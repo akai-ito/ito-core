@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  commit-messages:
+    name: Commit messages
+    uses: akai-ito/.github/.github/workflows/commit-messages.yml@main
+
+  docs:
+    name: Docs
+    uses: akai-ito/.github/.github/workflows/docs.yml@main
+
+  workflows:
+    name: Workflows and scripts
+    uses: akai-ito/.github/.github/workflows/workflows.yml@main
