@@ -14,6 +14,8 @@
 Commands in, one resumable event stream out. [protocol](protocol) holds the spec (OpenAPI for the
 commands, JSON Schema for the events), the [guarantees](protocol/guarantees.md) the server keeps,
 and a golden transcript of every scenario, which the server's tests replay through the real API.
+Read it rendered at [akai-ito.github.io/ito-core](https://akai-ito.github.io/ito-core/): the API
+reference, the guarantees, and a timeline of every transcript.
 
 ```sh
 npm ci
@@ -27,7 +29,6 @@ npm run docs                # the API reference, built into site/
   written, what the agent is doing right now, and a Stop that works instantly.
 - Never lose a message: send while the agent is busy, pick up after any disconnect, and retry
   without duplicates.
-- Publish its API docs on GitHub Pages, so any client can be built against the spec.
 - Run the agent on Codex behind a small interface of its own, with cloud or local models.
 
 ## Licence

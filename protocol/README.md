@@ -1,6 +1,8 @@
 # The Ito client API
 
 **Commands in, one resumable event stream out.** Ari speaks it, and so can any other client.
+Read it rendered, with the guarantees and a timeline of every transcript, at
+[akai-ito.github.io/ito-core](https://akai-ito.github.io/ito-core/).
 
 | File | What it is |
 | --- | --- |
@@ -71,4 +73,4 @@ types they don't recognise, and servers ignore unknown request fields.
   the types from the spec.
 - `npm run check:transcripts` checks every transcript against the spec and the guarantees it can
   see: offsets, unique ids, exactly-once delivery, every turn ending.
-- `npm run docs` builds the API reference into `site/`.
+- `npm run docs` builds the API reference into `site/`; every push to `main` publishes it.
