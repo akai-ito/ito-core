@@ -5,8 +5,9 @@
 [![CI](https://github.com/akai-ito/ito-core/actions/workflows/ci.yml/badge.svg)](https://github.com/akai-ito/ito-core/actions/workflows/ci.yml)
 
 > [!NOTE]
-> Nothing is built yet. Slice 1 comes first: live feel and never losing a message. The
-> [map](https://github.com/akai-ito/.github/blob/main/map.md) has the design and the plan.
+> Nothing is built yet. First comes the live conversation: streaming replies, an instant Stop,
+> and never losing a message. The [map](https://github.com/akai-ito/.github/blob/main/map.md) has
+> the design.
 
 ## What it will do
 
