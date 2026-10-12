@@ -1,0 +1,506 @@
+openapi: 3.1.0
+info:
+  title: Ito client API
+  version: "0.1"
+  summary: Commands in, one resumable event stream out.
+  description: |
+    The API that Ari, and any other client, uses to talk to an Ito server.
+
+    - **Discover** which protocol versions a server speaks with `GET /.well-known/ito`, before
+      you have a token.
+    - **Authenticate** every other request with `Authorization: Bearer <token>`. `ito serve`
+      prints the token once, when it creates it.
+    - **Listen** on `GET /v0/events`, one Server-Sent Events stream that carries everything the
+      server says. Resume with `Last-Event-ID` after any disconnect.
+    - **Send** with `POST /v0/messages`. The app chooses the message id, so retrying is always
+      safe.
+    - **Stop** a turn, or **try again** after one failed, with commands on the turn.
+
+    **Versioning.** Routes carry the protocol's major version, and every response carries an
+    `Ito-Protocol` header with the full version. Until 1.0, every protocol change may break, so
+    an app and a server must speak the same `0.MINOR`. Apps ignore fields and event types they
+    don't recognise; servers ignore unknown request fields.
+
+    **Retries.** Every command is idempotent: sending a message again with the same id, repeating
+    a stop, or repeating a try again has the effect of doing it once. Retry network errors,
+    `429` and `5xx` responses with backoff, honouring `Retry-After`.
+
+    **Errors.** A refused command answers with an HTTP status and an `error` object: a stable
+    `code`, a plain `message` for the person using the app, and a technical `detail`.
+  license:
+    name: PolyForm Noncommercial 1.0.0 or PolyForm Small Business 1.0.0
+    identifier: PolyForm-Noncommercial-1.0.0 OR PolyForm-Small-Business-1.0.0
+servers:
+  - url: https://{host}
+    description: Your Ito server, reached over HTTPS (for example through Tailscale).
+    variables:
+      host:
+        default: studio.example.ts.net
+security:
+  - token: []
+tags:
+  - name: Connecting
+    description: Find out what a server speaks and who it is.
+  - name: Conversation
+    description: Send messages, follow the conversation and read its history.
+  - name: Turns
+    description: Control the agent's work on a turn.
+paths:
+  /.well-known/ito:
+    get:
+      tags: [Connecting]
+      operationId: discover
+      summary: Discover the protocol versions
+      description: |
+        Open to anyone, and unversioned, so it works across majors. An app compares these
+        versions with its own before sending the token, and says which side to update when they
+        don't match.
+      security: []
+      responses:
+        "200":
+          description: The versions this server speaks.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Discovery" }
+              example:
+                product: ito
+                protocol: ["0.1"]
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/server:
+    get:
+      tags: [Connecting]
+      operationId: getServer
+      summary: Check the token and meet the server
+      description: The first authenticated call when connecting; it names the server and the agent.
+      responses:
+        "200":
+          description: The token is accepted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerInfo" }
+              example:
+                name: studio
+                version: 0.1.0
+                protocol: "0.1"
+                agent: { name: Ari }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/events:
+    get:
+      tags: [Conversation]
+      operationId: streamEvents
+      summary: Follow the conversation
+      description: |
+        One long-lived `text/event-stream` response that carries every event, in order. Each
+        Server-Sent Event has an `id:` line (the event's id) and a `data:` line (the event as JSON,
+        described by [the events schema](events.schema.json)). A comment line, `: ping`, arrives at
+        least every 15 seconds; treat 45 seconds of silence as a dead connection and reconnect.
+
+        Send the id of the last event you applied as `Last-Event-ID` to resume: you receive every
+        later event exactly once. When the server can't resume from it (there was none, it doesn't
+        know it, or you are too far behind), the stream starts with a `snapshot` instead; replace
+        your view of the conversation with it.
+
+        A turn runs to its end whether or not anyone is connected.
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: The id of the last event you applied.
+          schema: { $ref: "events.schema.json#/$defs/EventId" }
+      responses:
+        "200":
+          description: The event stream.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events, each carrying one event from the events schema.
+              example: |
+                id: e_0042
+                data: {"id":"e_0042","type":"turn.status","at":"2026-10-12T09:41:01.200Z","turn":"t_0007","kind":"working","label":"Searching the web"}
+
+                : ping
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/messages:
+    post:
+      tags: [Conversation]
+      operationId: sendMessage
+      summary: Send a message
+      description: |
+        Answers as soon as the message is on the server's disk, without waiting for the agent.
+        What happens next arrives on the event stream: `turn.started` when it starts a turn,
+        `message.read` when the agent takes it into the running turn, or `message.queued` when it
+        waits as Next. Send waiting messages one at a time, in order, each answered before the
+        next.
+
+        Sending the same id again returns the same message and changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendMessage" }
+            example:
+              id: 5b6c0a3e-8d1f-4c2a-9e7b-3f1d2c4b5a69
+              text: Plan my Saturday, a long run in the morning, then something calm.
+      responses:
+        "201":
+          description: Accepted for the first time.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageResult" }
+        "200":
+          description: Already accepted earlier; nothing changed.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+    get:
+      tags: [Conversation]
+      operationId: listMessages
+      summary: Read older messages
+      description: |
+        The messages just before a given one, oldest first. The newest messages come from the
+        event stream's `snapshot`, so `before` is always required. A `404` means the server
+        doesn't know that message (it was restored from a backup): reconnect to the event stream
+        for a snapshot.
+      parameters:
+        - name: before
+          in: query
+          required: true
+          description: Return messages older than this one.
+          schema: { $ref: "events.schema.json#/$defs/MessageId" }
+        - name: limit
+          in: query
+          required: false
+          description: How many messages to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: A page of older messages.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessagePage" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/turns/{turn}/stop:
+    post:
+      tags: [Turns]
+      operationId: stopTurn
+      summary: Stop a turn
+      description: |
+        Handled ahead of everything else, and never behind a message being accepted. The server
+        sends no more text for the turn, stops the agent, and keeps the message being written cut
+        at `cut`: where it was on your screen. `turn.ended` with outcome `stopped` follows once the
+        agent has really stopped.
+
+        If the turn has already ended, nothing changes and the answer gives its outcome.
+        Messages waiting as Next are answered after the stop.
+      parameters:
+        - $ref: "#/components/parameters/Turn"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StopTurn" }
+            example:
+              cut: { message: m_0012, offset: 214 }
+      responses:
+        "202":
+          description: The turn is stopping.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StopResult" }
+              example: { turn: t_0007, state: stopping }
+        "200":
+          description: The turn had already ended.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StopResult" }
+              example: { turn: t_0007, state: ended, outcome: completed }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/turns/{turn}/retry:
+    post:
+      tags: [Turns]
+      operationId: retryTurn
+      summary: Try a failed turn again
+      description: |
+        Starts a new turn that answers the same messages, below the failed reply, which stays.
+        The failed turn's id is the retry key: repeating the request returns the same new turn.
+        Only a failed turn can be tried again.
+      parameters:
+        - $ref: "#/components/parameters/Turn"
+      responses:
+        "202":
+          description: A new attempt has started.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetryResult" }
+              example: { turn: t_0008, retry_of: t_0007 }
+        "200":
+          description: Already tried again; this is that attempt.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RetryResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+components:
+  securitySchemes:
+    token:
+      type: http
+      scheme: bearer
+      bearerFormat: ito_…
+      description: |
+        The token `ito serve` printed when it created it; `ito token new` replaces it. Send it only
+        over HTTPS (or to a loopback address during development). The server never logs it.
+  headers:
+    ItoProtocol:
+      description: The protocol version this response speaks, as `MAJOR.MINOR`.
+      schema:
+        type: string
+        pattern: ^\d+\.\d+$
+        example: "0.1"
+    RetryAfter:
+      description: Seconds to wait before trying again.
+      schema:
+        type: integer
+        minimum: 0
+  parameters:
+    Turn:
+      name: turn
+      in: path
+      required: true
+      description: The turn's id, from `turn.started`.
+      schema: { $ref: "events.schema.json#/$defs/TurnId" }
+  responses:
+    InvalidRequest:
+      description: The request is malformed, or not possible in the current state (`invalid_request`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+          example:
+            error:
+              code: invalid_request
+              message: Only a reply that failed can be tried again.
+              detail: Turn t_0007 ended with outcome completed.
+    TokenRejected:
+      description: The token is missing, malformed, unknown or replaced (`token_rejected`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+          example:
+            error:
+              code: token_rejected
+              message: The server didn't accept this token.
+              detail: Use the token ito serve printed, or run ito token new.
+    NotFound:
+      description: The server doesn't know this turn or message (`not_found`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+    IdConflict:
+      description: A message with this id was already accepted with different text (`id_conflict`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+    TooLarge:
+      description: The message is longer than the server accepts (`too_large`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+    SlowDown:
+      description: Too many requests, or too many wrong tokens (`slow_down`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+    Unavailable:
+      description: The server is starting or shutting down (`unavailable`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+  schemas:
+    Event:
+      description: One event on the stream; the `type` field says which.
+      $ref: "events.schema.json#/$defs/Event"
+    Snapshot:
+      $ref: "events.schema.json#/$defs/Snapshot"
+    MessageAccepted:
+      $ref: "events.schema.json#/$defs/MessageAccepted"
+    MessageQueued:
+      $ref: "events.schema.json#/$defs/MessageQueued"
+    MessageRead:
+      $ref: "events.schema.json#/$defs/MessageRead"
+    TurnStarted:
+      $ref: "events.schema.json#/$defs/TurnStarted"
+    TurnStatus:
+      $ref: "events.schema.json#/$defs/TurnStatus"
+    MessageStarted:
+      $ref: "events.schema.json#/$defs/MessageStarted"
+    MessageDelta:
+      $ref: "events.schema.json#/$defs/MessageDelta"
+    MessageEnded:
+      $ref: "events.schema.json#/$defs/MessageEnded"
+    TurnEnded:
+      $ref: "events.schema.json#/$defs/TurnEnded"
+    Message:
+      $ref: "events.schema.json#/$defs/Message"
+    Status:
+      $ref: "events.schema.json#/$defs/Status"
+    Error:
+      $ref: "events.schema.json#/$defs/Error"
+    Discovery:
+      type: object
+      required: [product, protocol]
+      properties:
+        product:
+          const: ito
+        protocol:
+          description: The protocol versions this server speaks, as `MAJOR.MINOR`.
+          type: array
+          minItems: 1
+          items:
+            type: string
+            pattern: ^\d+\.\d+$
+    ServerInfo:
+      type: object
+      required: [name, version, protocol, agent]
+      properties:
+        name:
+          description: The server's name, usually its host name.
+          type: string
+        version:
+          description: The version of Ito the server runs.
+          type: string
+        protocol:
+          description: The protocol version of this route, as `MAJOR.MINOR`.
+          type: string
+          pattern: ^\d+\.\d+$
+        agent:
+          type: object
+          required: [name]
+          properties:
+            name:
+              description: What the agent is called; Ari until you choose another name.
+              type: string
+    SendMessage:
+      type: object
+      required: [id, text]
+      properties:
+        id:
+          description: A random UUID the app makes when you tap Send. It is the message's id and its retry key.
+          type: string
+          format: uuid
+        text:
+          description: What you wrote, as plain text or Markdown.
+          type: string
+          minLength: 1
+          maxLength: 32000
+          pattern: \S
+    MessageResult:
+      type: object
+      required: [message]
+      properties:
+        message: { $ref: "events.schema.json#/$defs/Message" }
+    MessagePage:
+      type: object
+      required: [messages, has_more]
+      properties:
+        messages:
+          description: Oldest first.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Message" }
+        has_more:
+          description: Whether even older messages exist.
+          type: boolean
+    StopTurn:
+      type: object
+      properties:
+        cut:
+          description: Where the message being written was on your screen when you tapped Stop. Without it, the server keeps everything written so far.
+          type: object
+          required: [message, offset]
+          properties:
+            message: { $ref: "events.schema.json#/$defs/MessageId" }
+            offset:
+              description: How much of the message's text you saw, in UTF-16 code units.
+              type: integer
+              minimum: 0
+    StopResult:
+      type: object
+      required: [turn, state]
+      properties:
+        turn: { $ref: "events.schema.json#/$defs/TurnId" }
+        state:
+          description: "`stopping` until the agent has stopped; `ended` if the turn had already ended."
+          enum: [stopping, ended]
+        outcome:
+          $ref: "events.schema.json#/$defs/Outcome"
+          description: How the turn ended, when `state` is `ended`.
+    RetryResult:
+      type: object
+      required: [turn, retry_of]
+      properties:
+        turn:
+          $ref: "events.schema.json#/$defs/TurnId"
+          description: The new attempt.
+        retry_of:
+          $ref: "events.schema.json#/$defs/TurnId"
+          description: The failed turn.
+    ErrorResult:
+      type: object
+      required: [error]
+      properties:
+        error: { $ref: "events.schema.json#/$defs/Error" }

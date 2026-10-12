@@ -1,0 +1,35 @@
+{"transcript":"12-send-while-offline","scenario":12,"title":"Send while offline","summary":"Two messages written offline go out in order once the signal returns. The first response is lost, so Ari sends the first message again and gets the same message back, unchanged; the second joins the turn the first started.","guarantees":["G1","G2","G3"],"app":{"cursor":"e_0006_69311"}}
+{"given":{"id":"e_0001_67331","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"b77a7cfe-2ae5-4ebe-a784-822ec390f61c","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z"}}}
+{"given":{"id":"e_0002_51159","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_36739","inputs":["b77a7cfe-2ae5-4ebe-a784-822ec390f61c"]}}
+{"given":{"id":"e_0003_37999","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_60432","role":"agent","kind":"reply","turn":"t_0001_36739","text":"","at":"2026-10-11T21:14:01.801Z"}}}
+{"given":{"id":"e_0004_73082","type":"message.delta","at":"2026-10-11T21:14:01.801Z","message":"m_0001_60432","offset":0,"text":"Fix it. The frame is sound; new brakes and a chain come to about £90, against roughly £600 for a comparable new bike. If the gears still slip after that, revisit."}}
+{"given":{"id":"e_0005_29645","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_60432","outcome":"completed","length":162}}
+{"given":{"id":"e_0006_69311","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_36739","outcome":"completed"}}
+{"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0006_69311"}}}
+{"at":30,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":1030,"world":"offline"}
+{"at":10030,"world":"online"}
+{"at":10030,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0006_69311"}}}
+{"at":10060,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":10065,"app":{"method":"POST","path":"/v0/messages","body":{"id":"76c3ac95-83e0-45e9-a821-a12c08d956e9","text":"Also, can you check if Juno is open on Sunday?"}}}
+{"at":10090,"event":{"id":"e_0007_70658","type":"message.accepted","at":"2026-10-12T08:41:10.090Z","message":{"id":"76c3ac95-83e0-45e9-a821-a12c08d956e9","role":"user","text":"Also, can you check if Juno is open on Sunday?","at":"2026-10-12T08:41:10.090Z"}}}
+{"at":10095,"server":{"status":201,"body":{"message":{"id":"76c3ac95-83e0-45e9-a821-a12c08d956e9","role":"user","text":"Also, can you check if Juno is open on Sunday?","at":"2026-10-12T08:41:10.090Z"}}},"lost":true}
+{"at":10096,"event":{"id":"e_0008_81887","type":"turn.started","at":"2026-10-12T08:41:10.096Z","turn":"t_0002_73493","inputs":["76c3ac95-83e0-45e9-a821-a12c08d956e9"]}}
+{"at":10396,"event":{"id":"e_0009_54954","type":"turn.status","at":"2026-10-12T08:41:10.396Z","turn":"t_0002_73493","kind":"thinking","label":"Thinking"}}
+{"at":12096,"app":{"method":"POST","path":"/v0/messages","body":{"id":"76c3ac95-83e0-45e9-a821-a12c08d956e9","text":"Also, can you check if Juno is open on Sunday?"}}}
+{"at":12126,"server":{"status":200,"body":{"message":{"id":"76c3ac95-83e0-45e9-a821-a12c08d956e9","role":"user","text":"Also, can you check if Juno is open on Sunday?","at":"2026-10-12T08:41:10.090Z"}}}}
+{"at":12127,"app":{"method":"POST","path":"/v0/messages","body":{"id":"0c1566bf-a262-4595-b7a6-dd608ba8c3b0","text":"And book for two at 8 if so"}}}
+{"at":12152,"event":{"id":"e_0010_76961","type":"message.accepted","at":"2026-10-12T08:41:12.152Z","message":{"id":"0c1566bf-a262-4595-b7a6-dd608ba8c3b0","role":"user","text":"And book for two at 8 if so","at":"2026-10-12T08:41:12.152Z"}}}
+{"at":12157,"server":{"status":201,"body":{"message":{"id":"0c1566bf-a262-4595-b7a6-dd608ba8c3b0","role":"user","text":"And book for two at 8 if so","at":"2026-10-12T08:41:12.152Z"}}}}
+{"at":12758,"event":{"id":"e_0011_23252","type":"message.read","at":"2026-10-12T08:41:12.758Z","message":"0c1566bf-a262-4595-b7a6-dd608ba8c3b0","turn":"t_0002_73493"}}
+{"at":12758,"event":{"id":"e_0012_79143","type":"turn.status","at":"2026-10-12T08:41:12.758Z","turn":"t_0002_73493","kind":"working","label":"Searching the web","detail":"Bistro Juno Sunday opening hours"}}
+{"at":15358,"event":{"id":"e_0013_62832","type":"turn.status","at":"2026-10-12T08:41:15.358Z","turn":"t_0002_73493","kind":"writing","label":"Writing"}}
+{"at":15358,"event":{"id":"e_0014_77587","type":"message.started","at":"2026-10-12T08:41:15.358Z","message":{"id":"m_0002_04718","role":"agent","kind":"reply","turn":"t_0002_73493","text":"","at":"2026-10-12T08:41:15.358Z"}}}
+{"at":15358,"event":{"id":"e_0015_68521","type":"message.delta","at":"2026-10-12T08:41:15.358Z","message":"m_0002_04718","offset":0,"text":"Juno is open on Sunday from "}}
+{"at":15478,"event":{"id":"e_0016_60120","type":"message.delta","at":"2026-10-12T08:41:15.478Z","message":"m_0002_04718","offset":28,"text":"18:00, and they have a table "}}
+{"at":15598,"event":{"id":"e_0017_42623","type":"message.delta","at":"2026-10-12T08:41:15.598Z","message":"m_0002_04718","offset":57,"text":"for two at 20:00. I can't "}}
+{"at":15718,"event":{"id":"e_0018_22710","type":"message.delta","at":"2026-10-12T08:41:15.718Z","message":"m_0002_04718","offset":83,"text":"book for you yet; their "}}
+{"at":15838,"event":{"id":"e_0019_30341","type":"message.delta","at":"2026-10-12T08:41:15.838Z","message":"m_0002_04718","offset":107,"text":"booking page is "}}
+{"at":15958,"event":{"id":"e_0020_40392","type":"message.delta","at":"2026-10-12T08:41:15.958Z","message":"m_0002_04718","offset":123,"text":"bistrojuno.example/book."}}
+{"at":15958,"event":{"id":"e_0021_56102","type":"message.ended","at":"2026-10-12T08:41:15.958Z","message":"m_0002_04718","outcome":"completed","length":147}}
+{"at":15958,"event":{"id":"e_0022_84860","type":"turn.ended","at":"2026-10-12T08:41:15.958Z","turn":"t_0002_73493","outcome":"completed"}}

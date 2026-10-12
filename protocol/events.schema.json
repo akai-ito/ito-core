@@ -1,0 +1,518 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akai-ito.github.io/ito-core/protocol/v0/events.schema.json",
+  "title": "Ito events",
+  "description": "Everything the server says on `GET /v0/events`. Each Server-Sent Event carries one event: its `id:` line is the event's id and its `data:` line is the event as JSON. Apps skip event types they don't recognise, but still keep their id as the cursor.",
+  "$ref": "#/$defs/Event",
+  "$defs": {
+    "Event": {
+      "description": "One event on the stream; its `type` says which.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Snapshot"
+        },
+        {
+          "$ref": "#/$defs/MessageAccepted"
+        },
+        {
+          "$ref": "#/$defs/MessageQueued"
+        },
+        {
+          "$ref": "#/$defs/MessageRead"
+        },
+        {
+          "$ref": "#/$defs/TurnStarted"
+        },
+        {
+          "$ref": "#/$defs/TurnStatus"
+        },
+        {
+          "$ref": "#/$defs/MessageStarted"
+        },
+        {
+          "$ref": "#/$defs/MessageDelta"
+        },
+        {
+          "$ref": "#/$defs/MessageEnded"
+        },
+        {
+          "$ref": "#/$defs/TurnEnded"
+        }
+      ]
+    },
+    "EventId": {
+      "description": "Opaque and never reused, even after the server is restored from a backup. Resume by sending the id of the last event you applied as `Last-Event-ID`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "MessageId": {
+      "description": "Opaque. The app makes the ids of the messages you send (random UUIDs); the server makes the ids of the agent's messages.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "TurnId": {
+      "description": "Opaque. A turn is one run of the agent, from its inputs to an answer, a stop or an error.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "Timestamp": {
+      "description": "Server time, RFC 3339 in UTC with milliseconds.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "examples": ["2026-10-12T09:41:07.120Z"]
+    },
+    "Outcome": {
+      "description": "How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.",
+      "enum": ["completed", "stopped", "interrupted", "failed"]
+    },
+    "Error": {
+      "description": "Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `not_found`, `id_conflict`, `too_large`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise.",
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "description": "Stable and snake_case.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "examples": ["model_timeout"]
+        },
+        "message": {
+          "description": "A plain sentence for the person using the app, written by the server.",
+          "type": "string",
+          "minLength": 1,
+          "examples": ["The model didn't respond for 60 seconds."]
+        },
+        "detail": {
+          "description": "The technical cause, for a Details view.",
+          "type": "string"
+        }
+      }
+    },
+    "MessageKind": {
+      "description": "Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as \"I'll check current prices first.\"; an app may show notes as live detail instead of in the conversation. Hide a kind you don't recognise.",
+      "enum": ["reply", "note"]
+    },
+    "Message": {
+      "description": "One message in the conversation. Messages are ordered by when they began.",
+      "type": "object",
+      "required": ["id", "role", "text", "at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "role": {
+          "description": "`user` for what you send, `agent` for what the agent writes.",
+          "enum": ["user", "agent"]
+        },
+        "kind": {
+          "$ref": "#/$defs/MessageKind"
+        },
+        "turn": {
+          "$ref": "#/$defs/TurnId",
+          "description": "Agent messages only: the turn that wrote it."
+        },
+        "text": {
+          "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far.",
+          "type": "string"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the message began: when the server accepted it, or the agent's first word."
+        },
+        "ended_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Agent messages only: when it ended."
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome",
+          "description": "Agent messages only. Absent while the message is still being written."
+        },
+        "error": {
+          "$ref": "#/$defs/Error",
+          "description": "Present when the outcome is `failed`."
+        }
+      },
+      "if": {
+        "properties": {
+          "role": {
+            "const": "agent"
+          }
+        }
+      },
+      "then": {
+        "required": ["kind", "turn"],
+        "properties": {
+          "kind": {
+            "$ref": "#/$defs/MessageKind"
+          },
+          "turn": {
+            "$ref": "#/$defs/TurnId"
+          }
+        }
+      }
+    },
+    "StatusKind": {
+      "description": "Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.",
+      "enum": ["thinking", "working", "writing", "adjusting", "waiting", "stopping"]
+    },
+    "StatusLabel": {
+      "description": "Plain words, such as \"Searching the web\". Never a tool name, a command or JSON.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "StatusDetail": {
+      "description": "Optional plain-word specifics, such as a search query.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "Status": {
+      "description": "What the agent is doing right now.",
+      "type": "object",
+      "required": ["kind", "label"],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/StatusKind"
+        },
+        "label": {
+          "$ref": "#/$defs/StatusLabel"
+        },
+        "detail": {
+          "$ref": "#/$defs/StatusDetail"
+        }
+      }
+    },
+    "LiveTurn": {
+      "description": "The turn running when a snapshot was taken.",
+      "type": "object",
+      "required": ["id", "inputs", "read", "status"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/TurnId"
+        },
+        "inputs": {
+          "description": "The messages the turn started with.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/MessageId"
+          }
+        },
+        "read": {
+          "description": "Messages sent while it was running that the agent has since taken in.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MessageId"
+          }
+        },
+        "retry_of": {
+          "$ref": "#/$defs/TurnId",
+          "description": "Present when the turn is a new attempt at a failed one."
+        },
+        "status": {
+          "description": "The current live status, if there is one yet.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Status"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Snapshot": {
+      "title": "snapshot",
+      "description": "The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.",
+      "type": "object",
+      "required": ["type", "at", "reason", "messages", "has_more", "turn", "next"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "snapshot"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "reason": {
+          "description": "Why there was no replay: `no_cursor`, `cursor_unknown` or `too_far_behind`.",
+          "enum": ["no_cursor", "cursor_unknown", "too_far_behind"]
+        },
+        "messages": {
+          "description": "The latest messages, oldest first, including a message still being written (with its text so far and no outcome). Page further back with `GET /v0/messages`.",
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/Message"
+          }
+        },
+        "has_more": {
+          "description": "Whether older messages exist.",
+          "type": "boolean"
+        },
+        "turn": {
+          "description": "The running turn, or null when the agent is idle.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/LiveTurn"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next": {
+          "description": "Messages waiting as Next, in the order they will be answered.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MessageId"
+          }
+        }
+      }
+    },
+    "MessageAccepted": {
+      "title": "message.accepted",
+      "description": "A message you sent is on the server's disk. Every connected app receives it, the sender included.",
+      "type": "object",
+      "required": ["id", "type", "at", "message"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.accepted"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/Message"
+        }
+      }
+    },
+    "MessageQueued": {
+      "title": "message.queued",
+      "description": "The message can't join the running turn, so it waits as Next. It starts the turn after this one, together with any other waiting messages.",
+      "type": "object",
+      "required": ["id", "type", "at", "message", "turn"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.queued"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "turn": {
+          "$ref": "#/$defs/TurnId",
+          "description": "The running turn it waits behind."
+        }
+      }
+    },
+    "MessageRead": {
+      "title": "message.read",
+      "description": "The agent has taken the message into the running turn. It reads new input at its next step, between model calls, so a reply it was already writing may finish first.",
+      "type": "object",
+      "required": ["id", "type", "at", "message", "turn"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.read"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "turn": {
+          "$ref": "#/$defs/TurnId"
+        }
+      }
+    },
+    "TurnStarted": {
+      "title": "turn.started",
+      "description": "The agent starts working. Stop works from this moment.",
+      "type": "object",
+      "required": ["id", "type", "at", "turn", "inputs"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "turn.started"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "turn": {
+          "$ref": "#/$defs/TurnId"
+        },
+        "inputs": {
+          "description": "The messages this turn answers, in the order they were sent.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/MessageId"
+          }
+        },
+        "retry_of": {
+          "$ref": "#/$defs/TurnId",
+          "description": "Present when this is a new attempt at a failed turn."
+        }
+      }
+    },
+    "TurnStatus": {
+      "title": "turn.status",
+      "description": "What the agent is doing now. It replaces the previous status, and `turn.ended` clears it.",
+      "type": "object",
+      "required": ["id", "type", "at", "turn", "kind", "label"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "turn.status"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "turn": {
+          "$ref": "#/$defs/TurnId"
+        },
+        "kind": {
+          "$ref": "#/$defs/StatusKind"
+        },
+        "label": {
+          "$ref": "#/$defs/StatusLabel"
+        },
+        "detail": {
+          "$ref": "#/$defs/StatusDetail"
+        }
+      }
+    },
+    "MessageStarted": {
+      "title": "message.started",
+      "description": "The agent begins a message: its text is empty and it has no outcome yet. `message.delta` events follow.",
+      "type": "object",
+      "required": ["id", "type", "at", "message"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.started"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/Message"
+        }
+      }
+    },
+    "MessageDelta": {
+      "title": "message.delta",
+      "description": "Text appended to a message. Text is never revised: `offset` is always the message's length before this piece.",
+      "type": "object",
+      "required": ["id", "type", "at", "message", "offset", "text"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.delta"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "offset": {
+          "description": "Where this piece starts, in UTF-16 code units.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "MessageEnded": {
+      "title": "message.ended",
+      "description": "A message is finished. Its final text is its first `length` UTF-16 code units: everything streamed, or less when you stopped it, cut where it was on your screen. Its `ended_at` is this event's `at`.",
+      "type": "object",
+      "required": ["id", "type", "at", "message", "outcome", "length"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.ended"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "length": {
+          "description": "The final length of the text, in UTF-16 code units.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "$ref": "#/$defs/Error",
+          "description": "Present when the outcome is `failed`."
+        }
+      }
+    },
+    "TurnEnded": {
+      "title": "turn.ended",
+      "description": "The turn is over and its status is cleared. Nothing more about this turn follows.",
+      "type": "object",
+      "required": ["id", "type", "at", "turn", "outcome"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "turn.ended"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "turn": {
+          "$ref": "#/$defs/TurnId"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "error": {
+          "$ref": "#/$defs/Error",
+          "description": "Present when the outcome is `failed`."
+        }
+      }
+    }
+  }
+}

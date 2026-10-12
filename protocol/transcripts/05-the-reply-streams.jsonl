@@ -1,0 +1,33 @@
+{"transcript":"05-the-reply-streams","scenario":5,"title":"The reply streams","summary":"Reply text arrives as appended pieces, each with its offset, including a burst after the network held several back; the finished text is exactly what streamed.","guarantees":["G7"],"app":{"cursor":"e_0006_57922"}}
+{"given":{"id":"e_0001_75682","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"d70174fb-30e1-44b3-bc42-ff74771f01e1","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z"}}}
+{"given":{"id":"e_0002_16650","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_40363","inputs":["d70174fb-30e1-44b3-bc42-ff74771f01e1"]}}
+{"given":{"id":"e_0003_47293","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_64933","role":"agent","kind":"reply","turn":"t_0001_40363","text":"","at":"2026-10-11T21:14:01.801Z"}}}
+{"given":{"id":"e_0004_99052","type":"message.delta","at":"2026-10-11T21:14:01.801Z","message":"m_0001_64933","offset":0,"text":"Fix it. The frame is sound; new brakes and a chain come to about £90, against roughly £600 for a comparable new bike. If the gears still slip after that, revisit."}}
+{"given":{"id":"e_0005_77767","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_64933","outcome":"completed","length":162}}
+{"given":{"id":"e_0006_57922","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_40363","outcome":"completed"}}
+{"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0006_57922"}}}
+{"at":30,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":2030,"app":{"method":"POST","path":"/v0/messages","body":{"id":"ca8f484f-3900-44f6-8fbf-85e7a258b7be","text":"Plan my Saturday: long run in the morning, then something calm."}}}
+{"at":2055,"event":{"id":"e_0007_33740","type":"message.accepted","at":"2026-10-12T08:41:02.055Z","message":{"id":"ca8f484f-3900-44f6-8fbf-85e7a258b7be","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.055Z"}}}
+{"at":2060,"server":{"status":201,"body":{"message":{"id":"ca8f484f-3900-44f6-8fbf-85e7a258b7be","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.055Z"}}}}
+{"at":2061,"event":{"id":"e_0008_04756","type":"turn.started","at":"2026-10-12T08:41:02.061Z","turn":"t_0002_27167","inputs":["ca8f484f-3900-44f6-8fbf-85e7a258b7be"]}}
+{"at":2361,"event":{"id":"e_0009_97095","type":"turn.status","at":"2026-10-12T08:41:02.361Z","turn":"t_0002_27167","kind":"thinking","label":"Thinking"}}
+{"at":3861,"event":{"id":"e_0010_11674","type":"turn.status","at":"2026-10-12T08:41:03.861Z","turn":"t_0002_27167","kind":"writing","label":"Writing"}}
+{"at":3861,"event":{"id":"e_0011_31431","type":"message.started","at":"2026-10-12T08:41:03.861Z","message":{"id":"m_0002_24233","role":"agent","kind":"reply","turn":"t_0002_27167","text":"","at":"2026-10-12T08:41:03.861Z"}}}
+{"at":3861,"event":{"id":"e_0012_01189","type":"message.delta","at":"2026-10-12T08:41:03.861Z","message":"m_0002_24233","offset":0,"text":"Here's a shape for "}}
+{"at":3971,"event":{"id":"e_0013_30438","type":"message.delta","at":"2026-10-12T08:41:03.971Z","message":"m_0002_24233","offset":19,"text":"Saturday:\n\n- **07:30** Long "}}
+{"at":4081,"event":{"id":"e_0014_58416","type":"message.delta","at":"2026-10-12T08:41:04.081Z","message":"m_0002_24233","offset":47,"text":"run, 18 km along the river; "}}
+{"at":4191,"event":{"id":"e_0015_66230","type":"message.delta","at":"2026-10-12T08:41:04.191Z","message":"m_0002_24233","offset":75,"text":"flat, and the café opens at "}}
+{"at":4301,"event":{"id":"e_0016_17901","type":"message.delta","at":"2026-10-12T08:41:04.301Z","message":"m_0002_24233","offset":103,"text":"9.\n"}}
+{"at":4411,"world":"network_stall","until":5311}
+{"at":5311,"event":{"id":"e_0017_50344","type":"message.delta","at":"2026-10-12T08:41:04.411Z","message":"m_0002_24233","offset":106,"text":"- **10:00** Breakfast, then "}}
+{"at":5311,"event":{"id":"e_0018_49364","type":"message.delta","at":"2026-10-12T08:41:04.521Z","message":"m_0002_24233","offset":134,"text":"a slow hour with your "}}
+{"at":5311,"event":{"id":"e_0019_71873","type":"message.delta","at":"2026-10-12T08:41:04.631Z","message":"m_0002_24233","offset":156,"text":"book.\n- **13:00** Lunch at "}}
+{"at":5311,"event":{"id":"e_0020_88885","type":"message.delta","at":"2026-10-12T08:41:04.741Z","message":"m_0002_24233","offset":183,"text":"home; keep it light before "}}
+{"at":5311,"event":{"id":"e_0021_03304","type":"message.delta","at":"2026-10-12T08:41:04.851Z","message":"m_0002_24233","offset":210,"text":"the afternoon.\n"}}
+{"at":5851,"event":{"id":"e_0022_74260","type":"message.delta","at":"2026-10-12T08:41:05.851Z","message":"m_0002_24233","offset":225,"text":"- **15:00** A walk in the "}}
+{"at":5961,"event":{"id":"e_0023_42756","type":"message.delta","at":"2026-10-12T08:41:05.961Z","message":"m_0002_24233","offset":251,"text":"botanic garden, phone in "}}
+{"at":6071,"event":{"id":"e_0024_25696","type":"message.delta","at":"2026-10-12T08:41:06.071Z","message":"m_0002_24233","offset":276,"text":"your pocket.\n\nEarly night: "}}
+{"at":6181,"event":{"id":"e_0025_56955","type":"message.delta","at":"2026-10-12T08:41:06.181Z","message":"m_0002_24233","offset":303,"text":"you're up at 7."}}
+{"at":6181,"event":{"id":"e_0026_46602","type":"message.ended","at":"2026-10-12T08:41:06.181Z","message":"m_0002_24233","outcome":"completed","length":318}}
+{"at":6181,"event":{"id":"e_0027_38614","type":"turn.ended","at":"2026-10-12T08:41:06.181Z","turn":"t_0002_27167","outcome":"completed"}}
