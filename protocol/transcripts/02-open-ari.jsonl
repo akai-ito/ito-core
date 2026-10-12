@@ -1,0 +1,22 @@
+{"transcript":"02-open-ari","scenario":2,"title":"Open Ari","summary":"The next morning Ari shows what it already had, then resumes from its cursor and receives only what is new: an exchange you had on the Mac last night.","guarantees":["G2","G4","G13"],"app":{"cursor":"e_0006_69350"}}
+{"given":{"id":"e_0001_07811","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"63d6297e-90ec-494f-9bfe-c55b7d5c6f60","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z"}}}
+{"given":{"id":"e_0002_39378","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_10607","inputs":["63d6297e-90ec-494f-9bfe-c55b7d5c6f60"]}}
+{"given":{"id":"e_0003_34034","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_00810","role":"agent","kind":"reply","turn":"t_0001_10607","text":"","at":"2026-10-11T21:14:01.801Z"}}}
+{"given":{"id":"e_0004_18405","type":"message.delta","at":"2026-10-11T21:14:01.801Z","message":"m_0001_00810","offset":0,"text":"Fix it. The frame is sound; new brakes and a chain come to about £90, against roughly £600 for a comparable new bike. If the gears still slip after that, revisit."}}
+{"given":{"id":"e_0005_83785","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_00810","outcome":"completed","length":162}}
+{"given":{"id":"e_0006_69350","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_10607","outcome":"completed"}}
+{"given":{"id":"e_0007_45539","type":"message.accepted","at":"2026-10-11T22:05:00.000Z","message":{"id":"6549385e-4502-4bc3-9104-7c510ad2365a","role":"user","text":"What time is sunrise on Saturday?","at":"2026-10-11T22:05:00.000Z"}}}
+{"given":{"id":"e_0008_16051","type":"turn.started","at":"2026-10-11T22:05:00.001Z","turn":"t_0002_47032","inputs":["6549385e-4502-4bc3-9104-7c510ad2365a"]}}
+{"given":{"id":"e_0009_64912","type":"message.started","at":"2026-10-11T22:05:01.801Z","message":{"id":"m_0002_32503","role":"agent","kind":"reply","turn":"t_0002_47032","text":"","at":"2026-10-11T22:05:01.801Z"}}}
+{"given":{"id":"e_0010_45362","type":"message.delta","at":"2026-10-11T22:05:01.801Z","message":"m_0002_32503","offset":0,"text":"07:12 in London, so it's light enough to start a run by about 06:50."}}
+{"given":{"id":"e_0011_81288","type":"message.ended","at":"2026-10-11T22:05:02.401Z","message":"m_0002_32503","outcome":"completed","length":68}}
+{"given":{"id":"e_0012_10645","type":"turn.ended","at":"2026-10-11T22:05:02.402Z","turn":"t_0002_47032","outcome":"completed"}}
+{"at":0,"world":"app_opened"}
+{"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0006_69350"}}}
+{"at":30,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":30,"event":{"id":"e_0007_45539","type":"message.accepted","at":"2026-10-11T22:05:00.000Z","message":{"id":"6549385e-4502-4bc3-9104-7c510ad2365a","role":"user","text":"What time is sunrise on Saturday?","at":"2026-10-11T22:05:00.000Z"}}}
+{"at":30,"event":{"id":"e_0008_16051","type":"turn.started","at":"2026-10-11T22:05:00.001Z","turn":"t_0002_47032","inputs":["6549385e-4502-4bc3-9104-7c510ad2365a"]}}
+{"at":30,"event":{"id":"e_0009_64912","type":"message.started","at":"2026-10-11T22:05:01.801Z","message":{"id":"m_0002_32503","role":"agent","kind":"reply","turn":"t_0002_47032","text":"","at":"2026-10-11T22:05:01.801Z"}}}
+{"at":30,"event":{"id":"e_0010_45362","type":"message.delta","at":"2026-10-11T22:05:01.801Z","message":"m_0002_32503","offset":0,"text":"07:12 in London, so it's light enough to start a run by about 06:50."}}
+{"at":30,"event":{"id":"e_0011_81288","type":"message.ended","at":"2026-10-11T22:05:02.401Z","message":"m_0002_32503","outcome":"completed","length":68}}
+{"at":30,"event":{"id":"e_0012_10645","type":"turn.ended","at":"2026-10-11T22:05:02.402Z","turn":"t_0002_47032","outcome":"completed"}}

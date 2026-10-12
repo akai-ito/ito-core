@@ -1,0 +1,32 @@
+{"transcript":"14-the-server-restarts-or-is-restored","scenario":14,"title":"The server restarts, or is restored","summary":"The server restarts mid-reply and, on startup, ends the cut-off turn, keeping its text as interrupted; Ari learns it by resuming. Another day the server is restored from a backup, Ari's cursor is unknown to it, and Ari receives a snapshot of what the server has.","guarantees":["G1","G5","G8"],"app":{"cursor":"e_0006_60524"}}
+{"given":{"id":"e_0001_59429","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"bafdbba2-d851-4593-bc68-fdb68d9ab705","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z"}}}
+{"given":{"id":"e_0002_28748","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_29460","inputs":["bafdbba2-d851-4593-bc68-fdb68d9ab705"]}}
+{"given":{"id":"e_0003_07449","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_43076","role":"agent","kind":"reply","turn":"t_0001_29460","text":"","at":"2026-10-11T21:14:01.801Z"}}}
+{"given":{"id":"e_0004_27951","type":"message.delta","at":"2026-10-11T21:14:01.801Z","message":"m_0001_43076","offset":0,"text":"Fix it. The frame is sound; new brakes and a chain come to about £90, against roughly £600 for a comparable new bike. If the gears still slip after that, revisit."}}
+{"given":{"id":"e_0005_00308","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_43076","outcome":"completed","length":162}}
+{"given":{"id":"e_0006_60524","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_29460","outcome":"completed"}}
+{"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0006_60524"}}}
+{"at":30,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":2030,"app":{"method":"POST","path":"/v0/messages","body":{"id":"8037ec47-000d-4359-9abd-be6ff7791ea0","text":"Plan my Saturday: long run in the morning, then something calm."}}}
+{"at":2055,"event":{"id":"e_0007_65465","type":"message.accepted","at":"2026-10-12T08:41:02.055Z","message":{"id":"8037ec47-000d-4359-9abd-be6ff7791ea0","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.055Z"}}}
+{"at":2060,"server":{"status":201,"body":{"message":{"id":"8037ec47-000d-4359-9abd-be6ff7791ea0","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.055Z"}}}}
+{"at":2061,"event":{"id":"e_0008_94511","type":"turn.started","at":"2026-10-12T08:41:02.061Z","turn":"t_0002_70317","inputs":["8037ec47-000d-4359-9abd-be6ff7791ea0"]}}
+{"at":2361,"event":{"id":"e_0009_45546","type":"turn.status","at":"2026-10-12T08:41:02.361Z","turn":"t_0002_70317","kind":"thinking","label":"Thinking"}}
+{"at":3661,"event":{"id":"e_0010_39645","type":"turn.status","at":"2026-10-12T08:41:03.661Z","turn":"t_0002_70317","kind":"writing","label":"Writing"}}
+{"at":3661,"event":{"id":"e_0011_24921","type":"message.started","at":"2026-10-12T08:41:03.661Z","message":{"id":"m_0002_05742","role":"agent","kind":"reply","turn":"t_0002_70317","text":"","at":"2026-10-12T08:41:03.661Z"}}}
+{"at":3661,"event":{"id":"e_0012_81155","type":"message.delta","at":"2026-10-12T08:41:03.661Z","message":"m_0002_05742","offset":0,"text":"Here's a shape for "}}
+{"at":3771,"event":{"id":"e_0013_64353","type":"message.delta","at":"2026-10-12T08:41:03.771Z","message":"m_0002_05742","offset":19,"text":"Saturday:\n\n- **07:30** Long "}}
+{"at":3881,"event":{"id":"e_0014_16079","type":"message.delta","at":"2026-10-12T08:41:03.881Z","message":"m_0002_05742","offset":47,"text":"run, 18 km along the river; "}}
+{"at":3991,"event":{"id":"e_0015_54448","type":"message.delta","at":"2026-10-12T08:41:03.991Z","message":"m_0002_05742","offset":75,"text":"flat, and the café opens at "}}
+{"at":4101,"event":{"id":"e_0016_99572","type":"message.delta","at":"2026-10-12T08:41:04.101Z","message":"m_0002_05742","offset":103,"text":"9.\n- **10:00** Breakfast, "}}
+{"at":4211,"event":{"id":"e_0017_60450","type":"message.delta","at":"2026-10-12T08:41:04.211Z","message":"m_0002_05742","offset":129,"text":"then a slow hour with your "}}
+{"at":4321,"event":{"id":"e_0018_35280","type":"message.delta","at":"2026-10-12T08:41:04.321Z","message":"m_0002_05742","offset":156,"text":"book.\n"}}
+{"at":4401,"world":"server_restarted"}
+{"at":8301,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0018_35280"}}}
+{"at":8331,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":8331,"event":{"id":"e_0019_55879","type":"message.ended","at":"2026-10-12T08:41:06.801Z","message":"m_0002_05742","outcome":"interrupted","length":162}}
+{"at":8331,"event":{"id":"e_0020_12669","type":"turn.ended","at":"2026-10-12T08:41:06.801Z","turn":"t_0002_70317","outcome":"interrupted"}}
+{"at":86408331,"world":"server_restored","to":"e_0006_60524"}
+{"at":86413331,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0020_12669"}}}
+{"at":86413361,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":86413361,"event":{"id":"e_0006_60524","type":"snapshot","at":"2026-10-13T08:41:13.361Z","reason":"cursor_unknown","messages":[{"id":"bafdbba2-d851-4593-bc68-fdb68d9ab705","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z"},{"id":"m_0001_43076","role":"agent","kind":"reply","turn":"t_0001_29460","text":"Fix it. The frame is sound; new brakes and a chain come to about £90, against roughly £600 for a comparable new bike. If the gears still slip after that, revisit.","at":"2026-10-11T21:14:01.801Z","outcome":"completed","ended_at":"2026-10-11T21:14:02.401Z"}],"has_more":false,"turn":null,"next":[]}}

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  REDOCLY_TELEMETRY: "off"
+  REDOCLY_SUPPRESS_UPDATE_NOTICE: "true"
+
 jobs:
   commit-messages:
     name: Commit messages
@@ -20,3 +24,65 @@ jobs:
   workflows:
     name: Workflows and scripts
     uses: akai-ito/.github/.github/workflows/workflows.yml@main
+
+  spec:
+    name: Spec is valid OpenAPI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - name: Lint protocol/openapi.yaml
+        run: npm run check:spec
+
+  transcripts:
+    name: Transcripts match the spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - name: Check every golden transcript
+        run: npm run check:transcripts
+
+  generated:
+    name: Generated files are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - name: Generate the transcripts and types again
+        run: npm run generate
+      - name: Compare with the committed files
+        run: |
+          if ! git diff --quiet -- protocol/; then
+            git diff --stat -- protocol/
+            echo "::error title=Generated files are stale::Run npm run generate and commit protocol/transcripts and protocol/types.ts."
+            exit 1
+          fi
+
+  types:
+    name: TypeScript compiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - name: Type-check
+        run: npm run typecheck
+
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - name: Lint
+        run: npm run lint
+
+  format:
+    name: Prettier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - name: Check formatting
+        run: npm run format:check
+
