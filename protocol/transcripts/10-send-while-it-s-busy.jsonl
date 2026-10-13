@@ -1,4 +1,4 @@
-{"transcript":"10-send-while-it-s-busy","scenario":10,"title":"Send while it's busy","summary":"A message sent mid-reply joins the running turn: the reply being written finishes, the agent reads the message and adjusts in a new reply. While the agent can't take input, a message waits as Next and starts the following turn.","guarantees":["G2","G3"],"app":{"cursor":"e_0006_87217"}}
+{"transcript":"10-send-while-it-s-busy","start":"2026-10-12T08:41:00.000Z","scenario":10,"title":"Send while it's busy","summary":"A message sent mid-reply joins the running turn: the reply being written finishes, the agent reads the message and adjusts in a new reply. While the agent can't take input, a message waits as Next and starts the following turn.","guarantees":["G2","G3"],"app":{"cursor":"e_0006_87217"}}
 {"given":{"id":"e_0001_40243","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"52054ffc-b7ec-4fc5-880c-287a139ae1d7","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z"}}}
 {"given":{"id":"e_0002_29128","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_72087","inputs":["52054ffc-b7ec-4fc5-880c-287a139ae1d7"]}}
 {"given":{"id":"e_0003_03084","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_37089","role":"agent","kind":"reply","turn":"t_0001_72087","text":"","at":"2026-10-11T21:14:01.801Z"}}}
@@ -6,67 +6,67 @@
 {"given":{"id":"e_0005_06866","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_37089","outcome":"completed","length":162}}
 {"given":{"id":"e_0006_87217","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_72087","outcome":"completed"}}
 {"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0006_87217"}}}
-{"at":30,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":2030,"app":{"method":"POST","path":"/v0/messages","body":{"id":"3a3e2f07-85f4-4f6c-95f1-200524c679a3","text":"Plan my Saturday: long run in the morning, then something calm."}}}
-{"at":2055,"event":{"id":"e_0007_12767","type":"message.accepted","at":"2026-10-12T08:41:02.055Z","message":{"id":"3a3e2f07-85f4-4f6c-95f1-200524c679a3","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.055Z"}}}
-{"at":2060,"server":{"status":201,"body":{"message":{"id":"3a3e2f07-85f4-4f6c-95f1-200524c679a3","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.055Z"}}}}
-{"at":2061,"event":{"id":"e_0008_78767","type":"turn.started","at":"2026-10-12T08:41:02.061Z","turn":"t_0002_01985","inputs":["3a3e2f07-85f4-4f6c-95f1-200524c679a3"]}}
-{"at":2361,"event":{"id":"e_0009_95520","type":"turn.status","at":"2026-10-12T08:41:02.361Z","turn":"t_0002_01985","kind":"thinking","label":"Thinking"}}
-{"at":3761,"event":{"id":"e_0010_25390","type":"turn.status","at":"2026-10-12T08:41:03.761Z","turn":"t_0002_01985","kind":"writing","label":"Writing"}}
-{"at":3761,"event":{"id":"e_0011_63478","type":"message.started","at":"2026-10-12T08:41:03.761Z","message":{"id":"m_0002_50552","role":"agent","kind":"reply","turn":"t_0002_01985","text":"","at":"2026-10-12T08:41:03.761Z"}}}
-{"at":3761,"event":{"id":"e_0012_62486","type":"message.delta","at":"2026-10-12T08:41:03.761Z","message":"m_0002_50552","offset":0,"text":"Here's a shape for "}}
-{"at":3871,"event":{"id":"e_0013_49863","type":"message.delta","at":"2026-10-12T08:41:03.871Z","message":"m_0002_50552","offset":19,"text":"Saturday:\n\n- **07:30** Long "}}
-{"at":3981,"event":{"id":"e_0014_98883","type":"message.delta","at":"2026-10-12T08:41:03.981Z","message":"m_0002_50552","offset":47,"text":"run, 18 km along the river; "}}
-{"at":4091,"event":{"id":"e_0015_13387","type":"message.delta","at":"2026-10-12T08:41:04.091Z","message":"m_0002_50552","offset":75,"text":"flat, and the café opens at "}}
-{"at":4201,"event":{"id":"e_0016_41109","type":"message.delta","at":"2026-10-12T08:41:04.201Z","message":"m_0002_50552","offset":103,"text":"9.\n- **10:00** Breakfast, "}}
-{"at":4311,"event":{"id":"e_0017_06579","type":"message.delta","at":"2026-10-12T08:41:04.311Z","message":"m_0002_50552","offset":129,"text":"then a slow hour with your "}}
-{"at":4421,"event":{"id":"e_0018_92410","type":"message.delta","at":"2026-10-12T08:41:04.421Z","message":"m_0002_50552","offset":156,"text":"book.\n"}}
-{"at":4501,"app":{"method":"POST","path":"/v0/messages","body":{"id":"1b82d2aa-dba7-4c69-916c-d9fb4a0b94ec","text":"Make the calm part outdoors"}}}
-{"at":4526,"event":{"id":"e_0019_70762","type":"message.accepted","at":"2026-10-12T08:41:04.526Z","message":{"id":"1b82d2aa-dba7-4c69-916c-d9fb4a0b94ec","role":"user","text":"Make the calm part outdoors","at":"2026-10-12T08:41:04.526Z"}}}
-{"at":4531,"server":{"status":201,"body":{"message":{"id":"1b82d2aa-dba7-4c69-916c-d9fb4a0b94ec","role":"user","text":"Make the calm part outdoors","at":"2026-10-12T08:41:04.526Z"}}}}
-{"at":4532,"event":{"id":"e_0020_27423","type":"message.delta","at":"2026-10-12T08:41:04.532Z","message":"m_0002_50552","offset":162,"text":"- **13:00** Lunch at home; "}}
-{"at":4642,"event":{"id":"e_0021_04398","type":"message.delta","at":"2026-10-12T08:41:04.642Z","message":"m_0002_50552","offset":189,"text":"keep it light before the "}}
-{"at":4752,"event":{"id":"e_0022_05631","type":"message.delta","at":"2026-10-12T08:41:04.752Z","message":"m_0002_50552","offset":214,"text":"afternoon.\n- **15:00** A "}}
-{"at":4862,"event":{"id":"e_0023_83163","type":"message.delta","at":"2026-10-12T08:41:04.862Z","message":"m_0002_50552","offset":239,"text":"walk in the botanic garden, "}}
-{"at":4972,"event":{"id":"e_0024_28708","type":"message.delta","at":"2026-10-12T08:41:04.972Z","message":"m_0002_50552","offset":267,"text":"phone in your pocket.\n\nEarly "}}
-{"at":5082,"event":{"id":"e_0025_51367","type":"message.delta","at":"2026-10-12T08:41:05.082Z","message":"m_0002_50552","offset":296,"text":"night: you're up at 7."}}
-{"at":5082,"event":{"id":"e_0026_01167","type":"message.ended","at":"2026-10-12T08:41:05.082Z","message":"m_0002_50552","outcome":"completed","length":318}}
-{"at":5482,"event":{"id":"e_0027_54829","type":"message.read","at":"2026-10-12T08:41:05.482Z","message":"1b82d2aa-dba7-4c69-916c-d9fb4a0b94ec","turn":"t_0002_01985"}}
-{"at":5482,"event":{"id":"e_0028_52683","type":"turn.status","at":"2026-10-12T08:41:05.482Z","turn":"t_0002_01985","kind":"adjusting","label":"Adjusting to your message"}}
-{"at":6382,"event":{"id":"e_0029_01351","type":"turn.status","at":"2026-10-12T08:41:06.382Z","turn":"t_0002_01985","kind":"writing","label":"Writing"}}
-{"at":6382,"event":{"id":"e_0030_73191","type":"message.started","at":"2026-10-12T08:41:06.382Z","message":{"id":"m_0003_01349","role":"agent","kind":"reply","turn":"t_0002_01985","text":"","at":"2026-10-12T08:41:06.382Z"}}}
-{"at":6382,"event":{"id":"e_0031_07120","type":"message.delta","at":"2026-10-12T08:41:06.382Z","message":"m_0003_01349","offset":0,"text":"Moving the calm part "}}
-{"at":6502,"event":{"id":"e_0032_56540","type":"message.delta","at":"2026-10-12T08:41:06.502Z","message":"m_0003_01349","offset":21,"text":"outside:\n\n- **13:00** Picnic "}}
-{"at":6622,"event":{"id":"e_0033_01023","type":"message.delta","at":"2026-10-12T08:41:06.622Z","message":"m_0003_01349","offset":50,"text":"lunch in the park instead.\n- "}}
-{"at":6742,"event":{"id":"e_0034_02624","type":"message.delta","at":"2026-10-12T08:41:06.742Z","message":"m_0003_01349","offset":79,"text":"**15:00** Keep the botanic "}}
-{"at":6862,"event":{"id":"e_0035_79931","type":"message.delta","at":"2026-10-12T08:41:06.862Z","message":"m_0003_01349","offset":106,"text":"garden walk; it's outdoors "}}
-{"at":6982,"event":{"id":"e_0036_53565","type":"message.delta","at":"2026-10-12T08:41:06.982Z","message":"m_0003_01349","offset":133,"text":"already."}}
-{"at":6982,"event":{"id":"e_0037_12611","type":"message.ended","at":"2026-10-12T08:41:06.982Z","message":"m_0003_01349","outcome":"completed","length":141}}
-{"at":6982,"event":{"id":"e_0038_62891","type":"turn.ended","at":"2026-10-12T08:41:06.982Z","turn":"t_0002_01985","outcome":"completed"}}
-{"at":36982,"app":{"method":"POST","path":"/v0/messages","body":{"id":"eb14631a-a787-4821-87f4-a691adb5b11a","text":"Also find somewhere for breakfast by the river."}}}
-{"at":37007,"event":{"id":"e_0039_81019","type":"message.accepted","at":"2026-10-12T08:41:37.007Z","message":{"id":"eb14631a-a787-4821-87f4-a691adb5b11a","role":"user","text":"Also find somewhere for breakfast by the river.","at":"2026-10-12T08:41:37.007Z"}}}
-{"at":37012,"server":{"status":201,"body":{"message":{"id":"eb14631a-a787-4821-87f4-a691adb5b11a","role":"user","text":"Also find somewhere for breakfast by the river.","at":"2026-10-12T08:41:37.007Z"}}}}
-{"at":37013,"event":{"id":"e_0040_91921","type":"turn.started","at":"2026-10-12T08:41:37.013Z","turn":"t_0003_58741","inputs":["eb14631a-a787-4821-87f4-a691adb5b11a"]}}
-{"at":37213,"world":"engine_compacting","until":40113}
-{"at":37213,"event":{"id":"e_0041_94569","type":"turn.status","at":"2026-10-12T08:41:37.213Z","turn":"t_0003_58741","kind":"waiting","label":"Tidying up its notes"}}
-{"at":37913,"app":{"method":"POST","path":"/v0/messages","body":{"id":"c64bf93c-0d54-4a21-8efa-f6ec351b62ef","text":"With outdoor seats, ideally."}}}
-{"at":37938,"event":{"id":"e_0042_14772","type":"message.accepted","at":"2026-10-12T08:41:37.938Z","message":{"id":"c64bf93c-0d54-4a21-8efa-f6ec351b62ef","role":"user","text":"With outdoor seats, ideally.","at":"2026-10-12T08:41:37.938Z"}}}
-{"at":37943,"server":{"status":201,"body":{"message":{"id":"c64bf93c-0d54-4a21-8efa-f6ec351b62ef","role":"user","text":"With outdoor seats, ideally.","at":"2026-10-12T08:41:37.938Z"}}}}
-{"at":37944,"event":{"id":"e_0043_61190","type":"message.queued","at":"2026-10-12T08:41:37.944Z","message":"c64bf93c-0d54-4a21-8efa-f6ec351b62ef","turn":"t_0003_58741"}}
-{"at":40113,"event":{"id":"e_0044_36612","type":"turn.status","at":"2026-10-12T08:41:40.113Z","turn":"t_0003_58741","kind":"working","label":"Searching the web","detail":"breakfast by the river, London"}}
-{"at":42513,"event":{"id":"e_0045_38828","type":"turn.status","at":"2026-10-12T08:41:42.513Z","turn":"t_0003_58741","kind":"writing","label":"Writing"}}
-{"at":42513,"event":{"id":"e_0046_93292","type":"message.started","at":"2026-10-12T08:41:42.513Z","message":{"id":"m_0004_56107","role":"agent","kind":"reply","turn":"t_0003_58741","text":"","at":"2026-10-12T08:41:42.513Z"}}}
-{"at":42513,"event":{"id":"e_0047_03619","type":"message.delta","at":"2026-10-12T08:41:42.513Z","message":"m_0004_56107","offset":0,"text":"**The Boathouse** opens at 8 "}}
-{"at":42633,"event":{"id":"e_0048_37227","type":"message.delta","at":"2026-10-12T08:41:42.633Z","message":"m_0004_56107","offset":29,"text":"and faces the water, ten "}}
-{"at":42753,"event":{"id":"e_0049_78207","type":"message.delta","at":"2026-10-12T08:41:42.753Z","message":"m_0004_56107","offset":54,"text":"minutes' walk from where "}}
-{"at":42873,"event":{"id":"e_0050_95403","type":"message.delta","at":"2026-10-12T08:41:42.873Z","message":"m_0004_56107","offset":79,"text":"your run ends."}}
-{"at":42873,"event":{"id":"e_0051_28451","type":"message.ended","at":"2026-10-12T08:41:42.873Z","message":"m_0004_56107","outcome":"completed","length":93}}
-{"at":42873,"event":{"id":"e_0052_26911","type":"turn.ended","at":"2026-10-12T08:41:42.873Z","turn":"t_0003_58741","outcome":"completed"}}
-{"at":42878,"event":{"id":"e_0053_28086","type":"turn.started","at":"2026-10-12T08:41:42.878Z","turn":"t_0004_97627","inputs":["c64bf93c-0d54-4a21-8efa-f6ec351b62ef"]}}
-{"at":43478,"event":{"id":"e_0054_77396","type":"turn.status","at":"2026-10-12T08:41:43.478Z","turn":"t_0004_97627","kind":"writing","label":"Writing"}}
-{"at":43478,"event":{"id":"e_0055_18245","type":"message.started","at":"2026-10-12T08:41:43.478Z","message":{"id":"m_0005_94194","role":"agent","kind":"reply","turn":"t_0004_97627","text":"","at":"2026-10-12T08:41:43.478Z"}}}
-{"at":43478,"event":{"id":"e_0056_34488","type":"message.delta","at":"2026-10-12T08:41:43.478Z","message":"m_0005_94194","offset":0,"text":"It does: six tables on the "}}
-{"at":43598,"event":{"id":"e_0057_25609","type":"message.delta","at":"2026-10-12T08:41:43.598Z","message":"m_0005_94194","offset":27,"text":"terrace, first come, first "}}
-{"at":43718,"event":{"id":"e_0058_47042","type":"message.delta","at":"2026-10-12T08:41:43.718Z","message":"m_0005_94194","offset":54,"text":"served."}}
-{"at":43718,"event":{"id":"e_0059_88431","type":"message.ended","at":"2026-10-12T08:41:43.718Z","message":"m_0005_94194","outcome":"completed","length":61}}
-{"at":43718,"event":{"id":"e_0060_17187","type":"turn.ended","at":"2026-10-12T08:41:43.718Z","turn":"t_0004_97627","outcome":"completed"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"3a3e2f07-85f4-4f6c-95f1-200524c679a3","text":"Plan my Saturday: long run in the morning, then something calm."}}}
+{"at":2000,"event":{"id":"e_0007_12767","type":"message.accepted","at":"2026-10-12T08:41:02.000Z","message":{"id":"3a3e2f07-85f4-4f6c-95f1-200524c679a3","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.000Z"}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"3a3e2f07-85f4-4f6c-95f1-200524c679a3","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.000Z"}}}}
+{"at":2000,"event":{"id":"e_0008_78767","type":"turn.started","at":"2026-10-12T08:41:02.000Z","turn":"t_0002_01985","inputs":["3a3e2f07-85f4-4f6c-95f1-200524c679a3"]}}
+{"at":2300,"event":{"id":"e_0009_95520","type":"turn.status","at":"2026-10-12T08:41:02.300Z","turn":"t_0002_01985","kind":"thinking","label":"Thinking"}}
+{"at":3700,"event":{"id":"e_0010_25390","type":"turn.status","at":"2026-10-12T08:41:03.700Z","turn":"t_0002_01985","kind":"writing","label":"Writing"}}
+{"at":3700,"event":{"id":"e_0011_63478","type":"message.started","at":"2026-10-12T08:41:03.700Z","message":{"id":"m_0002_50552","role":"agent","kind":"reply","turn":"t_0002_01985","text":"","at":"2026-10-12T08:41:03.700Z"}}}
+{"at":3700,"event":{"id":"e_0012_62486","type":"message.delta","at":"2026-10-12T08:41:03.700Z","message":"m_0002_50552","offset":0,"text":"Here's a shape for "}}
+{"at":3810,"event":{"id":"e_0013_49863","type":"message.delta","at":"2026-10-12T08:41:03.810Z","message":"m_0002_50552","offset":19,"text":"Saturday:\n\n- **07:30** Long "}}
+{"at":3920,"event":{"id":"e_0014_98883","type":"message.delta","at":"2026-10-12T08:41:03.920Z","message":"m_0002_50552","offset":47,"text":"run, 18 km along the river; "}}
+{"at":4030,"event":{"id":"e_0015_13387","type":"message.delta","at":"2026-10-12T08:41:04.030Z","message":"m_0002_50552","offset":75,"text":"flat, and the café opens at "}}
+{"at":4140,"event":{"id":"e_0016_41109","type":"message.delta","at":"2026-10-12T08:41:04.140Z","message":"m_0002_50552","offset":103,"text":"9.\n- **10:00** Breakfast, "}}
+{"at":4250,"event":{"id":"e_0017_06579","type":"message.delta","at":"2026-10-12T08:41:04.250Z","message":"m_0002_50552","offset":129,"text":"then a slow hour with your "}}
+{"at":4360,"event":{"id":"e_0018_92410","type":"message.delta","at":"2026-10-12T08:41:04.360Z","message":"m_0002_50552","offset":156,"text":"book.\n"}}
+{"at":4440,"app":{"method":"POST","path":"/v0/messages","body":{"id":"1b82d2aa-dba7-4c69-916c-d9fb4a0b94ec","text":"Make the calm part outdoors"}}}
+{"at":4440,"event":{"id":"e_0019_70762","type":"message.accepted","at":"2026-10-12T08:41:04.440Z","message":{"id":"1b82d2aa-dba7-4c69-916c-d9fb4a0b94ec","role":"user","text":"Make the calm part outdoors","at":"2026-10-12T08:41:04.440Z"}}}
+{"at":4440,"server":{"status":201,"body":{"message":{"id":"1b82d2aa-dba7-4c69-916c-d9fb4a0b94ec","role":"user","text":"Make the calm part outdoors","at":"2026-10-12T08:41:04.440Z"}}}}
+{"at":4470,"event":{"id":"e_0020_27423","type":"message.delta","at":"2026-10-12T08:41:04.470Z","message":"m_0002_50552","offset":162,"text":"- **13:00** Lunch at home; "}}
+{"at":4580,"event":{"id":"e_0021_04398","type":"message.delta","at":"2026-10-12T08:41:04.580Z","message":"m_0002_50552","offset":189,"text":"keep it light before the "}}
+{"at":4690,"event":{"id":"e_0022_05631","type":"message.delta","at":"2026-10-12T08:41:04.690Z","message":"m_0002_50552","offset":214,"text":"afternoon.\n- **15:00** A "}}
+{"at":4800,"event":{"id":"e_0023_83163","type":"message.delta","at":"2026-10-12T08:41:04.800Z","message":"m_0002_50552","offset":239,"text":"walk in the botanic garden, "}}
+{"at":4910,"event":{"id":"e_0024_28708","type":"message.delta","at":"2026-10-12T08:41:04.910Z","message":"m_0002_50552","offset":267,"text":"phone in your pocket.\n\nEarly "}}
+{"at":5020,"event":{"id":"e_0025_51367","type":"message.delta","at":"2026-10-12T08:41:05.020Z","message":"m_0002_50552","offset":296,"text":"night: you're up at 7."}}
+{"at":5020,"event":{"id":"e_0026_01167","type":"message.ended","at":"2026-10-12T08:41:05.020Z","message":"m_0002_50552","outcome":"completed","length":318}}
+{"at":5420,"event":{"id":"e_0027_54829","type":"message.read","at":"2026-10-12T08:41:05.420Z","message":"1b82d2aa-dba7-4c69-916c-d9fb4a0b94ec","turn":"t_0002_01985"}}
+{"at":5420,"event":{"id":"e_0028_52683","type":"turn.status","at":"2026-10-12T08:41:05.420Z","turn":"t_0002_01985","kind":"adjusting","label":"Adjusting to your message"}}
+{"at":6320,"event":{"id":"e_0029_01351","type":"turn.status","at":"2026-10-12T08:41:06.320Z","turn":"t_0002_01985","kind":"writing","label":"Writing"}}
+{"at":6320,"event":{"id":"e_0030_73191","type":"message.started","at":"2026-10-12T08:41:06.320Z","message":{"id":"m_0003_01349","role":"agent","kind":"reply","turn":"t_0002_01985","text":"","at":"2026-10-12T08:41:06.320Z"}}}
+{"at":6320,"event":{"id":"e_0031_07120","type":"message.delta","at":"2026-10-12T08:41:06.320Z","message":"m_0003_01349","offset":0,"text":"Moving the calm part "}}
+{"at":6440,"event":{"id":"e_0032_56540","type":"message.delta","at":"2026-10-12T08:41:06.440Z","message":"m_0003_01349","offset":21,"text":"outside:\n\n- **13:00** Picnic "}}
+{"at":6560,"event":{"id":"e_0033_01023","type":"message.delta","at":"2026-10-12T08:41:06.560Z","message":"m_0003_01349","offset":50,"text":"lunch in the park instead.\n- "}}
+{"at":6680,"event":{"id":"e_0034_02624","type":"message.delta","at":"2026-10-12T08:41:06.680Z","message":"m_0003_01349","offset":79,"text":"**15:00** Keep the botanic "}}
+{"at":6800,"event":{"id":"e_0035_79931","type":"message.delta","at":"2026-10-12T08:41:06.800Z","message":"m_0003_01349","offset":106,"text":"garden walk; it's outdoors "}}
+{"at":6920,"event":{"id":"e_0036_53565","type":"message.delta","at":"2026-10-12T08:41:06.920Z","message":"m_0003_01349","offset":133,"text":"already."}}
+{"at":6920,"event":{"id":"e_0037_12611","type":"message.ended","at":"2026-10-12T08:41:06.920Z","message":"m_0003_01349","outcome":"completed","length":141}}
+{"at":6920,"event":{"id":"e_0038_62891","type":"turn.ended","at":"2026-10-12T08:41:06.920Z","turn":"t_0002_01985","outcome":"completed"}}
+{"at":36920,"app":{"method":"POST","path":"/v0/messages","body":{"id":"eb14631a-a787-4821-87f4-a691adb5b11a","text":"Also find somewhere for breakfast by the river."}}}
+{"at":36920,"event":{"id":"e_0039_81019","type":"message.accepted","at":"2026-10-12T08:41:36.920Z","message":{"id":"eb14631a-a787-4821-87f4-a691adb5b11a","role":"user","text":"Also find somewhere for breakfast by the river.","at":"2026-10-12T08:41:36.920Z"}}}
+{"at":36920,"server":{"status":201,"body":{"message":{"id":"eb14631a-a787-4821-87f4-a691adb5b11a","role":"user","text":"Also find somewhere for breakfast by the river.","at":"2026-10-12T08:41:36.920Z"}}}}
+{"at":36920,"event":{"id":"e_0040_91921","type":"turn.started","at":"2026-10-12T08:41:36.920Z","turn":"t_0003_58741","inputs":["eb14631a-a787-4821-87f4-a691adb5b11a"]}}
+{"at":37120,"world":"engine_compacting","until":40020}
+{"at":37120,"event":{"id":"e_0041_94569","type":"turn.status","at":"2026-10-12T08:41:37.120Z","turn":"t_0003_58741","kind":"waiting","label":"Tidying up its notes"}}
+{"at":37820,"app":{"method":"POST","path":"/v0/messages","body":{"id":"c64bf93c-0d54-4a21-8efa-f6ec351b62ef","text":"With outdoor seats, ideally."}}}
+{"at":37820,"event":{"id":"e_0042_14772","type":"message.accepted","at":"2026-10-12T08:41:37.820Z","message":{"id":"c64bf93c-0d54-4a21-8efa-f6ec351b62ef","role":"user","text":"With outdoor seats, ideally.","at":"2026-10-12T08:41:37.820Z"}}}
+{"at":37820,"server":{"status":201,"body":{"message":{"id":"c64bf93c-0d54-4a21-8efa-f6ec351b62ef","role":"user","text":"With outdoor seats, ideally.","at":"2026-10-12T08:41:37.820Z"}}}}
+{"at":37820,"event":{"id":"e_0043_61190","type":"message.queued","at":"2026-10-12T08:41:37.820Z","message":"c64bf93c-0d54-4a21-8efa-f6ec351b62ef","turn":"t_0003_58741"}}
+{"at":39989,"event":{"id":"e_0044_36612","type":"turn.status","at":"2026-10-12T08:41:39.989Z","turn":"t_0003_58741","kind":"working","label":"Searching the web","detail":"breakfast by the river, London"}}
+{"at":42389,"event":{"id":"e_0045_38828","type":"turn.status","at":"2026-10-12T08:41:42.389Z","turn":"t_0003_58741","kind":"writing","label":"Writing"}}
+{"at":42389,"event":{"id":"e_0046_93292","type":"message.started","at":"2026-10-12T08:41:42.389Z","message":{"id":"m_0004_56107","role":"agent","kind":"reply","turn":"t_0003_58741","text":"","at":"2026-10-12T08:41:42.389Z"}}}
+{"at":42389,"event":{"id":"e_0047_03619","type":"message.delta","at":"2026-10-12T08:41:42.389Z","message":"m_0004_56107","offset":0,"text":"**The Boathouse** opens at 8 "}}
+{"at":42509,"event":{"id":"e_0048_37227","type":"message.delta","at":"2026-10-12T08:41:42.509Z","message":"m_0004_56107","offset":29,"text":"and faces the water, ten "}}
+{"at":42629,"event":{"id":"e_0049_78207","type":"message.delta","at":"2026-10-12T08:41:42.629Z","message":"m_0004_56107","offset":54,"text":"minutes' walk from where "}}
+{"at":42749,"event":{"id":"e_0050_95403","type":"message.delta","at":"2026-10-12T08:41:42.749Z","message":"m_0004_56107","offset":79,"text":"your run ends."}}
+{"at":42749,"event":{"id":"e_0051_28451","type":"message.ended","at":"2026-10-12T08:41:42.749Z","message":"m_0004_56107","outcome":"completed","length":93}}
+{"at":42749,"event":{"id":"e_0052_26911","type":"turn.ended","at":"2026-10-12T08:41:42.749Z","turn":"t_0003_58741","outcome":"completed"}}
+{"at":42749,"event":{"id":"e_0053_28086","type":"turn.started","at":"2026-10-12T08:41:42.749Z","turn":"t_0004_97627","inputs":["c64bf93c-0d54-4a21-8efa-f6ec351b62ef"]}}
+{"at":43349,"event":{"id":"e_0054_77396","type":"turn.status","at":"2026-10-12T08:41:43.349Z","turn":"t_0004_97627","kind":"writing","label":"Writing"}}
+{"at":43349,"event":{"id":"e_0055_18245","type":"message.started","at":"2026-10-12T08:41:43.349Z","message":{"id":"m_0005_94194","role":"agent","kind":"reply","turn":"t_0004_97627","text":"","at":"2026-10-12T08:41:43.349Z"}}}
+{"at":43349,"event":{"id":"e_0056_34488","type":"message.delta","at":"2026-10-12T08:41:43.349Z","message":"m_0005_94194","offset":0,"text":"It does: six tables on the "}}
+{"at":43469,"event":{"id":"e_0057_25609","type":"message.delta","at":"2026-10-12T08:41:43.469Z","message":"m_0005_94194","offset":27,"text":"terrace, first come, first "}}
+{"at":43589,"event":{"id":"e_0058_47042","type":"message.delta","at":"2026-10-12T08:41:43.589Z","message":"m_0005_94194","offset":54,"text":"served."}}
+{"at":43589,"event":{"id":"e_0059_88431","type":"message.ended","at":"2026-10-12T08:41:43.589Z","message":"m_0005_94194","outcome":"completed","length":61}}
+{"at":43589,"event":{"id":"e_0060_17187","type":"turn.ended","at":"2026-10-12T08:41:43.589Z","turn":"t_0004_97627","outcome":"completed"}}

@@ -1,82 +1,129 @@
 import { createHash } from "node:crypto";
+import { createCell } from "#cell.ts";
+import type {
+  Error as ErrorBody,
+  LiveTurn,
+  Message,
+  MessageKind,
+  Outcome,
+  Status,
+  StatusKind,
+} from "#protocol/types.ts";
 import type { Event, Line } from "./spec.ts";
 
-export type Outcome = "completed" | "stopped" | "interrupted" | "failed";
-export type StatusKind = "thinking" | "working" | "writing" | "adjusting" | "waiting" | "stopping";
-export type MessageKind = "reply" | "note";
+export type Header = {
+  readonly name: string;
+  readonly scenario: number;
+  readonly title: string;
+  readonly summary: string;
+  readonly guarantees: readonly string[];
+};
 
-export interface ErrorObject {
-  code: string;
-  message: string;
-  detail?: string;
-}
+type Fields = Readonly<Record<string, unknown>>;
 
-export interface Message {
-  id: string;
-  role: "user" | "agent";
-  kind?: MessageKind;
-  turn?: string;
-  text: string;
-  at: string;
-  ended_at?: string;
-  outcome?: Outcome;
-  error?: ErrorObject;
-}
+type HttpHeaders = Readonly<Record<string, string>>;
 
-interface Status {
-  kind: StatusKind;
-  label: string;
-  detail?: string;
-}
+type AppStart = { readonly cursor?: string; readonly oldestCached?: string };
 
-interface LiveTurn {
-  id: string;
-  inputs: string[];
-  read: string[];
-  retry_of?: string;
-  status: Status | null;
-}
+type RequestOptions = { readonly body?: unknown; readonly headers?: HttpHeaders };
 
-export interface Header {
-  name: string;
-  scenario: number;
-  title: string;
-  summary: string;
-  guarantees: string[];
-}
+type ResponseOptions = { readonly headers?: HttpHeaders; readonly isLost?: boolean };
+
+type SendOptions = { readonly id?: string; readonly isLost?: boolean };
+
+type WriteOptions = { readonly pieces?: number; readonly everyMs?: number };
+
+type EndOptions = { readonly length?: number; readonly error?: ErrorBody };
+
+type Cut = { readonly message: string; readonly offset: number };
+
+type Exchange = { readonly user: string; readonly agent: string; readonly turn: string };
+
+export type Transcript = {
+  readonly header: Header;
+  readonly lines: () => readonly Line[];
+  readonly time: (iso: string) => void;
+  readonly wait: (durationMs: number) => void;
+  readonly begin: (iso: string, app?: AppStart) => void;
+  readonly latestEventId: () => string | undefined;
+  readonly stepAtOffset: (offsetMs: number) => number;
+  readonly world: (marker: string, fields?: Fields) => void;
+  readonly request: (method: string, path: string, options?: RequestOptions) => void;
+  readonly response: (status: number, body: unknown, options?: ResponseOptions) => void;
+  readonly connect: (options?: { readonly headers?: HttpHeaders }) => void;
+  readonly disconnect: (marker: string, fields?: Fields) => void;
+  readonly stall: (durationMs: number) => void;
+  readonly exchange: (user: string, agent: string) => Exchange;
+  readonly send: (text: string, options?: SendOptions) => string;
+  readonly startTurn: (inputs: readonly string[], options?: { readonly retryOf?: string }) => string;
+  readonly status: (kind: StatusKind, label: string, detail?: string) => void;
+  readonly read: (message: string) => void;
+  readonly queue: (message: string) => void;
+  readonly reply: (kind?: MessageKind) => string;
+  readonly write: (text: string, options?: WriteOptions) => void;
+  readonly endMessage: (outcome: Outcome, options?: EndOptions) => void;
+  readonly endTurn: (outcome: Outcome, error?: ErrorBody) => string;
+  readonly stop: (turn: string, cut?: Cut) => void;
+  readonly retry: (failed: string) => string;
+  readonly listMessages: (before: string, limit: number) => void;
+  readonly restart: () => void;
+  readonly restore: (to: string) => void;
+  readonly toJsonl: () => string;
+};
+
+type IdPrefix = "e" | "m" | "t";
+
+type Counters = Readonly<Record<IdPrefix, number>>;
+
+type Ids = { readonly boot: number; readonly counters: Counters; readonly issued: ReadonlySet<string> };
+
+type Start = { readonly at: number; readonly cursor: string | undefined; readonly oldestCached: string | undefined };
+
+type Projection = { readonly order: readonly string[]; readonly byId: ReadonlyMap<string, Message> };
+
+type SnapshotReason = "no_cursor" | "cursor_unknown" | "too_far_behind";
 
 // Digits only, so no id can read as a word, or as a misspelling to a spell checker.
-const ID_CHARACTERS = "0123456789";
+const idCharacters = "0123456789";
+const serialDigits = 4;
+const tokenDigits = 5;
+const defaultPieceLength = 28;
+const defaultPieceIntervalMs = 120;
+const messagesPerSnapshot = 50;
 
-function token(seed: string, length: number): string {
+const toToken = (seed: string): string => {
   const digest = createHash("sha256").update(seed).digest();
-  let out = "";
-  for (let i = 0; i < length; i += 1) out += ID_CHARACTERS[(digest[i] ?? 0) % ID_CHARACTERS.length];
-  return out;
-}
+  return Array.from({ length: tokenDigits }, (_, index) =>
+    idCharacters.charAt((digest[index] ?? 0) % idCharacters.length),
+  ).join("");
+};
 
-export function uuidFor(seed: string): string {
+const toUuid = (seed: string): string => {
   const hex = createHash("sha256").update(seed).digest("hex");
-  const variant = "89ab"[parseInt(hex.charAt(16), 16) % 4];
+  const variant = "89ab".charAt(Number.parseInt(hex.charAt(16), 16) % 4);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
-}
+};
 
-export function project(log: Event[]): { order: string[]; byId: Map<string, Message> } {
-  const order: string[] = [];
-  const byId = new Map<string, Message>();
-  for (const event of log) {
-    if (event.type === "message.accepted" || event.type === "message.started") {
-      const message = structuredClone(event.message as Message);
-      byId.set(message.id, message);
-      order.push(message.id);
-    } else if (event.type === "message.delta") {
+const projectEvent = (projection: Projection, event: Event): Projection => {
+  const { order, byId } = projection;
+  switch (event.type) {
+    case "message.accepted":
+    case "message.started": {
+      const message = event.message as Message;
+      return { order: [...order, message.id], byId: new Map(byId).set(message.id, message) };
+    }
+    case "message.delta": {
       const message = byId.get(event.message as string);
       if (!message) throw new Error(`text for unknown message ${String(event.message)}`);
       if (event.offset !== message.text.length) {
         throw new Error(`text at offset ${String(event.offset)}, but ${message.id} has length ${message.text.length}`);
       }
-      message.text += event.text as string;
-    } else if (event.type === "message.ended") {
+      return {
+        order,
+        byId: new Map(byId).set(message.id, { ...message, text: message.text + (event.text as string) }),
+      };
+    }
+    case "message.ended": {
       const message = byId.get(event.message as string);
       if (!message) throw new Error(`end of unknown message ${String(event.message)}`);
       const length = event.length as number;
@@ -84,388 +131,407 @@ export function project(log: Event[]): { order: string[]; byId: Map<string, Mess
       if (event.outcome === "completed" && length !== message.text.length) {
         throw new Error(`${message.id} completed shorter than its text`);
       }
-      message.text = message.text.slice(0, length);
-      message.outcome = event.outcome as Outcome;
-      message.ended_at = event.at;
-      if (event.error) message.error = event.error as ErrorObject;
+      const error = event.error as ErrorBody | undefined;
+      const ended: Message = {
+        ...message,
+        text: message.text.slice(0, length),
+        outcome: event.outcome as Outcome,
+        ended_at: event.at,
+        ...(error && { error }),
+      };
+      return { order, byId: new Map(byId).set(message.id, ended) };
+    }
+    default: {
+      return projection;
     }
   }
-  return { order, byId };
-}
+};
 
-export function splitIntoPieces(text: string, pieces?: number): string[] {
-  if (pieces === 1) return [text];
-  const target = pieces ? Math.ceil(text.length / pieces) : 28;
-  const out: string[] = [];
-  let rest = text;
-  while (rest.length > target) {
-    let cut = rest.lastIndexOf(" ", target);
-    if (cut <= 0) cut = rest.indexOf(" ", target);
-    if (cut <= 0) break;
-    out.push(rest.slice(0, cut + 1));
-    rest = rest.slice(cut + 1);
+const project = (log: readonly Event[]): Projection =>
+  log.reduce<Projection>(projectEvent, { order: [], byId: new Map() });
+
+const toPieces = (rest: string, target: number): readonly string[] => {
+  if (rest.length > target) {
+    const lastSpace = rest.lastIndexOf(" ", target);
+    const cut = lastSpace <= 0 ? rest.indexOf(" ", target) : lastSpace;
+    if (cut > 0) return [rest.slice(0, cut + 1), ...toPieces(rest.slice(cut + 1), target)];
   }
-  if (rest) out.push(rest);
-  return out;
-}
+  return rest ? [rest] : [];
+};
 
-function idsIn(value: unknown): string[] {
+const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
+  pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
+
+const idsIn = (value: unknown): readonly string[] => {
   if (typeof value === "string") return /^[emt]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
-  if (value && typeof value === "object") return Object.values(value).flatMap(idsIn);
-  return [];
-}
+  return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
+};
+
+const toCounters = (log: readonly Event[]): Counters => {
+  const ids = log.flatMap(idsIn);
+  const highest = (prefix: IdPrefix): number =>
+    ids.filter((id) => id.startsWith(`${prefix}_`)).reduce((max, id) => Math.max(max, Number(id.split("_", 2)[1])), 0);
+  return { e: highest("e"), m: highest("m"), t: highest("t") };
+};
 
 // A small model of the server's event log. Scenarios drive it the way the server and an app would,
 // and it records what crosses the API, so offsets, ids and delivery after a disconnect can't drift.
-export class Transcript {
-  readonly header: Header;
-  private readonly lines: Line[] = [];
-  private log: Event[] = [];
-  private readonly issued = new Set<string>();
-  private boot = 1;
-  private readonly counters = { e: 0, m: 0, t: 0 };
-  private users = 0;
-  private now = 0;
-  private stepsStart: number | undefined;
-  private connected = false;
-  private cursor: string | undefined;
-  private appCursorAtStart: string | undefined;
-  private oldestCached: string | undefined;
-  private stallUntil: number | undefined;
-  private turn: LiveTurn | null = null;
-  private next: string[] = [];
-  private writing: string | undefined;
-  private readonly retries = new Map<string, string>();
+export const createTranscript = (header: Header): Transcript => {
+  const lines = createCell<readonly Line[]>([]);
+  const log = createCell<readonly Event[]>([]);
+  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0 }, issued: new Set() });
+  const users = createCell(0);
+  const now = createCell(0);
+  const start = createCell<Start | undefined>(undefined);
+  const isConnected = createCell(false);
+  const cursor = createCell<string | undefined>(undefined);
+  const stallUntil = createCell<number | undefined>(undefined);
+  const turn = createCell<LiveTurn | undefined>(undefined);
+  const next = createCell<readonly string[]>([]);
+  const writing = createCell<string | undefined>(undefined);
+  const retries = createCell<ReadonlyMap<string, string>>(new Map());
 
-  constructor(header: Header) {
-    this.header = header;
-  }
+  const timestamp = (): string => new Date(now.get()).toISOString();
 
-  get allLines(): Line[] {
-    return this.lines;
-  }
+  const stepAt = (at: number): number => {
+    const started = start.get();
+    if (started === undefined) throw new Error("a step before begin()");
+    return at - started.at;
+  };
 
-  time(iso: string): void {
-    const at = Date.parse(iso);
-    if (at < this.now) throw new Error(`time went backwards to ${iso}`);
-    this.now = at;
-  }
+  const addLine = (line: Line): void => {
+    lines.update((current) => [...current, line]);
+  };
 
-  wait(ms: number): void {
-    this.now += ms;
-  }
+  const addStep = (fields: Fields, at = now.get()): void => {
+    addLine({ at: stepAt(at), ...fields });
+  };
 
-  begin(iso: string, app: { cursor?: string; oldestCached?: string } = {}): void {
-    this.time(iso);
-    this.stepsStart = this.now;
-    this.appCursorAtStart = app.cursor === "latest" ? this.log.at(-1)?.id : app.cursor;
-    this.cursor = this.appCursorAtStart;
-    this.oldestCached = app.oldestCached;
-  }
+  const latestEventId = (): string | undefined => log.get().at(-1)?.id;
 
-  latestEventId(): string | undefined {
-    return this.log.at(-1)?.id;
-  }
+  const newId = (prefix: IdPrefix): string => {
+    const { boot, counters, issued } = ids.get();
+    const count = counters[prefix] + 1;
+    const serial = String(count).padStart(serialDigits, "0");
+    const id = `${prefix}_${serial}_${toToken(`${header.name}:${prefix}:${boot}:${serial}`)}`;
+    if (issued.has(id)) throw new Error(`id ${id} reused`);
+    ids.set({ boot, counters: { ...counters, [prefix]: count }, issued: new Set([...issued, id]) });
+    return id;
+  };
 
-  stepAtOffset(ms: number): number {
-    return this.stepAt(this.now + ms);
-  }
+  const newUserId = (): string => toUuid(`${header.name}:user:${users.update((count) => count + 1)}`);
 
-  userId(): string {
-    this.users += 1;
-    return uuidFor(`${this.header.name}:user:${this.users}`);
-  }
-
-  message(id: string): Message {
-    const message = project(this.log).byId.get(id);
+  const messageById = (id: string): Message => {
+    const message = project(log.get()).byId.get(id);
     if (!message) throw new Error(`unknown message ${id}`);
     return message;
-  }
+  };
 
-  private iso(): string {
-    return new Date(this.now).toISOString();
-  }
-
-  private stepAt(at = this.now): number {
-    if (this.stepsStart === undefined) throw new Error("a step before begin()");
-    return at - this.stepsStart;
-  }
-
-  private line(fields: Line, at = this.now): void {
-    this.lines.push({ at: this.stepAt(at), ...fields });
-  }
-
-  private newId(prefix: "e" | "m" | "t"): string {
-    this.counters[prefix] += 1;
-    const serial = String(this.counters[prefix]).padStart(4, "0");
-    const id = `${prefix}_${serial}_${token(`${this.header.name}:${prefix}:${this.boot}:${serial}`, 5)}`;
-    if (this.issued.has(id)) throw new Error(`id ${id} reused`);
-    this.issued.add(id);
-    return id;
-  }
-
-  private emit(type: string, fields: Record<string, unknown>): Event {
-    const event: Event = { id: this.newId("e"), type, at: this.iso(), ...fields };
-    this.log.push(event);
-    project(this.log);
-    if (this.stepsStart === undefined) {
-      this.lines.push({ given: event });
-    } else if (this.connected) {
-      const stalled = this.stallUntil !== undefined && this.now < this.stallUntil;
-      this.line({ event }, stalled ? this.stallUntil : this.now);
-      this.cursor = event.id;
+  const emit = (type: string, fields: Fields): void => {
+    const event: Event = { id: newId("e"), type, at: timestamp(), ...fields };
+    project(log.update((current) => [...current, event]));
+    if (start.get() === undefined) {
+      addLine({ given: event });
+      return;
     }
-    return event;
-  }
+    if (!isConnected.get()) return;
+    const until = stallUntil.get();
+    const deliveredAt = until !== undefined && now.get() < until ? until : now.get();
+    addStep({ event }, deliveredAt);
+    cursor.set(event.id);
+  };
 
-  world(marker: string, fields: Record<string, unknown> = {}): void {
-    this.line({ world: marker, ...fields });
-  }
+  const time = (iso: string): void => {
+    const at = Date.parse(iso);
+    if (at < now.get()) throw new Error(`time went backwards to ${iso}`);
+    now.set(at);
+  };
 
-  request(method: string, path: string, options: { body?: unknown; headers?: Record<string, string> } = {}): void {
-    this.line({
+  const wait = (durationMs: number): void => {
+    now.update((current) => current + durationMs);
+  };
+
+  const begin = (iso: string, app: AppStart = {}): void => {
+    time(iso);
+    const appCursor = app.cursor === "latest" ? latestEventId() : app.cursor;
+    start.set({ at: now.get(), cursor: appCursor, oldestCached: app.oldestCached });
+    cursor.set(appCursor);
+  };
+
+  const stepAtOffset = (offsetMs: number): number => stepAt(now.get() + offsetMs);
+
+  const world = (marker: string, fields: Fields = {}): void => {
+    addStep({ world: marker, ...fields });
+  };
+
+  const request = (method: string, path: string, options: RequestOptions = {}): void => {
+    addStep({
       app: {
         method,
         path,
-        ...(options.headers ? { headers: options.headers } : {}),
-        ...(options.body !== undefined ? { body: options.body } : {}),
+        ...(options.headers && { headers: options.headers }),
+        ...(options.body !== undefined && { body: options.body }),
       },
     });
-  }
+  };
 
-  response(status: number, body: unknown, options: { headers?: Record<string, string>; lost?: boolean } = {}): void {
-    this.line({
+  const response = (status: number, body: unknown, options: ResponseOptions = {}): void => {
+    addStep({
       server: {
         status,
-        ...(options.headers ? { headers: options.headers } : {}),
-        ...(body !== undefined ? { body } : {}),
+        ...(options.headers && { headers: options.headers }),
+        ...(body !== undefined && { body }),
       },
-      ...(options.lost ? { lost: true } : {}),
+      ...(options.isLost && { lost: true }),
     });
-  }
+  };
 
-  connect(options: { headers?: Record<string, string> } = {}): void {
-    const headers: Record<string, string> = { ...options.headers };
-    if (this.cursor) headers["Last-Event-ID"] = this.cursor;
-    this.request("GET", "/v0/events", Object.keys(headers).length ? { headers } : {});
-    this.wait(30);
-    this.response(200, undefined, { headers: { "Content-Type": "text/event-stream" } });
-    this.connected = true;
-    const known = this.cursor === undefined ? -1 : this.log.findIndex((event) => event.id === this.cursor);
-    if (known >= 0) {
-      for (const event of this.log.slice(known + 1)) {
-        this.line({ event });
-        this.cursor = event.id;
-      }
+  const snapshot = (reason: SnapshotReason): void => {
+    const { order, byId } = project(log.get());
+    const latest = latestEventId();
+    addStep({
+      event: {
+        ...(latest && { id: latest }),
+        type: "snapshot",
+        at: timestamp(),
+        reason,
+        messages: order.slice(-messagesPerSnapshot).map((id) => byId.get(id)),
+        has_more: order.length > messagesPerSnapshot,
+        turn: turn.get() ?? null,
+        next: next.get(),
+      },
+    });
+    cursor.set(latest);
+  };
+
+  const connect = (options: { readonly headers?: HttpHeaders } = {}): void => {
+    const appCursor = cursor.get();
+    const headers = { ...options.headers, ...(appCursor && { "Last-Event-ID": appCursor }) };
+    request("GET", "/v0/events", Object.keys(headers).length > 0 ? { headers } : {});
+    response(200, undefined, { headers: { "Content-Type": "text/event-stream" } });
+    isConnected.set(true);
+    const events = log.get();
+    const known = appCursor === undefined ? -1 : events.findIndex((event) => event.id === appCursor);
+    if (known === -1) {
+      snapshot(appCursor === undefined ? "no_cursor" : "cursor_unknown");
       return;
     }
-    this.snapshot(this.cursor === undefined ? "no_cursor" : "cursor_unknown");
-  }
+    const missed = events.slice(known + 1);
+    for (const event of missed) addStep({ event });
+    cursor.set(latestEventId());
+  };
 
-  private snapshot(reason: "no_cursor" | "cursor_unknown" | "too_far_behind"): void {
-    const { order, byId } = project(this.log);
-    const latest = this.log.at(-1)?.id;
-    this.line({
-      event: {
-        ...(latest ? { id: latest } : {}),
-        type: "snapshot",
-        at: this.iso(),
-        reason,
-        messages: order.slice(-50).map((id) => byId.get(id)),
-        has_more: order.length > 50,
-        turn: this.turn ? structuredClone(this.turn) : null,
-        next: [...this.next],
-      },
-    });
-    this.cursor = latest;
-  }
+  const disconnect = (marker: string, fields: Fields = {}): void => {
+    world(marker, fields);
+    isConnected.set(false);
+  };
 
-  disconnect(marker: string, fields: Record<string, unknown> = {}): void {
-    this.world(marker, fields);
-    this.connected = false;
-  }
+  const stall = (durationMs: number): void => {
+    const until = now.get() + durationMs;
+    world("network_stall", { until: stepAt(until) });
+    stallUntil.set(until);
+  };
 
-  stall(ms: number): void {
-    this.world("network_stall", { until: this.stepAt(this.now + ms) });
-    this.stallUntil = this.now + ms;
-  }
+  const runningTurn = (): LiveTurn => {
+    const running = turn.get();
+    if (!running) throw new Error("no turn is running");
+    return running;
+  };
 
-  exchange(user: string, agent: string): { user: string; agent: string; turn: string } {
-    const userId = this.userId();
-    this.emit("message.accepted", { message: { id: userId, role: "user", text: user, at: this.iso() } });
-    this.wait(1);
-    const turn = this.startTurn([userId]);
-    this.wait(1800);
-    const agentId = this.reply();
-    this.write(agent, { pieces: 1 });
-    this.wait(600);
-    this.endMessage("completed");
-    this.wait(1);
-    this.endTurn("completed");
-    return { user: userId, agent: agentId, turn };
-  }
-
-  send(text: string, options: { id?: string; lost?: boolean } = {}): string {
-    const id = options.id ?? this.userId();
-    this.request("POST", "/v0/messages", { body: { id, text } });
-    this.wait(25);
-    const existing = project(this.log).byId.get(id);
-    if (!existing) this.emit("message.accepted", { message: { id, role: "user", text, at: this.iso() } });
-    this.wait(5);
-    this.response(existing ? 200 : 201, { message: this.message(id) }, { lost: options.lost });
-    this.wait(1);
-    return id;
-  }
-
-  startTurn(inputs: string[], options: { retryOf?: string } = {}): string {
-    if (this.turn) throw new Error("a turn is already running");
-    const id = this.newId("t");
+  const startTurn = (inputs: readonly string[], options: { readonly retryOf?: string } = {}): string => {
+    if (turn.get()) throw new Error("a turn is already running");
+    const id = newId("t");
     const retry = options.retryOf ? { retry_of: options.retryOf } : {};
-    this.turn = { id, inputs: [...inputs], read: [], ...retry, status: null };
-    this.next = this.next.filter((message) => !inputs.includes(message));
-    this.emit("turn.started", { turn: id, inputs: [...inputs], ...retry });
+    turn.set({ id, inputs: [...inputs], read: [], ...retry, status: null });
+    next.update((current) => current.filter((message) => !inputs.includes(message)));
+    emit("turn.started", { turn: id, inputs, ...retry });
     return id;
-  }
+  };
 
-  private running(): LiveTurn {
-    if (!this.turn) throw new Error("no turn is running");
-    return this.turn;
-  }
+  const status = (kind: StatusKind, label: string, detail?: string): void => {
+    const running = runningTurn();
+    const liveStatus: Status = { kind, label, ...(detail && { detail }) };
+    turn.set({ ...running, status: liveStatus });
+    emit("turn.status", { turn: running.id, ...liveStatus });
+  };
 
-  status(kind: StatusKind, label: string, detail?: string): void {
-    const turn = this.running();
-    turn.status = { kind, label, ...(detail ? { detail } : {}) };
-    this.emit("turn.status", { turn: turn.id, ...turn.status });
-  }
+  const read = (message: string): void => {
+    const running = runningTurn();
+    turn.set({ ...running, read: [...running.read, message] });
+    emit("message.read", { message, turn: running.id });
+  };
 
-  read(message: string): void {
-    const turn = this.running();
-    turn.read.push(message);
-    this.emit("message.read", { message, turn: turn.id });
-  }
+  const queue = (message: string): void => {
+    const running = runningTurn();
+    next.update((current) => [...current, message]);
+    emit("message.queued", { message, turn: running.id });
+  };
 
-  queue(message: string): void {
-    const turn = this.running();
-    this.next.push(message);
-    this.emit("message.queued", { message, turn: turn.id });
-  }
-
-  reply(kind: MessageKind = "reply"): string {
-    const turn = this.running();
-    if (this.writing) throw new Error("a message is already being written");
-    const id = this.newId("m");
-    this.writing = id;
-    this.emit("message.started", { message: { id, role: "agent", kind, turn: turn.id, text: "", at: this.iso() } });
+  const reply = (kind: MessageKind = "reply"): string => {
+    if (writing.get()) throw new Error("a message is already being written");
+    const running = runningTurn();
+    const id = newId("m");
+    writing.set(id);
+    emit("message.started", { message: { id, role: "agent", kind, turn: running.id, text: "", at: timestamp() } });
     return id;
-  }
+  };
 
-  write(text: string, options: { pieces?: number; every?: number } = {}): void {
-    const id = this.writing;
+  const write = (text: string, options: WriteOptions = {}): void => {
+    const id = writing.get();
     if (!id) throw new Error("no message is being written");
-    splitIntoPieces(text, options.pieces).forEach((piece, index) => {
-      if (index > 0) this.wait(options.every ?? 120);
-      this.emit("message.delta", { message: id, offset: this.message(id).text.length, text: piece });
-    });
-  }
-
-  endMessage(outcome: Outcome, options: { length?: number; error?: ErrorObject } = {}): void {
-    const id = this.writing;
-    if (!id) throw new Error("no message is being written");
-    const length = options.length ?? this.message(id).text.length;
-    this.emit("message.ended", { message: id, outcome, length, ...(options.error ? { error: options.error } : {}) });
-    this.writing = undefined;
-  }
-
-  endTurn(outcome: Outcome, error?: ErrorObject): string {
-    const turn = this.running();
-    if (this.writing) throw new Error("the turn ended with a message still open");
-    this.emit("turn.ended", { turn: turn.id, outcome, ...(error ? { error } : {}) });
-    this.turn = null;
-    return turn.id;
-  }
-
-  stop(turn: string, cut?: { message: string; offset: number }): void {
-    this.request("POST", `/v0/turns/${turn}/stop`, { body: cut ? { cut } : {} });
-    this.wait(20);
-    if (this.turn?.id === turn) {
-      this.response(202, { turn, state: "stopping" });
-    } else {
-      const ended = this.log.findLast((event) => event.type === "turn.ended" && event.turn === turn);
-      if (!ended) throw new Error(`stop for unknown turn ${turn}`);
-      this.response(200, { turn, state: "ended", outcome: ended.outcome });
+    const pieces = splitIntoPieces(text, options.pieces);
+    for (const [index, piece] of pieces.entries()) {
+      if (index > 0) wait(options.everyMs ?? defaultPieceIntervalMs);
+      emit("message.delta", { message: id, offset: messageById(id).text.length, text: piece });
     }
-    this.wait(1);
-  }
+  };
 
-  retry(failed: string): string {
-    this.request("POST", `/v0/turns/${failed}/retry`);
-    this.wait(25);
-    const earlier = this.retries.get(failed);
+  const endMessage = (outcome: Outcome, options: EndOptions = {}): void => {
+    const id = writing.get();
+    if (!id) throw new Error("no message is being written");
+    const length = options.length ?? messageById(id).text.length;
+    emit("message.ended", { message: id, outcome, length, ...(options.error && { error: options.error }) });
+    writing.set(undefined);
+  };
+
+  const endTurn = (outcome: Outcome, error?: ErrorBody): string => {
+    if (writing.get()) throw new Error("the turn ended with a message still open");
+    const running = runningTurn();
+    emit("turn.ended", { turn: running.id, outcome, ...(error && { error }) });
+    turn.set(undefined);
+    return running.id;
+  };
+
+  const exchange = (user: string, agent: string): Exchange => {
+    const userMessageId = newUserId();
+    emit("message.accepted", { message: { id: userMessageId, role: "user", text: user, at: timestamp() } });
+    wait(1);
+    const turnId = startTurn([userMessageId]);
+    wait(1800);
+    const agentMessageId = reply();
+    write(agent, { pieces: 1 });
+    wait(600);
+    endMessage("completed");
+    wait(1);
+    endTurn("completed");
+    return { user: userMessageId, agent: agentMessageId, turn: turnId };
+  };
+
+  const send = (text: string, options: SendOptions = {}): string => {
+    const id = options.id ?? newUserId();
+    request("POST", "/v0/messages", { body: { id, text } });
+    const isKnown = project(log.get()).byId.has(id);
+    if (!isKnown) emit("message.accepted", { message: { id, role: "user", text, at: timestamp() } });
+    response(isKnown ? 200 : 201, { message: messageById(id) }, { isLost: options.isLost });
+    return id;
+  };
+
+  const stop = (turnId: string, cut?: Cut): void => {
+    request("POST", `/v0/turns/${turnId}/stop`, { body: cut ? { cut } : {} });
+    if (turn.get()?.id === turnId) {
+      response(202, { turn: turnId, state: "stopping" });
+      return;
+    }
+    const ended = log.get().findLast((event) => event.type === "turn.ended" && event.turn === turnId);
+    if (!ended) throw new Error(`stop for unknown turn ${turnId}`);
+    response(200, { turn: turnId, state: "ended", outcome: ended.outcome });
+  };
+
+  const retry = (failed: string): string => {
+    request("POST", `/v0/turns/${failed}/retry`);
+    const earlier = retries.get().get(failed);
     if (earlier) {
-      this.response(200, { turn: earlier, retry_of: failed });
-      this.wait(1);
+      response(200, { turn: earlier, retry_of: failed });
       return earlier;
     }
-    const started = this.log.find((event) => event.type === "turn.started" && event.turn === failed);
+    const started = log.get().find((event) => event.type === "turn.started" && event.turn === failed);
     if (!started) throw new Error(`retry of unknown turn ${failed}`);
-    const turn = this.startTurn(started.inputs as string[], { retryOf: failed });
-    this.retries.set(failed, turn);
-    this.response(202, { turn, retry_of: failed });
-    this.wait(1);
-    return turn;
-  }
+    const attempt = startTurn(started.inputs as readonly string[], { retryOf: failed });
+    retries.update((current) => new Map([...current, [failed, attempt]]));
+    response(202, { turn: attempt, retry_of: failed });
+    return attempt;
+  };
 
-  listMessages(before: string, limit: number): void {
-    this.request("GET", `/v0/messages?before=${before}&limit=${limit}`);
-    this.wait(35);
-    const { order, byId } = project(this.log);
+  const listMessages = (before: string, limit: number): void => {
+    request("GET", `/v0/messages?before=${before}&limit=${limit}`);
+    const { order, byId } = project(log.get());
     const index = order.indexOf(before);
-    if (index < 0) throw new Error(`no message ${before}`);
-    const start = Math.max(0, index - limit);
-    this.response(200, { messages: order.slice(start, index).map((id) => byId.get(id)), has_more: start > 0 });
-  }
+    if (index === -1) throw new Error(`no message ${before}`);
+    const first = Math.max(0, index - limit);
+    response(200, { messages: order.slice(first, index).map((id) => byId.get(id)), has_more: first > 0 });
+  };
 
-  restart(): void {
-    this.disconnect("server_restarted");
-    this.boot += 1;
-    this.wait(2400);
-    if (!this.turn) return;
-    if (this.writing) this.endMessage("interrupted");
-    this.endTurn("interrupted");
-  }
+  const restart = (): void => {
+    disconnect("server_restarted");
+    ids.update((current) => ({ ...current, boot: current.boot + 1 }));
+    wait(2400);
+    if (!turn.get()) return;
+    if (writing.get()) endMessage("interrupted");
+    endTurn("interrupted");
+  };
 
-  restore(to: string): void {
-    const index = this.log.findIndex((event) => event.id === to);
-    if (index < 0) throw new Error(`restore to unknown event ${to}`);
-    this.disconnect("server_restored", { to });
-    this.boot += 1;
-    this.log = this.log.slice(0, index + 1);
-    this.turn = null;
-    this.next = [];
-    this.writing = undefined;
-    for (const prefix of ["e", "m", "t"] as const) {
-      const serials = this.log.flatMap(idsIn).filter((id) => id.startsWith(`${prefix}_`));
-      this.counters[prefix] = serials.reduce((max, id) => Math.max(max, Number(id.split("_")[1])), 0);
+  const restore = (to: string): void => {
+    const index = log.get().findIndex((event) => event.id === to);
+    if (index === -1) throw new Error(`restore to unknown event ${to}`);
+    disconnect("server_restored", { to });
+    const kept = log.update((current) => current.slice(0, index + 1));
+    ids.update((current) => ({ ...current, boot: current.boot + 1, counters: toCounters(kept) }));
+    turn.set(undefined);
+    next.set([]);
+    writing.set(undefined);
+    wait(3000);
+  };
+
+  const toJsonl = (): string => {
+    if (turn.get() || next.get().length > 0 || writing.get()) {
+      throw new Error(`${header.name} ends with work in progress`);
     }
-    this.wait(3000);
-  }
+    const started = start.get();
+    const headerLine = {
+      transcript: header.name,
+      start: new Date(started?.at ?? 0).toISOString(),
+      scenario: header.scenario,
+      title: header.title,
+      summary: header.summary,
+      guarantees: header.guarantees,
+      app: {
+        ...(started?.cursor && { cursor: started.cursor }),
+        ...(started?.oldestCached && { oldest_cached: started.oldestCached }),
+      },
+    };
+    return [headerLine, ...lines.get()].map((line) => JSON.stringify(line)).join("\n") + "\n";
+  };
 
-  toJsonl(): string {
-    if (this.turn || this.next.length || this.writing)
-      throw new Error(`${this.header.name} ends with work in progress`);
-    const app = {
-      ...(this.appCursorAtStart ? { cursor: this.appCursorAtStart } : {}),
-      ...(this.oldestCached ? { oldest_cached: this.oldestCached } : {}),
-    };
-    const header = {
-      transcript: this.header.name,
-      scenario: this.header.scenario,
-      title: this.header.title,
-      summary: this.header.summary,
-      guarantees: this.header.guarantees,
-      app,
-    };
-    return [header, ...this.lines].map((line) => JSON.stringify(line)).join("\n") + "\n";
-  }
-}
+  return {
+    header,
+    lines: () => lines.get(),
+    time,
+    wait,
+    begin,
+    latestEventId,
+    stepAtOffset,
+    world,
+    request,
+    response,
+    connect,
+    disconnect,
+    stall,
+    exchange,
+    send,
+    startTurn,
+    status,
+    read,
+    queue,
+    reply,
+    write,
+    endMessage,
+    endTurn,
+    stop,
+    retry,
+    listMessages,
+    restart,
+    restore,
+    toJsonl,
+  };
+};

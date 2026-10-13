@@ -1,36 +1,54 @@
 {
   "name": "ito-core",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "license": "SEE LICENSE IN LICENSE.md",
   "engines": {
     "node": ">=24"
   },
+  "bin": {
+    "ito": "./bin/ito.ts"
+  },
+  "imports": {
+    "#protocol/*": "./protocol/*",
+    "#*": "./src/*"
+  },
   "scripts": {
     "check:spec": "redocly lint protocol/openapi.yaml",
     "check:transcripts": "node protocol/tools/check.ts",
     "generate": "node protocol/tools/scenarios.ts && npm run generate:types",
     "generate:types": "openapi-typescript protocol/openapi.yaml --output protocol/types.ts --root-types --root-types-no-schema-prefix && prettier --write protocol/types.ts",
+    "generate:codex": "node src/engine/codex/generate-bindings.ts && prettier --log-level warn --write src/engine/codex/bindings",
     "typecheck": "tsc",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "docs": "node docs/build.ts"
+    "test": "vitest run",
+    "docs": "node docs/build.ts",
+    "serve": "node bin/ito.ts serve"
+  },
+  "dependencies": {
+    "@openai/codex": "0.162.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "fastify": "5.12.7",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@redocly/cli": "^2.62.1",
-    "@redocly/openapi-core": "^2.62.1",
-    "@scalar/api-reference": "^1.74.0",
-    "@types/node": "^24.19.2",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
-    "eslint": "^10.12.0",
-    "marked": "^18.1.1",
-    "openapi-typescript": "^7.13.0",
-    "prettier": "^3.9.10",
-    "typescript": "~5.9.3",
-    "typescript-eslint": "^8.71.2",
-    "yaml": "^2.9.1"
+    "@eslint/js": "10.0.1",
+    "@redocly/cli": "2.62.1",
+    "@redocly/openapi-core": "2.62.1",
+    "@scalar/api-reference": "1.74.0",
+    "@types/node": "24.19.2",
+    "eslint": "10.12.0",
+    "eslint-plugin-functional": "10.0.1",
+    "eslint-plugin-unicorn": "78.0.0",
+    "marked": "18.1.1",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "5.0.4"
   }
 }
