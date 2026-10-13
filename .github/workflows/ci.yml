@@ -68,6 +68,15 @@ jobs:
       - name: Replay every golden transcript through the real server
         run: npx vitest run test/transcripts.test.ts
 
+  cli:
+    name: The ito command behaves
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - name: Run ito's commands in-process
+        run: npx vitest run test/cli.test.ts
+
   crash:
     name: Server survives a crash mid-reply
     runs-on: ubuntu-latest
