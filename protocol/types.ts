@@ -327,7 +327,7 @@ export interface components {
       kind?: components["schemas"]["MessageKind"];
       /** @description Agent messages only: the turn that wrote it. */
       turn?: components["schemas"]["TurnId"];
-      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. */
+      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a reply that stands in for a turn that failed or was cut off before writing. */
       text: string;
       /** @description When the message began: when the server accepted it, or the agent's first word. */
       at: components["schemas"]["Timestamp"];

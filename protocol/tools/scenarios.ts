@@ -603,7 +603,7 @@ const scenarios: readonly (() => Transcript)[] = [
       summary:
         "The model goes silent mid-reply; after 60 seconds the turn fails with a typed error and " +
         "the text so far is kept. Try again, tapped twice, starts one new attempt that answers the " +
-        "same message.",
+        "same message. A turn that fails before writing still leaves a reply: empty, carrying the error.",
       guarantees: ["G2", "G8", "G10"],
     });
     yesterday(transcript);
@@ -636,6 +636,19 @@ const scenarios: readonly (() => Transcript)[] = [
     writeWhole(transcript, saturdayAnswer, 4);
     transcript.endTurn("completed");
 
+    transcript.wait(20_000);
+    sendAndStart(transcript, "And Sunday?");
+    transcript.wait(300);
+    transcript.status("thinking", "Thinking");
+    transcript.wait(2000);
+    const unavailable: ErrorBody = {
+      code: "model_unavailable",
+      message: "The model service isn't responding right now.",
+      detail: "The model service answered 503 Service Unavailable.",
+    };
+    transcript.reply();
+    transcript.endMessage("failed", { error: unavailable });
+    transcript.endTurn("failed", unavailable);
     return transcript;
   },
 ];
