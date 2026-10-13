@@ -15,6 +15,8 @@ export type Listener = (entry: LogEntry) => void;
 
 export type MessageKind = "reply" | "note";
 
+export type ReplayGap = "cursor_unknown" | "too_far_behind";
+
 export type PendingWork =
   | { readonly kind: "message"; readonly message: MessageId }
   | { readonly kind: "retry"; readonly turn: TurnId; readonly retryOf: TurnId };
@@ -39,7 +41,7 @@ export type Settings = {
 
 export type Store = Settings & {
   readonly subscribe: (listener: Listener) => () => void;
-  readonly eventsAfter: (cursor: EventId) => readonly LogEntry[] | undefined;
+  readonly eventsAfter: (cursor: EventId) => Result<readonly LogEntry[], ReplayGap>;
   readonly snapshot: (reason: Snapshot["reason"]) => SnapshotEntry;
   readonly acceptMessage: (id: MessageId, text: string) => Result<Accepted, "id_conflict">;
   readonly listMessages: (before: MessageId, limit: number) => Result<Page, "not_found">;
@@ -96,6 +98,7 @@ type PendingRow = {
 type EventRow = { readonly seq: number; readonly id: string; readonly body: string };
 
 const snapshotSize = 50;
+const compactedSetting = "compacted_through_seq";
 
 const parseIds = (json: string): readonly string[] => JSON.parse(json) as readonly string[];
 
@@ -182,6 +185,20 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
   const turnRow = (id: string): TurnRow | undefined =>
     database.prepare("SELECT * FROM turns WHERE id = ?").get(id) as TurnRow | undefined;
 
+  const readSetting = (key: string): string | undefined => {
+    const row = database.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+      { readonly value: string } | undefined;
+    return row?.value;
+  };
+
+  const writeSetting = (key: string, value: string): void => {
+    database
+      .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+      .run(key, value);
+  };
+
+  const compactedThrough = (): number => Number(readSetting(compactedSetting) ?? 0);
+
   return {
     subscribe: (listener) => {
       listeners.update((current) => new Set([...current, listener]));
@@ -193,9 +210,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     eventsAfter: (cursor) => {
       const anchor = database.prepare("SELECT seq FROM events WHERE id = ?").get(cursor) as
         { readonly seq: number } | undefined;
-      if (!anchor) return;
+      if (!anchor) return fail("cursor_unknown");
+      if (anchor.seq < compactedThrough()) return fail("too_far_behind");
       const rows = database.prepare("SELECT seq, id, body FROM events WHERE seq > ? ORDER BY seq").all(anchor.seq);
-      return (rows as unknown as readonly EventRow[]).map((row) => toLogEntry(row));
+      return ok((rows as unknown as readonly EventRow[]).map((row) => toLogEntry(row)));
     },
 
     snapshot: (reason) => {
@@ -342,19 +360,9 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       record((stamp) => ({ ...stamp, type: "turn.ended", turn, outcome, ...(error && { error }) }));
     },
 
-    setting: (key) => {
-      const row = database.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
-        { readonly value: string } | undefined;
-      return row?.value;
-    },
+    setting: readSetting,
 
-    setSetting: (key, value) => {
-      database
-        .prepare(
-          "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        )
-        .run(key, value);
-    },
+    setSetting: writeSetting,
 
     importEvents: (events) => {
       transaction(() => {
@@ -363,7 +371,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     },
 
     compactText: (before) => {
-      database.prepare("DELETE FROM events WHERE type = 'message.delta' AND at < ?").run(before);
+      const { through } = database
+        .prepare("SELECT MAX(seq) AS through FROM events WHERE type = 'message.delta' AND at < ?")
+        .get(before) as { readonly through: number | null };
+      if (through === null) return;
+      transaction(() => {
+        database.prepare("DELETE FROM events WHERE type = 'message.delta' AND seq <= ?").run(through);
+        const compacted = Math.max(through, compactedThrough());
+        writeSetting(compactedSetting, String(compacted));
+      });
     },
 
     backupTo: (filePath) => {

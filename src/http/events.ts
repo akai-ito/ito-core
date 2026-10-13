@@ -27,9 +27,10 @@ const catchUp = (
   cursor: string | undefined,
   maxReplay: number,
 ): readonly (LogEntry | SnapshotEntry)[] => {
-  const replay = cursor === undefined ? undefined : store.eventsAfter(toEventId(cursor));
-  if (replay && replay.length <= maxReplay) return replay;
-  return [store.snapshot(cursor === undefined ? "no_cursor" : replay ? "too_far_behind" : "cursor_unknown")];
+  if (cursor === undefined) return [store.snapshot("no_cursor")];
+  const replay = store.eventsAfter(toEventId(cursor));
+  if (replay.ok && replay.value.length <= maxReplay) return replay.value;
+  return [store.snapshot(replay.ok ? "too_far_behind" : replay.failure)];
 };
 
 export const createEventStream =
