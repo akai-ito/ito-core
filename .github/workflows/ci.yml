@@ -59,41 +59,14 @@ jobs:
             exit 1
           fi
 
-  replay:
-    name: Transcripts replay against the server
+  server:
+    name: Server tests pass
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/node
-      - name: Replay every golden transcript through the real server
-        run: npx vitest run test/transcripts.test.ts
-
-  cli:
-    name: The ito command behaves
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/node
-      - name: Run ito's commands in-process
-        run: npx vitest run test/cli.test.ts
-
-  crash:
-    name: Server survives a crash mid-reply
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/node
-      - name: Kill ito serve mid-reply and restart it
-        run: npx vitest run test/crash.test.ts
-
-  codex-engine:
-    name: Codex adapter works with the pinned Codex
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/node
-      - name: Drive codex app-server against a mock model
-        run: npx vitest run test/codex-engine.test.ts
+      - name: Replay the transcripts, crash the server, drive the pinned Codex, run the commands
+        run: npm test
 
   codex-bindings:
     name: Codex bindings are current
