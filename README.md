@@ -38,11 +38,12 @@ node bin/ito.ts login    # signs Codex in, in Ito's own home
 node bin/ito.ts serve    # the first run prints your token, once
 ```
 
-`ito serve` listens on `127.0.0.1:8787` only. `tailscale serve --bg 8787` makes it reachable over
-your tailnet; add the server in Ari with the address Tailscale prints and your token. If you lose
-the token, `ito token new` makes another. `--engine demo` answers without Codex, to try Ari before
-signing in: a message with *long* in it gives a reply to stop, *fail* a failure, and *silent* a
-timeout.
+Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code instead of a browser
+redirect. `ito serve` listens on `127.0.0.1:8787` only. `tailscale serve --bg 8787` makes it
+reachable over your tailnet; add the server in Ari with the address Tailscale prints and your
+token. If you lose the token, `ito token new` makes another. `--engine demo` answers without
+Codex, to try Ari before signing in: a message with *long* in it gives a reply to stop, *fail* a
+failure, and *silent* a timeout.
 
 To keep it running, install the systemd user unit from [deploy](deploy/ito.service), which expects
 the clone in `~/ito-core` and Node on the default path:
