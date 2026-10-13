@@ -249,7 +249,6 @@ export class Transcript {
     const headers: Record<string, string> = { ...options.headers };
     if (this.cursor) headers["Last-Event-ID"] = this.cursor;
     this.request("GET", "/v0/events", Object.keys(headers).length ? { headers } : {});
-    this.wait(30);
     this.response(200, undefined, { headers: { "Content-Type": "text/event-stream" } });
     this.connected = true;
     const known = this.cursor === undefined ? -1 : this.log.findIndex((event) => event.id === this.cursor);
@@ -309,12 +308,9 @@ export class Transcript {
   send(text: string, options: { id?: string; lost?: boolean } = {}): string {
     const id = options.id ?? this.userId();
     this.request("POST", "/v0/messages", { body: { id, text } });
-    this.wait(25);
     const existing = project(this.log).byId.get(id);
     if (!existing) this.emit("message.accepted", { message: { id, role: "user", text, at: this.iso() } });
-    this.wait(5);
     this.response(existing ? 200 : 201, { message: this.message(id) }, { lost: options.lost });
-    this.wait(1);
     return id;
   }
 
@@ -387,7 +383,6 @@ export class Transcript {
 
   stop(turn: string, cut?: { message: string; offset: number }): void {
     this.request("POST", `/v0/turns/${turn}/stop`, { body: cut ? { cut } : {} });
-    this.wait(20);
     if (this.turn?.id === turn) {
       this.response(202, { turn, state: "stopping" });
     } else {
@@ -395,16 +390,13 @@ export class Transcript {
       if (!ended) throw new Error(`stop for unknown turn ${turn}`);
       this.response(200, { turn, state: "ended", outcome: ended.outcome });
     }
-    this.wait(1);
   }
 
   retry(failed: string): string {
     this.request("POST", `/v0/turns/${failed}/retry`);
-    this.wait(25);
     const earlier = this.retries.get(failed);
     if (earlier) {
       this.response(200, { turn: earlier, retry_of: failed });
-      this.wait(1);
       return earlier;
     }
     const started = this.log.find((event) => event.type === "turn.started" && event.turn === failed);
@@ -412,13 +404,11 @@ export class Transcript {
     const turn = this.startTurn(started.inputs as string[], { retryOf: failed });
     this.retries.set(failed, turn);
     this.response(202, { turn, retry_of: failed });
-    this.wait(1);
     return turn;
   }
 
   listMessages(before: string, limit: number): void {
     this.request("GET", `/v0/messages?before=${before}&limit=${limit}`);
-    this.wait(35);
     const { order, byId } = project(this.log);
     const index = order.indexOf(before);
     if (index < 0) throw new Error(`no message ${before}`);
@@ -460,6 +450,7 @@ export class Transcript {
     };
     const header = {
       transcript: this.header.name,
+      start: new Date(this.stepsStart ?? 0).toISOString(),
       scenario: this.header.scenario,
       title: this.header.title,
       summary: this.header.summary,

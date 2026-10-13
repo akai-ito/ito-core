@@ -1,4 +1,4 @@
-{"transcript":"04-the-agent-stirs","scenario":4,"title":"The agent stirs","summary":"The turn starts at once, then the live status follows the work in plain words, with a note from the agent along the way, and ends with the turn.","guarantees":["G8","G10"],"app":{"cursor":"e_0006_47377"}}
+{"transcript":"04-the-agent-stirs","start":"2026-10-12T08:41:00.000Z","scenario":4,"title":"The agent stirs","summary":"The turn starts at once, then the live status follows the work in plain words, with a note from the agent along the way, and ends with the turn.","guarantees":["G8","G10"],"app":{"cursor":"e_0006_47377"}}
 {"given":{"id":"e_0001_12048","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"d52e129f-e30a-4ce7-8622-4125b7edd868","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z"}}}
 {"given":{"id":"e_0002_09122","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_86267","inputs":["d52e129f-e30a-4ce7-8622-4125b7edd868"]}}
 {"given":{"id":"e_0003_01242","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_21968","role":"agent","kind":"reply","turn":"t_0001_86267","text":"","at":"2026-10-11T21:14:01.801Z"}}}
@@ -6,25 +6,25 @@
 {"given":{"id":"e_0005_68925","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_21968","outcome":"completed","length":162}}
 {"given":{"id":"e_0006_47377","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_86267","outcome":"completed"}}
 {"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0006_47377"}}}
-{"at":30,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":2030,"app":{"method":"POST","path":"/v0/messages","body":{"id":"f63df431-879e-46f0-9e6d-154323b2c9f4","text":"Plan my Saturday: long run in the morning, then something calm."}}}
-{"at":2055,"event":{"id":"e_0007_85615","type":"message.accepted","at":"2026-10-12T08:41:02.055Z","message":{"id":"f63df431-879e-46f0-9e6d-154323b2c9f4","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.055Z"}}}
-{"at":2060,"server":{"status":201,"body":{"message":{"id":"f63df431-879e-46f0-9e6d-154323b2c9f4","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.055Z"}}}}
-{"at":2061,"event":{"id":"e_0008_96143","type":"turn.started","at":"2026-10-12T08:41:02.061Z","turn":"t_0002_22663","inputs":["f63df431-879e-46f0-9e6d-154323b2c9f4"]}}
-{"at":2311,"event":{"id":"e_0009_44455","type":"turn.status","at":"2026-10-12T08:41:02.311Z","turn":"t_0002_22663","kind":"thinking","label":"Thinking"}}
-{"at":3211,"event":{"id":"e_0010_38533","type":"turn.status","at":"2026-10-12T08:41:03.211Z","turn":"t_0002_22663","kind":"thinking","label":"Thinking","detail":"Sketching a calm Saturday"}}
-{"at":3911,"event":{"id":"e_0011_75023","type":"message.started","at":"2026-10-12T08:41:03.911Z","message":{"id":"m_0002_90390","role":"agent","kind":"note","turn":"t_0002_22663","text":"","at":"2026-10-12T08:41:03.911Z"}}}
-{"at":3911,"event":{"id":"e_0012_54122","type":"message.delta","at":"2026-10-12T08:41:03.911Z","message":"m_0002_90390","offset":0,"text":"I'll check which cafés "}}
-{"at":4031,"event":{"id":"e_0013_89231","type":"message.delta","at":"2026-10-12T08:41:04.031Z","message":"m_0002_90390","offset":23,"text":"by the river open early."}}
-{"at":4031,"event":{"id":"e_0014_48522","type":"message.ended","at":"2026-10-12T08:41:04.031Z","message":"m_0002_90390","outcome":"completed","length":47}}
-{"at":4071,"event":{"id":"e_0015_66351","type":"turn.status","at":"2026-10-12T08:41:04.071Z","turn":"t_0002_22663","kind":"working","label":"Searching the web","detail":"riverside cafés open at 9am"}}
-{"at":6671,"event":{"id":"e_0016_77110","type":"turn.status","at":"2026-10-12T08:41:06.671Z","turn":"t_0002_22663","kind":"thinking","label":"Thinking","detail":"Fitting the day around the run"}}
-{"at":7771,"event":{"id":"e_0017_72268","type":"turn.status","at":"2026-10-12T08:41:07.771Z","turn":"t_0002_22663","kind":"writing","label":"Writing"}}
-{"at":7771,"event":{"id":"e_0018_15772","type":"message.started","at":"2026-10-12T08:41:07.771Z","message":{"id":"m_0003_29104","role":"agent","kind":"reply","turn":"t_0002_22663","text":"","at":"2026-10-12T08:41:07.771Z"}}}
-{"at":7771,"event":{"id":"e_0019_57705","type":"message.delta","at":"2026-10-12T08:41:07.771Z","message":"m_0003_29104","offset":0,"text":"Here's a shape for Saturday:\n\n- **07:30** Long run, 18 km along the river; flat, "}}
-{"at":7891,"event":{"id":"e_0020_06983","type":"message.delta","at":"2026-10-12T08:41:07.891Z","message":"m_0003_29104","offset":81,"text":"and the café opens at 9.\n- **10:00** Breakfast, then a slow hour with your "}}
-{"at":8011,"event":{"id":"e_0021_18999","type":"message.delta","at":"2026-10-12T08:41:08.011Z","message":"m_0003_29104","offset":156,"text":"book.\n- **13:00** Lunch at home; keep it light before the afternoon.\n- **15:00** "}}
-{"at":8131,"event":{"id":"e_0022_71152","type":"message.delta","at":"2026-10-12T08:41:08.131Z","message":"m_0003_29104","offset":237,"text":"A walk in the botanic garden, phone in your pocket.\n\nEarly night: you're up at "}}
-{"at":8251,"event":{"id":"e_0023_06854","type":"message.delta","at":"2026-10-12T08:41:08.251Z","message":"m_0003_29104","offset":316,"text":"7."}}
-{"at":8251,"event":{"id":"e_0024_04337","type":"message.ended","at":"2026-10-12T08:41:08.251Z","message":"m_0003_29104","outcome":"completed","length":318}}
-{"at":8251,"event":{"id":"e_0025_92861","type":"turn.ended","at":"2026-10-12T08:41:08.251Z","turn":"t_0002_22663","outcome":"completed"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"f63df431-879e-46f0-9e6d-154323b2c9f4","text":"Plan my Saturday: long run in the morning, then something calm."}}}
+{"at":2000,"event":{"id":"e_0007_85615","type":"message.accepted","at":"2026-10-12T08:41:02.000Z","message":{"id":"f63df431-879e-46f0-9e6d-154323b2c9f4","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.000Z"}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"f63df431-879e-46f0-9e6d-154323b2c9f4","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.000Z"}}}}
+{"at":2000,"event":{"id":"e_0008_96143","type":"turn.started","at":"2026-10-12T08:41:02.000Z","turn":"t_0002_22663","inputs":["f63df431-879e-46f0-9e6d-154323b2c9f4"]}}
+{"at":2250,"event":{"id":"e_0009_44455","type":"turn.status","at":"2026-10-12T08:41:02.250Z","turn":"t_0002_22663","kind":"thinking","label":"Thinking"}}
+{"at":3150,"event":{"id":"e_0010_38533","type":"turn.status","at":"2026-10-12T08:41:03.150Z","turn":"t_0002_22663","kind":"thinking","label":"Thinking","detail":"Sketching a calm Saturday"}}
+{"at":3850,"event":{"id":"e_0011_75023","type":"message.started","at":"2026-10-12T08:41:03.850Z","message":{"id":"m_0002_90390","role":"agent","kind":"note","turn":"t_0002_22663","text":"","at":"2026-10-12T08:41:03.850Z"}}}
+{"at":3850,"event":{"id":"e_0012_54122","type":"message.delta","at":"2026-10-12T08:41:03.850Z","message":"m_0002_90390","offset":0,"text":"I'll check which cafés "}}
+{"at":3970,"event":{"id":"e_0013_89231","type":"message.delta","at":"2026-10-12T08:41:03.970Z","message":"m_0002_90390","offset":23,"text":"by the river open early."}}
+{"at":3970,"event":{"id":"e_0014_48522","type":"message.ended","at":"2026-10-12T08:41:03.970Z","message":"m_0002_90390","outcome":"completed","length":47}}
+{"at":4010,"event":{"id":"e_0015_66351","type":"turn.status","at":"2026-10-12T08:41:04.010Z","turn":"t_0002_22663","kind":"working","label":"Searching the web","detail":"riverside cafés open at 9am"}}
+{"at":6610,"event":{"id":"e_0016_77110","type":"turn.status","at":"2026-10-12T08:41:06.610Z","turn":"t_0002_22663","kind":"thinking","label":"Thinking","detail":"Fitting the day around the run"}}
+{"at":7710,"event":{"id":"e_0017_72268","type":"turn.status","at":"2026-10-12T08:41:07.710Z","turn":"t_0002_22663","kind":"writing","label":"Writing"}}
+{"at":7710,"event":{"id":"e_0018_15772","type":"message.started","at":"2026-10-12T08:41:07.710Z","message":{"id":"m_0003_29104","role":"agent","kind":"reply","turn":"t_0002_22663","text":"","at":"2026-10-12T08:41:07.710Z"}}}
+{"at":7710,"event":{"id":"e_0019_57705","type":"message.delta","at":"2026-10-12T08:41:07.710Z","message":"m_0003_29104","offset":0,"text":"Here's a shape for Saturday:\n\n- **07:30** Long run, 18 km along the river; flat, "}}
+{"at":7830,"event":{"id":"e_0020_06983","type":"message.delta","at":"2026-10-12T08:41:07.830Z","message":"m_0003_29104","offset":81,"text":"and the café opens at 9.\n- **10:00** Breakfast, then a slow hour with your "}}
+{"at":7950,"event":{"id":"e_0021_18999","type":"message.delta","at":"2026-10-12T08:41:07.950Z","message":"m_0003_29104","offset":156,"text":"book.\n- **13:00** Lunch at home; keep it light before the afternoon.\n- **15:00** "}}
+{"at":8070,"event":{"id":"e_0022_71152","type":"message.delta","at":"2026-10-12T08:41:08.070Z","message":"m_0003_29104","offset":237,"text":"A walk in the botanic garden, phone in your pocket.\n\nEarly night: you're up at "}}
+{"at":8190,"event":{"id":"e_0023_06854","type":"message.delta","at":"2026-10-12T08:41:08.190Z","message":"m_0003_29104","offset":316,"text":"7."}}
+{"at":8190,"event":{"id":"e_0024_04337","type":"message.ended","at":"2026-10-12T08:41:08.190Z","message":"m_0003_29104","outcome":"completed","length":318}}
+{"at":8190,"event":{"id":"e_0025_92861","type":"turn.ended","at":"2026-10-12T08:41:08.190Z","turn":"t_0002_22663","outcome":"completed"}}

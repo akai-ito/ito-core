@@ -1,4 +1,4 @@
-{"transcript":"08-copy-and-share","scenario":8,"title":"Copy and share","summary":"Message text is the Markdown source, code fence included, available piece by piece while it streams, so the app can copy any part of it at any time.","guarantees":["G7"],"app":{"cursor":"e_0006_06261"}}
+{"transcript":"08-copy-and-share","start":"2026-10-12T08:41:00.000Z","scenario":8,"title":"Copy and share","summary":"Message text is the Markdown source, code fence included, available piece by piece while it streams, so the app can copy any part of it at any time.","guarantees":["G7"],"app":{"cursor":"e_0006_06261"}}
 {"given":{"id":"e_0001_03251","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"7f25eedd-f9f0-491d-8453-68489f9735a3","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z"}}}
 {"given":{"id":"e_0002_82300","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_47023","inputs":["7f25eedd-f9f0-491d-8453-68489f9735a3"]}}
 {"given":{"id":"e_0003_89753","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_09845","role":"agent","kind":"reply","turn":"t_0001_47023","text":"","at":"2026-10-11T21:14:01.801Z"}}}
@@ -6,20 +6,20 @@
 {"given":{"id":"e_0005_50655","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_09845","outcome":"completed","length":162}}
 {"given":{"id":"e_0006_06261","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_47023","outcome":"completed"}}
 {"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0006_06261"}}}
-{"at":30,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":2030,"app":{"method":"POST","path":"/v0/messages","body":{"id":"c20b0e66-9057-46a7-960d-3ed802c5fbce","text":"How do I see what's using port 8080 on my Mac?"}}}
-{"at":2055,"event":{"id":"e_0007_28598","type":"message.accepted","at":"2026-10-12T08:41:02.055Z","message":{"id":"c20b0e66-9057-46a7-960d-3ed802c5fbce","role":"user","text":"How do I see what's using port 8080 on my Mac?","at":"2026-10-12T08:41:02.055Z"}}}
-{"at":2060,"server":{"status":201,"body":{"message":{"id":"c20b0e66-9057-46a7-960d-3ed802c5fbce","role":"user","text":"How do I see what's using port 8080 on my Mac?","at":"2026-10-12T08:41:02.055Z"}}}}
-{"at":2061,"event":{"id":"e_0008_87266","type":"turn.started","at":"2026-10-12T08:41:02.061Z","turn":"t_0002_28397","inputs":["c20b0e66-9057-46a7-960d-3ed802c5fbce"]}}
-{"at":2361,"event":{"id":"e_0009_77533","type":"turn.status","at":"2026-10-12T08:41:02.361Z","turn":"t_0002_28397","kind":"thinking","label":"Thinking"}}
-{"at":3561,"event":{"id":"e_0010_41270","type":"turn.status","at":"2026-10-12T08:41:03.561Z","turn":"t_0002_28397","kind":"writing","label":"Writing"}}
-{"at":3561,"event":{"id":"e_0011_28529","type":"message.started","at":"2026-10-12T08:41:03.561Z","message":{"id":"m_0002_38147","role":"agent","kind":"reply","turn":"t_0002_28397","text":"","at":"2026-10-12T08:41:03.561Z"}}}
-{"at":3561,"event":{"id":"e_0012_99153","type":"message.delta","at":"2026-10-12T08:41:03.561Z","message":"m_0002_38147","offset":0,"text":"Run this in "}}
-{"at":3681,"event":{"id":"e_0013_58730","type":"message.delta","at":"2026-10-12T08:41:03.681Z","message":"m_0002_38147","offset":12,"text":"Terminal:\n\n```sh\nlsof "}}
-{"at":3801,"event":{"id":"e_0014_09036","type":"message.delta","at":"2026-10-12T08:41:03.801Z","message":"m_0002_38147","offset":34,"text":"-nP -iTCP:8080 "}}
-{"at":3921,"event":{"id":"e_0015_47509","type":"message.delta","at":"2026-10-12T08:41:03.921Z","message":"m_0002_38147","offset":49,"text":"-sTCP:LISTEN\n```\n\nThe "}}
-{"at":4041,"event":{"id":"e_0016_93519","type":"message.delta","at":"2026-10-12T08:41:04.041Z","message":"m_0002_38147","offset":71,"text":"second column is the "}}
-{"at":4161,"event":{"id":"e_0017_60580","type":"message.delta","at":"2026-10-12T08:41:04.161Z","message":"m_0002_38147","offset":92,"text":"process ID; `kill "}}
-{"at":4281,"event":{"id":"e_0018_17332","type":"message.delta","at":"2026-10-12T08:41:04.281Z","message":"m_0002_38147","offset":110,"text":"<PID>` stops it."}}
-{"at":4281,"event":{"id":"e_0019_54316","type":"message.ended","at":"2026-10-12T08:41:04.281Z","message":"m_0002_38147","outcome":"completed","length":126}}
-{"at":4281,"event":{"id":"e_0020_32478","type":"turn.ended","at":"2026-10-12T08:41:04.281Z","turn":"t_0002_28397","outcome":"completed"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"c20b0e66-9057-46a7-960d-3ed802c5fbce","text":"How do I see what's using port 8080 on my Mac?"}}}
+{"at":2000,"event":{"id":"e_0007_28598","type":"message.accepted","at":"2026-10-12T08:41:02.000Z","message":{"id":"c20b0e66-9057-46a7-960d-3ed802c5fbce","role":"user","text":"How do I see what's using port 8080 on my Mac?","at":"2026-10-12T08:41:02.000Z"}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"c20b0e66-9057-46a7-960d-3ed802c5fbce","role":"user","text":"How do I see what's using port 8080 on my Mac?","at":"2026-10-12T08:41:02.000Z"}}}}
+{"at":2000,"event":{"id":"e_0008_87266","type":"turn.started","at":"2026-10-12T08:41:02.000Z","turn":"t_0002_28397","inputs":["c20b0e66-9057-46a7-960d-3ed802c5fbce"]}}
+{"at":2300,"event":{"id":"e_0009_77533","type":"turn.status","at":"2026-10-12T08:41:02.300Z","turn":"t_0002_28397","kind":"thinking","label":"Thinking"}}
+{"at":3500,"event":{"id":"e_0010_41270","type":"turn.status","at":"2026-10-12T08:41:03.500Z","turn":"t_0002_28397","kind":"writing","label":"Writing"}}
+{"at":3500,"event":{"id":"e_0011_28529","type":"message.started","at":"2026-10-12T08:41:03.500Z","message":{"id":"m_0002_38147","role":"agent","kind":"reply","turn":"t_0002_28397","text":"","at":"2026-10-12T08:41:03.500Z"}}}
+{"at":3500,"event":{"id":"e_0012_99153","type":"message.delta","at":"2026-10-12T08:41:03.500Z","message":"m_0002_38147","offset":0,"text":"Run this in "}}
+{"at":3620,"event":{"id":"e_0013_58730","type":"message.delta","at":"2026-10-12T08:41:03.620Z","message":"m_0002_38147","offset":12,"text":"Terminal:\n\n```sh\nlsof "}}
+{"at":3740,"event":{"id":"e_0014_09036","type":"message.delta","at":"2026-10-12T08:41:03.740Z","message":"m_0002_38147","offset":34,"text":"-nP -iTCP:8080 "}}
+{"at":3860,"event":{"id":"e_0015_47509","type":"message.delta","at":"2026-10-12T08:41:03.860Z","message":"m_0002_38147","offset":49,"text":"-sTCP:LISTEN\n```\n\nThe "}}
+{"at":3980,"event":{"id":"e_0016_93519","type":"message.delta","at":"2026-10-12T08:41:03.980Z","message":"m_0002_38147","offset":71,"text":"second column is the "}}
+{"at":4100,"event":{"id":"e_0017_60580","type":"message.delta","at":"2026-10-12T08:41:04.100Z","message":"m_0002_38147","offset":92,"text":"process ID; `kill "}}
+{"at":4220,"event":{"id":"e_0018_17332","type":"message.delta","at":"2026-10-12T08:41:04.220Z","message":"m_0002_38147","offset":110,"text":"<PID>` stops it."}}
+{"at":4220,"event":{"id":"e_0019_54316","type":"message.ended","at":"2026-10-12T08:41:04.220Z","message":"m_0002_38147","outcome":"completed","length":126}}
+{"at":4220,"event":{"id":"e_0020_32478","type":"turn.ended","at":"2026-10-12T08:41:04.220Z","turn":"t_0002_28397","outcome":"completed"}}

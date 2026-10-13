@@ -273,7 +273,6 @@ const scenarios: (() => Transcript)[] = [
     s.wait(250);
     s.endMessage("stopped", { length: cut });
     s.endTurn("stopped");
-    s.wait(5);
     s.startTurn([morning]);
     s.wait(300);
     s.status("thinking", "Thinking");
@@ -389,6 +388,7 @@ const scenarios: (() => Transcript)[] = [
     s.write(first, { every: 110 });
     s.wait(80);
     const outdoors = s.send("Make the calm part outdoors");
+    s.wait(30);
     s.write(after(SATURDAY_A, first), { every: 110 });
     s.endMessage("completed");
     s.wait(400);
@@ -416,7 +416,6 @@ const scenarios: (() => Transcript)[] = [
     s.wait(2400);
     writeWhole(s, "**The Boathouse** opens at 8 and faces the water, ten minutes' walk from where your run ends.");
     s.endTurn("completed");
-    s.wait(5);
     s.startTurn([seats]);
     s.wait(600);
     writeWhole(s, "It does: six tables on the terrace, first come, first served.");
@@ -606,7 +605,7 @@ const scenarios: (() => Transcript)[] = [
     const error: ErrorObject = {
       code: "model_timeout",
       message: "The model didn't respond for 60 seconds.",
-      detail: "No progress from Codex for 60 seconds while it was writing; the request to the model was still open.",
+      detail: "No progress from the engine for 60 seconds while it was writing.",
     };
     s.endMessage("failed", { error });
     s.endTurn("failed", error);
