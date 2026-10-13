@@ -1,0 +1,3 @@
+src/engine/codex/bindings/** linguist-generated=true
+protocol/types.ts linguist-generated=true
+protocol/transcripts/*.jsonl linguist-generated=true
