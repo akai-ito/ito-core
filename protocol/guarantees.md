@@ -15,7 +15,7 @@ where the protocol has to make it possible, marked *App*.
 | G4 | **Exact resume.** Every event carries a cursor. Reconnecting with the last cursor the app applied delivers every later event once: nothing missing, nothing repeated, including reply text streamed in the meantime. | 2, 11, 13 |
 | G5 | **An honest reset.** When the server can't continue from a cursor (too old, restored from a backup, a different server), it says so and sends a fresh snapshot. It never resumes from the wrong place. Ids are never reused, even after a restore. | 14 |
 | G6 | **Turns outlive connections.** A turn runs to its end whether or not any app is connected. Only Stop, a failure or a restart ends it early. | 13 |
-| G7 | **Text only grows.** Reply text streams as appended pieces and is never revised. A finished message's text is exactly what was streamed, or exactly what was on screen when you tapped Stop. | 5, 7, 8, 11 |
+| G7 | **Text only grows.** Reply text streams as appended pieces and is never revised. A finished message's text is exactly what was streamed, or exactly what was on screen when you tapped Stop. Stop cuts only a message still being written; one that already finished keeps all its text. | 5, 7, 8, 11 |
 | G8 | **Every turn ends, with a reason.** Completed, stopped, interrupted by a restart, or failed with a typed error. Nothing is left "still writing", and live status never outlives its turn. | 4, 6, 14, 15 |
 | G9 | **Stop jumps every queue.** Stop is a command of its own, addressed to one turn, safe to repeat, and handled ahead of everything else on both sides: never behind a send, a steer or a reconnect. It is confirmed only once the agent has really stopped. | 7 |
 | G10 | **Plain words, typed errors.** Live status is plain words from a known vocabulary. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15 |
@@ -82,6 +82,9 @@ where the protocol has to make it possible, marked *App*.
   the server forces it.
 - A message sent while a turn is stopping waits, and starts the next turn. (G3)
 - A Stop that arrives after the reply already finished changes nothing.
+- When the screen lags behind the server, Stop cuts the message still being written, at as much of
+  it as was on screen (nothing, if it hadn't appeared yet). A reply that already finished keeps all
+  its text, so every app, snapshot and history page agrees. (G7)
 
 ### 8 · [Copy and share](transcripts/08-copy-and-share.jsonl)
 

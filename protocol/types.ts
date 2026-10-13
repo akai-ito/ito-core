@@ -396,7 +396,7 @@ export interface components {
       has_more: boolean;
     };
     StopTurn: {
-      /** @description Where the message being written was on your screen when you tapped Stop. Without it, the server keeps everything written so far. */
+      /** @description Where the message still being written was on your screen when you tapped Stop. Without it, the server keeps everything written so far. A cut that names a message which already finished changes nothing; a finished message keeps all its text. */
       cut?: {
         message: components["schemas"]["MessageId"];
         /** @description How much of the message's text you saw, in UTF-16 code units. */
