@@ -77,6 +77,15 @@ jobs:
       - name: Kill ito serve mid-reply and restart it
         run: npx vitest run test/crash.test.ts
 
+  codex-engine:
+    name: Codex adapter works with the pinned Codex
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - name: Drive codex app-server against a mock model
+        run: npx vitest run test/codex-engine.test.ts
+
   codex-bindings:
     name: Codex bindings are current
     runs-on: ubuntu-latest

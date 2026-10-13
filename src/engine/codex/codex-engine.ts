@@ -2,6 +2,7 @@ import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
 import type { TurnId } from "#conversation/ids.ts";
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
+import type { JsonValue } from "#engine/codex/bindings/serde_json/JsonValue.ts";
 import type { ThreadStartParams } from "#engine/codex/bindings/v2/ThreadStartParams.ts";
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
 import { startCodexProcess, type CodexProcess } from "#engine/codex/codex-process.ts";
@@ -16,6 +17,8 @@ export type CodexEngineOptions = {
   readonly workspace: string;
   readonly settings: Settings;
   readonly log: Log;
+  readonly modelProvider?: string;
+  readonly config?: Readonly<Record<string, JsonValue>>;
 };
 
 type Session = { readonly process: CodexProcess; readonly threadId: string };
@@ -40,7 +43,14 @@ const threadOf = (notification: ServerNotification): string | undefined => {
     : undefined;
 };
 
-export const createCodexEngine = ({ codexHome, workspace, settings, log }: CodexEngineOptions): Engine => {
+export const createCodexEngine = ({
+  codexHome,
+  workspace,
+  settings,
+  log,
+  modelProvider,
+  config,
+}: CodexEngineOptions): Engine => {
   const active = createCell<ActiveTurn | undefined>(undefined);
   const session = createCell<Promise<Result<Session, string>> | undefined>(undefined);
   const generation = createCell(0);
@@ -49,7 +59,8 @@ export const createCodexEngine = ({ codexHome, workspace, settings, log }: Codex
     cwd: workspace,
     approvalPolicy: "never",
     sandbox: "workspace-write",
-    config: { sandbox_workspace_write: { network_access: true } },
+    config: { sandbox_workspace_write: { network_access: true }, ...config },
+    ...(modelProvider && { modelProvider }),
   };
 
   const emit = (turn: TurnId, events: readonly EngineEvent[]): void => {
