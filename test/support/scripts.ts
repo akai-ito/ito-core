@@ -94,11 +94,36 @@ const toTimed = (event: LoggedEvent): TimedEvent | undefined => {
   }
 };
 
+type MessageEnded = Extract<LoggedEvent, { readonly type: "message.ended" }>;
+
+const standInsFor = (events: readonly LoggedEvent[]): ReadonlySet<string> => {
+  const written = new Set(events.filter((event) => event.type === "message.delta").map((event) => event.message));
+  return new Set(
+    events
+      .filter(
+        (event): event is MessageEnded =>
+          event.type === "message.ended" &&
+          event.length === 0 &&
+          (event.outcome === "failed" || event.outcome === "interrupted") &&
+          !written.has(event.message),
+      )
+      .map((event) => event.message),
+  );
+};
+
+const isAboutMessage = (event: LoggedEvent, messages: ReadonlySet<string>): boolean =>
+  (event.type === "message.started" && messages.has(event.message.id)) ||
+  (event.type === "message.ended" && messages.has(event.message));
+
 const toScript = (events: readonly LoggedEvent[]): TurnScript => {
   const reads = new Set(events.filter((event) => event.type === "message.read").map((event) => event.message));
   const stopped = events.find((event) => event.type === "turn.ended" && event.outcome === "stopped");
+  const standIns = standInsFor(events);
   return {
-    events: events.map((event) => toTimed(event)).filter((timed) => timed !== undefined),
+    events: events
+      .filter((event) => !isAboutMessage(event, standIns))
+      .map((event) => toTimed(event))
+      .filter((timed) => timed !== undefined),
     steer: (input) => ({ outcome: reads.has(input.messageId) ? "taken" : "refused" }),
     stoppedAt: (requestedAt) => (stopped ? Date.parse(stopped.at) : requestedAt),
   };

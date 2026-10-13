@@ -248,7 +248,8 @@ const scenarios: readonly (() => Transcript)[] = [
       summary:
         "Stop names the turn and the cut point on screen; the stopped message keeps exactly that, " +
         "a message sent while stopping starts the next turn, and a Stop that arrives after a reply " +
-        "finished changes nothing.",
+        "finished changes nothing. When the screen lags, Stop cuts the message still being written " +
+        "and a reply that already finished keeps all its text.",
       guarantees: ["G3", "G7", "G9"],
     });
     yesterday(transcript);
@@ -292,6 +293,20 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.endTurn("completed");
     transcript.wait(150);
     transcript.stop(sunday.turn, { message: late, offset: 52 });
+
+    transcript.wait(20_000);
+    const evening = sendAndStart(transcript, "And Saturday evening?");
+    transcript.wait(900);
+    writeWhole(transcript, "Evening: dinner at home, then an early night before the long run.", 3);
+    transcript.status("writing", "Writing");
+    const rainyDay = transcript.reply();
+    transcript.write("If it rains, swap the walk for the ", { pieces: 2 });
+    transcript.wait(60);
+    transcript.stop(evening.turn, { message: rainyDay, offset: 0 });
+    transcript.status("stopping", "Stopping");
+    transcript.wait(150);
+    transcript.endMessage("stopped", { length: 0 });
+    transcript.endTurn("stopped");
     return transcript;
   },
 
@@ -588,7 +603,7 @@ const scenarios: readonly (() => Transcript)[] = [
       summary:
         "The model goes silent mid-reply; after 60 seconds the turn fails with a typed error and " +
         "the text so far is kept. Try again, tapped twice, starts one new attempt that answers the " +
-        "same message.",
+        "same message. A turn that fails before writing still leaves a reply: empty, carrying the error.",
       guarantees: ["G2", "G8", "G10"],
     });
     yesterday(transcript);
@@ -620,6 +635,20 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(1200);
     writeWhole(transcript, saturdayAnswer, 4);
     transcript.endTurn("completed");
+
+    transcript.wait(20_000);
+    sendAndStart(transcript, "And Sunday?");
+    transcript.wait(300);
+    transcript.status("thinking", "Thinking");
+    transcript.wait(2000);
+    const unavailable: ErrorBody = {
+      code: "model_unavailable",
+      message: "The model service isn't responding right now.",
+      detail: "The model service answered 503 Service Unavailable.",
+    };
+    transcript.reply();
+    transcript.endMessage("failed", { error: unavailable });
+    transcript.endTurn("failed", unavailable);
     return transcript;
   },
 ];

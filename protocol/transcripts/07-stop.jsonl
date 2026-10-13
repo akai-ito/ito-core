@@ -1,4 +1,4 @@
-{"transcript":"07-stop","start":"2026-10-12T08:41:00.000Z","scenario":7,"title":"Stop","summary":"Stop names the turn and the cut point on screen; the stopped message keeps exactly that, a message sent while stopping starts the next turn, and a Stop that arrives after a reply finished changes nothing.","guarantees":["G3","G7","G9"],"app":{"cursor":"e_0006_13823"}}
+{"transcript":"07-stop","start":"2026-10-12T08:41:00.000Z","scenario":7,"title":"Stop","summary":"Stop names the turn and the cut point on screen; the stopped message keeps exactly that, a message sent while stopping starts the next turn, and a Stop that arrives after a reply finished changes nothing. When the screen lags, Stop cuts the message still being written and a reply that already finished keeps all its text.","guarantees":["G3","G7","G9"],"app":{"cursor":"e_0006_13823"}}
 {"given":{"id":"e_0001_72832","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"40fad84f-9c72-47ac-b2ce-b6152b68b0c0","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z"}}}
 {"given":{"id":"e_0002_57610","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_97463","inputs":["40fad84f-9c72-47ac-b2ce-b6152b68b0c0"]}}
 {"given":{"id":"e_0003_30735","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_79685","role":"agent","kind":"reply","turn":"t_0001_97463","text":"","at":"2026-10-11T21:14:01.801Z"}}}
@@ -58,3 +58,23 @@
 {"at":28290,"event":{"id":"e_0047_20739","type":"turn.ended","at":"2026-10-12T08:41:28.290Z","turn":"t_0004_50773","outcome":"completed"}}
 {"at":28440,"app":{"method":"POST","path":"/v0/turns/t_0004_50773/stop","body":{"cut":{"message":"m_0004_08797","offset":52}}}}
 {"at":28440,"server":{"status":200,"body":{"turn":"t_0004_50773","state":"ended","outcome":"completed"}}}
+{"at":48440,"app":{"method":"POST","path":"/v0/messages","body":{"id":"e8d134af-23b2-4510-9360-ccd762695be8","text":"And Saturday evening?"}}}
+{"at":48440,"event":{"id":"e_0048_29606","type":"message.accepted","at":"2026-10-12T08:41:48.440Z","message":{"id":"e8d134af-23b2-4510-9360-ccd762695be8","role":"user","text":"And Saturday evening?","at":"2026-10-12T08:41:48.440Z"}}}
+{"at":48440,"server":{"status":201,"body":{"message":{"id":"e8d134af-23b2-4510-9360-ccd762695be8","role":"user","text":"And Saturday evening?","at":"2026-10-12T08:41:48.440Z"}}}}
+{"at":48440,"event":{"id":"e_0049_41868","type":"turn.started","at":"2026-10-12T08:41:48.440Z","turn":"t_0005_27837","inputs":["e8d134af-23b2-4510-9360-ccd762695be8"]}}
+{"at":49340,"event":{"id":"e_0050_53208","type":"turn.status","at":"2026-10-12T08:41:49.340Z","turn":"t_0005_27837","kind":"writing","label":"Writing"}}
+{"at":49340,"event":{"id":"e_0051_05469","type":"message.started","at":"2026-10-12T08:41:49.340Z","message":{"id":"m_0005_12106","role":"agent","kind":"reply","turn":"t_0005_27837","text":"","at":"2026-10-12T08:41:49.340Z"}}}
+{"at":49340,"event":{"id":"e_0052_68292","type":"message.delta","at":"2026-10-12T08:41:49.340Z","message":"m_0005_12106","offset":0,"text":"Evening: dinner at "}}
+{"at":49460,"event":{"id":"e_0053_96521","type":"message.delta","at":"2026-10-12T08:41:49.460Z","message":"m_0005_12106","offset":19,"text":"home, then an early "}}
+{"at":49580,"event":{"id":"e_0054_00574","type":"message.delta","at":"2026-10-12T08:41:49.580Z","message":"m_0005_12106","offset":39,"text":"night before the long "}}
+{"at":49700,"event":{"id":"e_0055_26246","type":"message.delta","at":"2026-10-12T08:41:49.700Z","message":"m_0005_12106","offset":61,"text":"run."}}
+{"at":49700,"event":{"id":"e_0056_59944","type":"message.ended","at":"2026-10-12T08:41:49.700Z","message":"m_0005_12106","outcome":"completed","length":65}}
+{"at":49700,"event":{"id":"e_0057_95890","type":"turn.status","at":"2026-10-12T08:41:49.700Z","turn":"t_0005_27837","kind":"writing","label":"Writing"}}
+{"at":49700,"event":{"id":"e_0058_99455","type":"message.started","at":"2026-10-12T08:41:49.700Z","message":{"id":"m_0006_90669","role":"agent","kind":"reply","turn":"t_0005_27837","text":"","at":"2026-10-12T08:41:49.700Z"}}}
+{"at":49700,"event":{"id":"e_0059_04778","type":"message.delta","at":"2026-10-12T08:41:49.700Z","message":"m_0006_90669","offset":0,"text":"If it rains, swap "}}
+{"at":49820,"event":{"id":"e_0060_44071","type":"message.delta","at":"2026-10-12T08:41:49.820Z","message":"m_0006_90669","offset":18,"text":"the walk for the "}}
+{"at":49880,"app":{"method":"POST","path":"/v0/turns/t_0005_27837/stop","body":{"cut":{"message":"m_0006_90669","offset":0}}}}
+{"at":49880,"server":{"status":202,"body":{"turn":"t_0005_27837","state":"stopping"}}}
+{"at":49880,"event":{"id":"e_0061_80152","type":"turn.status","at":"2026-10-12T08:41:49.880Z","turn":"t_0005_27837","kind":"stopping","label":"Stopping"}}
+{"at":50030,"event":{"id":"e_0062_65642","type":"message.ended","at":"2026-10-12T08:41:50.030Z","message":"m_0006_90669","outcome":"stopped","length":0}}
+{"at":50030,"event":{"id":"e_0063_73830","type":"turn.ended","at":"2026-10-12T08:41:50.030Z","turn":"t_0005_27837","outcome":"stopped"}}

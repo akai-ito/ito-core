@@ -175,6 +175,7 @@ export const createTurns = (
     const state = current(turn);
     if (!state) return;
     if (state.writing) store.endMessage(state.writing.message, "failed", sentLength(state), error);
+    if (!state.hasStartedReply) store.endMessage(store.startMessage(turn, "reply"), "failed", 0, error);
     store.endTurn(turn, "failed", error);
     afterTurn(state);
   };
@@ -411,6 +412,7 @@ export const createTurns = (
       if (turn) {
         const open = store.openMessage(turn.id);
         if (open) store.endMessage(open.id, "interrupted", open.text.length);
+        if (!turn.hasStartedReply) store.endMessage(store.startMessage(turn.id, "reply"), "interrupted", 0);
         store.endTurn(turn.id, "interrupted");
       }
       void enqueue(drain);
