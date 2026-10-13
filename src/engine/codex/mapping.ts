@@ -41,9 +41,15 @@ const refusalErrors = new Set(["cyberPolicy", "misalignmentPolicyViolation"]);
 const errorName = (info: CodexErrorInfo | null): string =>
   typeof info === "string" ? info : info ? (Object.keys(info)[0] ?? "other") : "other";
 
+const httpStatusOf = (info: CodexErrorInfo | null): number | undefined => {
+  const [detail]: readonly unknown[] = info && typeof info === "object" ? Object.values(info) : [];
+  const status: unknown = detail && typeof detail === "object" ? Reflect.get(detail, "httpStatusCode") : undefined;
+  return typeof status === "number" ? status : undefined;
+};
+
 export const toFailureCode = (info: CodexErrorInfo | null): EngineFailureCode => {
   const name = errorName(info);
-  if (name === "unauthorized") return "engine_signed_out";
+  if (name === "unauthorized" || httpStatusOf(info) === 401) return "engine_signed_out";
   if (name === "usageLimitExceeded") return "usage_limit";
   if (name === "contextWindowExceeded") return "context_full";
   if (refusalErrors.has(name)) return "refused";

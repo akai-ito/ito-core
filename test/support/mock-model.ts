@@ -127,6 +127,10 @@ export const startMockModel = async (): Promise<MockModel> => {
     }
     const texts = userTexts(body);
     const scenario = markerPattern.exec(texts.findLast((text) => markerPattern.test(text)) ?? "")?.groups?.scenario;
+    if (scenario === "signedout") {
+      sendJson(response, 401, { error: { message: "Missing bearer or basic authentication in header" } });
+      return;
+    }
     if (scenario === "usage") {
       sendJson(response, 429, {
         error: { type: "usage_limit_reached", message: "The usage limit has been reached", plan_type: "plus" },

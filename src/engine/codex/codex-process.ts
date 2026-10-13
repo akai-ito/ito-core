@@ -6,6 +6,8 @@ import { codexScript } from "#engine/codex/binary.ts";
 import type { InitializeParams } from "#engine/codex/bindings/InitializeParams.ts";
 import type { InitializeResponse } from "#engine/codex/bindings/InitializeResponse.ts";
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
+import type { GetAccountParams } from "#engine/codex/bindings/v2/GetAccountParams.ts";
+import type { GetAccountResponse } from "#engine/codex/bindings/v2/GetAccountResponse.ts";
 import type { ThreadReadParams } from "#engine/codex/bindings/v2/ThreadReadParams.ts";
 import type { ThreadReadResponse } from "#engine/codex/bindings/v2/ThreadReadResponse.ts";
 import type { ThreadResumeParams } from "#engine/codex/bindings/v2/ThreadResumeParams.ts";
@@ -25,6 +27,7 @@ import { packageVersion } from "#version.ts";
 type Call<Parameters, Response> = { readonly parameters: Parameters; readonly response: Response };
 
 type Calls = {
+  readonly "account/read": Call<GetAccountParams, GetAccountResponse>;
   readonly "thread/start": Call<ThreadStartParams, ThreadStartResponse>;
   readonly "thread/resume": Call<ThreadResumeParams, ThreadResumeResponse>;
   readonly "thread/read": Call<ThreadReadParams, ThreadReadResponse>;

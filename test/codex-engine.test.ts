@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ import { startMockModel, type MockModel } from "./support/mock-model.ts";
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-codex-"));
 const codexHome = path.join(home, "codex");
 const workspace = path.join(home, "workspace");
+const hasManagedConfig = existsSync("/etc/codex/managed_config.toml");
 
 const createMemorySettings = (): Settings => {
   const values = createCell<ReadonlyMap<string, string>>(new Map());
@@ -27,6 +28,10 @@ const createMemorySettings = (): Settings => {
 const settings = createMemorySettings();
 const logged = createCell<readonly string[]>([]);
 const progressCount = createCell(0);
+
+const collectLog = (message: string, error: unknown): void => {
+  logged.set([...logged.get(), `${message}: ${String(error)}`]);
+};
 const turnCount = createCell(0);
 const model = createCell<MockModel | undefined>(undefined);
 const engine = createCell<Engine | undefined>(undefined);
@@ -55,9 +60,7 @@ const openEngine = (baseUrl: string): Engine =>
     codexHome,
     workspace,
     settings,
-    log: (message, error) => {
-      logged.set([...logged.get(), `${message}: ${String(error)}`]);
-    },
+    log: collectLog,
     modelProvider: "mock",
     config: {
       model_providers: {
@@ -166,6 +169,15 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(events.at(-1)).toEqual({ type: "stopped" });
   });
 
+  it("stops a turn interrupted before Codex has started it", async () => {
+    turnCount.update((count) => count + 1);
+    const events = currentEngine().start(currentTurn(), [toInput("[[slow]] Never mind")]);
+    await currentEngine().interrupt(currentTurn());
+    const seen = createCell<readonly EngineEvent[]>([]);
+    for await (const event of events) seen.set([...seen.get(), event]);
+    expect(seen.get().at(-1)).toEqual({ type: "stopped" });
+  });
+
   it("reports a web search with its query", async () => {
     const events = await runTurn("[[search]] Find breakfast");
     expect(events).toContainEqual({
@@ -180,10 +192,35 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(events.at(-1)).toMatchObject({ type: "failed", code: "usage_limit" });
   });
 
+  it("maps a rejected sign-in to engine_signed_out", async () => {
+    const events = await runTurn("[[signedout]] Are you there?");
+    expect(events.at(-1)).toMatchObject({ type: "failed", code: "engine_signed_out" });
+  });
+
   it("maps a model failure to model_unavailable", async () => {
     const events = await runTurn("[[failure]] Once more");
     expect(events.at(-1)).toMatchObject({ type: "failed", code: "model_unavailable" });
   });
+
+  it.skipIf(hasManagedConfig)(
+    "fails a turn as signed out before calling the model when no one is signed in",
+    async () => {
+      const signedOutHome = path.join(home, "signed-out");
+      const signedOutEngine = createCodexEngine({
+        codexHome: signedOutHome,
+        workspace,
+        settings: createMemorySettings(),
+        log: collectLog,
+      });
+      const events = signedOutEngine.start(toTurnId("t_signed_out"), [toInput("Hello?")]);
+      const seen = createCell<readonly EngineEvent[]>([]);
+      for await (const event of events) seen.set([...seen.get(), event]);
+      await signedOutEngine.close();
+      expect(seen.get()).toEqual([
+        { type: "failed", code: "engine_signed_out", detail: "Codex has no account signed in." },
+      ]);
+    },
+  );
 
   it("resumes the same thread after a restart", async () => {
     const thread = settings.setting(threadSetting);
