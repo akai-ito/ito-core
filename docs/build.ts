@@ -92,8 +92,31 @@ const toHeading = ({ tokens, depth }: Tokens.Heading): string => {
 
 const markdown = new Marked({ gfm: true, renderer: { heading: toHeading } });
 
-const toHtml = (source: string, shouldDrop: (token: Token) => boolean = () => false): string =>
-  markdown.parser(markdown.lexer(source).filter((token) => !shouldDrop(token)));
+const toSiteLink = (prefix: string, href: string): string => {
+  if (/^https?:/u.test(href) || href.startsWith("#")) return href;
+  if (href === "transcripts") return `${prefix}transcripts/`;
+  if (href === "guarantees.md") return `${prefix}guarantees/`;
+  const transcript = /^transcripts\/(?<name>\d\d-[\da-z-]+)\.jsonl$/u.exec(href)?.groups?.name;
+  if (transcript) return `${prefix}transcripts/${transcript}/`;
+  const isSpecFile = href === "openapi.yaml" || href === "events.schema.json";
+  return isSpecFile
+    ? `${prefix}protocol/v0/${href}`
+    : `https://github.com/akai-ito/ito-core/blob/main/protocol/${href}`;
+};
+
+const withSiteLinks = (value: unknown, prefix: string): unknown => {
+  if (Array.isArray(value)) return value.map((item) => withSiteLinks(item, prefix));
+  if (!value || typeof value !== "object") return value;
+  const copy = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withSiteLinks(item, prefix)]));
+  return copy.type === "link" && typeof copy.href === "string"
+    ? { ...copy, href: toSiteLink(prefix, copy.href) }
+    : copy;
+};
+
+const toHtml = (source: string, prefix: string, shouldDrop: (token: Token) => boolean = () => false): string => {
+  const tokens = withSiteLinks(markdown.lexer(source), prefix) as readonly Token[];
+  return markdown.parser(tokens.filter((token) => !shouldDrop(token)));
+};
 
 const write = (file: string, content: string): void => {
   mkdirSync(path.dirname(file), { recursive: true });
@@ -260,6 +283,7 @@ write(path.join(site, "api", "index.html"), apiReferencePage);
 const readme = readFileSync(path.join(protocolDirectory, "README.md"), "utf8");
 const landing = toHtml(
   readme.slice(readme.indexOf("## How it fits together"), readme.indexOf("## Working on it")),
+  "",
   (token) => token.type === "code" && (token as Tokens.Code).lang === "mermaid",
 );
 write(
@@ -276,7 +300,7 @@ write(
   ),
 );
 
-const guarantees = toHtml(readFileSync(path.join(protocolDirectory, "guarantees.md"), "utf8"));
+const guarantees = toHtml(readFileSync(path.join(protocolDirectory, "guarantees.md"), "utf8"), "../");
 write(
   path.join(site, "guarantees", "index.html"),
   toPage("Guarantees · Ito client API", 1, `<article class="prose">${guarantees}</article>`),
