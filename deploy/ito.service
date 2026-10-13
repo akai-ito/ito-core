@@ -1,0 +1,12 @@
+[Unit]
+Description=Ito server
+Documentation=https://github.com/akai-ito/ito-core#run-the-server
+
+[Service]
+WorkingDirectory=%h/ito-core
+ExecStart=/usr/bin/env node bin/ito.ts serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
