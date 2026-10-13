@@ -143,6 +143,14 @@ export const createTurns = (
     });
   };
 
+  const endOpenMessage = (turn: TurnId): void => {
+    flush(turn);
+    const state = current(turn);
+    if (!state?.writing) return;
+    store.endMessage(state.writing.message, "completed", sentLength(state));
+    running.set({ ...state, writing: undefined });
+  };
+
   const afterTurn = (state: Running): void => {
     clearTimers(state);
     running.set(undefined);
@@ -224,10 +232,11 @@ export const createTurns = (
       }
       case "text.started": {
         if (isStopping) return;
+        endOpenMessage(turn);
         if (event.kind === "reply") store.setStatus(turn, writingStatus);
         const message = store.startMessage(turn, event.kind);
         running.set({
-          ...state,
+          ...(current(turn) ?? state),
           writing: { message, kind: event.kind },
           hasStartedReply: state.hasStartedReply || event.kind === "reply",
           buffered: "",
@@ -240,10 +249,7 @@ export const createTurns = (
         return;
       }
       case "text.ended": {
-        if (isStopping || !state.writing) return;
-        flush(turn);
-        store.endMessage(state.writing.message, "completed", sentLength(state));
-        change(turn, (latest) => ({ ...latest, writing: undefined }));
+        if (!isStopping) endOpenMessage(turn);
         return;
       }
       case "input.read": {
@@ -256,7 +262,8 @@ export const createTurns = (
         return;
       }
       case "failed": {
-        failTurn(turn, toTurnError(event.code, event.detail));
+        if (isStopping) finishStop(turn);
+        else failTurn(turn, toTurnError(event.code, event.detail));
         return;
       }
       case "stopped": {
@@ -271,6 +278,12 @@ export const createTurns = (
     }
   };
 
+  const endUnfinished = (turn: TurnId, detail: string): void => {
+    const state = current(turn);
+    if (state?.phase === "stopping") finishStop(turn);
+    else if (state) failTurn(turn, toTurnError("engine_failed", detail));
+  };
+
   const consume = async (turn: TurnId, events: AsyncIterable<EngineEvent>): Promise<void> => {
     try {
       for await (const event of events) {
@@ -278,9 +291,9 @@ export const createTurns = (
         resetWatchdog(turn);
         handle(turn, event);
       }
-      if (current(turn)) failTurn(turn, toTurnError("engine_failed", "The engine ended the turn without a result."));
+      endUnfinished(turn, "The engine ended the turn without a result.");
     } catch (error) {
-      if (current(turn)) failTurn(turn, toTurnError("engine_failed", describe(error)));
+      endUnfinished(turn, describe(error));
     }
   };
 
