@@ -25,6 +25,7 @@ export const initialTurnState: TurnState = {
 };
 
 const unavailableErrors = new Set([
+  "other",
   "serverOverloaded",
   "internalServerError",
   "flexUnavailable",
