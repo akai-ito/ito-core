@@ -26,6 +26,7 @@ const createMemorySettings = (): Settings => {
 
 const settings = createMemorySettings();
 const logged = createCell<readonly string[]>([]);
+const progressCount = createCell(0);
 const turnCount = createCell(0);
 const model = createCell<MockModel | undefined>(undefined);
 const engine = createCell<Engine | undefined>(undefined);
@@ -83,6 +84,10 @@ const runTurn = async (
   const seen = createCell<readonly EngineEvent[]>([]);
   const events = currentEngine().start(currentTurn(), [toInput(text)]);
   for await (const event of events) {
+    if (event.type === "progress") {
+      progressCount.update((count) => count + 1);
+      continue;
+    }
     seen.set([...seen.get(), event]);
     await onEvent?.(event);
   }
@@ -131,6 +136,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
       { type: "text.started", kind: "reply" },
     ]);
     expect(textOf(events)).toBe("Let me think about that.Here is the answer.");
+    expect(progressCount.get()).toBeGreaterThan(0);
     expect(settings.setting(threadSetting)).toBeDefined();
   });
 

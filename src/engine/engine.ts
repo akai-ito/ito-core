@@ -27,6 +27,7 @@ export type EngineEvent =
   | { readonly type: "text.ended" }
   | { readonly type: "input.read"; readonly messageId: MessageId }
   | { readonly type: "failed"; readonly code: EngineFailureCode; readonly detail: string }
+  | { readonly type: "progress" }
   | { readonly type: "stopped" }
   | { readonly type: "ended" };
 

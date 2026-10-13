@@ -36,11 +36,11 @@ const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "faile
 
 const toUserInput = ({ text }: Input): UserInput => ({ type: "text", text, text_elements: [] });
 
-const threadOf = (notification: ServerNotification): string | undefined => {
-  const parameters: unknown = notification.params;
-  return typeof parameters === "object" && parameters !== null && "threadId" in parameters
-    ? String(parameters.threadId)
-    : undefined;
+type Scope = Readonly<Partial<Record<"threadId" | "turnId", unknown>>>;
+
+const fieldOf = (notification: ServerNotification, field: keyof Scope): string | undefined => {
+  const value = (notification.params as Scope | null)?.[field];
+  return typeof value === "string" ? value : undefined;
 };
 
 export const createCodexEngine = ({
@@ -76,10 +76,11 @@ export const createCodexEngine = ({
 
   const onNotification = (notification: ServerNotification): void => {
     const current = active.get();
-    if (!current || threadOf(notification) !== openThreadId.get()) return;
+    if (!current || fieldOf(notification, "threadId") !== openThreadId.get()) return;
     const { state, events } = toEngineEvents(current.state, notification);
+    const isTurnScoped = fieldOf(notification, "turnId") !== undefined;
     active.set({ ...current, state });
-    emit(current.id, events);
+    emit(current.id, isTurnScoped && events.length === 0 ? [{ type: "progress" }] : events);
   };
 
   const openThread = async (process: CodexProcess): Promise<Result<string, string>> => {

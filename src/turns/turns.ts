@@ -266,6 +266,9 @@ export const createTurns = (
         else failTurn(turn, toTurnError(event.code, event.detail));
         return;
       }
+      case "progress": {
+        return;
+      }
       case "stopped": {
         finishStop(turn);
         return;
