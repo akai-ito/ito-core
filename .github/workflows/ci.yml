@@ -68,6 +68,22 @@ jobs:
       - name: Replay every golden transcript through the real server
         run: npx vitest run test/transcripts.test.ts
 
+  codex-bindings:
+    name: Codex bindings are current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - name: Generate the bindings from the pinned Codex again
+        run: npm run generate:codex
+      - name: Compare with the committed bindings
+        run: |
+          if [ -n "$(git status --porcelain -- src/engine/codex/bindings)" ]; then
+            git status --short -- src/engine/codex/bindings | head -20
+            echo "::error title=Codex bindings are stale::Run npm run generate:codex and commit src/engine/codex/bindings."
+            exit 1
+          fi
+
   types:
     name: TypeScript compiles
     runs-on: ubuntu-latest

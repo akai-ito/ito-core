@@ -1,0 +1,5 @@
+import { readFileSync } from "node:fs";
+
+export const packageVersion = (): string =>
+  (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { readonly version: string })
+    .version;

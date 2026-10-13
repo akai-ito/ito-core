@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { createCell } from "#cell.ts";
@@ -11,6 +11,7 @@ import { loadSchemas } from "#protocol/schemas.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Limits, type Log, type Turns } from "#turns/turns.ts";
+import { packageVersion } from "#version.ts";
 
 export type ServerOptions = {
   readonly dataDirectory: string;
@@ -38,10 +39,6 @@ const textRetentionMs = 30 * dayMs;
 const defaultHeartbeatMs = 15_000;
 
 export const databaseFile = (dataDirectory: string): string => path.join(dataDirectory, "ito.db");
-
-export const packageVersion = (): string =>
-  (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { readonly version: string })
-    .version;
 
 export const createServer = (options: ServerOptions): Server => {
   const clock = options.clock ?? systemClock;
