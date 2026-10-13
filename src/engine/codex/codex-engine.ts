@@ -100,7 +100,7 @@ export const createCodexEngine = ({
     if (stored) {
       const resumed = await process.call("thread/resume", { ...threadOptions, threadId: stored });
       if (resumed.ok) return ok(resumed.value.thread.id);
-      log("Codex couldn't resume the conversation's thread, so it starts a new one", resumed.failure.message);
+      log("Codex couldn't resume the conversation's session, so it starts a new one", resumed.failure.message);
     }
     const started = await process.call("thread/start", threadOptions);
     if (!started.ok) return fail(`Codex couldn't start a thread: ${started.failure.message}`);
