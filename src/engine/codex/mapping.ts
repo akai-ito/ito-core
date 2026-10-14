@@ -68,7 +68,7 @@ type StepKind = Extract<EngineEvent, { readonly type: "step.started" }>["kind"];
 
 const planKey = "plan";
 const outputLimit = 2048;
-const shellWrapper = /^(?:\/usr)?\/bin\/(?:ba|z)?sh -lc (["'])(?<inner>[\s\S]*)\1$/u;
+const shellWrapper = /^(?:\/usr)?\/bin\/(?:bash|zsh|sh) -lc (["'])(?<inner>[\s\S]*)\1$/u;
 
 const started = (key: string, kind: StepKind, facts: StepFacts): EngineEvent => ({
   type: "step.started",
