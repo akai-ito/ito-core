@@ -1,0 +1,13 @@
+name: Commit messages on edit
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  contents: read
+
+jobs:
+  commit-messages:
+    name: Commit messages
+    uses: akai-ito/.github/.github/workflows/commit-messages.yml@main
