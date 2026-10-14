@@ -97,6 +97,16 @@ const runTurn = async (
   return seen.get();
 };
 
+type ModelRequest = {
+  readonly tools?: readonly unknown[];
+  readonly input?: readonly { readonly type?: string; readonly tools?: readonly unknown[] }[];
+};
+
+const toolsIn = (body: unknown): readonly unknown[] => {
+  const { tools = [], input = [] } = body as ModelRequest;
+  return [...tools, ...input.filter((item) => item.type === "additional_tools").flatMap((item) => item.tools ?? [])];
+};
+
 const textOf = (events: readonly EngineEvent[]): string =>
   events.map((event) => (event.type === "text" ? event.text : "")).join("");
 
@@ -141,6 +151,11 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(textOf(events)).toBe("Let me think about that.Here is the answer.");
     expect(progressCount.get()).toBeGreaterThan(0);
     expect(settings.setting(threadSetting)).toBeDefined();
+  });
+
+  it.skipIf(hasManagedConfig)("offers the model live web search", () => {
+    const offered = (model.get()?.requests() ?? []).flatMap((body) => toolsIn(body));
+    expect(offered).toContainEqual(expect.objectContaining({ type: "web_search", external_web_access: true }));
   });
 
   it("takes a steer mid-message and reads it", async () => {

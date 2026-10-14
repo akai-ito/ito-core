@@ -3,7 +3,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
 
-export type MockModel = { readonly baseUrl: string; readonly close: () => Promise<void> };
+export type MockModel = {
+  readonly baseUrl: string;
+  readonly requests: () => readonly unknown[];
+  readonly close: () => Promise<void>;
+};
 
 type InputItem = {
   readonly type?: string;
@@ -50,6 +54,7 @@ const createSend =
 
 export const startMockModel = async (): Promise<MockModel> => {
   const counter = createCell(0);
+  const received = createCell<readonly unknown[]>([]);
   const nextId = (prefix: string): string => `${prefix}_${String(counter.update((count) => count + 1))}`;
 
   const reason = async (send: Send, text: string): Promise<void> => {
@@ -117,6 +122,7 @@ export const startMockModel = async (): Promise<MockModel> => {
 
   const respond = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const body = await readBody(request);
+    if (body !== undefined) received.set([...received.get(), body]);
     if (request.method === "GET" && request.url?.startsWith("/v1/models")) {
       sendJson(response, 200, { models: [] });
       return;
@@ -150,6 +156,7 @@ export const startMockModel = async (): Promise<MockModel> => {
 
   return {
     baseUrl: `http://127.0.0.1:${String(address.port)}/v1`,
+    requests: () => received.get(),
     close: async () => {
       server.closeAllConnections();
       server.close();
