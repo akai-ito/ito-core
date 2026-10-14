@@ -1,9 +1,11 @@
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
 import type { CodexErrorInfo } from "#engine/codex/bindings/v2/CodexErrorInfo.ts";
 import type { CommandAction } from "#engine/codex/bindings/v2/CommandAction.ts";
+import type { FileUpdateChange } from "#engine/codex/bindings/v2/FileUpdateChange.ts";
+import type { TurnPlanStep } from "#engine/codex/bindings/v2/TurnPlanStep.ts";
 import type { ThreadItem } from "#engine/codex/bindings/v2/ThreadItem.ts";
 import type { TurnError } from "#engine/codex/bindings/v2/TurnError.ts";
-import type { Activity, EngineEvent, EngineFailureCode } from "#engine/engine.ts";
+import type { EngineEvent, EngineFailureCode, StepFacts } from "#engine/engine.ts";
 import { toMessageId } from "#conversation/ids.ts";
 
 export type TurnState = {
@@ -11,7 +13,7 @@ export type TurnState = {
   readonly steered: ReadonlySet<string>;
   readonly isCompacting: boolean;
   readonly summary: string;
-  readonly heading: string | undefined;
+  readonly hasPlan: boolean;
 };
 
 export type Mapped = { readonly state: TurnState; readonly events: readonly EngineEvent[] };
@@ -21,7 +23,7 @@ export const initialTurnState: TurnState = {
   steered: new Set(),
   isCompacting: false,
   summary: "",
-  heading: undefined,
+  hasPlan: false,
 };
 
 const unavailableErrors = new Set([
@@ -62,46 +64,133 @@ export const toFailure = (error: TurnError | null): EngineEvent => ({
   detail: error ? [error.message, error.additionalDetails].filter(Boolean).join(" ") : "Codex failed the turn.",
 });
 
-const toCommandActivity = ([first]: readonly CommandAction[]): Activity => {
-  switch (first?.type) {
+type StepKind = Extract<EngineEvent, { readonly type: "step.started" }>["kind"];
+
+const planKey = "plan";
+const outputLimit = 2048;
+const shellWrapper = /^(?:\/usr)?\/bin\/(?:ba|z)?sh -lc (["'])(?<inner>[\s\S]*)\1$/u;
+
+const started = (key: string, kind: StepKind, facts: StepFacts): EngineEvent => ({
+  type: "step.started",
+  key,
+  kind,
+  facts,
+});
+
+const ended = (key: string, isCompleted: boolean, facts: StepFacts = {}): EngineEvent => ({
+  type: "step.ended",
+  key,
+  outcome: isCompleted ? "completed" : "failed",
+  facts,
+});
+
+const withoutEmpty = (facts: Readonly<Record<string, unknown>>): StepFacts =>
+  Object.fromEntries(
+    Object.entries(facts).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+  );
+
+const tailOf = (text: string): string => {
+  const tail = text.length > outputLimit ? text.slice(-outputLimit) : text;
+  return /^[\uDC00-\uDFFF]/u.test(tail) ? tail.slice(1) : tail;
+};
+
+const innerCommand = (command: string): string => {
+  const inner = shellWrapper.exec(command)?.groups?.inner;
+  return inner === undefined ? command : inner.replaceAll(String.raw`\"`, '"');
+};
+
+const toAction = (action: CommandAction): NonNullable<StepFacts["actions"]>[number] => {
+  switch (action.type) {
     case "read": {
-      return { kind: "command", action: "read" };
+      return { type: "read", path: action.path };
     }
     case "search": {
-      return { kind: "command", action: "search" };
+      return withoutEmpty({ type: "search", query: action.query, path: action.path }) as { readonly type: "search" };
     }
     case "listFiles": {
-      return { kind: "command", action: "list" };
+      return withoutEmpty({ type: "list", path: action.path }) as { readonly type: "list" };
     }
-    case "unknown":
-    case undefined: {
-      return { kind: "command", action: "run" };
+    case "unknown": {
+      return { type: "run" };
     }
   }
 };
 
-const toActivity = (item: ThreadItem): Activity | undefined => {
+const countLines = (diff: string, sign: "+" | "-"): number =>
+  diff.split("\n").filter((line) => line.startsWith(sign) && !line.startsWith(sign.repeat(3))).length;
+
+const toFile = ({ path, kind, diff }: FileUpdateChange): NonNullable<StepFacts["files"]>[number] => {
+  const counts = { lines_added: countLines(diff, "+"), lines_removed: countLines(diff, "-") };
+  if (kind.type === "add") return { path, change: "added", ...counts };
+  if (kind.type === "delete") return { path, change: "deleted", ...counts };
+  return kind.move_path
+    ? { path: kind.move_path, change: "moved", from: path, ...counts }
+    : { path, change: "modified", ...counts };
+};
+
+const toPlanItems = (plan: readonly TurnPlanStep[]): NonNullable<StepFacts["items"]> =>
+  plan.map(({ step, status }) => ({
+    text: step,
+    state: status === "completed" ? "done" : status === "inProgress" ? "in_progress" : "pending",
+  }));
+
+const searchFacts = (item: Extract<ThreadItem, { readonly type: "webSearch" }>): StepFacts => {
+  const { action } = item;
+  const queries = action?.type === "search" && action.queries && action.queries.length > 1 ? action.queries : undefined;
+  const url = action?.type === "openPage" || action?.type === "findInPage" ? action.url : undefined;
+  const pattern = action?.type === "findInPage" ? action.pattern : undefined;
+  return withoutEmpty({ query: item.query, queries, url, pattern });
+};
+
+const summaryFacts = (summary: string): StepFacts => {
+  const heading = /\*\*(?<heading>[^*]+)\*\*/u.exec(
+    summary.split("\n\n").findLast((part) => part.startsWith("**")) ?? "",
+  )?.groups?.heading;
+  return withoutEmpty({ summary, heading });
+};
+
+const closing = (state: TurnState): readonly EngineEvent[] => (state.openMessage ? [{ type: "text.ended" }] : []);
+
+const startStep = (item: ThreadItem): EngineEvent | undefined => {
   switch (item.type) {
     case "reasoning": {
-      return { kind: "thinking" };
+      return started(item.id, "thinking", {});
     }
     case "commandExecution": {
-      return toCommandActivity(item.commandActions);
+      return started(
+        item.id,
+        "command",
+        withoutEmpty({
+          command: innerCommand(item.command),
+          cwd: item.cwd,
+          actions: item.commandActions.map(toAction),
+        }),
+      );
     }
     case "fileChange": {
-      return { kind: "file_change" };
+      return started(item.id, "file_change", { files: item.changes.map(toFile) });
     }
     case "webSearch": {
-      return item.query ? { kind: "web_search", query: item.query } : { kind: "web_search" };
+      return started(item.id, "web_search", searchFacts(item));
     }
     case "mcpToolCall": {
-      return { kind: "tool", capability: item.server, operation: item.tool };
+      return started(item.id, "tool", { capability: item.server, operation: item.tool, arguments: item.arguments });
     }
     case "dynamicToolCall": {
-      return { kind: "tool", capability: item.namespace ?? "tool", operation: item.tool };
+      return started(item.id, "tool", {
+        capability: item.namespace ?? "tool",
+        operation: item.tool,
+        arguments: item.arguments,
+      });
+    }
+    case "sleep": {
+      return started(item.id, "wait", { wait_ms: item.durationMs });
+    }
+    case "imageView": {
+      return started(item.id, "image_view", { path: item.path });
     }
     case "contextCompaction": {
-      return { kind: "compacting" };
+      return started(item.id, "compacting", {});
     }
     case "userMessage":
     case "agentMessage":
@@ -110,8 +199,6 @@ const toActivity = (item: ThreadItem): Activity | undefined => {
     case "plan":
     case "collabAgentToolCall":
     case "subAgentActivity":
-    case "imageView":
-    case "sleep":
     case "imageGeneration":
     case "enteredReviewMode":
     case "exitedReviewMode": {
@@ -120,10 +207,52 @@ const toActivity = (item: ThreadItem): Activity | undefined => {
   }
 };
 
-const headingOf = (summary: string): string | undefined =>
-  /^\s*\*\*(?<heading>[^*]+)\*\*/u.exec(summary)?.groups?.heading;
-
-const closing = (state: TurnState): readonly EngineEvent[] => (state.openMessage ? [{ type: "text.ended" }] : []);
+const endStep = (item: ThreadItem): EngineEvent | undefined => {
+  switch (item.type) {
+    case "reasoning": {
+      return ended(item.id, true, summaryFacts(item.summary.join("\n\n")));
+    }
+    case "commandExecution": {
+      return ended(
+        item.id,
+        item.status === "completed" && (item.exitCode ?? 0) === 0,
+        withoutEmpty({
+          exit_code: item.exitCode,
+          output: item.aggregatedOutput ? tailOf(item.aggregatedOutput) : undefined,
+        }),
+      );
+    }
+    case "fileChange": {
+      return ended(item.id, item.status === "completed", { files: item.changes.map(toFile) });
+    }
+    case "webSearch": {
+      return ended(item.id, true, searchFacts(item));
+    }
+    case "mcpToolCall": {
+      return ended(item.id, item.status === "completed", withoutEmpty({ detail: item.error?.message }));
+    }
+    case "dynamicToolCall": {
+      return ended(item.id, item.success !== false);
+    }
+    case "sleep":
+    case "imageView":
+    case "contextCompaction": {
+      return ended(item.id, true);
+    }
+    case "userMessage":
+    case "agentMessage":
+    case "hookPrompt":
+    case "functionCallOutput":
+    case "plan":
+    case "collabAgentToolCall":
+    case "subAgentActivity":
+    case "imageGeneration":
+    case "enteredReviewMode":
+    case "exitedReviewMode": {
+      return undefined;
+    }
+  }
+};
 
 const startItem = (state: TurnState, item: ThreadItem): Mapped => {
   if (item.type === "userMessage") {
@@ -139,14 +268,14 @@ const startItem = (state: TurnState, item: ThreadItem): Mapped => {
       events: [...closing(state), { type: "text.started", kind: item.phase === "commentary" ? "note" : "reply" }],
     };
   }
-  const activity = toActivity(item);
+  const step = startStep(item);
   return {
     state: {
       ...state,
       isCompacting: state.isCompacting || item.type === "contextCompaction",
-      ...(item.type === "reasoning" && { summary: "", heading: undefined }),
+      ...(item.type === "reasoning" && { summary: "" }),
     },
-    events: activity ? [{ type: "activity", activity }] : [],
+    events: step ? [step] : [],
   };
 };
 
@@ -154,22 +283,23 @@ const completeItem = (state: TurnState, item: ThreadItem): Mapped => {
   if (item.type === "agentMessage" && item.id === state.openMessage) {
     return { state: { ...state, openMessage: undefined }, events: [{ type: "text.ended" }] };
   }
-  if (item.type === "contextCompaction") return { state: { ...state, isCompacting: false }, events: [] };
+  const step = endStep(item);
   return {
-    state,
-    events:
-      item.type === "webSearch" && item.query
-        ? [{ type: "activity", activity: { kind: "web_search", query: item.query } }]
-        : [],
+    state: item.type === "contextCompaction" ? { ...state, isCompacting: false } : state,
+    events: step ? [step] : [],
   };
 };
 
-const addSummary = (state: TurnState, delta: string): Mapped => {
-  const summary = state.summary + delta;
-  const heading = headingOf(summary);
-  return heading && heading !== state.heading
-    ? { state: { ...state, summary, heading }, events: [{ type: "activity", activity: { kind: "thinking", heading } }] }
-    : { state: { ...state, summary }, events: [] };
+const addSummary = (state: TurnState, key: string, text: string): Mapped => {
+  const summary = state.summary + text;
+  return { state: { ...state, summary }, events: [{ type: "step.updated", key, facts: summaryFacts(summary) }] };
+};
+
+const updatePlan = (state: TurnState, explanation: string | null, plan: readonly TurnPlanStep[]): Mapped => {
+  const facts = withoutEmpty({ explanation, items: toPlanItems(plan) });
+  return state.hasPlan
+    ? { state, events: [{ type: "step.updated", key: planKey, facts }] }
+    : { state: { ...state, hasPlan: true }, events: [started(planKey, "plan", facts)] };
 };
 
 const handledMethods = [
@@ -178,6 +308,8 @@ const handledMethods = [
   "item/agentMessage/delta",
   "item/reasoning/summaryPartAdded",
   "item/reasoning/summaryTextDelta",
+  "item/fileChange/patchUpdated",
+  "turn/plan/updated",
   "turn/completed",
 ] as const;
 
@@ -220,10 +352,17 @@ export const toEngineEvents = (state: TurnState, notification: ServerNotificatio
       return { state, events: itemId === state.openMessage ? [{ type: "text", text: delta }] : [] };
     }
     case "item/reasoning/summaryPartAdded": {
-      return { state: { ...state, summary: "" }, events: [] };
+      return { state: state.summary ? { ...state, summary: `${state.summary}\n\n` } : state, events: [] };
     }
     case "item/reasoning/summaryTextDelta": {
-      return addSummary(state, notification.params.delta);
+      return addSummary(state, notification.params.itemId, notification.params.delta);
+    }
+    case "item/fileChange/patchUpdated": {
+      const { itemId, changes } = notification.params;
+      return { state, events: [{ type: "step.updated", key: itemId, facts: { files: changes.map(toFile) } }] };
+    }
+    case "turn/plan/updated": {
+      return updatePlan(state, notification.params.explanation, notification.params.plan);
     }
     case "turn/completed": {
       return { state, events: toTurnEnd(notification.params.turn) };
