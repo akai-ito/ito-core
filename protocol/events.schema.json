@@ -198,7 +198,7 @@
           "$ref": "#/$defs/StepKind"
         },
         "title": {
-          "description": "Plain words, such as \"Reading notes.md\": present tense while the step runs, past tense once it has ended (\"Read notes.md\").",
+          "description": "Plain words, such as \"Reading notes.md\": present tense while the step runs, past tense once it has completed (\"Read notes.md\"). A step that didn't complete keeps its present-tense title.",
           "type": "string",
           "minLength": 1
         },
@@ -215,7 +215,7 @@
         },
         "outcome": {
           "$ref": "#/$defs/Outcome",
-          "description": "How the step ended. Absent while it runs."
+          "description": "How the step ended. Absent while it runs. `completed`: it ran, whatever its result; a command that exits non-zero, such as a search that finds nothing, is completed, with its `exit_code`. `failed`: it couldn't run, or a tool reported an error. `stopped` or `interrupted`: its turn was stopped, or cut off by a restart."
         },
         "duration_ms": {
           "description": "How long the step took, once it has ended.",
@@ -293,7 +293,7 @@
           }
         },
         "exit_code": {
-          "description": "`command`: its exit code, once it has ended.",
+          "description": "`command`: its exit code, once it has ended. Non-zero doesn't make the step failed.",
           "type": "integer"
         },
         "output": {

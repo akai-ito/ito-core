@@ -90,7 +90,7 @@ describe("restarting after a turn was cut off before it wrote a reply", () => {
           type: "step.ended",
           step: {
             id: "s_cut_off",
-            title: "Thought it through",
+            title: "Thinking it through",
             outcome: "interrupted",
             ended_at: at,
             duration_ms: 4000,

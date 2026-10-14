@@ -58,8 +58,14 @@ const searching = (query: string) => ({
 const tidying = { title: "Tidying up its notes", endedTitle: "Tidied up its notes" } as const;
 
 const heading = (transcript: Transcript, title: string, summary: string): void => {
-  transcript.updateStep({ heading: title, summary: `**${title}**\n\n${summary}` }, title);
+  transcript.updateStep({ heading: title, summary: `**${title}**\n\n${summary}` }, { detail: title });
 };
+
+const packingPlan = (states: readonly string[]): readonly Readonly<Record<string, string>>[] =>
+  ["Read the packing list", "Check Saturday's forecast", "Update the list"].map((text, index) => ({
+    text,
+    state: states[index] ?? "pending",
+  }));
 
 const writeWhole = (transcript: Transcript, text: string, pieces?: number): void => {
   transcript.status("writing", "Writing");
@@ -277,8 +283,9 @@ const scenarios: readonly (() => Transcript)[] = [
         "Stop names the turn and the cut point on screen; the stopped message keeps exactly that, " +
         "a message sent while stopping starts the next turn, and a Stop that arrives after a reply " +
         "finished changes nothing. When the screen lags, Stop cuts the message still being written " +
-        "and a reply that already finished keeps all its text.",
-      guarantees: ["G3", "G7", "G9"],
+        "and a reply that already finished keeps all its text. A Stop while a step runs ends the " +
+        "step as stopped, keeping its present-tense title.",
+      guarantees: ["G3", "G7", "G9", "G14"],
     });
     yesterday(transcript);
     transcript.begin(todayAt, { cursor: "latest" });
@@ -334,6 +341,16 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.status("stopping", "Stopping");
     transcript.wait(150);
     transcript.endMessage("stopped", { length: 0 });
+    transcript.endTurn("stopped");
+
+    transcript.wait(20_000);
+    const cafe = sendAndStart(transcript, "Find a café for after the run.");
+    transcript.wait(300);
+    transcript.step("web_search", searching("cafés near Battersea Park open at 9"));
+    transcript.wait(1200);
+    transcript.stop(cafe.turn);
+    transcript.status("stopping", "Stopping");
+    transcript.wait(150);
     transcript.endTurn("stopped");
     return transcript;
   },
@@ -680,6 +697,87 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.reply();
     transcript.endMessage("failed", { error: unavailable });
     transcript.endTurn("failed", unavailable);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "16-working-through-a-task",
+      scenario: 16,
+      title: "Working through a task",
+      summary:
+        "The agent works through a task step by step: a plan it updates as it goes, a command " +
+        "with two actions, a search that finds nothing (exit code 1, still completed), a tool, a " +
+        "wait and a file change, each with a plain title and its specifics; the plan ends with the turn.",
+      guarantees: ["G10", "G14"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Tidy up my packing list for Saturday, and check the weather.");
+    transcript.wait(300);
+    transcript.step("thinking", thinking);
+    transcript.wait(900);
+    const plan = transcript.step("plan", {
+      title: "Planning 3 steps",
+      endedTitle: "Planned 3 steps",
+      fields: { items: packingPlan(["in_progress"]) },
+    });
+    transcript.wait(200);
+    transcript.step("command", {
+      title: "Reading packing.md",
+      endedTitle: "Read packing.md",
+      fields: {
+        command: 'cat packing.md && grep -n "jacket" packing.md',
+        cwd: "/home/you/.ito/workspace",
+        actions: [
+          { type: "read", path: "packing.md" },
+          { type: "search", query: "jacket", path: "packing.md" },
+        ],
+      },
+    });
+    transcript.wait(400);
+    transcript.endStep({
+      fields: { exit_code: 0, output: "- Running shoes\n- Water bottle\n- Light jacket\n3:- Light jacket\n" },
+    });
+    transcript.updateStep({ items: packingPlan(["done", "in_progress"]) }, { id: plan });
+    transcript.step("command", {
+      title: "Searching for “umbrella”",
+      endedTitle: "Searched for “umbrella”",
+      fields: {
+        command: 'grep -rn "umbrella" notes/',
+        cwd: "/home/you/.ito/workspace",
+        actions: [{ type: "search", query: "umbrella", path: "notes/" }],
+      },
+    });
+    transcript.wait(300);
+    transcript.endStep({ fields: { exit_code: 1 } });
+    transcript.step("tool", {
+      title: "Using weather",
+      endedTitle: "Used weather",
+      fields: { capability: "weather", operation: "forecast", arguments: { place: "London", day: "Saturday" } },
+    });
+    transcript.wait(1300);
+    transcript.endStep();
+    transcript.step("wait", { title: "Waiting 2 seconds", endedTitle: "Waited 2 seconds", fields: { wait_ms: 2000 } });
+    transcript.wait(2000);
+    transcript.endStep();
+    transcript.updateStep({ items: packingPlan(["done", "done", "in_progress"]) }, { id: plan });
+    transcript.step("file_change", {
+      title: "Editing packing.md",
+      endedTitle: "Edited packing.md",
+      fields: { files: [{ path: "packing.md", change: "modified", lines_added: 2, lines_removed: 1 }] },
+    });
+    transcript.wait(500);
+    transcript.endStep();
+    transcript.updateStep({ items: packingPlan(["done", "done", "done"]) }, { id: plan });
+    transcript.wait(300);
+    writeWhole(
+      transcript,
+      "Done. Saturday looks wet until noon, so I swapped the light jacket for a rain jacket and added an umbrella to your list.",
+    );
+    transcript.endTurn("completed");
     return transcript;
   },
 ];
