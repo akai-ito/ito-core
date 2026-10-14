@@ -40,4 +40,13 @@ export const migrations: readonly string[] = [
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );`,
+  `CREATE TABLE steps (
+    id TEXT PRIMARY KEY,
+    turn TEXT NOT NULL,
+    position INTEGER NOT NULL UNIQUE,
+    body TEXT NOT NULL,
+    outcome TEXT
+  );
+  UPDATE events SET body = json_set(body, '$.message.position', seq)
+    WHERE type IN ('message.accepted', 'message.started');`,
 ];

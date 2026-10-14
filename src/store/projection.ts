@@ -68,6 +68,21 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       database.prepare("INSERT OR IGNORE INTO pending (kind, message) VALUES ('message', ?)").run(event.message);
       return;
     }
+    case "step.started": {
+      const { step } = event;
+      database
+        .prepare("INSERT INTO steps (id, turn, position, body, outcome) VALUES (?, ?, ?, ?, ?)")
+        .run(step.id, step.turn, step.position, toJson(step), step.outcome ?? null);
+      return;
+    }
+    case "step.updated":
+    case "step.ended": {
+      const { step } = event;
+      database
+        .prepare("UPDATE steps SET body = ?, outcome = ? WHERE id = ?")
+        .run(toJson(step), step.outcome ?? null, step.id);
+      return;
+    }
     case "turn.ended": {
       database
         .prepare("UPDATE turns SET outcome = ?, error = ?, status = NULL WHERE id = ?")
