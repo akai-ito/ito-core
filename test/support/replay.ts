@@ -31,7 +31,7 @@ const fail = (message: string): never => {
 const isWorldStep = (step: Step): step is WorldStep => "world" in step;
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emt]_\d{4}_\d{5}$/u.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emst]_\d{4}_\d{5}$/u.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap((item) => idsIn(item));
   return value && typeof value === "object" ? Object.values(value).flatMap((item) => idsIn(item)) : [];
 };

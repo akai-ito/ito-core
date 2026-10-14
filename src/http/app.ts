@@ -101,7 +101,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       const { before, limit } = request.query;
       const page = store.listMessages(toMessageId(before), limit);
       return page.ok
-        ? { messages: page.value.messages, has_more: page.value.hasMore }
+        ? { messages: page.value.messages, steps: page.value.steps, has_more: page.value.hasMore }
         : reply
             .code(404)
             .send(toErrorResult("not_found", `No message ${before}.`, "That message isn't on the server."));

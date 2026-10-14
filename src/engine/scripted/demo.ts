@@ -38,11 +38,24 @@ const ending = (events: readonly TimedEvent[], event: EngineEvent): TimedEvent =
   event,
 });
 
-const opening = (input: string, now: number): readonly TimedEvent[] => [
-  { at: now + 200, event: { type: "activity", activity: { kind: "thinking", heading: "Reading your message" } } },
-  ...writeMessage("note", "Let me put that together.", now + 700),
-  { at: now + 1500, event: { type: "activity", activity: { kind: "web_search", query: input.slice(0, 60) } } },
-];
+const opening = (input: string, now: number): readonly TimedEvent[] => {
+  const query = input.slice(0, 60);
+  return [
+    { at: now + 200, event: { type: "step.started", key: "thinking", kind: "thinking", facts: {} } },
+    {
+      at: now + 450,
+      event: {
+        type: "step.updated",
+        key: "thinking",
+        facts: { heading: "Reading your message", summary: "**Reading your message**\n\nWorking out what you need." },
+      },
+    },
+    { at: now + 650, event: { type: "step.ended", key: "thinking", outcome: "completed", facts: {} } },
+    ...writeMessage("note", "Let me put that together.", now + 700),
+    { at: now + 1500, event: { type: "step.started", key: "search", kind: "web_search", facts: { query } } },
+    { at: now + 2300, event: { type: "step.ended", key: "search", outcome: "completed", facts: { query } } },
+  ];
+};
 
 const scriptFor = (inputs: readonly Input[], now: number): readonly TimedEvent[] => {
   const text = inputs

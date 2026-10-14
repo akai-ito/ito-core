@@ -27,7 +27,7 @@ sequenceDiagram
   Server-->>App: every later event, then live (or a snapshot)
   App->>Server: POST /v0/messages {id, text}
   Server-->>App: 201 once the message is on disk
-  Server-->>App: message.accepted, turn.started, turn.status, message.delta …
+  Server-->>App: message.accepted, turn.started, step.started, turn.status, message.delta …
   App->>Server: POST /v0/turns/{turn}/stop {cut}
   Server-->>App: message.ended (stopped), turn.ended (stopped)
 ```
@@ -55,6 +55,9 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `message.read` | The agent took it into the running turn |
 | `turn.started` | The agent starts working; Stop works from here |
 | `turn.status` | What the agent is doing now, in plain words |
+| `step.started` | The agent starts a step (thinking, a search, a command, an edit…), with its title |
+| `step.updated` | More is known about a running step |
+| `step.ended` | A step is over, with its outcome, duration and past-tense title |
 | `message.started` | The agent begins a reply, or a note while it works |
 | `message.delta` | Text appended to a message, at an offset |
 | `message.ended` | A message is finished: completed, stopped, interrupted or failed |

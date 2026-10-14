@@ -1,10 +1,20 @@
 import { randomBytes } from "node:crypto";
-import { toEventId, toMessageId, toTurnId, type EventId, type MessageId, type TurnId } from "#conversation/ids.ts";
+import {
+  toEventId,
+  toMessageId,
+  toStepId,
+  toTurnId,
+  type EventId,
+  type MessageId,
+  type StepId,
+  type TurnId,
+} from "#conversation/ids.ts";
 
 export type Identifiers = {
   readonly event: () => EventId;
   readonly message: () => MessageId;
   readonly turn: () => TurnId;
+  readonly step: () => StepId;
 };
 
 const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -17,4 +27,5 @@ export const randomIdentifiers: Identifiers = {
   event: () => toEventId(`e_${randomText()}`),
   message: () => toMessageId(`m_${randomText()}`),
   turn: () => toTurnId(`t_${randomText()}`),
+  step: () => toStepId(`s_${randomText()}`),
 };

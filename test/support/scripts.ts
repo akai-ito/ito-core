@@ -1,36 +1,10 @@
 import { createCell } from "#cell.ts";
 import { toMessageId } from "#conversation/ids.ts";
-import { toStatus } from "#conversation/status.ts";
-import type { Activity, EngineFailureCode } from "#engine/engine.ts";
+import { factsOf } from "#conversation/steps.ts";
+import type { EngineFailureCode } from "#engine/engine.ts";
 import type { ScriptSource, TimedEvent, TurnScript } from "#engine/scripted/script-engine.ts";
-import type { TurnStatus } from "#protocol/types.ts";
 import type { LoggedEvent } from "#store/projection.ts";
 import type { Transcript } from "./transcript-file.ts";
-
-const activityCandidates: readonly Activity[] = [
-  { kind: "thinking" },
-  { kind: "web_search" },
-  { kind: "command", action: "read" },
-  { kind: "command", action: "search" },
-  { kind: "command", action: "list" },
-  { kind: "command", action: "run" },
-  { kind: "file_change" },
-  { kind: "compacting" },
-];
-
-const withDetail = (activity: Activity, detail: string | undefined): Activity => {
-  if (!detail) return activity;
-  if (activity.kind === "thinking") return { ...activity, heading: detail };
-  return activity.kind === "web_search" ? { ...activity, query: detail } : activity;
-};
-
-const toActivity = (status: TurnStatus): Activity | undefined =>
-  activityCandidates
-    .map((candidate) => withDetail(candidate, status.detail))
-    .find((candidate) => {
-      const derived = toStatus(candidate);
-      return derived.kind === status.kind && derived.label === status.label && derived.detail === status.detail;
-    });
 
 const loggedEvents = (transcript: Transcript): readonly LoggedEvent[] =>
   transcript.steps
@@ -51,6 +25,11 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "turn.ended": {
       return event.turn === turn;
     }
+    case "step.started":
+    case "step.updated":
+    case "step.ended": {
+      return event.step.turn === turn;
+    }
     case "message.accepted":
     case "message.queued":
     case "turn.started": {
@@ -63,8 +42,19 @@ const toTimed = (event: LoggedEvent): TimedEvent | undefined => {
   const at = Date.parse(event.at);
   switch (event.type) {
     case "turn.status": {
-      const activity = toActivity(event);
-      return activity && { at, event: { type: "activity", activity } };
+      return;
+    }
+    case "step.started": {
+      const { step } = event;
+      return { at, event: { type: "step.started", key: step.id, kind: step.kind, facts: factsOf(step) } };
+    }
+    case "step.updated": {
+      return { at, event: { type: "step.updated", key: event.step.id, facts: factsOf(event.step) } };
+    }
+    case "step.ended": {
+      const { step } = event;
+      const outcome = step.outcome === "failed" ? "failed" : "completed";
+      return { at, event: { type: "step.ended", key: step.id, outcome, facts: factsOf(step) } };
     }
     case "message.started": {
       return { at, event: { type: "text.started", kind: event.message.kind ?? "reply" } };
@@ -115,13 +105,25 @@ const isAboutMessage = (event: LoggedEvent, messages: ReadonlySet<string>): bool
   (event.type === "message.started" && messages.has(event.message.id)) ||
   (event.type === "message.ended" && messages.has(event.message));
 
+const isEndedByTheLoop = (event: LoggedEvent, turnEnd: LoggedEvent | undefined): boolean => {
+  if (event.type !== "step.ended") return false;
+  const { outcome, ended_at: endedAt } = event.step;
+  const isTurnsOwnEnd =
+    turnEnd?.type === "turn.ended" &&
+    turnEnd.outcome !== "completed" &&
+    outcome === turnEnd.outcome &&
+    endedAt === turnEnd.at;
+  return outcome === "stopped" || outcome === "interrupted" || isTurnsOwnEnd;
+};
+
 const toScript = (events: readonly LoggedEvent[]): TurnScript => {
   const reads = new Set(events.filter((event) => event.type === "message.read").map((event) => event.message));
   const stopped = events.find((event) => event.type === "turn.ended" && event.outcome === "stopped");
+  const turnEnd = events.find((event) => event.type === "turn.ended");
   const standIns = standInsFor(events);
   return {
     events: events
-      .filter((event) => !isAboutMessage(event, standIns))
+      .filter((event) => !isAboutMessage(event, standIns) && !isEndedByTheLoop(event, turnEnd))
       .map((event) => toTimed(event))
       .filter((timed) => timed !== undefined),
     steer: (input) => ({ outcome: reads.has(input.messageId) ? "taken" : "refused" }),

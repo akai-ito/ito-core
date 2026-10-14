@@ -1,0 +1,71 @@
+import { describe, expect, it } from "vitest";
+import { toStepTitle } from "#conversation/steps.ts";
+import type { StepFacts } from "#engine/engine.ts";
+import type { StepKind } from "#protocol/types.ts";
+
+const both = (kind: StepKind, facts: StepFacts): readonly string[] => [
+  toStepTitle(kind, facts, "present"),
+  toStepTitle(kind, facts, "past"),
+];
+
+describe("step titles", () => {
+  it("name common commands in everyday words", () => {
+    expect(both("command", { command: "sleep 10" })).toEqual(["Waiting 10 seconds", "Waited 10 seconds"]);
+    expect(both("command", { command: "curl -s https://example.com" })).toEqual([
+      "Fetching a web page",
+      "Fetched a web page",
+    ]);
+    expect(both("command", { command: "git log --oneline -5" })).toEqual([
+      "Looking at the project's history",
+      "Looked at the project's history",
+    ]);
+    expect(both("command", { command: "CI=1 npm install" })).toEqual(["Installing packages", "Installed packages"]);
+    expect(both("command", { command: "./do-something.sh" })).toEqual(["Running a command", "Ran a command"]);
+  });
+
+  it("take what a command read, searched or listed from its actions", () => {
+    expect(both("command", { actions: [{ type: "read", path: "notes/saturday.md" }] })).toEqual([
+      "Reading saturday.md",
+      "Read saturday.md",
+    ]);
+    const reads = [
+      { type: "read", path: "a.md" },
+      { type: "read", path: "b.md" },
+      { type: "read", path: "c.md" },
+    ] as const;
+    expect(both("command", { actions: [...reads] })).toEqual(["Reading 3 files", "Read 3 files"]);
+    expect(both("command", { actions: [{ type: "search", query: "cafe" }] })).toEqual([
+      "Searching for “cafe”",
+      "Searched for “cafe”",
+    ]);
+    expect(both("command", { actions: [{ type: "list", path: "notes/" }] })).toEqual([
+      "Looking through notes",
+      "Looked through notes",
+    ]);
+  });
+
+  it("describe file changes, searches, waits and plans", () => {
+    expect(both("file_change", { files: [{ path: "src/plan.md", change: "added" }] })).toEqual([
+      "Creating plan.md",
+      "Created plan.md",
+    ]);
+    const files = [
+      { path: "a.md", change: "modified" },
+      { path: "b.md", change: "deleted" },
+    ] as const;
+    expect(both("file_change", { files: [...files] })).toEqual(["Editing 2 files", "Edited 2 files"]);
+    expect(both("web_search", { url: "https://www.bbc.co.uk/news", pattern: "opening hours" })).toEqual([
+      "Looking for “opening hours” on bbc.co.uk",
+      "Looked for “opening hours” on bbc.co.uk",
+    ]);
+    expect(both("web_search", { url: "https://example.com/page" })).toEqual([
+      "Opening example.com",
+      "Opened example.com",
+    ]);
+    expect(both("wait", { wait_ms: 1000 })).toEqual(["Waiting 1 second", "Waited 1 second"]);
+    expect(both("plan", { items: [{ text: "Book", state: "pending" }] })).toEqual([
+      "Planning 1 step",
+      "Planned 1 step",
+    ]);
+  });
+});

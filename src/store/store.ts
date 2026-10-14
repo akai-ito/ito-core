@@ -3,8 +3,18 @@ import { createCell } from "#cell.ts";
 import { toTimestamp, type Clock } from "#clock.ts";
 import { toMessageId, toTurnId, type EventId, type MessageId, type TurnId } from "#conversation/ids.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Error as ErrorBody, LiveTurn, Message, Outcome, Snapshot, Status } from "#protocol/types.ts";
+import type {
+  Error as ErrorBody,
+  LiveTurn,
+  Message,
+  Outcome,
+  Snapshot,
+  Status,
+  Step,
+  StepKind,
+} from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
+import type { StepFacts } from "#engine/engine.ts";
 import { project, type LoggedEvent } from "#store/projection.ts";
 
 export type LogEntry = { readonly seq: number; readonly event: LoggedEvent };
@@ -32,7 +42,11 @@ export type OpenMessage = { readonly id: MessageId; readonly text: string };
 
 export type Accepted = { readonly message: Message; readonly isNew: boolean };
 
-export type Page = { readonly messages: readonly Message[]; readonly hasMore: boolean };
+export type Page = {
+  readonly messages: readonly Message[];
+  readonly steps: readonly Step[];
+  readonly hasMore: boolean;
+};
 
 export type Settings = {
   readonly setting: (key: string) => string | undefined;
@@ -57,6 +71,10 @@ export type Store = Settings & {
   readonly markRead: (turn: TurnId, message: MessageId) => void;
   readonly queueMessage: (turn: TurnId, message: MessageId) => void;
   readonly startMessage: (turn: TurnId, kind: MessageKind) => MessageId;
+  readonly startStep: (turn: TurnId, kind: StepKind, title: string, facts: StepFacts) => Step;
+  readonly updateStep: (step: Step) => void;
+  readonly endStep: (step: Step) => void;
+  readonly openSteps: (turn: TurnId) => readonly Step[];
   readonly appendText: (message: MessageId, text: string) => void;
   readonly endMessage: (message: MessageId, outcome: Outcome, length: number, error?: ErrorBody) => void;
   readonly endTurn: (turn: TurnId, outcome: Outcome, error?: ErrorBody) => void;
@@ -68,6 +86,7 @@ export type Store = Settings & {
 
 type MessageRow = {
   readonly id: string;
+  readonly position: number;
   readonly role: "user" | "agent";
   readonly kind: MessageKind | null;
   readonly turn: string | null;
@@ -97,6 +116,8 @@ type PendingRow = {
 
 type EventRow = { readonly seq: number; readonly id: string; readonly body: string };
 
+type StepRow = { readonly body: string };
+
 const snapshotSize = 50;
 const compactedSetting = "compacted_through_seq";
 
@@ -104,7 +125,7 @@ const parseIds = (json: string): readonly string[] => JSON.parse(json) as readon
 
 const toMessage = (row: MessageRow): Message =>
   row.role === "user"
-    ? { id: row.id, role: "user", text: row.text, at: row.at }
+    ? { id: row.id, role: "user", text: row.text, at: row.at, position: row.position }
     : {
         id: row.id,
         role: "agent",
@@ -112,6 +133,7 @@ const toMessage = (row: MessageRow): Message =>
         turn: row.turn ?? "",
         text: row.text,
         at: row.at,
+        position: row.position,
         ...(row.ended_at && { ended_at: row.ended_at }),
         ...(row.outcome && { outcome: row.outcome }),
         ...(row.error && { error: JSON.parse(row.error) as ErrorBody }),
@@ -139,6 +161,8 @@ const toPendingWork = (row: PendingRow): PendingWork =>
 
 const toLogEntry = (row: EventRow): LogEntry => ({ seq: row.seq, event: JSON.parse(row.body) as LoggedEvent });
 
+const toStep = (row: StepRow): Step => JSON.parse(row.body) as Step;
+
 export const createStore = (database: DatabaseSync, clock: Clock, identifiers: Identifiers): Store => {
   const listeners = createCell<ReadonlySet<Listener>>(new Set());
   const unannounced = createCell<readonly LogEntry[]>([]);
@@ -164,20 +188,32 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     }
   };
 
+  const nextSeq = (): number =>
+    (database.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM events").get() as { readonly seq: number }).seq;
+
   const append = (event: LoggedEvent): void => {
-    const { lastInsertRowid } = database
-      .prepare("INSERT INTO events (id, type, at, body) VALUES (?, ?, ?, ?)")
-      .run(event.id, event.type, event.at, JSON.stringify(event));
-    const seq = Number(lastInsertRowid);
+    const seq = nextSeq();
+    database
+      .prepare("INSERT INTO events (seq, id, type, at, body) VALUES (?, ?, ?, ?, ?)")
+      .run(seq, event.id, event.type, event.at, JSON.stringify(event));
     project(database, seq, event);
     unannounced.update((entries) => [...entries, { seq, event }]);
   };
 
-  const record = (build: (stamp: { readonly id: string; readonly at: string }) => LoggedEvent): void => {
+  const record = (
+    build: (stamp: { readonly id: string; readonly at: string }, position: number) => LoggedEvent,
+  ): void => {
     transaction(() => {
-      append(build({ id: identifiers.event(), at: now() }));
+      append(build({ id: identifiers.event(), at: now() }, nextSeq()));
     });
   };
+
+  const stepsFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Step[] =>
+    (
+      database
+        .prepare("SELECT body FROM steps WHERE position >= ? AND position < ? ORDER BY position")
+        .all(from, until) as unknown as readonly StepRow[]
+    ).map((row) => toStep(row));
 
   const messageRow = (id: string): MessageRow | undefined =>
     database.prepare("SELECT * FROM messages WHERE id = ?").get(id) as MessageRow | undefined;
@@ -228,6 +264,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       const next = database
         .prepare("SELECT message FROM pending WHERE kind = 'message' ORDER BY position")
         .all() as unknown as readonly { readonly message: string }[];
+      const window = rows.slice(0, snapshotSize).toReversed();
       return {
         seq: latest?.seq ?? 0,
         event: {
@@ -235,11 +272,9 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           type: "snapshot",
           at: now(),
           reason,
-          messages: rows
-            .slice(0, snapshotSize)
-            .toReversed()
-            .map((row) => toMessage(row)),
+          messages: window.map((row) => toMessage(row)),
           has_more: rows.length > snapshotSize,
+          steps: window[0] ? [...stepsFrom(window[0].position)] : [],
           turn: turn ? toLiveTurn(turn) : null,
           next: next.map((row) => row.message),
         },
@@ -252,7 +287,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         if (existing)
           return existing.text === text ? ok({ message: toMessage(existing), isNew: false }) : fail("id_conflict");
         const at = now();
-        const message: Message = { id, role: "user", text, at };
+        const message: Message = { id, role: "user", text, at, position: nextSeq() };
         append({ id: identifiers.event(), type: "message.accepted", at, message });
         return ok({ message, isNew: true });
       }),
@@ -264,11 +299,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       const rows = database
         .prepare("SELECT * FROM messages WHERE position < ? ORDER BY position DESC LIMIT ?")
         .all(anchor.position, limit + 1) as unknown as readonly MessageRow[];
+      const page = rows.slice(0, limit).toReversed();
       return ok({
-        messages: rows
-          .slice(0, limit)
-          .toReversed()
-          .map((row) => toMessage(row)),
+        messages: page.map((row) => toMessage(row)),
+        steps: page[0] ? stepsFrom(page[0].position, anchor.position) : [],
         hasMore: rows.length > limit,
       });
     },
@@ -339,13 +373,41 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     startMessage: (turn, kind) => {
       const id = identifiers.message();
-      record((stamp) => ({
+      record((stamp, position) => ({
         ...stamp,
         type: "message.started",
-        message: { id, role: "agent", kind, turn, text: "", at: stamp.at },
+        message: { id, role: "agent", kind, turn, text: "", at: stamp.at, position },
       }));
       return id;
     },
+
+    startStep: (turn, kind, title, facts) => {
+      const id = identifiers.step();
+      const started = createCell<Step | undefined>(undefined);
+      record((stamp, position) => {
+        const step: Step = { ...facts, id, turn, kind, title, at: stamp.at, position };
+        started.set(step);
+        return { ...stamp, type: "step.started", step };
+      });
+      const step = started.get();
+      if (!step) throw new Error(`step ${id} wasn't recorded`);
+      return step;
+    },
+
+    updateStep: (step) => {
+      record((stamp) => ({ ...stamp, type: "step.updated", step }));
+    },
+
+    endStep: (step) => {
+      record((stamp) => ({ ...stamp, type: "step.ended", step }));
+    },
+
+    openSteps: (turn) =>
+      (
+        database
+          .prepare("SELECT body FROM steps WHERE turn = ? AND outcome IS NULL ORDER BY position")
+          .all(turn) as unknown as readonly StepRow[]
+      ).map((row) => toStep(row)),
 
     appendText: (message, text) => {
       const row = messageRow(message);

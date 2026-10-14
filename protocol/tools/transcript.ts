@@ -8,6 +8,8 @@ import type {
   Outcome,
   Status,
   StatusKind,
+  Step,
+  StepKind,
 } from "#protocol/types.ts";
 import type { Event, Line } from "./spec.ts";
 
@@ -39,6 +41,17 @@ type Cut = { readonly message: string; readonly offset: number };
 
 type Exchange = { readonly user: string; readonly agent: string; readonly turn: string };
 
+type StepOptions = {
+  readonly title: string;
+  readonly endedTitle: string;
+  readonly fields?: Fields;
+  readonly detail?: string;
+};
+
+type StepEnd = { readonly outcome?: Outcome; readonly fields?: Fields };
+
+type RunningStep = { readonly step: Step; readonly endedTitle: string };
+
 export type Transcript = {
   readonly header: Header;
   readonly lines: () => readonly Line[];
@@ -57,6 +70,9 @@ export type Transcript = {
   readonly send: (text: string, options?: SendOptions) => string;
   readonly startTurn: (inputs: readonly string[], options?: { readonly retryOf?: string }) => string;
   readonly status: (kind: StatusKind, label: string, detail?: string) => void;
+  readonly step: (kind: StepKind, options: StepOptions) => string;
+  readonly updateStep: (fields: Fields, detail?: string) => void;
+  readonly endStep: (end?: StepEnd) => void;
   readonly read: (message: string) => void;
   readonly queue: (message: string) => void;
   readonly reply: (kind?: MessageKind) => string;
@@ -71,7 +87,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t";
+type IdPrefix = "e" | "m" | "t" | "s";
 
 type Counters = Readonly<Record<IdPrefix, number>>;
 
@@ -79,7 +95,11 @@ type Ids = { readonly boot: number; readonly counters: Counters; readonly issued
 
 type Start = { readonly at: number; readonly cursor: string | undefined; readonly oldestCached: string | undefined };
 
-type Projection = { readonly order: readonly string[]; readonly byId: ReadonlyMap<string, Message> };
+type Projection = {
+  readonly order: readonly string[];
+  readonly byId: ReadonlyMap<string, Message>;
+  readonly steps: ReadonlyMap<string, Step>;
+};
 
 type SnapshotReason = "no_cursor" | "cursor_unknown" | "too_far_behind";
 
@@ -110,7 +130,13 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
     case "message.accepted":
     case "message.started": {
       const message = event.message as Message;
-      return { order: [...order, message.id], byId: new Map(byId).set(message.id, message) };
+      return { ...projection, order: [...order, message.id], byId: new Map(byId).set(message.id, message) };
+    }
+    case "step.started":
+    case "step.updated":
+    case "step.ended": {
+      const step = event.step as Step;
+      return { ...projection, steps: new Map(projection.steps).set(step.id, step) };
     }
     case "message.delta": {
       const message = byId.get(event.message as string);
@@ -119,7 +145,7 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
         throw new Error(`text at offset ${String(event.offset)}, but ${message.id} has length ${message.text.length}`);
       }
       return {
-        order,
+        ...projection,
         byId: new Map(byId).set(message.id, { ...message, text: message.text + (event.text as string) }),
       };
     }
@@ -139,7 +165,7 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
         ended_at: event.at,
         ...(error && { error }),
       };
-      return { order, byId: new Map(byId).set(message.id, ended) };
+      return { ...projection, byId: new Map(byId).set(message.id, ended) };
     }
     default: {
       return projection;
@@ -148,7 +174,19 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
 };
 
 const project = (log: readonly Event[]): Projection =>
-  log.reduce<Projection>(projectEvent, { order: [], byId: new Map() });
+  log.reduce<Projection>(projectEvent, { order: [], byId: new Map(), steps: new Map() });
+
+const stepsBetween = (steps: ReadonlyMap<string, Step>, from: number, until = Infinity): readonly Step[] =>
+  steps
+    .values()
+    .filter((step) => step.position >= from && step.position < until)
+    .toArray()
+    .toSorted((left, right) => left.position - right.position);
+
+const statusKindFor = (kind: StepKind): StatusKind => {
+  if (kind === "thinking" || kind === "plan") return "thinking";
+  return kind === "wait" || kind === "compacting" ? "waiting" : "working";
+};
 
 const toPieces = (rest: string, target: number): readonly string[] => {
   if (rest.length > target) {
@@ -163,7 +201,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emt]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emst]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -172,7 +210,7 @@ const toCounters = (log: readonly Event[]): Counters => {
   const ids = log.flatMap(idsIn);
   const highest = (prefix: IdPrefix): number =>
     ids.filter((id) => id.startsWith(`${prefix}_`)).reduce((max, id) => Math.max(max, Number(id.split("_", 2)[1])), 0);
-  return { e: highest("e"), m: highest("m"), t: highest("t") };
+  return { e: highest("e"), m: highest("m"), t: highest("t"), s: highest("s") };
 };
 
 // A small model of the server's event log. Scenarios drive it the way the server and an app would,
@@ -180,7 +218,7 @@ const toCounters = (log: readonly Event[]): Counters => {
 export const createTranscript = (header: Header): Transcript => {
   const lines = createCell<readonly Line[]>([]);
   const log = createCell<readonly Event[]>([]);
-  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0 }, issued: new Set() });
+  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0 }, issued: new Set() });
   const users = createCell(0);
   const now = createCell(0);
   const start = createCell<Start | undefined>(undefined);
@@ -190,6 +228,7 @@ export const createTranscript = (header: Header): Transcript => {
   const turn = createCell<LiveTurn | undefined>(undefined);
   const next = createCell<readonly string[]>([]);
   const writing = createCell<string | undefined>(undefined);
+  const runningStep = createCell<RunningStep | undefined>(undefined);
   const retries = createCell<ReadonlyMap<string, string>>(new Map());
 
   const timestamp = (): string => new Date(now.get()).toISOString();
@@ -209,6 +248,8 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const latestEventId = (): string | undefined => log.get().at(-1)?.id;
+
+  const nextPosition = (): number => log.get().length + 1;
 
   const newId = (prefix: IdPrefix): string => {
     const { boot, counters, issued } = ids.get();
@@ -288,16 +329,19 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const snapshot = (reason: SnapshotReason): void => {
-    const { order, byId } = project(log.get());
+    const { order, byId, steps } = project(log.get());
     const latest = latestEventId();
+    const messages = order.slice(-messagesPerSnapshot).flatMap((id) => byId.get(id) ?? []);
+    const first = messages[0]?.position;
     addStep({
       event: {
         ...(latest && { id: latest }),
         type: "snapshot",
         at: timestamp(),
         reason,
-        messages: order.slice(-messagesPerSnapshot).map((id) => byId.get(id)),
+        messages,
         has_more: order.length > messagesPerSnapshot,
+        steps: first === undefined ? [] : stepsBetween(steps, first),
         turn: turn.get() ?? null,
         next: next.get(),
       },
@@ -349,11 +393,60 @@ export const createTranscript = (header: Header): Transcript => {
     return id;
   };
 
-  const status = (kind: StatusKind, label: string, detail?: string): void => {
+  const setStatus = (kind: StatusKind, label: string, detail?: string): void => {
     const running = runningTurn();
     const liveStatus: Status = { kind, label, ...(detail && { detail }) };
     turn.set({ ...running, status: liveStatus });
     emit("turn.status", { turn: running.id, ...liveStatus });
+  };
+
+  const endStep = (end: StepEnd = {}): void => {
+    const current = runningStep.get();
+    if (!current) return;
+    const durationMs = now.get() - Date.parse(current.step.at);
+    const ended = {
+      ...current.step,
+      ...end.fields,
+      title: current.endedTitle,
+      ended_at: timestamp(),
+      outcome: end.outcome ?? "completed",
+      duration_ms: durationMs,
+    };
+    runningStep.set(undefined);
+    emit("step.ended", { step: ended });
+  };
+
+  const status = (kind: StatusKind, label: string, detail?: string): void => {
+    if (kind === "writing") endStep();
+    setStatus(kind, label, detail);
+  };
+
+  const step = (kind: StepKind, options: StepOptions): string => {
+    endStep();
+    const running = runningTurn();
+    const id = newId("s");
+    const started = {
+      id,
+      turn: running.id,
+      kind,
+      title: options.title,
+      at: timestamp(),
+      position: nextPosition(),
+      ...options.fields,
+    } as Step;
+    runningStep.set({ step: started, endedTitle: options.endedTitle });
+    emit("step.started", { step: started });
+    setStatus(statusKindFor(kind), options.title, options.detail);
+    return id;
+  };
+
+  const updateStep = (fields: Fields, detail?: string): void => {
+    const current = runningStep.get();
+    if (!current) throw new Error("no step is running");
+    const updated: Step = { ...current.step, ...fields };
+    runningStep.set({ ...current, step: updated });
+    emit("step.updated", { step: updated });
+    if (detail) setStatus(statusKindFor(updated.kind), updated.title, detail);
   };
 
   const read = (message: string): void => {
@@ -370,10 +463,13 @@ export const createTranscript = (header: Header): Transcript => {
 
   const reply = (kind: MessageKind = "reply"): string => {
     if (writing.get()) throw new Error("a message is already being written");
+    endStep();
     const running = runningTurn();
     const id = newId("m");
     writing.set(id);
-    emit("message.started", { message: { id, role: "agent", kind, turn: running.id, text: "", at: timestamp() } });
+    emit("message.started", {
+      message: { id, role: "agent", kind, turn: running.id, text: "", at: timestamp(), position: nextPosition() },
+    });
     return id;
   };
 
@@ -398,6 +494,7 @@ export const createTranscript = (header: Header): Transcript => {
   const endTurn = (outcome: Outcome, error?: ErrorBody): string => {
     if (writing.get()) throw new Error("the turn ended with a message still open");
     const running = runningTurn();
+    endStep({ outcome });
     emit("turn.ended", { turn: running.id, outcome, ...(error && { error }) });
     turn.set(undefined);
     return running.id;
@@ -405,10 +502,14 @@ export const createTranscript = (header: Header): Transcript => {
 
   const exchange = (user: string, agent: string): Exchange => {
     const userMessageId = newUserId();
-    emit("message.accepted", { message: { id: userMessageId, role: "user", text: user, at: timestamp() } });
+    emit("message.accepted", {
+      message: { id: userMessageId, role: "user", text: user, at: timestamp(), position: nextPosition() },
+    });
     wait(1);
     const turnId = startTurn([userMessageId]);
-    wait(1800);
+    wait(300);
+    step("thinking", { title: "Thinking it through", endedTitle: "Thought it through" });
+    wait(1500);
     const agentMessageId = reply();
     write(agent, { pieces: 1 });
     wait(600);
@@ -422,7 +523,9 @@ export const createTranscript = (header: Header): Transcript => {
     const id = options.id ?? newUserId();
     request("POST", "/v0/messages", { body: { id, text } });
     const isKnown = project(log.get()).byId.has(id);
-    if (!isKnown) emit("message.accepted", { message: { id, role: "user", text, at: timestamp() } });
+    if (!isKnown) {
+      emit("message.accepted", { message: { id, role: "user", text, at: timestamp(), position: nextPosition() } });
+    }
     response(isKnown ? 200 : 201, { message: messageById(id) }, { isLost: options.isLost });
     return id;
   };
@@ -455,11 +558,18 @@ export const createTranscript = (header: Header): Transcript => {
 
   const listMessages = (before: string, limit: number): void => {
     request("GET", `/v0/messages?before=${before}&limit=${limit}`);
-    const { order, byId } = project(log.get());
+    const { order, byId, steps } = project(log.get());
     const index = order.indexOf(before);
     if (index === -1) throw new Error(`no message ${before}`);
     const first = Math.max(0, index - limit);
-    response(200, { messages: order.slice(first, index).map((id) => byId.get(id)), has_more: first > 0 });
+    const messages = order.slice(first, index).flatMap((id) => byId.get(id) ?? []);
+    const from = messages[0]?.position;
+    const until = byId.get(before)?.position;
+    response(200, {
+      messages,
+      steps: from === undefined ? [] : stepsBetween(steps, from, until),
+      has_more: first > 0,
+    });
   };
 
   const restart = (): void => {
@@ -480,6 +590,7 @@ export const createTranscript = (header: Header): Transcript => {
     turn.set(undefined);
     next.set([]);
     writing.set(undefined);
+    runningStep.set(undefined);
     wait(3000);
   };
 
@@ -521,6 +632,9 @@ export const createTranscript = (header: Header): Transcript => {
     send,
     startTurn,
     status,
+    step,
+    updateStep,
+    endStep,
     read,
     queue,
     reply,

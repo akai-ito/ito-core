@@ -1,14 +1,12 @@
 import type { MessageId, TurnId } from "#conversation/ids.ts";
+import type { Step, StepKind } from "#protocol/types.ts";
 
 export type Input = { readonly messageId: MessageId; readonly text: string };
 
-export type Activity =
-  | { readonly kind: "thinking"; readonly heading?: string }
-  | { readonly kind: "web_search"; readonly query?: string }
-  | { readonly kind: "command"; readonly action: "read" | "search" | "list" | "run" }
-  | { readonly kind: "file_change" }
-  | { readonly kind: "tool"; readonly capability: string; readonly operation: string }
-  | { readonly kind: "compacting" };
+export type StepFacts = Omit<
+  Step,
+  "id" | "turn" | "kind" | "title" | "at" | "position" | "ended_at" | "outcome" | "duration_ms"
+>;
 
 export type EngineFailureCode =
   | "model_timeout"
@@ -21,7 +19,14 @@ export type EngineFailureCode =
   | "internal";
 
 export type EngineEvent =
-  | { readonly type: "activity"; readonly activity: Activity }
+  | { readonly type: "step.started"; readonly key: string; readonly kind: StepKind; readonly facts: StepFacts }
+  | { readonly type: "step.updated"; readonly key: string; readonly facts: StepFacts }
+  | {
+      readonly type: "step.ended";
+      readonly key: string;
+      readonly outcome: "completed" | "failed";
+      readonly facts: StepFacts;
+    }
   | { readonly type: "text.started"; readonly kind: "reply" | "note" }
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "text.ended" }

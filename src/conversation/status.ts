@@ -1,12 +1,4 @@
-import type { Activity } from "#engine/engine.ts";
-import type { Status } from "#protocol/types.ts";
-
-const commandLabels = {
-  read: "Reading files",
-  search: "Searching files",
-  list: "Browsing files",
-  run: "Running a command",
-} as const;
+import type { Status, StepKind } from "#protocol/types.ts";
 
 const maxDetailLength = 200;
 
@@ -33,27 +25,14 @@ const withDetail = (status: Status, text: string | undefined): Status => {
   return detail ? { ...status, detail } : status;
 };
 
-export const toStatus = (activity: Activity): Status => {
-  switch (activity.kind) {
-    case "thinking": {
-      return withDetail({ kind: "thinking", label: "Thinking" }, activity.heading);
-    }
-    case "web_search": {
-      return withDetail({ kind: "working", label: "Searching the web" }, activity.query);
-    }
-    case "command": {
-      return { kind: "working", label: commandLabels[activity.action] };
-    }
-    case "file_change": {
-      return { kind: "working", label: "Editing files" };
-    }
-    case "tool": {
-      return { kind: "working", label: "Working" };
-    }
-    case "compacting": {
-      return { kind: "waiting", label: "Tidying up its notes" };
-    }
-  }
+const statusKindOf = (kind: StepKind): Status["kind"] => {
+  if (kind === "thinking" || kind === "plan") return "thinking";
+  return kind === "wait" || kind === "compacting" ? "waiting" : "working";
+};
+
+export const toStepStatus = (kind: StepKind, title: string, heading: string | undefined): Status => {
+  const status: Status = { kind: statusKindOf(kind), label: title };
+  return kind === "thinking" ? withDetail(status, heading) : status;
 };
 
 export const writingStatus: Status = { kind: "writing", label: "Writing" };

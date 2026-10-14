@@ -3,10 +3,11 @@ import type { Cancel, Clock } from "#clock.ts";
 import { toCommandError, toTurnError, toWatchdogError } from "#conversation/failures.ts";
 import type { MessageId, TurnId } from "#conversation/ids.ts";
 import { isAdjustingAfterRead, route, type Conversation } from "#conversation/routing.ts";
-import { adjustingStatus, stoppingStatus, toStatus, writingStatus } from "#conversation/status.ts";
+import { adjustingStatus, stoppingStatus, toStepStatus, writingStatus } from "#conversation/status.ts";
+import { toEndedStep, toStepTitle, toUpdatedStep } from "#conversation/steps.ts";
 import type { Engine, EngineEvent, Input } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Error as ErrorBody, Outcome } from "#protocol/types.ts";
+import type { Error as ErrorBody, Outcome, Status, Step } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { PendingWork, Store } from "#store/store.ts";
 
@@ -47,11 +48,17 @@ type Running = {
   readonly cancelFlush: Cancel | undefined;
   readonly cancelWatchdog: Cancel;
   readonly cancelForcedStop: Cancel | undefined;
+  readonly steps: ReadonlyMap<string, Step>;
 };
 
 export const defaultLimits: Limits = { watchdogMs: 60_000, forcedStopMs: 5000, coalesceMs: 100 };
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const statusOf = (step: Step): Status => toStepStatus(step.kind, step.title, step.heading);
+
+const isSameStatus = (left: Status, right: Status): boolean =>
+  left.kind === right.kind && left.label === right.label && left.detail === right.detail;
 
 type MessageWork = Extract<PendingWork, { readonly kind: "message" }>;
 
@@ -158,6 +165,37 @@ export const createTurns = (
     void enqueue(drain);
   };
 
+  const endOpenSteps = (state: Running, outcome: Outcome): void => {
+    for (const step of state.steps.values()) store.endStep(toEndedStep(step, outcome, {}, clock.now()));
+  };
+
+  const changeSteps = (turn: TurnId, update: (steps: ReadonlyMap<string, Step>) => ReadonlyMap<string, Step>): void => {
+    change(turn, (latest) => ({ ...latest, steps: update(latest.steps) }));
+  };
+
+  const startStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.started" }>): void => {
+    const title = toStepTitle(event.kind, event.facts, "present");
+    const step = store.startStep(turn, event.kind, title, event.facts);
+    changeSteps(turn, (steps) => new Map(steps).set(event.key, step));
+    store.setStatus(turn, statusOf(step));
+  };
+
+  const updateStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.updated" }>): void => {
+    const step = current(turn)?.steps.get(event.key);
+    if (!step) return;
+    const updated = toUpdatedStep(step, event.facts);
+    store.updateStep(updated);
+    changeSteps(turn, (steps) => new Map(steps).set(event.key, updated));
+    if (!isSameStatus(statusOf(step), statusOf(updated))) store.setStatus(turn, statusOf(updated));
+  };
+
+  const endStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.ended" }>): void => {
+    const step = current(turn)?.steps.get(event.key);
+    if (!step) return;
+    store.endStep(toEndedStep(step, event.outcome, event.facts, clock.now()));
+    changeSteps(turn, (steps) => new Map([...steps].filter(([key]) => key !== event.key)));
+  };
+
   const finishStop = (turn: TurnId): void => {
     const state = current(turn);
     if (!state) return;
@@ -166,6 +204,7 @@ export const createTurns = (
       const length = state.cut?.message === state.writing.message ? Math.min(state.cut.offset, sent) : sent;
       store.endMessage(state.writing.message, "stopped", length);
     }
+    endOpenSteps(state, "stopped");
     store.endTurn(turn, "stopped");
     afterTurn(state);
   };
@@ -175,6 +214,7 @@ export const createTurns = (
     const state = current(turn);
     if (!state) return;
     if (state.writing) store.endMessage(state.writing.message, "failed", sentLength(state), error);
+    endOpenSteps(state, "failed");
     if (!state.hasStartedReply) store.endMessage(store.startMessage(turn, "reply"), "failed", 0, error);
     store.endTurn(turn, "failed", error);
     afterTurn(state);
@@ -185,6 +225,7 @@ export const createTurns = (
     const state = current(turn);
     if (!state) return;
     if (state.writing) store.endMessage(state.writing.message, "completed", sentLength(state));
+    endOpenSteps(state, "completed");
     store.endTurn(turn, "completed");
     afterTurn(state);
   };
@@ -227,8 +268,16 @@ export const createTurns = (
     if (!state) return;
     const isStopping = state.phase === "stopping";
     switch (event.type) {
-      case "activity": {
-        if (!isStopping) store.setStatus(turn, toStatus(event.activity));
+      case "step.started": {
+        if (!isStopping) startStep(turn, event);
+        return;
+      }
+      case "step.updated": {
+        if (!isStopping) updateStep(turn, event);
+        return;
+      }
+      case "step.ended": {
+        if (!isStopping) endStep(turn, event);
         return;
       }
       case "text.started": {
@@ -321,6 +370,7 @@ export const createTurns = (
       cancelFlush: undefined,
       cancelWatchdog: armWatchdog(turn),
       cancelForcedStop: undefined,
+      steps: new Map(),
     });
     void consume(
       turn,
@@ -412,6 +462,9 @@ export const createTurns = (
       if (turn) {
         const open = store.openMessage(turn.id);
         if (open) store.endMessage(open.id, "interrupted", open.text.length);
+        for (const step of store.openSteps(turn.id)) {
+          store.endStep(toEndedStep(step, "interrupted", {}, clock.now()));
+        }
         if (!turn.hasStartedReply) store.endMessage(store.startMessage(turn.id, "reply"), "interrupted", 0);
         store.endTurn(turn.id, "interrupted");
       }

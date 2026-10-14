@@ -47,6 +47,20 @@ const sendAndStart = (transcript: Transcript, text: string): { readonly user: st
   return { user, turn };
 };
 
+const thinking = { title: "Thinking it through", endedTitle: "Thought it through" } as const;
+
+const searching = (query: string) => ({
+  title: `Searching the web for ${query}`,
+  endedTitle: `Searched the web for ${query}`,
+  fields: { query },
+});
+
+const tidying = { title: "Tidying up its notes", endedTitle: "Tidied up its notes" } as const;
+
+const heading = (transcript: Transcript, title: string, summary: string): void => {
+  transcript.updateStep({ heading: title, summary: `**${title}**\n\n${summary}` }, title);
+};
+
 const writeWhole = (transcript: Transcript, text: string, pieces?: number): void => {
   transcript.status("writing", "Writing");
   transcript.reply();
@@ -68,7 +82,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.begin(todayAt);
     transcript.request("GET", "/.well-known/ito");
     transcript.wait(40);
-    transcript.response(200, { product: "ito", protocol: ["0.1"] }, { headers: { "Ito-Protocol": "0.1" } });
+    transcript.response(200, { product: "ito", protocol: ["0.2"] }, { headers: { "Ito-Protocol": "0.2" } });
     transcript.wait(20);
     transcript.request("GET", "/v0/server", {
       headers: { Authorization: "Bearer ito_example_mistyped_token_0000000000000000000" },
@@ -83,15 +97,15 @@ const scenarios: readonly (() => Transcript)[] = [
           detail: "Use the token ito serve printed, or run ito token new.",
         },
       },
-      { headers: { "Ito-Protocol": "0.1" } },
+      { headers: { "Ito-Protocol": "0.2" } },
     );
     transcript.wait(9000);
     transcript.request("GET", "/v0/server", { headers: { Authorization: authorization } });
     transcript.wait(40);
     transcript.response(
       200,
-      { name: "studio", version: "0.1.0", protocol: "0.1", agent: { name: "Ari" } },
-      { headers: { "Ito-Protocol": "0.1" } },
+      { name: "studio", version: "0.2.0", protocol: "0.2", agent: { name: "Ari" } },
+      { headers: { "Ito-Protocol": "0.2" } },
     );
     transcript.wait(10);
     transcript.connect({ headers: { Authorization: authorization } });
@@ -137,7 +151,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, saturdayQuestion);
     transcript.wait(400);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1500);
     writeWhole(transcript, saturdayAnswer, 3);
     transcript.endTurn("completed");
@@ -150,9 +164,10 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 4,
       title: "The agent stirs",
       summary:
-        "The turn starts at once, then the live status follows the work in plain words, with a " +
-        "note from the agent along the way, and ends with the turn.",
-      guarantees: ["G8", "G10"],
+        "The turn starts at once, then the agent's steps stream as it works (thinking, a web " +
+        "search, reading a note), each with a plain title and its specifics, with a note from the " +
+        "agent along the way; status follows the work and ends with the turn.",
+      guarantees: ["G8", "G10", "G14"],
     });
     yesterday(transcript);
     transcript.begin(todayAt, { cursor: "latest" });
@@ -160,18 +175,31 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, saturdayQuestion);
     transcript.wait(250);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(900);
-    transcript.status("thinking", "Thinking", "Sketching a calm Saturday");
+    heading(transcript, "Sketching a calm Saturday", "A long run first, then something slow by the river.");
     transcript.wait(700);
     transcript.reply("note");
     transcript.write("I'll check which cafés by the river open early.", { pieces: 2 });
     transcript.endMessage("completed");
     transcript.wait(40);
-    transcript.status("working", "Searching the web", "riverside cafés open at 9am");
+    transcript.step("web_search", searching("riverside cafés open at 9am"));
     transcript.wait(2600);
-    transcript.status("thinking", "Thinking", "Fitting the day around the run");
-    transcript.wait(1100);
+    transcript.step("command", {
+      title: "Reading saturday.md",
+      endedTitle: "Read saturday.md",
+      fields: {
+        command: "cat notes/saturday.md",
+        cwd: "/home/you/.ito/workspace",
+        actions: [{ type: "read", path: "notes/saturday.md" }],
+      },
+    });
+    transcript.wait(300);
+    transcript.endStep({ fields: { exit_code: 0, output: "Long run with Sam at 7:30.\n" } });
+    transcript.step("thinking", thinking);
+    transcript.wait(400);
+    heading(transcript, "Fitting the day around the run", "Breakfast after the run, the garden in the afternoon.");
+    transcript.wait(700);
     writeWhole(transcript, saturdayAnswer, 4);
     transcript.endTurn("completed");
     return transcript;
@@ -193,7 +221,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, saturdayQuestion);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1500);
     transcript.status("writing", "Writing");
     transcript.reply();
@@ -226,7 +254,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, saturdayQuestion);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1200);
     transcript.status("writing", "Writing");
     transcript.reply();
@@ -258,7 +286,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     const { turn } = sendAndStart(transcript, saturdayQuestion);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1400);
     transcript.status("writing", "Writing");
     const reply = transcript.reply();
@@ -275,7 +303,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.endTurn("stopped");
     transcript.startTurn([morning]);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1100);
     writeWhole(
       transcript,
@@ -326,7 +354,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, "How do I see what's using port 8080 on my Mac?");
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1200);
     writeWhole(
       transcript,
@@ -344,8 +372,9 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "Scrolling back",
       summary:
         "Ari pages backwards from the oldest message it has, a page at a time, until the server " +
-        "says there is nothing older; pages are bounded by messages, so they never shift.",
-      guarantees: ["G3"],
+        "says there is nothing older; pages are bounded by messages, so they never shift, and " +
+        "each carries the agent's steps among its messages.",
+      guarantees: ["G3", "G14"],
     });
     transcript.time("2026-09-01T17:30:00.000Z");
     transcript.exchange(
@@ -394,7 +423,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, saturdayQuestion);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1400);
     transcript.status("writing", "Writing");
     transcript.reply();
@@ -421,12 +450,12 @@ const scenarios: readonly (() => Transcript)[] = [
     sendAndStart(transcript, "Also find somewhere for breakfast by the river.");
     transcript.wait(200);
     transcript.world("engine_compacting", { until: transcript.stepAtOffset(2900) });
-    transcript.status("waiting", "Tidying up its notes");
+    transcript.step("compacting", tidying);
     transcript.wait(700);
     const seats = transcript.send("With outdoor seats, ideally.");
     transcript.queue(seats);
     transcript.wait(2169);
-    transcript.status("working", "Searching the web", "breakfast by the river, London");
+    transcript.step("web_search", searching("breakfast by the river, London"));
     transcript.wait(2400);
     writeWhole(
       transcript,
@@ -457,7 +486,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, saturdayQuestion);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1300);
     transcript.status("writing", "Writing");
     transcript.reply();
@@ -510,13 +539,13 @@ const scenarios: readonly (() => Transcript)[] = [
     const first = transcript.send(juno, { isLost: true });
     transcript.startTurn([first]);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1700);
     transcript.send(juno, { id: first });
     const second = transcript.send("And book for two at 8 if so");
     transcript.wait(600);
     transcript.read(second);
-    transcript.status("working", "Searching the web", "Bistro Juno Sunday opening hours");
+    transcript.step("web_search", searching("Bistro Juno Sunday opening hours"));
     transcript.wait(2600);
     writeWhole(
       transcript,
@@ -542,7 +571,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, saturdayQuestion);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1300);
     transcript.status("writing", "Writing");
     transcript.reply();
@@ -579,7 +608,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, saturdayQuestion);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1300);
     transcript.status("writing", "Writing");
     transcript.reply();
@@ -603,8 +632,9 @@ const scenarios: readonly (() => Transcript)[] = [
       summary:
         "The model goes silent mid-reply; after 60 seconds the turn fails with a typed error and " +
         "the text so far is kept. Try again, tapped twice, starts one new attempt that answers the " +
-        "same message. A turn that fails before writing still leaves a reply: empty, carrying the error.",
-      guarantees: ["G2", "G8", "G10"],
+        "same message. A turn that fails before writing still leaves a reply: empty, carrying the " +
+        "error, and the step it was on ends with it.",
+      guarantees: ["G2", "G8", "G10", "G14"],
     });
     yesterday(transcript);
     transcript.begin(todayAt, { cursor: "latest" });
@@ -612,7 +642,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     const { turn } = sendAndStart(transcript, saturdayQuestion);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1300);
     transcript.status("writing", "Writing");
     transcript.reply();
@@ -631,7 +661,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(300);
     transcript.retry(turn);
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(1200);
     writeWhole(transcript, saturdayAnswer, 4);
     transcript.endTurn("completed");
@@ -639,13 +669,14 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(20_000);
     sendAndStart(transcript, "And Sunday?");
     transcript.wait(300);
-    transcript.status("thinking", "Thinking");
+    transcript.step("thinking", thinking);
     transcript.wait(2000);
     const unavailable: ErrorBody = {
       code: "model_unavailable",
       message: "The model service isn't responding right now.",
       detail: "The model service answered 503 Service Unavailable.",
     };
+    transcript.endStep({ outcome: "failed" });
     transcript.reply();
     transcript.endMessage("failed", { error: unavailable });
     transcript.endTurn("failed", unavailable);

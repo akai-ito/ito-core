@@ -101,7 +101,7 @@ const textOf = (events: readonly EngineEvent[]): string =>
   events.map((event) => (event.type === "text" ? event.text : "")).join("");
 
 const typesOf = (events: readonly EngineEvent[]): readonly string[] =>
-  events.map((event) => event.type).filter((type, index, types) => type !== "text" || types[index - 1] !== "text");
+  events.map((event) => event.type).filter((type, index, types) => type !== types[index - 1]);
 
 describe("the Codex engine against the pinned codex app-server", () => {
   beforeAll(async () => {
@@ -120,8 +120,9 @@ describe("the Codex engine against the pinned codex app-server", () => {
   it("streams thinking, a note and a reply, then ends the turn", async () => {
     const events = await runTurn("[[reply]] Plan my Saturday");
     expect(typesOf(events)).toEqual([
-      "activity",
-      "activity",
+      "step.started",
+      "step.updated",
+      "step.ended",
       "text.started",
       "text",
       "text.ended",
@@ -130,10 +131,11 @@ describe("the Codex engine against the pinned codex app-server", () => {
       "text.ended",
       "ended",
     ]);
-    expect(events.slice(0, 2)).toEqual([
-      { type: "activity", activity: { kind: "thinking" } },
-      { type: "activity", activity: { kind: "thinking", heading: "Planning the answer" } },
-    ]);
+    expect(events[0]).toMatchObject({ type: "step.started", kind: "thinking" });
+    expect(events.findLast((event) => event.type === "step.updated")).toMatchObject({
+      facts: { heading: "Planning the answer", summary: "**Planning the answer** Thinking it through. " },
+    });
+    expect(events.find((event) => event.type === "step.ended")).toMatchObject({ outcome: "completed" });
     expect(events.filter((event) => event.type === "text.started")).toEqual([
       { type: "text.started", kind: "note" },
       { type: "text.started", kind: "reply" },
@@ -180,10 +182,10 @@ describe("the Codex engine against the pinned codex app-server", () => {
 
   it("reports a web search with its query", async () => {
     const events = await runTurn("[[search]] Find breakfast");
-    expect(events).toContainEqual({
-      type: "activity",
-      activity: { kind: "web_search", query: "breakfast by the river" },
-    });
+    expect(events).toContainEqual(expect.objectContaining({ type: "step.started", kind: "web_search" }));
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "step.ended", outcome: "completed", facts: { query: "breakfast by the river" } }),
+    );
     expect(events.at(-1)).toEqual({ type: "ended" });
   });
 

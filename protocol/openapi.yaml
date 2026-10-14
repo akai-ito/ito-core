@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.1"
+  version: "0.2"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -66,7 +66,7 @@ paths:
               schema: { $ref: "#/components/schemas/Discovery" }
               example:
                 product: ito
-                protocol: ["0.1"]
+                protocol: ["0.2"]
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/server:
     get:
@@ -84,8 +84,8 @@ paths:
               schema: { $ref: "#/components/schemas/ServerInfo" }
               example:
                 name: studio
-                version: 0.1.0
-                protocol: "0.1"
+                version: 0.2.0
+                protocol: "0.2"
                 agent: { name: Ari }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
@@ -124,7 +124,7 @@ paths:
                 description: Server-Sent Events, each carrying one event from the events schema.
               example: |
                 id: e_0042
-                data: {"id":"e_0042","type":"turn.status","at":"2026-10-12T09:41:01.200Z","turn":"t_0007","kind":"working","label":"Searching the web"}
+                data: {"id":"e_0042","type":"turn.status","at":"2026-10-12T09:41:01.200Z","turn":"t_0007","kind":"working","label":"Searching the web for riverside cafés"}
 
                 : ping
         "401": { $ref: "#/components/responses/TokenRejected" }
@@ -177,10 +177,10 @@ paths:
       operationId: listMessages
       summary: Read older messages
       description: |
-        The messages just before a given one, oldest first. The newest messages come from the
-        event stream's `snapshot`, so `before` is always required. A `404` means the server
-        doesn't know that message (it was restored from a backup): reconnect to the event stream
-        for a snapshot.
+        The messages just before a given one, oldest first, with the agent's steps among them.
+        The newest messages come from the event stream's `snapshot`, so `before` is always
+        required. A `404` means the server doesn't know that message (it was restored from a
+        backup): reconnect to the event stream for a snapshot.
       parameters:
         - name: before
           in: query
@@ -296,7 +296,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.1"
+        example: "0.2"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -387,6 +387,12 @@ components:
       $ref: "events.schema.json#/$defs/TurnStarted"
     TurnStatus:
       $ref: "events.schema.json#/$defs/TurnStatus"
+    StepStarted:
+      $ref: "events.schema.json#/$defs/StepStarted"
+    StepUpdated:
+      $ref: "events.schema.json#/$defs/StepUpdated"
+    StepEnded:
+      $ref: "events.schema.json#/$defs/StepEnded"
     MessageStarted:
       $ref: "events.schema.json#/$defs/MessageStarted"
     MessageDelta:
@@ -397,6 +403,8 @@ components:
       $ref: "events.schema.json#/$defs/TurnEnded"
     Message:
       $ref: "events.schema.json#/$defs/Message"
+    Step:
+      $ref: "events.schema.json#/$defs/Step"
     Status:
       $ref: "events.schema.json#/$defs/Status"
     Error:
@@ -456,12 +464,16 @@ components:
         message: { $ref: "events.schema.json#/$defs/Message" }
     MessagePage:
       type: object
-      required: [messages, has_more]
+      required: [messages, steps, has_more]
       properties:
         messages:
           description: Oldest first.
           type: array
           items: { $ref: "events.schema.json#/$defs/Message" }
+        steps:
+          description: Every step from the first of these messages up to the message the page ends before, in position order.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Step" }
         has_more:
           description: Whether even older messages exist.
           type: boolean

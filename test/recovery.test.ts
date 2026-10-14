@@ -22,10 +22,30 @@ const given: readonly LoggedEvent[] = [
     id: "e_cut_off_1",
     type: "message.accepted",
     at: asked,
-    message: { id: question, role: "user", text: "Plan my Saturday.", at: asked },
+    message: { id: question, role: "user", text: "Plan my Saturday.", at: asked, position: 1 },
   },
   { id: "e_cut_off_2", type: "turn.started", at: asked, turn: "t_cut_off", inputs: [question] },
-  { id: "e_cut_off_3", type: "turn.status", at: asked, turn: "t_cut_off", kind: "thinking", label: "Thinking" },
+  {
+    id: "e_cut_off_3",
+    type: "step.started",
+    at: asked,
+    step: {
+      id: "s_cut_off",
+      turn: "t_cut_off",
+      kind: "thinking",
+      title: "Thinking it through",
+      at: asked,
+      position: 3,
+    },
+  },
+  {
+    id: "e_cut_off_4",
+    type: "turn.status",
+    at: asked,
+    turn: "t_cut_off",
+    kind: "thinking",
+    label: "Thinking it through",
+  },
 ];
 
 const openServer = (): Server =>
@@ -44,7 +64,7 @@ describe("restarting after a turn was cut off before it wrote a reply", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it("leaves an empty reply marked interrupted, then ends the turn", async () => {
+  it("ends its running step and leaves an empty reply, all marked interrupted", async () => {
     const seeding = openServer();
     seeding.store.importEvents(given);
     seeding.store.setSetting(tokenSetting, hashToken(token));
@@ -55,12 +75,27 @@ describe("restarting after a turn was cut off before it wrote a reply", () => {
     try {
       const stream = await openEventStream(`${origin}/v0/events`, {
         authorization: `Bearer ${token}`,
-        "last-event-id": "e_cut_off_3",
+        "last-event-id": "e_cut_off_4",
       });
-      const events = [await stream.next(2000), await stream.next(2000), await stream.next(2000)];
+      const events = [
+        await stream.next(2000),
+        await stream.next(2000),
+        await stream.next(2000),
+        await stream.next(2000),
+      ];
       stream.close();
       const at = toTimestamp(clock.now());
       expect(events).toMatchObject([
+        {
+          type: "step.ended",
+          step: {
+            id: "s_cut_off",
+            title: "Thought it through",
+            outcome: "interrupted",
+            ended_at: at,
+            duration_ms: 4000,
+          },
+        },
         { type: "message.started", message: { role: "agent", kind: "reply", turn: "t_cut_off", text: "", at } },
         { type: "message.ended", outcome: "interrupted", length: 0 },
         { type: "turn.ended", turn: "t_cut_off", outcome: "interrupted" },

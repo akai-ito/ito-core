@@ -191,10 +191,18 @@ const summariseEvent = (event: JsonObject): Summary => {
       };
     }
     case "snapshot": {
+      const steps = (event.steps as readonly unknown[]).length;
       return {
         who: "event",
-        what: `${type} ${escapeHtml(String(event.reason))} · ${(event.messages as readonly unknown[]).length} messages${event.turn ? " · a turn running" : ""}`,
+        what: `${type} ${escapeHtml(String(event.reason))} · ${(event.messages as readonly unknown[]).length} messages · ${steps} step${steps === 1 ? "" : "s"}${event.turn ? " · a turn running" : ""}`,
       };
+    }
+    case "step.started":
+    case "step.updated":
+    case "step.ended": {
+      const step = event.step as { readonly kind: string; readonly title: string; readonly outcome?: string };
+      const outcome = step.outcome ? ` · ${step.outcome}` : "";
+      return { who: "event", what: `${type} ${escapeHtml(step.kind)} · “${escapeHtml(step.title)}”${outcome}` };
     }
     case "message.accepted":
     case "message.started": {
