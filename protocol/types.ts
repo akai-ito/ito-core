@@ -85,10 +85,10 @@ export interface paths {
     };
     /**
      * Read older messages
-     * @description The messages just before a given one, oldest first. The newest messages come from the
-     *     event stream's `snapshot`, so `before` is always required. A `404` means the server
-     *     doesn't know that message (it was restored from a backup): reconnect to the event stream
-     *     for a snapshot.
+     * @description The messages just before a given one, oldest first, with the agent's steps among them.
+     *     The newest messages come from the event stream's `snapshot`, so `before` is always
+     *     required. A `404` means the server doesn't know that message (it was restored from a
+     *     backup): reconnect to the event stream for a snapshot.
      */
     get: operations["listMessages"];
     put?: never;
@@ -169,6 +169,9 @@ export interface components {
       | components["schemas"]["MessageRead"]
       | components["schemas"]["TurnStarted"]
       | components["schemas"]["TurnStatus"]
+      | components["schemas"]["StepStarted"]
+      | components["schemas"]["StepUpdated"]
+      | components["schemas"]["StepEnded"]
       | components["schemas"]["MessageStarted"]
       | components["schemas"]["MessageDelta"]
       | components["schemas"]["MessageEnded"]
@@ -191,6 +194,8 @@ export interface components {
       messages: components["schemas"]["Message"][];
       /** @description Whether older messages exist. */
       has_more: boolean;
+      /** @description Every step from the first of these messages on, including the running turn's steps, in position order. */
+      steps: components["schemas"]["Step"][];
       /** @description The running turn, or null when the agent is idle. */
       turn: components["schemas"]["LiveTurn"] | null;
       /** @description Messages waiting as Next, in the order they will be answered. */
@@ -262,6 +267,39 @@ export interface components {
       detail?: components["schemas"]["StatusDetail"];
     };
     /**
+     * step.started
+     * @description The agent starts a step. It carries the step as it begins, with its present-tense title.
+     */
+    StepStarted: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "step.started";
+      at: components["schemas"]["Timestamp"];
+      step: components["schemas"]["Step"];
+    };
+    /**
+     * step.updated
+     * @description More is known about a running step, such as more of its summary or its plan's progress. It carries the step as it now stands; replace your copy.
+     */
+    StepUpdated: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "step.updated";
+      at: components["schemas"]["Timestamp"];
+      step: components["schemas"]["Step"];
+    };
+    /**
+     * step.ended
+     * @description A step ends. It carries the step as it finished: its outcome, duration, past-tense title, and what is known at the end.
+     */
+    StepEnded: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "step.ended";
+      at: components["schemas"]["Timestamp"];
+      step: components["schemas"]["Step"];
+    };
+    /**
      * message.started
      * @description The agent begins a message: its text is empty and it has no outcome yet. `message.delta` events follow.
      */
@@ -331,12 +369,93 @@ export interface components {
       text: string;
       /** @description When the message began: when the server accepted it, or the agent's first word. */
       at: components["schemas"]["Timestamp"];
+      position: components["schemas"]["Position"];
       /** @description Agent messages only: when it ended. */
       ended_at?: components["schemas"]["Timestamp"];
       /** @description Agent messages only. Absent while the message is still being written. */
       outcome?: components["schemas"]["Outcome"];
       /** @description Present when the outcome is `failed`. */
       error?: components["schemas"]["Error"];
+    };
+    /** @description One thing the agent did while working on a turn: thinking, a web search, a command, an edit, a tool, a plan, a wait. Its title is plain words written by the server, safe to show as it is. Its other fields carry the specifics exactly as the agent used them (commands, paths, queries, URLs, output); show what you choose. Fields beyond the common ones belong to particular kinds, and a step carries those its kind has. */
+    Step: {
+      id: components["schemas"]["StepId"];
+      /** @description The turn the step belongs to. */
+      turn: components["schemas"]["TurnId"];
+      kind: components["schemas"]["StepKind"];
+      /** @description Plain words, such as "Reading notes.md": present tense while the step runs, past tense once it has ended ("Read notes.md"). */
+      title: string;
+      /** @description When the step began. */
+      at: components["schemas"]["Timestamp"];
+      position: components["schemas"]["Position"];
+      /** @description When the step ended. Absent while it runs. */
+      ended_at?: components["schemas"]["Timestamp"];
+      /** @description How the step ended. Absent while it runs. */
+      outcome?: components["schemas"]["Outcome"];
+      /** @description How long the step took, once it has ended. */
+      duration_ms?: number;
+      /** @description `thinking`: the heading the model gave its reasoning. */
+      heading?: string;
+      /** @description `thinking`: the model's summary of its reasoning, as far as it has been written. */
+      summary?: string;
+      /** @description `web_search`: what was searched for. */
+      query?: string;
+      /** @description `web_search`: every query, when there were several. */
+      queries?: string[];
+      /** @description `web_search`: the page opened or searched within. */
+      url?: string;
+      /** @description `web_search`: the words looked for on a page. */
+      pattern?: string;
+      /** @description `web_search`: results, when the search returned them. */
+      results?: {
+        title?: string;
+        url: string;
+      }[];
+      /** @description `command`: the command line, exactly as run. */
+      command?: string;
+      /** @description `command`: the folder it ran in. */
+      cwd?: string;
+      /** @description `command`: what the command did, as far as the engine could tell: read a file, search for a term, list a folder, or run something else. */
+      actions?: {
+        /** @enum {unknown} */
+        type: "read" | "search" | "list" | "run";
+        path?: string;
+        query?: string;
+      }[];
+      /** @description `command`: its exit code, once it has ended. */
+      exit_code?: number;
+      /** @description `command`: the end of what it printed, at most the last 2 KB, once it has ended. */
+      output?: string;
+      /** @description `file_change`: the files changed. */
+      files?: {
+        path: string;
+        /** @enum {unknown} */
+        change: "added" | "modified" | "deleted" | "moved";
+        /** @description For a moved file, where it was. */
+        from?: string;
+        lines_added?: number;
+        lines_removed?: number;
+      }[];
+      /** @description `tool`: the capability the tool belongs to, such as a server's name. */
+      capability?: string;
+      /** @description `tool`: the operation called. */
+      operation?: string;
+      /** @description `tool`: the arguments it was called with, as JSON. */
+      arguments?: unknown;
+      /** @description What went wrong, in the tool's or command's own words, when the step failed. */
+      detail?: string;
+      /** @description `plan`: why the plan is what it is. */
+      explanation?: string;
+      /** @description `plan`: its items, in order, each with its state. */
+      items?: {
+        text: string;
+        /** @enum {unknown} */
+        state: "pending" | "in_progress" | "done";
+      }[];
+      /** @description `wait`: how long the agent chose to wait. */
+      wait_ms?: number;
+      /** @description `image_view`: the image looked at. */
+      path?: string;
     };
     /** @description What the agent is doing right now. */
     Status: {
@@ -392,6 +511,8 @@ export interface components {
     MessagePage: {
       /** @description Oldest first. */
       messages: components["schemas"]["Message"][];
+      /** @description Every step from the first of these messages up to the message the page ends before, in position order. */
+      steps: components["schemas"]["Step"][];
       /** @description Whether even older messages exist. */
       has_more: boolean;
     };
@@ -439,17 +560,27 @@ export interface components {
      * @example 2026-10-12T09:41:07.120Z
      */
     Timestamp: string;
+    /** @description Where a message or a step sits in the conversation: strictly increasing in conversation order, with gaps. Snapshots and history pages carry messages and steps in separate lists; merge them by position. */
+    Position: number;
     /**
      * @description How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.
      * @enum {unknown}
      */
     Outcome: "completed" | "stopped" | "interrupted" | "failed";
+    /** @description Opaque. The server makes it when a step starts. */
+    StepId: string;
+    /**
+     * @description What kind of thing the agent did. Show the title of a kind you don't recognise.
+     * @enum {unknown}
+     */
+    StepKind:
+      "thinking" | "web_search" | "command" | "file_change" | "tool" | "plan" | "wait" | "image_view" | "compacting";
     /**
      * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
      * @enum {unknown}
      */
     StatusKind: "thinking" | "working" | "writing" | "adjusting" | "waiting" | "stopping";
-    /** @description Plain words, such as "Searching the web". Never a tool name, a command or JSON. */
+    /** @description Plain words written by the server, safe to show as they are. While a step runs, its title. */
     StatusLabel: string;
     /** @description Optional plain-word specifics, such as a search query. */
     StatusDetail: string;
@@ -578,11 +709,15 @@ export type MessageQueued = components["schemas"]["MessageQueued"];
 export type MessageRead = components["schemas"]["MessageRead"];
 export type TurnStarted = components["schemas"]["TurnStarted"];
 export type TurnStatus = components["schemas"]["TurnStatus"];
+export type StepStarted = components["schemas"]["StepStarted"];
+export type StepUpdated = components["schemas"]["StepUpdated"];
+export type StepEnded = components["schemas"]["StepEnded"];
 export type MessageStarted = components["schemas"]["MessageStarted"];
 export type MessageDelta = components["schemas"]["MessageDelta"];
 export type MessageEnded = components["schemas"]["MessageEnded"];
 export type TurnEnded = components["schemas"]["TurnEnded"];
 export type Message = components["schemas"]["Message"];
+export type Step = components["schemas"]["Step"];
 export type Status = components["schemas"]["Status"];
 export type Error = components["schemas"]["Error"];
 export type Discovery = components["schemas"]["Discovery"];
@@ -599,7 +734,10 @@ export type MessageId = components["schemas"]["MessageId"];
 export type MessageKind = components["schemas"]["MessageKind"];
 export type TurnId = components["schemas"]["TurnId"];
 export type Timestamp = components["schemas"]["Timestamp"];
+export type Position = components["schemas"]["Position"];
 export type Outcome = components["schemas"]["Outcome"];
+export type StepId = components["schemas"]["StepId"];
+export type StepKind = components["schemas"]["StepKind"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
 export type StatusDetail = components["schemas"]["StatusDetail"];
@@ -636,7 +774,7 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.1"
+           *         "0.2"
            *       ]
            *     }
            */
@@ -665,8 +803,8 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.1.0",
-           *       "protocol": "0.1",
+           *       "version": "0.2.0",
+           *       "protocol": "0.2",
            *       "agent": {
            *         "name": "Ari"
            *       }
@@ -700,7 +838,7 @@ export interface operations {
         content: {
           /**
            * @example id: e_0042
-           *     data: {"id":"e_0042","type":"turn.status","at":"2026-10-12T09:41:01.200Z","turn":"t_0007","kind":"working","label":"Searching the web"}
+           *     data: {"id":"e_0042","type":"turn.status","at":"2026-10-12T09:41:01.200Z","turn":"t_0007","kind":"working","label":"Searching the web for riverside cafés"}
            *
            *     : ping
            */
