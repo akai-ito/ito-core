@@ -54,9 +54,10 @@ curl -s -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
   http://127.0.0.1:8787/v0/messages
 ```
 
-`tailscale serve --bg 8787` then makes it reachable over your tailnet, at an HTTPS address it
-prints (turn on HTTPS certificates in the Tailscale admin console first). Add the server in Ari
-with that address and your token.
+`tailscale serve --bg --https=8443 8787` then makes it reachable over your tailnet at
+`https://<machine>.<tailnet>.ts.net:8443` (turn on HTTPS certificates in the Tailscale admin console
+first). Port 8443 leaves 443 alone, so Ito never replaces another service this machine already
+serves or funnels there. Add the server in Ari with that address and your token.
 
 To keep it running, install the systemd user unit from [deploy](deploy/ito.service), which expects
 the clone in `~/ito-core` and Node on the default path:

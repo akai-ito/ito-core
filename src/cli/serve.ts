@@ -14,6 +14,8 @@ import { createServer, type EngineContext, type ServerOptions } from "#server.ts
 
 export const defaultPort = 8787;
 
+export const tailnetPort = 8443;
+
 type EngineName = "codex" | "demo";
 
 type ServeOptions = { readonly engine: EngineName; readonly port: number; readonly name: string };
@@ -58,7 +60,7 @@ const firstRunMessage = (token: string, port: number): string =>
     tokenMessage("Your token, shown once. Keep it like a password:", token),
     `Ito listens on http://127.0.0.1:${port}, on this machine only. To reach it from your phone over your tailnet:`,
     "",
-    `  tailscale serve --bg ${port}`,
+    `  tailscale serve --bg --https=${tailnetPort} ${port}`,
     "",
     "Then add the server in Ari with the address Tailscale prints and this token.",
   ].join("\n");
