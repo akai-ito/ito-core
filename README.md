@@ -39,11 +39,24 @@ node bin/ito.ts serve    # the first run prints your token, once
 ```
 
 Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code instead of a browser
-redirect. `ito serve` listens on `127.0.0.1:8787` only. `tailscale serve --bg 8787` makes it
-reachable over your tailnet; add the server in Ari with the address Tailscale prints and your
-token. If you lose the token, `ito token new` makes another. `--engine demo` answers without
-Codex, to try Ari before signing in: a message with *long* in it gives a reply to stop, *fail* a
-failure, and *silent* a timeout.
+redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new`
+makes another. `--engine demo` answers without Codex, to try Ari before signing in: a message with
+*long* in it gives a reply to stop, *fail* a failure, and *silent* a timeout.
+
+Before reaching for your phone, check a real turn from the machine itself, with the server running
+and your token in `TOKEN`. The stream should show the turn start, statuses, the reply's text
+arriving, and `turn.ended` with `completed`:
+
+```sh
+curl -N -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8787/v0/events &
+curl -s -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
+  -d "{\"id\":\"$(cat /proc/sys/kernel/random/uuid)\",\"text\":\"List your workspace, then say hi.\"}" \
+  http://127.0.0.1:8787/v0/messages
+```
+
+`tailscale serve --bg 8787` then makes it reachable over your tailnet, at an HTTPS address it
+prints (turn on HTTPS certificates in the Tailscale admin console first). Add the server in Ari
+with that address and your token.
 
 To keep it running, install the systemd user unit from [deploy](deploy/ito.service), which expects
 the clone in `~/ito-core` and Node on the default path:
@@ -53,6 +66,13 @@ mkdir -p ~/.config/systemd/user
 cp deploy/ito.service ~/.config/systemd/user/
 systemctl --user enable --now ito
 loginctl enable-linger "$USER"   # keeps it running while you're logged out
+journalctl --user -u ito -f      # its logs
+```
+
+To update, pull and restart; a reply being written at that moment ends as interrupted:
+
+```sh
+cd ~/ito-core && git pull && npm ci --omit=dev && systemctl --user restart ito
 ```
 
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's

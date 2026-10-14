@@ -71,7 +71,7 @@ export const createCodexEngine = ({
     cwd: workspace,
     approvalPolicy: "never",
     sandbox: "workspace-write",
-    config: { sandbox_workspace_write: { network_access: true }, ...config },
+    config: { sandbox_workspace_write: { network_access: true }, web_search: "live", ...config },
     ...(modelProvider && { modelProvider }),
   };
 
