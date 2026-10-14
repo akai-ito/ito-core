@@ -10,11 +10,19 @@ type Conversation = {
   readonly texts: ReadonlyMap<string, string>;
   readonly ended: ReadonlySet<string>;
   readonly running: ReadonlySet<string>;
+  readonly steps: ReadonlyMap<string, StepState>;
+  readonly lastPosition: number;
 };
+
+type StepState = { readonly turn: string; readonly position: number; readonly isEnded: boolean };
+
+type Positioned = { readonly id: string; readonly position: number };
+
+type SnapshotStep = Positioned & { readonly turn: string; readonly outcome?: string };
 
 type Delivery = { readonly conversation: Conversation; readonly delivered: ReadonlySet<string> };
 
-type SnapshotMessage = { readonly id: string; readonly text: string; readonly outcome?: string };
+type SnapshotMessage = Positioned & { readonly text: string; readonly outcome?: string };
 
 type GuaranteeTable = ReadonlyMap<number, ReadonlySet<string>>;
 
@@ -72,15 +80,58 @@ const checkOrder = (file: string, lines: readonly Line[]): void => {
   );
 };
 
+const checkPosition = (conversation: Conversation, position: number, what: string, where: string): number => {
+  if (position <= conversation.lastPosition) {
+    throw failure(where, `${what} has position ${position}, not after ${conversation.lastPosition}`);
+  }
+  return position;
+};
+
+const startStep = (conversation: Conversation, step: SnapshotStep, where: string): Conversation => {
+  if (conversation.steps.has(step.id)) throw failure(where, `step ${step.id} starts twice`);
+  if (!conversation.running.has(step.turn)) throw failure(where, `step ${step.id} starts outside a running turn`);
+  const position = checkPosition(conversation, step.position, `step ${step.id}`, where);
+  return {
+    ...conversation,
+    steps: new Map(conversation.steps).set(step.id, { turn: step.turn, position, isEnded: false }),
+    lastPosition: position,
+  };
+};
+
+const changeStep = (conversation: Conversation, step: SnapshotStep, isEnding: boolean, where: string): Conversation => {
+  const known = conversation.steps.get(step.id);
+  if (!known) throw failure(where, `step ${step.id} changes without starting`);
+  if (known.isEnded) throw failure(where, `step ${step.id} changes after it ended`);
+  if (known.turn !== step.turn || known.position !== step.position) {
+    throw failure(where, `step ${step.id} changed its turn or position`);
+  }
+  if (isEnding && !step.outcome) throw failure(where, `step ${step.id} ends without an outcome`);
+  if (!isEnding && step.outcome) throw failure(where, `step ${step.id} has an outcome before it ends`);
+  return { ...conversation, steps: new Map(conversation.steps).set(step.id, { ...known, isEnded: isEnding }) };
+};
+
 const applyEvent = (conversation: Conversation, event: Event, where: string): Conversation => {
   const { texts, ended, running } = conversation;
   const message = event.message;
   switch (event.type) {
     case "message.accepted":
     case "message.started": {
-      const { id, text } = message as { readonly id: string; readonly text: string };
+      const { id, text, position } = message as SnapshotMessage;
       if (texts.has(id)) throw failure(where, `message ${id} begins twice`);
-      return { ...conversation, texts: new Map(texts).set(id, text) };
+      return {
+        ...conversation,
+        texts: new Map(texts).set(id, text),
+        lastPosition: checkPosition(conversation, position, `message ${id}`, where),
+      };
+    }
+    case "step.started": {
+      return startStep(conversation, event.step as SnapshotStep, where);
+    }
+    case "step.updated": {
+      return changeStep(conversation, event.step as SnapshotStep, false, where);
+    }
+    case "step.ended": {
+      return changeStep(conversation, event.step as SnapshotStep, true, where);
     }
     case "message.delta": {
       const id = message as string;
@@ -101,7 +152,7 @@ const applyEvent = (conversation: Conversation, event: Event, where: string): Co
       if (event.outcome === "completed" && length !== text.length) {
         throw failure(where, "a completed message keeps all its text");
       }
-      return { texts: new Map(texts).set(id, text.slice(0, length)), ended: new Set([...ended, id]), running };
+      return { ...conversation, texts: new Map(texts).set(id, text.slice(0, length)), ended: new Set([...ended, id]) };
     }
     case "turn.started": {
       return { ...conversation, running: new Set([...running, event.turn as string]) };
@@ -109,6 +160,8 @@ const applyEvent = (conversation: Conversation, event: Event, where: string): Co
     case "turn.ended": {
       const turn = event.turn as string;
       if (!running.has(turn)) throw failure(where, `turn ${String(event.turn)} ended without starting`);
+      const unfinished = [...conversation.steps].find(([, step]) => step.turn === turn && !step.isEnded);
+      if (unfinished) throw failure(where, `turn ${turn} ended with step ${unfinished[0]} still running`);
       return { ...conversation, running: new Set([...running].filter((candidate) => candidate !== turn)) };
     }
     default: {
@@ -117,9 +170,24 @@ const applyEvent = (conversation: Conversation, event: Event, where: string): Co
   }
 };
 
-const applySnapshot = (conversation: Conversation, event: Event): Conversation => {
+const checkAscending = (entries: readonly Positioned[], what: string, where: string): void => {
+  entries.reduce((previous, entry) => {
+    if (entry.position <= previous) throw failure(where, `snapshot ${what} out of position order at ${entry.id}`);
+    return entry.position;
+  }, 0);
+};
+
+const applySnapshot = (conversation: Conversation, event: Event, where: string): Conversation => {
   const messages = event.messages as readonly SnapshotMessage[];
+  const steps = event.steps as readonly SnapshotStep[];
   const turn = event.turn as { readonly id: string } | null;
+  checkAscending(messages, "messages", where);
+  checkAscending(steps, "steps", where);
+  const first = messages[0]?.position ?? Infinity;
+  const early = steps.find((step) => step.position < first);
+  if (early) throw failure(where, `snapshot step ${early.id} comes before its first message`);
+  const stray = steps.find((step) => !step.outcome && step.turn !== turn?.id);
+  if (stray) throw failure(where, `snapshot step ${stray.id} is running outside the running turn`);
   return {
     texts: new Map(messages.map((message) => [message.id, message.text])),
     ended: new Set([
@@ -127,6 +195,10 @@ const applySnapshot = (conversation: Conversation, event: Event): Conversation =
       ...messages.filter((message) => Boolean(message.outcome)).map((message) => message.id),
     ]),
     running: new Set(turn ? [turn.id] : []),
+    steps: new Map(
+      steps.map((step) => [step.id, { turn: step.turn, position: step.position, isEnded: Boolean(step.outcome) }]),
+    ),
+    lastPosition: Math.max(0, ...messages.map((message) => message.position), ...steps.map((step) => step.position)),
   };
 };
 
@@ -147,14 +219,14 @@ const checkDelivery = (file: string, header: Line, lines: readonly Line[]): void
   const applied = new Set(appliedEntries.map(([id]) => id));
   const appliedConversation = appliedEntries.reduce<Conversation>(
     (conversation, [id, event]) => applyEvent(conversation, event, `${file} (given ${id})`),
-    { texts: new Map(), ended: new Set(), running: new Set() },
+    { texts: new Map(), ended: new Set(), running: new Set(), steps: new Map(), lastPosition: 0 },
   );
 
   const deliver = ({ conversation, delivered }: Delivery, line: Line, index: number): Delivery => {
     const where = `${file}:${index + 2}`;
     const event = line.event as Event | undefined;
     if (!event) return { conversation, delivered };
-    if (event.type === "snapshot") return { conversation: applySnapshot(conversation, event), delivered };
+    if (event.type === "snapshot") return { conversation: applySnapshot(conversation, event, where), delivered };
     if (!event.id) throw failure(where, "only a snapshot may lack an id");
     if (delivered.has(event.id)) throw failure(where, `event ${event.id} is delivered twice`);
     if (applied.has(event.id)) throw failure(where, `event ${event.id} is delivered again after the app applied it`);

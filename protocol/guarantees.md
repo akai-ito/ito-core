@@ -22,7 +22,7 @@ where the protocol has to make it possible, marked *App*.
 | G11 | **The token stays secret.** It travels only over HTTPS (loopback excepted, for development), is never logged and is never sent back. | 1 |
 | G12 | **Versioned and tolerant.** The server states its protocol version before asking for the token. Both sides ignore what they don't recognise. A major mismatch says which side to update. | 1 |
 | G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2 |
-| G14 | **The agent's steps are kept.** Every step the agent takes (thinking, a search, a command, an edit, a tool, a plan) streams as it happens and is stored in the conversation, in order with the messages, so it comes back in snapshots, in history and on every app. Every step ends with an outcome; a step still running when its turn ends, ends with the turn. | 4, 14 |
+| G14 | **The agent's steps are kept.** Every step the agent takes (thinking, a search, a command, an edit, a tool, a plan) streams as it happens and is stored in the conversation, in order with the messages, so it comes back in snapshots, in history and on every app. Every step ends with an outcome; a step still running when its turn ends, ends with the turn. | 4, 9, 15 |
 
 ## Scenario by scenario
 
