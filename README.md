@@ -39,9 +39,10 @@ node bin/ito.ts serve    # the first run prints your token, once
 ```
 
 Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code instead of a browser
-redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new`
-makes another. `--engine demo` answers without Codex, to try Ari before signing in: a message with
-*long* in it gives a reply to stop, *fail* a failure, and *silent* a timeout.
+redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new` makes
+another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
+in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, and *silent* a
+timeout.
 
 Before reaching for your phone, check a real turn from the machine itself, with the server running
 and your token in `TOKEN`. The stream should show the turn start, statuses, the reply's text

@@ -383,14 +383,14 @@ export interface components {
       /** @description The turn the step belongs to. */
       turn: components["schemas"]["TurnId"];
       kind: components["schemas"]["StepKind"];
-      /** @description Plain words, such as "Reading notes.md": present tense while the step runs, past tense once it has ended ("Read notes.md"). */
+      /** @description Plain words, such as "Reading notes.md": present tense while the step runs, past tense once it has completed ("Read notes.md"). A step that didn't complete keeps its present-tense title. */
       title: string;
       /** @description When the step began. */
       at: components["schemas"]["Timestamp"];
       position: components["schemas"]["Position"];
       /** @description When the step ended. Absent while it runs. */
       ended_at?: components["schemas"]["Timestamp"];
-      /** @description How the step ended. Absent while it runs. */
+      /** @description How the step ended. Absent while it runs. `completed`: it ran, whatever its result; a command that exits non-zero, such as a search that finds nothing, is completed, with its `exit_code`. `failed`: it couldn't run, or a tool reported an error. `stopped` or `interrupted`: its turn was stopped, or cut off by a restart. */
       outcome?: components["schemas"]["Outcome"];
       /** @description How long the step took, once it has ended. */
       duration_ms?: number;
@@ -422,7 +422,7 @@ export interface components {
         path?: string;
         query?: string;
       }[];
-      /** @description `command`: its exit code, once it has ended. */
+      /** @description `command`: its exit code, once it has ended. Non-zero doesn't make the step failed. */
       exit_code?: number;
       /** @description `command`: the end of what it printed, at most the last 2 KB, once it has ended. */
       output?: string;

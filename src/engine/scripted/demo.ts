@@ -1,4 +1,5 @@
-import type { EngineEvent, Input } from "#engine/engine.ts";
+import { createCell } from "#cell.ts";
+import type { EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
 
 const pieceMs = 70;
@@ -8,7 +9,7 @@ const shortReply = [
   "",
   "- It streams a reply in small pieces, the way a real model does.",
   "- Send a message while it writes to try **steering**.",
-  "- Include *long* for a long reply to stop, *fail* for a failure, or *silent* for a timeout.",
+  "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, or *silent* for a timeout.",
 ].join("\n");
 
 const longReply = Array.from(
@@ -57,12 +58,71 @@ const opening = (input: string, now: number): readonly TimedEvent[] => {
   ];
 };
 
+type Started = Extract<EngineEvent, { readonly type: "step.started" }>;
+
+const startStep = (key: string, kind: Started["kind"], facts: StepFacts): EngineEvent => ({
+  type: "step.started",
+  key,
+  kind,
+  facts,
+});
+
+const updatePlan = (facts: StepFacts): EngineEvent => ({ type: "step.updated", key: "plan", facts });
+
+const endStep = (key: string, facts: StepFacts = {}): EngineEvent => ({
+  type: "step.ended",
+  key,
+  outcome: "completed",
+  facts,
+});
+
+const planOf = (states: readonly ("pending" | "in_progress" | "done")[]): StepFacts => ({
+  items: ["Read your notes", "Check Saturday's forecast", "Update the notes"].map((text, index) => ({
+    text,
+    state: states[index] ?? "pending",
+  })),
+});
+
+const busyTrail = (startAt: number): readonly TimedEvent[] =>
+  [
+    startStep("plan", "plan", planOf(["in_progress"])),
+    startStep("read", "command", {
+      command: 'cat notes.md && grep -n "run" notes.md',
+      actions: [
+        { type: "read", path: "notes.md" },
+        { type: "search", query: "run", path: "notes.md" },
+      ],
+    }),
+    endStep("read", { exit_code: 0, output: "Saturday: long run at 7:30\n1:Saturday: long run at 7:30\n" }),
+    updatePlan(planOf(["done", "in_progress"])),
+    startStep("search", "command", {
+      command: 'grep -rn "umbrella" notes/',
+      actions: [{ type: "search", query: "umbrella", path: "notes/" }],
+    }),
+    endStep("search", { exit_code: 1 }),
+    startStep("tool", "tool", {
+      capability: "weather",
+      operation: "forecast",
+      arguments: { place: "London", day: "Saturday" },
+    }),
+    endStep("tool"),
+    startStep("wait", "wait", { wait_ms: 1500 }),
+    endStep("wait"),
+    updatePlan(planOf(["done", "done", "in_progress"])),
+    startStep("edit", "file_change", {
+      files: [{ path: "notes.md", change: "modified", lines_added: 2, lines_removed: 1 }],
+    }),
+    endStep("edit"),
+    updatePlan(planOf(["done", "done", "done"])),
+  ].map((event, index) => ({ at: startAt + index * 450, event }));
+
 const scriptFor = (inputs: readonly Input[], now: number): readonly TimedEvent[] => {
   const text = inputs
     .map((input) => input.text)
     .join("\n")
     .toLowerCase();
-  const start = opening(text, now);
+  const opened = opening(text, now);
+  const start = text.includes("busy") ? [...opened, ...busyTrail(lastAt(opened) + 300)] : opened;
   if (text.includes("silent")) return start;
   if (text.includes("fail")) {
     return [
@@ -76,16 +136,16 @@ const scriptFor = (inputs: readonly Input[], now: number): readonly TimedEvent[]
 
 export const demoScripts: ScriptSource = (_turn, inputs, now) => {
   const events = scriptFor(inputs, now);
+  const scheduledUntil = createCell(lastAt(events));
   return {
     events,
     steer: (input, steeredAt) => {
-      const replyAt = Math.max(steeredAt + 600, lastAt(events) + pieceMs);
+      const replyAt = Math.max(steeredAt + 600, scheduledUntil.get() + pieceMs);
+      const reply = writeMessage("reply", `Got it: ${input.text}`, replyAt);
+      scheduledUntil.set(lastAt(reply));
       return {
         outcome: "taken",
-        events: [
-          { at: steeredAt + 300, event: { type: "input.read", messageId: input.messageId } },
-          ...writeMessage("reply", `Got it: ${input.text}`, replyAt),
-        ],
+        events: [{ at: steeredAt + 300, event: { type: "input.read", messageId: input.messageId } }, ...reply],
       };
     },
     stoppedAt: (requestedAt) => requestedAt + 150,

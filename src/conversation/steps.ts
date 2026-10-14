@@ -188,7 +188,7 @@ export const toEndedStep = (step: Step, outcome: Outcome, facts: StepFacts, ende
   return {
     ...step,
     ...facts,
-    title: toStepTitle(step.kind, merged, "past"),
+    title: toStepTitle(step.kind, merged, outcome === "completed" ? "past" : "present"),
     ended_at: toTimestamp(endedAt),
     outcome,
     duration_ms: Math.max(0, endedAt - Date.parse(step.at)),

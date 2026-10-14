@@ -48,7 +48,9 @@ type StepOptions = {
   readonly detail?: string;
 };
 
-type StepEnd = { readonly outcome?: Outcome; readonly fields?: Fields };
+type StepEnd = { readonly outcome?: Outcome; readonly fields?: Fields; readonly id?: string };
+
+type StepUpdate = { readonly detail?: string; readonly id?: string };
 
 type RunningStep = { readonly step: Step; readonly endedTitle: string };
 
@@ -71,7 +73,7 @@ export type Transcript = {
   readonly startTurn: (inputs: readonly string[], options?: { readonly retryOf?: string }) => string;
   readonly status: (kind: StatusKind, label: string, detail?: string) => void;
   readonly step: (kind: StepKind, options: StepOptions) => string;
-  readonly updateStep: (fields: Fields, detail?: string) => void;
+  readonly updateStep: (fields: Fields, update?: StepUpdate) => void;
   readonly endStep: (end?: StepEnd) => void;
   readonly read: (message: string) => void;
   readonly queue: (message: string) => void;
@@ -228,7 +230,7 @@ export const createTranscript = (header: Header): Transcript => {
   const turn = createCell<LiveTurn | undefined>(undefined);
   const next = createCell<readonly string[]>([]);
   const writing = createCell<string | undefined>(undefined);
-  const runningStep = createCell<RunningStep | undefined>(undefined);
+  const runningSteps = createCell<ReadonlyMap<string, RunningStep>>(new Map());
   const retries = createCell<ReadonlyMap<string, string>>(new Map());
 
   const timestamp = (): string => new Date(now.get()).toISOString();
@@ -400,20 +402,35 @@ export const createTranscript = (header: Header): Transcript => {
     emit("turn.status", { turn: running.id, ...liveStatus });
   };
 
-  const endStep = (end: StepEnd = {}): void => {
-    const current = runningStep.get();
-    if (!current) return;
-    const durationMs = now.get() - Date.parse(current.step.at);
+  const foreground = (): RunningStep | undefined =>
+    runningSteps
+      .get()
+      .values()
+      .filter((running) => running.step.kind !== "plan")
+      .toArray()
+      .at(-1);
+
+  const finishStep = (running: RunningStep, end: StepEnd): void => {
+    const outcome = end.outcome ?? "completed";
     const ended = {
-      ...current.step,
+      ...running.step,
       ...end.fields,
-      title: current.endedTitle,
+      title: outcome === "completed" ? running.endedTitle : running.step.title,
       ended_at: timestamp(),
-      outcome: end.outcome ?? "completed",
-      duration_ms: durationMs,
+      outcome,
+      duration_ms: now.get() - Date.parse(running.step.at),
     };
-    runningStep.set(undefined);
+    runningSteps.update((current) => new Map([...current].filter(([id]) => id !== running.step.id)));
     emit("step.ended", { step: ended });
+  };
+
+  const endStep = (end: StepEnd = {}): void => {
+    const running = end.id ? runningSteps.get().get(end.id) : foreground();
+    if (running) finishStep(running, end);
+  };
+
+  const endAllSteps = (outcome: Outcome): void => {
+    for (const running of runningSteps.get().values()) finishStep(running, { outcome });
   };
 
   const status = (kind: StatusKind, label: string, detail?: string): void => {
@@ -422,7 +439,7 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const step = (kind: StepKind, options: StepOptions): string => {
-    endStep();
+    if (kind !== "plan") endStep();
     const running = runningTurn();
     const id = newId("s");
     const started = {
@@ -434,19 +451,19 @@ export const createTranscript = (header: Header): Transcript => {
       position: nextPosition(),
       ...options.fields,
     } as Step;
-    runningStep.set({ step: started, endedTitle: options.endedTitle });
+    runningSteps.update((current) => new Map([...current, [id, { step: started, endedTitle: options.endedTitle }]]));
     emit("step.started", { step: started });
     setStatus(statusKindFor(kind), options.title, options.detail);
     return id;
   };
 
-  const updateStep = (fields: Fields, detail?: string): void => {
-    const current = runningStep.get();
+  const updateStep = (fields: Fields, update: StepUpdate = {}): void => {
+    const current = update.id ? runningSteps.get().get(update.id) : foreground();
     if (!current) throw new Error("no step is running");
     const updated: Step = { ...current.step, ...fields };
-    runningStep.set({ ...current, step: updated });
+    runningSteps.update((steps) => new Map([...steps, [updated.id, { ...current, step: updated }]]));
     emit("step.updated", { step: updated });
-    if (detail) setStatus(statusKindFor(updated.kind), updated.title, detail);
+    if (update.detail) setStatus(statusKindFor(updated.kind), updated.title, update.detail);
   };
 
   const read = (message: string): void => {
@@ -494,7 +511,7 @@ export const createTranscript = (header: Header): Transcript => {
   const endTurn = (outcome: Outcome, error?: ErrorBody): string => {
     if (writing.get()) throw new Error("the turn ended with a message still open");
     const running = runningTurn();
-    endStep({ outcome });
+    endAllSteps(outcome);
     emit("turn.ended", { turn: running.id, outcome, ...(error && { error }) });
     turn.set(undefined);
     return running.id;
@@ -590,7 +607,7 @@ export const createTranscript = (header: Header): Transcript => {
     turn.set(undefined);
     next.set([]);
     writing.set(undefined);
-    runningStep.set(undefined);
+    runningSteps.set(new Map());
     wait(3000);
   };
 

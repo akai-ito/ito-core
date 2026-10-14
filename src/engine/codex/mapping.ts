@@ -215,7 +215,7 @@ const endStep = (item: ThreadItem): EngineEvent | undefined => {
     case "commandExecution": {
       return ended(
         item.id,
-        item.status === "completed" && (item.exitCode ?? 0) === 0,
+        typeof item.exitCode === "number",
         withoutEmpty({
           exit_code: item.exitCode,
           output: item.aggregatedOutput ? tailOf(item.aggregatedOutput) : undefined,
