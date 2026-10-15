@@ -52,6 +52,20 @@ describe("the demo engine", () => {
     expect(events.at(-1)).toEqual({ type: "ended" });
   });
 
+  it("asks a question, an approval or a secret on its keywords, then ends the turn", async () => {
+    const asked = await runToEnd("Please ask me something");
+    expect(asked.slice(-2)).toMatchObject([
+      { type: "ask", fields: { kind: "question", question: "Which Juno did you mean?" } },
+      { type: "ended" },
+    ]);
+    const approval = await runToEnd("approve this");
+    expect(approval.at(-2)).toMatchObject({ type: "ask", fields: { kind: "approval" } });
+    const secret = await runToEnd("a secret");
+    expect(secret.at(-2)).toMatchObject({ type: "ask", fields: { secret: true } });
+    const busy = await runToEnd("a busy task");
+    expect(busy.some((event) => event.type === "ask")).toBe(false);
+  });
+
   it("walks a trail of steps when asked to be busy", async () => {
     const events = await runToEnd("Be busy for me");
     const kinds = events
