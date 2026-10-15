@@ -2,13 +2,20 @@ export type Dimensions = { readonly width: number; readonly height: number };
 
 const imageTypes: ReadonlySet<string> = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
+const markerByte = 255;
+const startOfImage = 216;
+const firstFrameMarker = 192;
+const lastFrameMarker = 207;
+const markersThatAreNotFrames: ReadonlySet<number> = new Set([196, 200, 204]);
+const fourteenBits = 16_383;
+
 export const isImage = (mediaType: string): boolean => imageTypes.has(mediaType.toLowerCase());
 
 const jpegDimensions = (bytes: Buffer, offset = 2): Dimensions | undefined => {
-  if (offset + 9 > bytes.length || bytes[offset] !== 0xff) return undefined;
+  if (offset + 9 > bytes.length || bytes[offset] !== markerByte) return undefined;
   const marker = bytes[offset + 1] ?? 0;
   const length = bytes.readUInt16BE(offset + 2);
-  const isFrame = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+  const isFrame = marker >= firstFrameMarker && marker <= lastFrameMarker && !markersThatAreNotFrames.has(marker);
   return isFrame
     ? { height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) }
     : jpegDimensions(bytes, offset + 2 + length);
@@ -20,11 +27,11 @@ const webpDimensions = (bytes: Buffer): Dimensions | undefined => {
     return { width: bytes.readUIntLE(24, 3) + 1, height: bytes.readUIntLE(27, 3) + 1 };
   }
   if (chunk === "VP8 " && bytes.length >= 30) {
-    return { width: bytes.readUInt16LE(26) & 0x3f_ff, height: bytes.readUInt16LE(28) & 0x3f_ff };
+    return { width: bytes.readUInt16LE(26) & fourteenBits, height: bytes.readUInt16LE(28) & fourteenBits };
   }
   if (chunk === "VP8L" && bytes.length >= 25) {
     const bits = bytes.readUInt32LE(21);
-    return { width: (bits & 0x3f_ff) + 1, height: ((bits >> 14) & 0x3f_ff) + 1 };
+    return { width: (bits & fourteenBits) + 1, height: ((bits >> 14) & fourteenBits) + 1 };
   }
   return undefined;
 };
@@ -32,7 +39,7 @@ const webpDimensions = (bytes: Buffer): Dimensions | undefined => {
 export const readDimensions = (bytes: Buffer, mediaType: string): Dimensions | undefined => {
   switch (mediaType.toLowerCase()) {
     case "image/jpeg": {
-      return bytes[0] === 0xff && bytes[1] === 0xd8 ? jpegDimensions(bytes) : undefined;
+      return bytes[0] === markerByte && bytes[1] === startOfImage ? jpegDimensions(bytes) : undefined;
     }
     case "image/png": {
       return bytes.length >= 24 && bytes.toString("ascii", 1, 4) === "PNG"
