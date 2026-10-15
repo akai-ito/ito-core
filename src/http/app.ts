@@ -83,7 +83,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   app.addHook("onRequest", async (request, reply) => {
     const route = request.routeOptions.url;
-    if (!route?.startsWith("/v0/") || route === "/v0/pair") return;
+    if (route === "/v0/pair" || !route?.startsWith("/v0/")) return;
     const verdict = gate.check(request.headers.authorization);
     if (verdict === "accepted") return;
     return verdict === "slow_down"
