@@ -1,4 +1,5 @@
 import type { TurnId } from "#conversation/ids.ts";
+import { createSecrets, type Secrets } from "#conversation/secrets.ts";
 import { toGap } from "#reports/gap.ts";
 import type { Reporter } from "#reports/reporter.ts";
 import type { Tool } from "#tools/mcp.ts";
@@ -7,7 +8,11 @@ export const reportToolName = "report_gap";
 
 const text = (description: string): Readonly<Record<string, string>> => ({ type: "string", description });
 
-export const createReportTool = (reporter: Reporter, currentTurn: () => TurnId | undefined): Tool => ({
+export const createReportTool = (
+  reporter: Reporter,
+  currentTurn: () => TurnId | undefined,
+  secrets: Secrets = createSecrets(),
+): Tool => ({
   name: reportToolName,
   title: "Report a gap to Ito",
   description:
@@ -30,7 +35,7 @@ export const createReportTool = (reporter: Reporter, currentTurn: () => TurnId |
     additionalProperties: false,
   },
   call: async (input) => {
-    const gap = toGap(input);
+    const gap = toGap(secrets.redactValue(input));
     if (!gap.ok) return { text: gap.failure, isError: true };
     const filed = await reporter.report(currentTurn(), gap.value);
     if (!filed.ok) return { text: filed.failure, isError: true };

@@ -101,7 +101,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         ? reply.code(400).send(toErrorResult("invalid_request", `No ask ${String(answers)}.`))
         : reply.code(409).send(toErrorResult("id_conflict", `Message ${id} was already accepted with different text.`));
     }
-    if (accepted.value.isNew) turns.route(toMessageId(id), text);
+    if (accepted.value.isNew) turns.route(toMessageId(id), text, accepted.value.message.secret === true);
     return reply.code(accepted.value.isNew ? 201 : 200).send({ message: accepted.value.message });
   });
 

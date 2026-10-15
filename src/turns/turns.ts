@@ -3,6 +3,7 @@ import type { Cancel, Clock } from "#clock.ts";
 import { toCommandError, toTurnError, toWatchdogError } from "#conversation/failures.ts";
 import type { AskId, MessageId, TurnId } from "#conversation/ids.ts";
 import { isAdjustingAfterRead, route, type Conversation } from "#conversation/routing.ts";
+import { createSecrets, type Secrets } from "#conversation/secrets.ts";
 import { adjustingStatus, stoppingStatus, toStepStatus, writingStatus } from "#conversation/status.ts";
 import { toEndedStep, toStepTitle, toUpdatedStep } from "#conversation/steps.ts";
 import type { AskFields, Engine, EngineEvent, Input } from "#engine/engine.ts";
@@ -28,7 +29,7 @@ export type Log = (message: string, error: unknown) => void;
 export type Info = (message: string, details: Readonly<Record<string, unknown>>) => void;
 
 export type Turns = {
-  readonly route: (message: MessageId, text: string) => void;
+  readonly route: (message: MessageId, text: string, isSecret?: boolean) => void;
   readonly stop: (turn: TurnId, cut: Cut | undefined) => StopState | undefined;
   readonly retry: (failed: TurnId) => Result<RetryStarted, "not_found" | "not_failed">;
   readonly ask: (fields: AskFields) => Result<Ask, "no_turn">;
@@ -48,6 +49,7 @@ type Running = {
   readonly hasStartedReply: boolean;
   readonly awaitingRead: readonly MessageId[];
   readonly buffered: string;
+  readonly held: string;
   readonly lastFlushAt: number | undefined;
   readonly cancelFlush: Cancel | undefined;
   readonly cancelWatchdog: Cancel;
@@ -83,6 +85,7 @@ export const createTurns = (
   identifiers: Identifiers,
   log: Log,
   limits: Limits = defaultLimits,
+  secrets: Secrets = createSecrets(),
 ): Turns => {
   const running = createCell<Running | undefined>(undefined);
   const actor = createCell<Promise<void>>(Promise.resolve());
@@ -135,9 +138,9 @@ export const createTurns = (
     running.set({ ...state, buffered: "", cancelFlush: undefined, lastFlushAt: clock.now() });
   };
 
-  const pushText = (turn: TurnId, text: string): void => {
+  const emitText = (turn: TurnId, text: string): void => {
     const state = current(turn);
-    if (!state?.writing) return;
+    if (text === "" || !state?.writing) return;
     const now = clock.now();
     const sinceFlush = state.lastFlushAt === undefined ? Infinity : now - state.lastFlushAt;
     if (sinceFlush >= limits.coalesceMs && state.buffered === "") {
@@ -156,7 +159,24 @@ export const createTurns = (
     });
   };
 
+  const pushText = (turn: TurnId, text: string): void => {
+    const state = current(turn);
+    if (!state?.writing) return;
+    const combined = secrets.redact(state.held + text);
+    const cut = combined.length - secrets.unfinished(combined);
+    running.set({ ...state, held: combined.slice(cut) });
+    emitText(turn, combined.slice(0, cut));
+  };
+
+  const releaseHeld = (turn: TurnId): void => {
+    const state = current(turn);
+    if (!state?.held) return;
+    running.set({ ...state, held: "" });
+    emitText(turn, state.held);
+  };
+
   const endOpenMessage = (turn: TurnId): void => {
+    releaseHeld(turn);
     flush(turn);
     const state = current(turn);
     if (!state?.writing) return;
@@ -180,8 +200,9 @@ export const createTurns = (
   };
 
   const startStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.started" }>): void => {
-    const title = toStepTitle(event.kind, event.facts, "present");
-    const step = store.startStep(turn, event.kind, title, event.facts);
+    const facts = secrets.redactValue(event.facts);
+    const title = toStepTitle(event.kind, facts, "present");
+    const step = store.startStep(turn, event.kind, title, facts);
     changeSteps(turn, (steps) => new Map(steps).set(event.key, step));
     store.setStatus(turn, statusOf(step));
   };
@@ -189,7 +210,7 @@ export const createTurns = (
   const updateStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.updated" }>): void => {
     const step = current(turn)?.steps.get(event.key);
     if (!step) return;
-    const updated = toUpdatedStep(step, event.facts);
+    const updated = toUpdatedStep(step, secrets.redactValue(event.facts));
     store.updateStep(updated);
     changeSteps(turn, (steps) => new Map(steps).set(event.key, updated));
     if (!isSameStatus(statusOf(step), statusOf(updated))) store.setStatus(turn, statusOf(updated));
@@ -198,7 +219,7 @@ export const createTurns = (
   const endStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.ended" }>): void => {
     const step = current(turn)?.steps.get(event.key);
     if (!step) return;
-    store.endStep(toEndedStep(step, event.outcome, event.facts, clock.now()));
+    store.endStep(toEndedStep(step, event.outcome, secrets.redactValue(event.facts), clock.now()));
     changeSteps(turn, (steps) => new Map([...steps].filter(([key]) => key !== event.key)));
   };
 
@@ -216,6 +237,7 @@ export const createTurns = (
   };
 
   const failTurn = (turn: TurnId, error: ErrorBody): void => {
+    releaseHeld(turn);
     flush(turn);
     const state = current(turn);
     if (!state) return;
@@ -227,6 +249,7 @@ export const createTurns = (
   };
 
   const completeTurn = (turn: TurnId): void => {
+    releaseHeld(turn);
     flush(turn);
     const state = current(turn);
     if (!state) return;
@@ -273,8 +296,8 @@ export const createTurns = (
     const state = current(turn);
     if (state?.phase !== "running") return fail("no_turn");
     endOpenMessage(turn);
-    const asked = store.startAsk(turn, fields);
-    change(turn, (latest) => ({ ...latest, phase: "asking", buffered: "" }));
+    const asked = store.startAsk(turn, secrets.redactValue(fields));
+    change(turn, (latest) => ({ ...latest, phase: "asking", buffered: "", held: "" }));
     return ok(asked);
   };
 
@@ -327,6 +350,7 @@ export const createTurns = (
           writing: { message, kind: event.kind },
           hasStartedReply: state.hasStartedReply || event.kind === "reply",
           buffered: "",
+          held: "",
           lastFlushAt: undefined,
         });
         return;
@@ -428,6 +452,7 @@ export const createTurns = (
       hasStartedReply: false,
       awaitingRead: [],
       buffered: "",
+      held: "",
       lastFlushAt: undefined,
       cancelFlush: undefined,
       cancelWatchdog: armWatchdog(turn),
@@ -476,7 +501,8 @@ export const createTurns = (
   };
 
   return {
-    route: (message, text) => {
+    route: (message, text, isSecret = false) => {
+      if (isSecret) secrets.add(text);
       received.update((texts) => new Map([...texts, [message, text]]));
       void enqueue(() => routeMessage(message, text));
     },
@@ -507,6 +533,7 @@ export const createTurns = (
             phase: "stopping",
             cut,
             buffered: "",
+            held: "",
             cancelForcedStop: clock.after(limits.forcedStopMs, () => {
               void forceStop(turn);
             }),
