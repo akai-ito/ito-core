@@ -14,7 +14,7 @@ import { createGitHub } from "#reports/github.ts";
 import { createReporter, defaultDailyLimit } from "#reports/reporter.ts";
 import { createReportTool } from "#reports/tool.ts";
 import { createAskTool } from "#asks/tool.ts";
-import { createAttachments } from "#attachments/attachments.ts";
+import { createAttachments, type Attachments } from "#attachments/attachments.ts";
 import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
 import { createNotifier, defaultReminderMs } from "#notifications/notifier.ts";
 import { createPresence } from "#notifications/presence.ts";
@@ -53,6 +53,7 @@ export type Server = {
   readonly app: FastifyInstance;
   readonly store: Store;
   readonly turns: Turns;
+  readonly attachments: Attachments;
   readonly close: () => Promise<void>;
 };
 
@@ -168,6 +169,7 @@ export const createServer = (options: ServerOptions): Server => {
     app,
     store,
     turns,
+    attachments,
     close: () => {
       const pending = closing.get() ?? shutdown();
       closing.set(pending);

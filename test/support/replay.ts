@@ -1,11 +1,13 @@
 import { generateKeyPairSync } from "node:crypto";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
+import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
+import type { Attachment } from "#protocol/types.ts";
 import { apnsSettings } from "#notifications/apns.ts";
 import { openNotification } from "#notifications/crypto.ts";
 import type { Envelope } from "#notifications/notifier.ts";
@@ -16,6 +18,7 @@ import { createIdMatcher } from "./matching.ts";
 import { createScriptQueue, deriveScripts } from "./scripts.ts";
 import {
   readTranscript,
+  type Transcript,
   type AppRequest,
   type ServerResponse,
   type Step,
@@ -63,16 +66,30 @@ const settle = async (): Promise<void> => {
   await yieldToIo();
 };
 
+const fixture = (name: string): Buffer => readFileSync(path.join(fixtureDirectory, name));
+
+const bodyOf = (request: AppRequest): Uint8Array<ArrayBuffer> | string | undefined => {
+  if (request.body_file) return new Uint8Array(fixture(request.body_file));
+  if (request.body_size !== undefined) return new Uint8Array(request.body_size);
+  return request.body === undefined ? undefined : JSON.stringify(request.body);
+};
+
 const send = async (origin: string, request: AppRequest): Promise<Received> => {
-  const hasBody = request.body !== undefined;
+  const body = bodyOf(request);
+  const isJson = request.body !== undefined;
   const response = await fetch(origin + request.path, {
     method: request.method,
-    headers: { ...toHeaders(request.headers), ...(hasBody && { "content-type": "application/json" }) },
-    ...(hasBody && { body: JSON.stringify(request.body) }),
+    headers: { ...(isJson && { "content-type": "application/json" }), ...toHeaders(request.headers) },
+    ...(body !== undefined && { body }),
   });
-  const text = await response.text();
+  const isJsonAnswer = response.headers.get("content-type")?.startsWith("application/json") ?? false;
+  const text = isJsonAnswer ? await response.text() : undefined;
+  if (!isJsonAnswer) await response.arrayBuffer();
   return { status: response.status, headers: response.headers, body: text ? (JSON.parse(text) as unknown) : undefined };
 };
+
+const givenAttachments = (transcript: Transcript): readonly Attachment[] =>
+  transcript.given.flatMap((event) => (event.type === "message.accepted" ? (event.message.attachments ?? []) : []));
 
 const withTimeout = async <Value>(promise: Promise<Value>, what: string): Promise<Value> => {
   const timedOut = Symbol("timed out");
@@ -93,6 +110,7 @@ export const replay = async (name: string): Promise<void> => {
   const response = createCell<Promise<Received> | undefined>(undefined);
   const apns = await startFakeApns();
   const deviceKey = createCell<DeviceKey | undefined>(undefined);
+  const tokens = createCell<ReadonlyMap<string, string>>(new Map());
 
   const createReplayServer = (): Server =>
     createServer({
@@ -154,7 +172,21 @@ export const replay = async (name: string): Promise<void> => {
       const actual = received.headers.get(header);
       check(actual === value ? undefined : `header ${header}: ${String(actual)}, expected ${value}`, index);
     }
+    const expectedToken = (expected.body as { readonly token?: unknown } | undefined)?.token;
+    const receivedToken = (received.body as { readonly token?: unknown } | undefined)?.token;
+    if (typeof expectedToken === "string" && typeof receivedToken === "string") {
+      tokens.update((current) => new Map([...current, [expectedToken, receivedToken]]));
+      check(receivedToken.startsWith("ito_") ? undefined : `token ${receivedToken} doesn't look like one`, index);
+      return;
+    }
     if (expected.body !== undefined) check(ids.match(expected.body, received.body), index);
+  };
+
+  const withTokens = (step: AppRequest): AppRequest => {
+    const authorization = step.headers?.Authorization;
+    const token = authorization?.replace(/^Bearer /u, "");
+    const actual = token === undefined ? undefined : tokens.get().get(token);
+    return actual ? { ...step, headers: { ...step.headers, Authorization: `Bearer ${actual}` } } : step;
   };
 
   const recoveryTime = (index: number, stoppedAt: number): number => {
@@ -175,7 +207,7 @@ export const replay = async (name: string): Promise<void> => {
   };
 
   const request = async (step: AppRequest): Promise<void> => {
-    const translated = ids.translate(step);
+    const translated = withTokens(ids.translate(step));
     const registered = /^\/v0\/devices\/(?<device>[^/]+)$/u.exec(translated.path)?.groups?.device;
     const key = (translated.body as { readonly notification_key?: string } | undefined)?.notification_key;
     if (registered && key && translated.method === "PUT") deviceKey.set({ id: registered, notificationKey: key });
@@ -209,6 +241,12 @@ export const replay = async (name: string): Promise<void> => {
         await stopServer();
         restoreBackup();
         await listen(createReplayServer());
+        return;
+      }
+      case "pairing_code_shown": {
+        await advance(time);
+        const code = String((step as { readonly code?: unknown }).code).replaceAll("-", "");
+        live.get()?.server.store.createPairingCode(hashToken(code), new Date(time + 5 * 60 * 1000).toISOString());
         return;
       }
       default: {
@@ -253,6 +291,9 @@ export const replay = async (name: string): Promise<void> => {
   };
 
   const seeded = createReplayServer();
+  for (const attachment of givenAttachments(transcript)) {
+    seeded.attachments.save(attachment.id, attachment.name, attachment.media_type, fixture(attachment.name));
+  }
   seeded.store.importEvents(transcript.given);
   seeded.store.setSetting(tokenSetting, hashToken(transcriptToken));
   seeded.store.setSetting(apnsSettings.privateKey, apnsKey);
