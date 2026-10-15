@@ -33,6 +33,10 @@ const progressCount = createCell(0);
 const collectLog = (message: string, error: unknown): void => {
   logged.set([...logged.get(), `${message}: ${String(error)}`]);
 };
+const noted = createCell<readonly (readonly [string, Readonly<Record<string, unknown>>])[]>([]);
+const collectInfo = (message: string, details: Readonly<Record<string, unknown>>): void => {
+  noted.set([...noted.get(), [message, details]]);
+};
 const turnCount = createCell(0);
 const model = createCell<MockModel | undefined>(undefined);
 const engine = createCell<Engine | undefined>(undefined);
@@ -63,6 +67,7 @@ const openEngine = (baseUrl: string, given = instructions): Engine =>
     instructions: given,
     settings,
     log: collectLog,
+    info: collectInfo,
     modelProvider: "mock",
     config: {
       model_providers: {
@@ -152,6 +157,8 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(progressCount.get()).toBeGreaterThan(0);
     expect(settings.setting(threadSetting)).toBeDefined();
     expect(currentModel().developerTexts()).toContain(instructions);
+    expect(noted.get().map(([message]) => message)).toEqual(["Codex started a session for the conversation"]);
+    expect(typeof noted.get()[0]?.[1].model).toBe("string");
   });
 
   it("takes a steer mid-message and reads it", async () => {
@@ -223,6 +230,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
         instructions,
         settings: createMemorySettings(),
         log: collectLog,
+        info: collectInfo,
       });
       const events = signedOutEngine.start(toTurnId("t_signed_out"), [toInput("Hello?")]);
       const seen = createCell<readonly EngineEvent[]>([]);
@@ -240,6 +248,9 @@ describe("the Codex engine against the pinned codex app-server", () => {
     const events = await runTurn("[[reply]] Still there?");
     expect(events.at(-1)).toEqual({ type: "ended" });
     expect(settings.setting(threadSetting)).toBe(thread);
+    const [message, details] = noted.get().at(-1) ?? [];
+    expect(message).toBe("Codex resumed the conversation's session");
+    expect(typeof details?.model).toBe("string");
     expect(logged.get()).toEqual([]);
   });
 
