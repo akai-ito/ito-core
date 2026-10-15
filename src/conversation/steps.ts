@@ -116,13 +116,37 @@ const fileChangeTitle = ({ files = [] }: StepFacts): Title => {
   return title(`Editing ${count}`, `Edited ${count}`);
 };
 
-const webSearchTitle = ({ query, url, pattern }: StepFacts): Title => {
+const titleQueryLength = 60;
+
+const searchOperator = /^(?:site|intitle|inurl|intext|filetype|ext|before|after):|^(?:OR|AND|\|)$|^-\S/u;
+
+const shortened = (words: readonly string[]): string => {
+  const whole = words.join(" ");
+  if (whole.length <= titleQueryLength) return whole;
+  const overflowing = words.findIndex((_, index) => words.slice(0, index + 1).join(" ").length > titleQueryLength);
+  return `${words.slice(0, Math.max(1, overflowing)).join(" ")}…`;
+};
+
+const searchTitle = (query: string): Title => {
+  const tokens = query
+    .replace(/\s*(?:\.\.\.|…)$/u, "")
+    .replaceAll(/["“”]/gu, "")
+    .split(/\s+/u)
+    .filter(Boolean);
+  const sites = tokens.filter((token) => token.startsWith("site:") && token.length > 5);
+  const site = sites.length === 1 ? sites[0]?.slice(5).replace(/^www\./u, "") : undefined;
+  const words = shortened(tokens.filter((token) => !searchOperator.test(token)));
+  if (site && words) return title(`Searching ${site} for ${words}`, `Searched ${site} for ${words}`);
+  if (site) return title(`Searching ${site}`, `Searched ${site}`);
+  return words
+    ? title(`Searching the web for ${words}`, `Searched the web for ${words}`)
+    : title("Searching the web", "Searched the web");
+};
+
+const webSearchTitle = ({ query, queries, url, pattern }: StepFacts): Title => {
   if (url && pattern)
     return title(`Looking for “${pattern}” on ${hostOf(url)}`, `Looked for “${pattern}” on ${hostOf(url)}`);
-  if (url) return title(`Opening ${hostOf(url)}`, `Opened ${hostOf(url)}`);
-  return query
-    ? title(`Searching the web for ${query}`, `Searched the web for ${query}`)
-    : title("Searching the web", "Searched the web");
+  return url ? title(`Opening ${hostOf(url)}`, `Opened ${hostOf(url)}`) : searchTitle(queries?.[0] ?? query ?? "");
 };
 
 const toolTitle = ({ capability = "a tool", operation, url }: StepFacts): Title => {
