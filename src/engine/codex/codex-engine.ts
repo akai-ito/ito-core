@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
@@ -80,10 +80,14 @@ const toAccount = (account: Account): Readonly<Record<string, string>> => {
 
 const uploadsFolder = "uploads";
 
-const freeName = (folder: string, name: string, attempt = 1): string => {
+const isSameFile = (left: string, right: string): boolean =>
+  statSync(left).size === statSync(right).size && readFileSync(left).equals(readFileSync(right));
+
+const placeName = (folder: string, source: string, name: string, attempt = 1): string => {
   const extension = path.extname(name);
   const candidate = attempt === 1 ? name : `${path.basename(name, extension)}-${String(attempt)}${extension}`;
-  return existsSync(path.join(folder, candidate)) ? freeName(folder, name, attempt + 1) : candidate;
+  const target = path.join(folder, candidate);
+  return !existsSync(target) || isSameFile(source, target) ? candidate : placeName(folder, source, name, attempt + 1);
 };
 
 const safeName = (name: string): string => {
@@ -100,7 +104,7 @@ const toUserInputs = (workspace: string, { text, attachments = [] }: Input): rea
   const folder = path.join(workspace, uploadsFolder);
   if (attachments.length > 0) mkdirSync(folder, { recursive: true });
   const placed = attachments.map((attachment) => {
-    const name = freeName(folder, safeName(attachment.name));
+    const name = placeName(folder, attachment.source, safeName(attachment.name));
     copyFileSync(attachment.source, path.join(folder, name));
     return { ...attachment, path: path.join(folder, name), relative: `${uploadsFolder}/${name}` };
   });

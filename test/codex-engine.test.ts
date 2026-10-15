@@ -309,6 +309,10 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(currentModel().userTexts().at(-1)).toContain(
       "(Attached, and saved in your workspace: uploads/riverside.jpg, uploads/running-log.csv)",
     );
+    turnCount.update((count) => count + 1);
+    const again = currentEngine().start(currentTurn(), [{ ...input, messageId: toMessageId(randomUUID()) }]);
+    for await (const event of again) seen.set([...seen.get(), event]);
+    expect(currentModel().userTexts().at(-1)).toContain("uploads/riverside.jpg, uploads/running-log.csv");
   });
 
   it("maps a usage limit to usage_limit", async () => {
