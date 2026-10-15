@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 import { createCell } from "#cell.ts";
+import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
 import type {
+  Ask,
+  AskKind,
+  AskOption,
   Error as ErrorBody,
   LiveTurn,
   Message,
   MessageKind,
+  Notification,
   Outcome,
   Status,
   StatusKind,
@@ -31,7 +36,18 @@ type RequestOptions = { readonly body?: unknown; readonly headers?: HttpHeaders 
 
 type ResponseOptions = { readonly headers?: HttpHeaders; readonly isLost?: boolean };
 
-type SendOptions = { readonly id?: string; readonly isLost?: boolean };
+type SendOptions = { readonly id?: string; readonly isLost?: boolean; readonly answers?: string };
+
+type AskFields = {
+  readonly kind?: AskKind;
+  readonly question: string;
+  readonly options?: readonly AskOption[];
+  readonly allowsText?: boolean;
+  readonly preview?: string;
+  readonly secret?: boolean;
+};
+
+type Device = { readonly id: string; readonly isLooking: boolean };
 
 type WriteOptions = { readonly pieces?: number; readonly everyMs?: number };
 
@@ -83,13 +99,18 @@ export type Transcript = {
   readonly endTurn: (outcome: Outcome, error?: ErrorBody) => string;
   readonly stop: (turn: string, cut?: Cut) => void;
   readonly retry: (failed: string) => string;
+  readonly ask: (fields: AskFields) => string;
+  readonly cancelAsk: (ask: string) => void;
+  readonly registerDevice: () => string;
+  readonly presence: (isLooking: boolean) => void;
+  readonly remind: () => void;
   readonly listMessages: (before: string, limit: number) => void;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s";
+type IdPrefix = "e" | "m" | "t" | "s" | "a";
 
 type Counters = Readonly<Record<IdPrefix, number>>;
 
@@ -101,6 +122,7 @@ type Projection = {
   readonly order: readonly string[];
   readonly byId: ReadonlyMap<string, Message>;
   readonly steps: ReadonlyMap<string, Step>;
+  readonly asks: ReadonlyMap<string, Ask>;
 };
 
 type SnapshotReason = "no_cursor" | "cursor_unknown" | "too_far_behind";
@@ -112,6 +134,7 @@ const tokenDigits = 5;
 const defaultPieceLength = 28;
 const defaultPieceIntervalMs = 120;
 const messagesPerSnapshot = 50;
+const reminderAfterMs = 3 * 60 * 60 * 1000;
 
 const toToken = (seed: string): string => {
   const digest = createHash("sha256").update(seed).digest();
@@ -139,6 +162,11 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
     case "step.ended": {
       const step = event.step as Step;
       return { ...projection, steps: new Map(projection.steps).set(step.id, step) };
+    }
+    case "ask.started":
+    case "ask.ended": {
+      const ask = event.ask as Ask;
+      return { ...projection, asks: new Map(projection.asks).set(ask.id, ask) };
     }
     case "message.delta": {
       const message = byId.get(event.message as string);
@@ -176,12 +204,16 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
 };
 
 const project = (log: readonly Event[]): Projection =>
-  log.reduce<Projection>(projectEvent, { order: [], byId: new Map(), steps: new Map() });
+  log.reduce<Projection>(projectEvent, { order: [], byId: new Map(), steps: new Map(), asks: new Map() });
 
-const stepsBetween = (steps: ReadonlyMap<string, Step>, from: number, until = Infinity): readonly Step[] =>
-  steps
+const between = <Entry extends { readonly position: number }>(
+  entries: ReadonlyMap<string, Entry>,
+  from: number,
+  until = Infinity,
+): readonly Entry[] =>
+  entries
     .values()
-    .filter((step) => step.position >= from && step.position < until)
+    .filter((entry) => entry.position >= from && entry.position < until)
     .toArray()
     .toSorted((left, right) => left.position - right.position);
 
@@ -203,7 +235,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emst]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emsta]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -212,7 +244,7 @@ const toCounters = (log: readonly Event[]): Counters => {
   const ids = log.flatMap(idsIn);
   const highest = (prefix: IdPrefix): number =>
     ids.filter((id) => id.startsWith(`${prefix}_`)).reduce((max, id) => Math.max(max, Number(id.split("_", 2)[1])), 0);
-  return { e: highest("e"), m: highest("m"), t: highest("t"), s: highest("s") };
+  return { e: highest("e"), m: highest("m"), t: highest("t"), s: highest("s"), a: highest("a") };
 };
 
 // A small model of the server's event log. Scenarios drive it the way the server and an app would,
@@ -220,7 +252,7 @@ const toCounters = (log: readonly Event[]): Counters => {
 export const createTranscript = (header: Header): Transcript => {
   const lines = createCell<readonly Line[]>([]);
   const log = createCell<readonly Event[]>([]);
-  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0 }, issued: new Set() });
+  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0, a: 0 }, issued: new Set() });
   const users = createCell(0);
   const now = createCell(0);
   const start = createCell<Start | undefined>(undefined);
@@ -232,6 +264,10 @@ export const createTranscript = (header: Header): Transcript => {
   const writing = createCell<string | undefined>(undefined);
   const runningSteps = createCell<ReadonlyMap<string, RunningStep>>(new Map());
   const retries = createCell<ReadonlyMap<string, string>>(new Map());
+  const waiting = createCell<string | undefined>(undefined);
+  const askedAt = createCell<number | undefined>(undefined);
+  const isReminded = createCell(false);
+  const device = createCell<Device | undefined>(undefined);
 
   const timestamp = (): string => new Date(now.get()).toISOString();
 
@@ -331,7 +367,7 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const snapshot = (reason: SnapshotReason): void => {
-    const { order, byId, steps } = project(log.get());
+    const { order, byId, steps, asks } = project(log.get());
     const latest = latestEventId();
     const messages = order.slice(-messagesPerSnapshot).flatMap((id) => byId.get(id) ?? []);
     const first = messages[0]?.position;
@@ -343,7 +379,8 @@ export const createTranscript = (header: Header): Transcript => {
         reason,
         messages,
         has_more: order.length > messagesPerSnapshot,
-        steps: first === undefined ? [] : stepsBetween(steps, first),
+        steps: first === undefined ? [] : between(steps, first),
+        asks: first === undefined ? [] : between(asks, first),
         turn: turn.get() ?? null,
         next: next.get(),
       },
@@ -383,6 +420,25 @@ export const createTranscript = (header: Header): Transcript => {
     const running = turn.get();
     if (!running) throw new Error("no turn is running");
     return running;
+  };
+
+  const push = (level: "active" | "time-sensitive", notification: Notification): void => {
+    const current = device.get();
+    if (!current || start.get() === undefined || (current.isLooking && isConnected.get())) return;
+    addStep({ push: { device: current.id, level, notification } });
+  };
+
+  const askById = (id: string): Ask => {
+    const found = project(log.get()).asks.get(id);
+    if (!found) throw new Error(`unknown ask ${id}`);
+    return found;
+  };
+
+  const endAsk = (id: string, outcome: "answered" | "cancelled", answer?: string): void => {
+    emit("ask.ended", {
+      ask: { ...askById(id), ended_at: timestamp(), outcome, ...(answer && { answer }) },
+    });
+    waiting.set(undefined);
   };
 
   const startTurn = (inputs: readonly string[], options: { readonly retryOf?: string } = {}): string => {
@@ -514,6 +570,19 @@ export const createTranscript = (header: Header): Transcript => {
     endAllSteps(outcome);
     emit("turn.ended", { turn: running.id, outcome, ...(error && { error }) });
     turn.set(undefined);
+    const { byId, asks } = project(log.get());
+    const hasAsked = asks.values().some((asked) => asked.turn === running.id);
+    const lastReply = byId
+      .values()
+      .filter((message) => message.turn === running.id && message.kind === "reply" && message.text !== "")
+      .toArray()
+      .at(-1);
+    if (outcome === "completed" && !hasAsked && lastReply) {
+      push("active", { kind: "reply", text: toFirstLine(lastReply.text), turn: running.id, message: lastReply.id });
+    }
+    if (outcome === "failed" && error) {
+      push("active", { kind: "failed", text: toFailedText(error.message), turn: running.id });
+    }
     return running.id;
   };
 
@@ -538,13 +607,110 @@ export const createTranscript = (header: Header): Transcript => {
 
   const send = (text: string, options: SendOptions = {}): string => {
     const id = options.id ?? newUserId();
-    request("POST", "/v0/messages", { body: { id, text } });
+    request("POST", "/v0/messages", { body: { id, text, ...(options.answers && { answers: options.answers }) } });
     const isKnown = project(log.get()).byId.has(id);
     if (!isKnown) {
-      emit("message.accepted", { message: { id, role: "user", text, at: timestamp(), position: nextPosition() } });
+      const isSecret = options.answers !== undefined && askById(options.answers).secret;
+      const answering = waiting.get();
+      emit("message.accepted", {
+        message: {
+          id,
+          role: "user",
+          text: isSecret ? "" : text,
+          at: timestamp(),
+          position: nextPosition(),
+          ...(answering && { answers: answering }),
+          ...(isSecret && { secret: true }),
+        },
+      });
+      if (answering) endAsk(answering, "answered", id);
     }
     response(isKnown ? 200 : 201, { message: messageById(id) }, { isLost: options.isLost });
     return id;
+  };
+
+  const ask = (fields: AskFields): string => {
+    endStep();
+    const running = runningTurn();
+    const earlier = waiting.get();
+    if (earlier) endAsk(earlier, "cancelled");
+    const options = fields.options ?? [];
+    const asked: Ask = {
+      id: newId("a"),
+      turn: running.id,
+      kind: fields.kind ?? "question",
+      question: fields.question,
+      options: [...options],
+      allows_text: options.length === 0 || (fields.allowsText ?? true),
+      ...(fields.preview && { preview: fields.preview }),
+      secret: fields.secret ?? false,
+      at: timestamp(),
+      position: nextPosition(),
+    };
+    emit("ask.started", { ask: asked });
+    waiting.set(asked.id);
+    askedAt.set(now.get());
+    isReminded.set(false);
+    push("time-sensitive", {
+      kind: "ask",
+      text: asked.question,
+      ask: {
+        id: asked.id,
+        options: options.map((option) => option.label),
+        allows_text: asked.allows_text,
+        secret: asked.secret,
+      },
+    });
+    return asked.id;
+  };
+
+  const cancelAsk = (id: string): void => {
+    request("POST", `/v0/asks/${id}/cancel`);
+    if (waiting.get() === id) endAsk(id, "cancelled");
+    response(200, { ask: askById(id) });
+  };
+
+  const registerDevice = (): string => {
+    const id = toUuid(`${header.name}:device`);
+    const key = Buffer.from("01234567890123456789012345678901");
+    request("PUT", `/v0/devices/${id}`, {
+      body: {
+        apns_token: "0123456789abcdef".repeat(4),
+        environment: "production",
+        notification_key: key.toString("base64"),
+      },
+    });
+    const keyId = createHash("sha256").update(key).digest("hex").slice(0, 8);
+    response(201, { device: { id, environment: "production", key_id: keyId, registered_at: timestamp() } });
+    device.set({ id, isLooking: false });
+    return id;
+  };
+
+  const presence = (isLooking: boolean): void => {
+    const current = device.get();
+    if (!current) throw new Error("presence before a device is registered");
+    request("PUT", `/v0/devices/${current.id}/presence`, { body: { looking: isLooking } });
+    response(204, undefined);
+    device.set({ ...current, isLooking });
+  };
+
+  const remind = (): void => {
+    const id = waiting.get();
+    const at = askedAt.get();
+    if (!id || at === undefined || isReminded.get()) throw new Error("no ask is waiting for a reminder");
+    now.set(Math.max(now.get(), at + reminderAfterMs));
+    isReminded.set(true);
+    const asked = askById(id);
+    push("active", {
+      kind: "reminder",
+      text: toReminderText(asked.question),
+      ask: {
+        id,
+        options: asked.options.map((option) => option.label),
+        allows_text: asked.allows_text,
+        secret: asked.secret,
+      },
+    });
   };
 
   const stop = (turnId: string, cut?: Cut): void => {
@@ -575,7 +741,7 @@ export const createTranscript = (header: Header): Transcript => {
 
   const listMessages = (before: string, limit: number): void => {
     request("GET", `/v0/messages?before=${before}&limit=${limit}`);
-    const { order, byId, steps } = project(log.get());
+    const { order, byId, steps, asks } = project(log.get());
     const index = order.indexOf(before);
     if (index === -1) throw new Error(`no message ${before}`);
     const first = Math.max(0, index - limit);
@@ -584,13 +750,16 @@ export const createTranscript = (header: Header): Transcript => {
     const until = byId.get(before)?.position;
     response(200, {
       messages,
-      steps: from === undefined ? [] : stepsBetween(steps, from, until),
+      steps: from === undefined ? [] : between(steps, from, until),
+      asks: from === undefined ? [] : between(asks, from, until),
       has_more: first > 0,
     });
   };
 
   const restart = (): void => {
     disconnect("server_restarted");
+    const registered = device.get();
+    if (registered) device.set({ ...registered, isLooking: false });
     ids.update((current) => ({ ...current, boot: current.boot + 1 }));
     wait(2400);
     if (!turn.get()) return;
@@ -660,6 +829,11 @@ export const createTranscript = (header: Header): Transcript => {
     endTurn,
     stop,
     retry,
+    ask,
+    cancelAsk,
+    registerDevice,
+    presence,
+    remind,
     listMessages,
     restart,
     restore,

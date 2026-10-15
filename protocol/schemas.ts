@@ -9,6 +9,7 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
 
 export type Schemas = {
   readonly events: JsonSchema & { readonly $id: string; readonly $defs: Readonly<Record<string, JsonSchema>> };
+  readonly push: JsonSchema & { readonly $id: string; readonly $defs: Readonly<Record<string, JsonSchema>> };
   readonly openapi: JsonSchema & { readonly $id: string };
   readonly document: OpenApiDocument;
 };
@@ -56,6 +57,7 @@ export const withReferencesResolved = (schema: unknown, eventsId: string): unkno
       key === "$ref" && typeof value === "string"
         ? value
             .replace(/^events\.schema\.json#/, () => `${eventsId}#`)
+            .replace(/^push\.schema\.json#/, () => `${eventsId.replace(/events\.schema\.json$/, "push.schema.json")}#`)
             .replace(/^#\/components\/schemas\//, () => `${openapiSchemaId}#/$defs/`)
         : withReferencesResolved(value, eventsId),
     ]),
@@ -64,12 +66,13 @@ export const withReferencesResolved = (schema: unknown, eventsId: string): unkno
 
 export const loadSchemas = (directory = protocolDirectory): Schemas => {
   const events = JSON.parse(readFileSync(path.join(directory, "events.schema.json"), "utf8")) as Schemas["events"];
+  const push = JSON.parse(readFileSync(path.join(directory, "push.schema.json"), "utf8")) as Schemas["push"];
   const document = parseYaml(readFileSync(path.join(directory, "openapi.yaml"), "utf8")) as OpenApiDocument;
   const openapi = {
     $id: openapiSchemaId,
     $defs: withReferencesResolved(document.components.schemas, events.$id),
   } as Schemas["openapi"];
-  return { events, openapi, document };
+  return { events, push, openapi, document };
 };
 
 export const protocolVersion = (document: OpenApiDocument): string => document.info.version;

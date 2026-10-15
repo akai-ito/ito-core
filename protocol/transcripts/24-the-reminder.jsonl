@@ -1,0 +1,50 @@
+{"transcript":"24-the-reminder","start":"2026-10-12T08:41:00.000Z","scenario":24,"title":"The reminder","summary":"An ask made while you're away notifies you at once. Three hours later, still unanswered, it sends one reminder at normal level, and then nothing more. When you answer, nothing is pushed: you're looking.","guarantees":["G15","G16","G18"],"app":{"cursor":"e_0009_50139"}}
+{"given":{"id":"e_0001_01163","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"a38ab63f-cd53-4185-8787-854cc00ddc02","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z","position":1}}}
+{"given":{"id":"e_0002_28865","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_91658","inputs":["a38ab63f-cd53-4185-8787-854cc00ddc02"]}}
+{"given":{"id":"e_0003_16465","type":"step.started","at":"2026-10-11T21:14:00.301Z","step":{"id":"s_0001_27068","turn":"t_0001_91658","kind":"thinking","title":"Thinking it through","at":"2026-10-11T21:14:00.301Z","position":3}}}
+{"given":{"id":"e_0004_43798","type":"turn.status","at":"2026-10-11T21:14:00.301Z","turn":"t_0001_91658","kind":"thinking","label":"Thinking it through"}}
+{"given":{"id":"e_0005_63529","type":"step.ended","at":"2026-10-11T21:14:01.801Z","step":{"id":"s_0001_27068","turn":"t_0001_91658","kind":"thinking","title":"Thought it through","at":"2026-10-11T21:14:00.301Z","position":3,"ended_at":"2026-10-11T21:14:01.801Z","outcome":"completed","duration_ms":1500}}}
+{"given":{"id":"e_0006_65287","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_16750","role":"agent","kind":"reply","turn":"t_0001_91658","text":"","at":"2026-10-11T21:14:01.801Z","position":6}}}
+{"given":{"id":"e_0007_34715","type":"message.delta","at":"2026-10-11T21:14:01.801Z","message":"m_0001_16750","offset":0,"text":"Fix it. The frame is sound; new brakes and a chain come to about £90, against roughly £600 for a comparable new bike. If the gears still slip after that, revisit."}}
+{"given":{"id":"e_0008_66810","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_16750","outcome":"completed","length":162}}
+{"given":{"id":"e_0009_50139","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_91658","outcome":"completed"}}
+{"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0009_50139"}}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"app":{"method":"PUT","path":"/v0/devices/3d4eefac-a501-4ba8-b987-9f43677057d4","body":{"apns_token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","environment":"production","notification_key":"MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="}}}
+{"at":0,"server":{"status":201,"body":{"device":{"id":"3d4eefac-a501-4ba8-b987-9f43677057d4","environment":"production","key_id":"861009ec","registered_at":"2026-10-12T08:41:00.000Z"}}}}
+{"at":0,"app":{"method":"PUT","path":"/v0/devices/3d4eefac-a501-4ba8-b987-9f43677057d4/presence","body":{"looking":true}}}
+{"at":0,"server":{"status":204}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"d46a7bdd-6b3f-4d81-94a4-2393b548433b","text":"Book Juno for Saturday at 7:30, for two."}}}
+{"at":2000,"event":{"id":"e_0010_58348","type":"message.accepted","at":"2026-10-12T08:41:02.000Z","message":{"id":"d46a7bdd-6b3f-4d81-94a4-2393b548433b","role":"user","text":"Book Juno for Saturday at 7:30, for two.","at":"2026-10-12T08:41:02.000Z","position":10}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"d46a7bdd-6b3f-4d81-94a4-2393b548433b","role":"user","text":"Book Juno for Saturday at 7:30, for two.","at":"2026-10-12T08:41:02.000Z","position":10}}}}
+{"at":2000,"event":{"id":"e_0011_50647","type":"turn.started","at":"2026-10-12T08:41:02.000Z","turn":"t_0002_52821","inputs":["d46a7bdd-6b3f-4d81-94a4-2393b548433b"]}}
+{"at":2400,"app":{"method":"PUT","path":"/v0/devices/3d4eefac-a501-4ba8-b987-9f43677057d4/presence","body":{"looking":false}}}
+{"at":2400,"server":{"status":204}}
+{"at":2400,"world":"app_closed"}
+{"at":3800,"push":{"device":"3d4eefac-a501-4ba8-b987-9f43677057d4","level":"time-sensitive","notification":{"kind":"ask","text":"Which Juno did you mean?","ask":{"id":"a_0001_40832","options":["Clapham","Soho"],"allows_text":true,"secret":false}}}}
+{"at":10803800,"push":{"device":"3d4eefac-a501-4ba8-b987-9f43677057d4","level":"active","notification":{"kind":"reminder","text":"Still waiting on one thing: Which Juno did you mean?","ask":{"id":"a_0001_40832","options":["Clapham","Soho"],"allows_text":true,"secret":false}}}}
+{"at":28803800,"world":"app_opened"}
+{"at":28803800,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0011_50647"}}}
+{"at":28803800,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":28803800,"event":{"id":"e_0012_56124","type":"step.started","at":"2026-10-12T08:41:02.700Z","step":{"id":"s_0002_80551","turn":"t_0002_52821","kind":"web_search","title":"Searching the web for Juno restaurant London","at":"2026-10-12T08:41:02.700Z","position":12,"query":"Juno restaurant London"}}}
+{"at":28803800,"event":{"id":"e_0013_51060","type":"turn.status","at":"2026-10-12T08:41:02.700Z","turn":"t_0002_52821","kind":"working","label":"Searching the web for Juno restaurant London"}}
+{"at":28803800,"event":{"id":"e_0014_81283","type":"step.ended","at":"2026-10-12T08:41:03.800Z","step":{"id":"s_0002_80551","turn":"t_0002_52821","kind":"web_search","title":"Searched the web for Juno restaurant London","at":"2026-10-12T08:41:02.700Z","position":12,"query":"Juno restaurant London","ended_at":"2026-10-12T08:41:03.800Z","outcome":"completed","duration_ms":1100}}}
+{"at":28803800,"event":{"id":"e_0015_87018","type":"ask.started","at":"2026-10-12T08:41:03.800Z","ask":{"id":"a_0001_40832","turn":"t_0002_52821","kind":"question","question":"Which Juno did you mean?","options":[{"label":"Clapham","description":"Abbeville Road, SW4"},{"label":"Soho","description":"Greek Street, W1"}],"allows_text":true,"secret":false,"at":"2026-10-12T08:41:03.800Z","position":15}}}
+{"at":28803800,"event":{"id":"e_0016_08896","type":"turn.ended","at":"2026-10-12T08:41:03.800Z","turn":"t_0002_52821","outcome":"completed"}}
+{"at":28803800,"app":{"method":"PUT","path":"/v0/devices/3d4eefac-a501-4ba8-b987-9f43677057d4/presence","body":{"looking":true}}}
+{"at":28803800,"server":{"status":204}}
+{"at":28807800,"app":{"method":"POST","path":"/v0/messages","body":{"id":"3c2171f0-3504-49fc-a75a-f7e7b7371229","text":"Clapham","answers":"a_0001_40832"}}}
+{"at":28807800,"event":{"id":"e_0017_66647","type":"message.accepted","at":"2026-10-12T16:41:07.800Z","message":{"id":"3c2171f0-3504-49fc-a75a-f7e7b7371229","role":"user","text":"Clapham","at":"2026-10-12T16:41:07.800Z","position":17,"answers":"a_0001_40832"}}}
+{"at":28807800,"event":{"id":"e_0018_21215","type":"ask.ended","at":"2026-10-12T16:41:07.800Z","ask":{"id":"a_0001_40832","turn":"t_0002_52821","kind":"question","question":"Which Juno did you mean?","options":[{"label":"Clapham","description":"Abbeville Road, SW4"},{"label":"Soho","description":"Greek Street, W1"}],"allows_text":true,"secret":false,"at":"2026-10-12T08:41:03.800Z","position":15,"ended_at":"2026-10-12T16:41:07.800Z","outcome":"answered","answer":"3c2171f0-3504-49fc-a75a-f7e7b7371229"}}}
+{"at":28807800,"server":{"status":201,"body":{"message":{"id":"3c2171f0-3504-49fc-a75a-f7e7b7371229","role":"user","text":"Clapham","at":"2026-10-12T16:41:07.800Z","position":17,"answers":"a_0001_40832"}}}}
+{"at":28807800,"event":{"id":"e_0019_94591","type":"turn.started","at":"2026-10-12T16:41:07.800Z","turn":"t_0003_05029","inputs":["3c2171f0-3504-49fc-a75a-f7e7b7371229"]}}
+{"at":28808100,"event":{"id":"e_0020_53499","type":"step.started","at":"2026-10-12T16:41:08.100Z","step":{"id":"s_0003_26175","turn":"t_0003_05029","kind":"tool","title":"Using booking","at":"2026-10-12T16:41:08.100Z","position":20,"capability":"booking","operation":"check","arguments":{"place":"Juno, Clapham","day":"Saturday","time":"19:30","people":2}}}}
+{"at":28808100,"event":{"id":"e_0021_04408","type":"turn.status","at":"2026-10-12T16:41:08.100Z","turn":"t_0003_05029","kind":"working","label":"Using booking"}}
+{"at":28809500,"event":{"id":"e_0022_46386","type":"step.ended","at":"2026-10-12T16:41:09.500Z","step":{"id":"s_0003_26175","turn":"t_0003_05029","kind":"tool","title":"Used booking","at":"2026-10-12T16:41:08.100Z","position":20,"capability":"booking","operation":"check","arguments":{"place":"Juno, Clapham","day":"Saturday","time":"19:30","people":2},"ended_at":"2026-10-12T16:41:09.500Z","outcome":"completed","duration_ms":1400}}}
+{"at":28809500,"event":{"id":"e_0023_10333","type":"turn.status","at":"2026-10-12T16:41:09.500Z","turn":"t_0003_05029","kind":"writing","label":"Writing"}}
+{"at":28809500,"event":{"id":"e_0024_83766","type":"message.started","at":"2026-10-12T16:41:09.500Z","message":{"id":"m_0002_20811","role":"agent","kind":"reply","turn":"t_0003_05029","text":"","at":"2026-10-12T16:41:09.500Z","position":24}}}
+{"at":28809500,"event":{"id":"e_0025_51860","type":"message.delta","at":"2026-10-12T16:41:09.500Z","message":"m_0002_20811","offset":0,"text":"Juno in Clapham has a table "}}
+{"at":28809620,"event":{"id":"e_0026_68664","type":"message.delta","at":"2026-10-12T16:41:09.620Z","message":"m_0002_20811","offset":28,"text":"for two at 7:30 on Saturday. "}}
+{"at":28809740,"event":{"id":"e_0027_57948","type":"message.delta","at":"2026-10-12T16:41:09.740Z","message":"m_0002_20811","offset":57,"text":"Shall I book it?"}}
+{"at":28809740,"event":{"id":"e_0028_27659","type":"message.ended","at":"2026-10-12T16:41:09.740Z","message":"m_0002_20811","outcome":"completed","length":73}}
+{"at":28809740,"event":{"id":"e_0029_38524","type":"turn.ended","at":"2026-10-12T16:41:09.740Z","turn":"t_0003_05029","outcome":"completed"}}

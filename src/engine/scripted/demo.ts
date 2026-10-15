@@ -1,5 +1,5 @@
 import { createCell } from "#cell.ts";
-import type { EngineEvent, Input, StepFacts } from "#engine/engine.ts";
+import type { AskFields, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
 
 const pieceMs = 70;
@@ -9,7 +9,7 @@ const shortReply = [
   "",
   "- It streams a reply in small pieces, the way a real model does.",
   "- Send a message while it writes to try **steering**.",
-  "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, or *silent* for a timeout.",
+  "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, *approve* for an approval, or *secret* for a secret question.",
 ].join("\n");
 
 const longReply = Array.from(
@@ -116,6 +116,39 @@ const busyTrail = (startAt: number): readonly TimedEvent[] =>
     updatePlan(planOf(["done", "done", "done"])),
   ].map((event, index) => ({ at: startAt + index * 450, event }));
 
+const askFor = (text: string): AskFields | undefined => {
+  if (/\bsecret\b/u.test(text)) {
+    return {
+      kind: "question",
+      question: "The demo engine needs a code. What is it?",
+      options: [],
+      allows_text: true,
+      secret: true,
+    };
+  }
+  if (/\bapprove\b/u.test(text)) {
+    return {
+      kind: "approval",
+      question: "Shall I go ahead?",
+      options: [{ label: "Go ahead", acts: true }, { label: "Not now" }],
+      allows_text: false,
+      preview: "The demo engine would book a table for two, Saturday at 7:30.",
+      secret: false,
+    };
+  }
+  if (!/\bask\b/u.test(text)) return undefined;
+  return {
+    kind: "question",
+    question: "Which Juno did you mean?",
+    options: [
+      { label: "Clapham", description: "Abbeville Road, SW4" },
+      { label: "Soho", description: "Greek Street, W1" },
+    ],
+    allows_text: true,
+    secret: false,
+  };
+};
+
 const scriptFor = (inputs: readonly Input[], now: number): readonly TimedEvent[] => {
   const text = inputs
     .map((input) => input.text)
@@ -124,6 +157,15 @@ const scriptFor = (inputs: readonly Input[], now: number): readonly TimedEvent[]
   const opened = opening(text, now);
   const start = text.includes("busy") ? [...opened, ...busyTrail(lastAt(opened) + 300)] : opened;
   if (text.includes("silent")) return start;
+  const fields = askFor(text);
+  if (fields) {
+    const askedAt = lastAt(start) + 300;
+    return [
+      ...start,
+      { at: askedAt, event: { type: "ask", fields } },
+      { at: askedAt + pieceMs, event: { type: "ended" } },
+    ];
+  }
   if (text.includes("fail")) {
     return [
       ...start,

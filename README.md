@@ -41,8 +41,8 @@ node bin/ito.ts serve    # the first run prints your token, once
 Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code instead of a browser
 redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new` makes
 another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
-in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, and *silent* a
-timeout.
+in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a timeout,
+*ask* a question, *approve* an approval, and *secret* a secret question.
 
 Before reaching for your phone, check a real turn from the machine itself, with the server running
 and your token in `TOKEN`. The stream should show the turn start, statuses, the reply's text
@@ -87,6 +87,19 @@ ito-core, never with anything from your conversation. To switch it on, create a
 [fine-grained GitHub token](https://github.com/settings/personal-access-tokens/new) for
 akai-ito/ito-core with *Issues: read and write*, then run `node bin/ito.ts reports token` and paste
 it. Up to 20 reports a day are filed; any more go to Ito's log.
+
+Ari notifies you while you're away: when a reply finishes, when something fails, and when it asks
+you something. To switch notifications on, create an APNs key in your Apple Developer account
+(Certificates, Identifiers & Profiles, then Keys, with Apple Push Notifications service), download
+its `.p8` file once, and run:
+
+```sh
+node bin/ito.ts push setup --key AuthKey_ABC123DEFG.p8 --key-id ABC123DEFG \
+  --team-id <your team id> --bundle-id <Ari's bundle id>
+```
+
+The box needs to reach `api.push.apple.com` on port 443. Notifications travel encrypted with a key
+each phone makes, so Apple only ever carries ciphertext.
 
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, and the agent's working directory in `workspace`.

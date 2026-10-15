@@ -39,10 +39,13 @@ const textsOf = (body: unknown, role: string): readonly string[] => {
     .map((item) => (item.content ?? []).map((part) => part.text ?? "").join(""));
 };
 
-const hasToolOutput = (body: unknown): boolean =>
-  ((body as { readonly input?: readonly InputItem[] } | undefined)?.input ?? []).some(
-    (item) => item.type === "custom_tool_call_output" || item.type === "function_call_output",
-  );
+const hasToolOutput = (body: unknown): boolean => {
+  const input = (body as { readonly input?: readonly InputItem[] } | undefined)?.input ?? [];
+  const lastUser = input.findLastIndex((item) => item.type === "message" && item.role === "user");
+  return input
+    .slice(lastUser + 1)
+    .some((item) => item.type === "custom_tool_call_output" || item.type === "function_call_output");
+};
 
 const sendJson = (response: ServerResponse, status: number, body: unknown): void => {
   response.writeHead(status, { "content-type": "application/json" });
@@ -110,6 +113,14 @@ export const startMockModel = async (): Promise<MockModel> => {
     await send("response.output_item.done", { item: { ...item, input } });
   };
 
+  const askThroughExec = async (send: Send): Promise<void> => {
+    const ask = { question: "Which Juno did you mean?", options: [{ label: "Clapham" }, { label: "Soho" }] };
+    const item = { type: "custom_tool_call", id: nextId("ctc"), call_id: nextId("call"), name: "exec" };
+    const input = `const result = await tools.mcp__ito__ask(${JSON.stringify(ask)});\ntext(JSON.stringify(result));`;
+    await send("response.output_item.added", { item: { ...item, input: "" } });
+    await send("response.output_item.done", { item: { ...item, input } });
+  };
+
   const stream = async (
     response: ServerResponse,
     scenario: string,
@@ -132,6 +143,10 @@ export const startMockModel = async (): Promise<MockModel> => {
       await reason(send, "Working slowly");
       await say(send, "This note streams slowly so that it can be steered or stopped.", "commentary", 300);
       await say(send, "Slow answer.", "final_answer");
+    } else if (scenario === "ask" && hasToolOutput) {
+      await say(send, "This should never be read: asking ends the turn.", "final_answer", 300);
+    } else if (scenario === "ask") {
+      await askThroughExec(send);
     } else if (scenario === "report" && hasToolOutput) {
       await say(send, "Most parkruns start at 9:00, and I've reported that.", "final_answer");
     } else if (scenario === "report") {

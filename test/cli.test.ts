@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import type { Io } from "#cli/io.ts";
 import { main, usage } from "#cli/main.ts";
 import { systemClock } from "#clock.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
+import { apnsSettings } from "#notifications/apns.ts";
 import { reportsTokenSetting } from "#reports/reporter.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { databaseFile } from "#server.ts";
@@ -84,6 +86,39 @@ describe("the ito command", () => {
     expect(saved.code).toBe(0);
     expect(saved.printed).not.toContain("github_pat_example");
     expect(storedSetting(reportsTokenSetting)).toBe("github_pat_example");
+  });
+
+  it("keeps the APNs key and ids for notifications, refusing a key that isn't one", async () => {
+    const keyFile = path.join(home, "AuthKey_KEY1234567.p8");
+    const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+      .privateKey.export({ type: "pkcs8", format: "pem" })
+      .toString();
+    writeFileSync(keyFile, pem);
+    const flags = [
+      "--key",
+      keyFile,
+      "--key-id",
+      "KEY1234567",
+      "--team-id",
+      "TEAM123456",
+      "--bundle-id",
+      "com.example.ari",
+    ];
+    expect(await run(["push", "setup", "--key", keyFile])).toMatchObject({ code: 1 });
+    const rsaFile = path.join(home, "not-apns.pem");
+    writeFileSync(
+      rsaFile,
+      generateKeyPairSync("rsa", { modulusLength: 2048 })
+        .privateKey.export({ type: "pkcs8", format: "pem" })
+        .toString(),
+    );
+    const wrong = await run(["push", "setup", ...flags.map((flag) => (flag === keyFile ? rsaFile : flag))]);
+    expect(wrong).toMatchObject({ code: 1, errors: expect.stringContaining("isn't an APNs key") as string });
+    expect(storedSetting(apnsSettings.keyId)).toBeUndefined();
+
+    expect(await run(["push", "setup", ...flags])).toMatchObject({ code: 0 });
+    expect(storedSetting(apnsSettings.privateKey)).toBe(pem);
+    expect(storedSetting(apnsSettings.bundleId)).toBe("com.example.ari");
   });
 
   it("refuses an unknown engine or a bad port before starting", async () => {

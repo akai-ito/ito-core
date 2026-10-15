@@ -30,6 +30,12 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "step.ended": {
       return event.step.turn === turn;
     }
+    case "ask.started": {
+      return event.ask.turn === turn;
+    }
+    case "ask.ended": {
+      return false;
+    }
     case "message.accepted":
     case "message.queued":
     case "turn.started": {
@@ -41,7 +47,13 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
 const toTimed = (event: LoggedEvent): TimedEvent | undefined => {
   const at = Date.parse(event.at);
   switch (event.type) {
-    case "turn.status": {
+    case "ask.started": {
+      const { kind, question, options, allows_text, preview, secret } = event.ask;
+      const fields = { kind, question, options, allows_text, ...(preview && { preview }), secret };
+      return { at, event: { type: "ask", fields } };
+    }
+    case "turn.status":
+    case "ask.ended": {
       return;
     }
     case "step.started": {

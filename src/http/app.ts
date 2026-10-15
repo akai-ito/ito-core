@@ -1,12 +1,19 @@
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOptions } from "fastify";
 import type { Clock } from "#clock.ts";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
-import { toMessageId, toTurnId } from "#conversation/ids.ts";
+import { toAskId, toDeviceId, toMessageId, toTurnId } from "#conversation/ids.ts";
 import type { Gate } from "#http/auth.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
-import type { Error as ErrorBody, SendMessage, StopTurn } from "#protocol/types.ts";
+import type { Presence } from "#notifications/presence.ts";
+import type {
+  Error as ErrorBody,
+  Presence as PresenceBody,
+  RegisterDevice,
+  SendMessage,
+  StopTurn,
+} from "#protocol/types.ts";
 import type { Store } from "#store/store.ts";
 import { toRetryFailure, type Turns } from "#turns/turns.ts";
 
@@ -19,6 +26,7 @@ export type AppOptions = {
   readonly schemas: Schemas;
   readonly info: ServerInfo;
   readonly gate: Gate;
+  readonly presence: Presence;
   readonly heartbeatMs: number;
   readonly logger: FastifyServerOptions["logger"];
 };
@@ -36,7 +44,7 @@ const isTooLong = (error: FastifyError): boolean =>
   error.validation?.some((issue) => issue.keyword === "maxLength" && issue.instancePath === "/text") ?? false;
 
 export const createApp = (options: AppOptions): FastifyInstance => {
-  const { store, turns, clock, schemas, info, gate, heartbeatMs, logger } = options;
+  const { store, turns, clock, schemas, info, gate, presence, heartbeatMs, logger } = options;
   const protocol = protocolVersion(schemas.document);
   const routeSchemas = toRouteSchemas(schemas);
   const schemaFor = (operationId: string): RouteSchema => routeSchemas.get(operationId) ?? {};
@@ -80,15 +88,18 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   app.get("/v0/server", () => ({ name: info.name, version: info.version, protocol, agent: { name: info.agentName } }));
 
-  app.get("/v0/events", createEventStream({ store, clock, protocol, heartbeatMs, maxReplay }));
+  app.get(
+    "/v0/events",
+    createEventStream({ store, clock, protocol, heartbeatMs, maxReplay, openStream: presence.openStream }),
+  );
 
   app.post<{ Body: SendMessage }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text } = request.body;
-    const accepted = store.acceptMessage(toMessageId(id), text);
+    const { id, text, answers } = request.body;
+    const accepted = store.acceptMessage(toMessageId(id), text, answers === undefined ? undefined : toAskId(answers));
     if (!accepted.ok) {
-      return reply
-        .code(409)
-        .send(toErrorResult("id_conflict", `Message ${id} was already accepted with different text.`));
+      return accepted.failure === "unknown_ask"
+        ? reply.code(400).send(toErrorResult("invalid_request", `No ask ${String(answers)}.`))
+        : reply.code(409).send(toErrorResult("id_conflict", `Message ${id} was already accepted with different text.`));
     }
     if (accepted.value.isNew) turns.route(toMessageId(id), text);
     return reply.code(accepted.value.isNew ? 201 : 200).send({ message: accepted.value.message });
@@ -101,7 +112,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       const { before, limit } = request.query;
       const page = store.listMessages(toMessageId(before), limit);
       return page.ok
-        ? { messages: page.value.messages, steps: page.value.steps, has_more: page.value.hasMore }
+        ? {
+            messages: page.value.messages,
+            steps: page.value.steps,
+            asks: page.value.asks,
+            has_more: page.value.hasMore,
+          }
         : reply
             .code(404)
             .send(toErrorResult("not_found", `No message ${before}.`, "That message isn't on the server."));
@@ -133,6 +149,68 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         return reply.code(started.failure === "not_found" ? 404 : 400).send({ error: toRetryFailure(started.failure) });
       }
       return reply.code(started.value.isNew ? 202 : 200).send({ turn: started.value.turn, retry_of: turn });
+    },
+  );
+
+  app.post<{ Params: { readonly ask: string } }>(
+    "/v0/asks/:ask/cancel",
+    { schema: schemaFor("cancelAsk") },
+    async (request, reply) => {
+      const cancelled = turns.cancelAsk(toAskId(request.params.ask));
+      return cancelled.ok
+        ? { ask: cancelled.value }
+        : reply
+            .code(404)
+            .send(toErrorResult("not_found", `No ask ${request.params.ask}.`, "That question isn't on the server."));
+    },
+  );
+
+  app.put<{ Params: { readonly device: string }; Body: RegisterDevice }>(
+    "/v0/devices/:device",
+    { schema: schemaFor("registerDevice") },
+    async (request, reply) => {
+      const { apns_token: apnsToken, environment, notification_key: notificationKey } = request.body;
+      const { device, isNew } = store.registerDevice(toDeviceId(request.params.device), {
+        apnsToken,
+        environment,
+        notificationKey,
+      });
+      return reply.code(isNew ? 201 : 200).send({
+        device: {
+          id: device.id,
+          environment: device.environment,
+          key_id: device.keyId,
+          registered_at: device.registeredAt,
+        },
+      });
+    },
+  );
+
+  app.delete<{ Params: { readonly device: string } }>(
+    "/v0/devices/:device",
+    { schema: schemaFor("removeDevice") },
+    async (request, reply) => {
+      const device = toDeviceId(request.params.device);
+      store.removeDevice(device);
+      presence.forget(device);
+      return reply.code(204).send();
+    },
+  );
+
+  app.put<{ Params: { readonly device: string }; Body: PresenceBody }>(
+    "/v0/devices/:device/presence",
+    { schema: schemaFor("setPresence") },
+    async (request, reply) => {
+      const device = toDeviceId(request.params.device);
+      if (store.devices().every((registered) => registered.id !== device)) {
+        return reply
+          .code(404)
+          .send(
+            toErrorResult("not_found", `No device ${device}.`, "Register this device before saying you're looking."),
+          );
+      }
+      presence.setLooking(device, request.body.looking);
+      return reply.code(204).send();
     },
   );
 

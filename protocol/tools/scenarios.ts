@@ -74,6 +74,23 @@ const writeWhole = (transcript: Transcript, text: string, pieces?: number): void
   transcript.endMessage("completed");
 };
 
+const junoOptions = [
+  { label: "Clapham", description: "Abbeville Road, SW4" },
+  { label: "Soho", description: "Greek Street, W1" },
+];
+
+const askWhichJuno = (transcript: Transcript): string => {
+  transcript.step("web_search", searching("Juno restaurant London"));
+  transcript.wait(1100);
+  return transcript.ask({ question: "Which Juno did you mean?", options: junoOptions });
+};
+
+const booking = (operation: string, fields: Readonly<Record<string, unknown>>) => ({
+  title: "Using booking",
+  endedTitle: "Used booking",
+  fields: { capability: "booking", operation, arguments: fields },
+});
+
 const scenarios: readonly (() => Transcript)[] = [
   () => {
     const transcript = createTranscript({
@@ -88,7 +105,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.begin(todayAt);
     transcript.request("GET", "/.well-known/ito");
     transcript.wait(40);
-    transcript.response(200, { product: "ito", protocol: ["0.2"] }, { headers: { "Ito-Protocol": "0.2" } });
+    transcript.response(200, { product: "ito", protocol: ["0.3"] }, { headers: { "Ito-Protocol": "0.3" } });
     transcript.wait(20);
     transcript.request("GET", "/v0/server", {
       headers: { Authorization: "Bearer ito_example_mistyped_token_0000000000000000000" },
@@ -103,15 +120,15 @@ const scenarios: readonly (() => Transcript)[] = [
           detail: "Use the token ito serve printed, or run ito token new.",
         },
       },
-      { headers: { "Ito-Protocol": "0.2" } },
+      { headers: { "Ito-Protocol": "0.3" } },
     );
     transcript.wait(9000);
     transcript.request("GET", "/v0/server", { headers: { Authorization: authorization } });
     transcript.wait(40);
     transcript.response(
       200,
-      { name: "studio", version: "0.2.0", protocol: "0.2", agent: { name: "Ari" } },
-      { headers: { "Ito-Protocol": "0.2" } },
+      { name: "studio", version: "0.3.0", protocol: "0.3", agent: { name: "Ari" } },
+      { headers: { "Ito-Protocol": "0.3" } },
     );
     transcript.wait(10);
     transcript.connect({ headers: { Authorization: authorization } });
@@ -829,6 +846,414 @@ const scenarios: readonly (() => Transcript)[] = [
         "reported that. Check the page before you go.",
     );
     transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "18-a-reply-while-you-re-away",
+      scenario: 18,
+      title: "A reply while you're away",
+      summary:
+        "You send two messages and leave. The first reply reaches your lock screen as a notification with " +
+        "its first line, Markdown stripped; the second turn fails, and that arrives too. Opening Ari catches up.",
+      guarantees: ["G15", "G18"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.presence(true);
+    transcript.wait(2000);
+    const { turn } = sendAndStart(transcript, saturdayQuestion);
+    transcript.wait(800);
+    const bus = transcript.send("Also, does the 37 bus run before 7 on Saturdays?");
+    transcript.queue(bus);
+    transcript.wait(400);
+    transcript.presence(false);
+    transcript.disconnect("app_closed");
+    transcript.wait(300);
+    transcript.step("thinking", thinking);
+    transcript.wait(2200);
+    writeWhole(transcript, saturdayAnswer);
+    transcript.endTurn("completed");
+    transcript.startTurn([bus]);
+    transcript.wait(300);
+    transcript.step("web_search", searching("37 bus Saturday first departure"));
+    transcript.wait(60_000);
+    const unavailable: ErrorBody = {
+      code: "model_unavailable",
+      message: "The model service isn't responding right now.",
+      detail: "The model service answered 503 Service Unavailable.",
+    };
+    transcript.endStep({ outcome: "failed" });
+    transcript.reply();
+    transcript.endMessage("failed", { error: unavailable });
+    transcript.endTurn("failed", unavailable);
+    transcript.wait(20 * 60 * 1000);
+    transcript.world("app_opened", { from: "notification", turn });
+    transcript.connect();
+    transcript.presence(true);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "19-ari-asks-before-acting",
+      scenario: 19,
+      title: "Ari asks before acting",
+      summary:
+        "The agent finds two places called Juno and asks which you meant, with both as options and room " +
+        "to type your own answer. Asking ends its turn. Tapping Clapham sends it as your message, which " +
+        "answers the ask, and a new turn carries on.",
+      guarantees: ["G16"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Book a table at Juno for Saturday at 7:30, for two.");
+    transcript.wait(300);
+    const juno = askWhichJuno(transcript);
+    transcript.endTurn("completed");
+    transcript.wait(4000);
+    const clapham = transcript.send("Clapham", { answers: juno });
+    transcript.startTurn([clapham]);
+    transcript.wait(300);
+    transcript.step(
+      "tool",
+      booking("check", {
+        place: "Juno, Clapham",
+        day: "Saturday",
+        time: "19:30",
+        people: 2,
+      }),
+    );
+    transcript.wait(1400);
+    transcript.endStep();
+    writeWhole(transcript, "Juno in Clapham has a table for two at 7:30 on Saturday. Shall I book it?");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "20-an-approval",
+      scenario: 20,
+      title: "An approval",
+      summary:
+        "Before booking, the agent asks for your approval, with a preview of exactly what would happen " +
+        "and the option that acts marked. You tap Book it, and the next turn books.",
+      guarantees: ["G16"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Book Juno in Clapham for Saturday at 7:30, for two.");
+    transcript.wait(300);
+    transcript.step(
+      "tool",
+      booking("check", {
+        place: "Juno, Clapham",
+        day: "Saturday",
+        time: "19:30",
+        people: 2,
+      }),
+    );
+    transcript.wait(1300);
+    const approval = transcript.ask({
+      kind: "approval",
+      question: "Shall I book this?",
+      preview: "Juno, Clapham\nSaturday 18 October, 7:30pm\nTable for 2, under your name",
+      options: [{ label: "Book it", acts: true }, { label: "Not now" }],
+      allowsText: false,
+    });
+    transcript.endTurn("completed");
+    transcript.wait(3000);
+    const yes = transcript.send("Book it", { answers: approval });
+    transcript.startTurn([yes]);
+    transcript.wait(300);
+    transcript.step(
+      "tool",
+      booking("book", {
+        place: "Juno, Clapham",
+        day: "Saturday",
+        time: "19:30",
+        people: 2,
+      }),
+    );
+    transcript.wait(1800);
+    transcript.endStep();
+    writeWhole(transcript, "Booked: Juno in Clapham, Saturday at 7:30, a table for two. The reference is JC4821.");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "21-an-ask-while-you-re-away",
+      scenario: 21,
+      title: "An ask while you're away",
+      summary:
+        "The agent asks while you're away, so the ask arrives as a time-sensitive notification carrying " +
+        "its options. Answering from the notification is an ordinary send naming the ask; the agent carries " +
+        "on, and its reply notifies you too.",
+      guarantees: ["G15", "G16", "G18"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.presence(true);
+    transcript.wait(2000);
+    sendAndStart(transcript, "Book a table at Juno for Friday at 8, for two.");
+    transcript.wait(500);
+    transcript.presence(false);
+    transcript.disconnect("app_closed");
+    transcript.wait(300);
+    const juno = askWhichJuno(transcript);
+    transcript.endTurn("completed");
+    transcript.wait(90_000);
+    transcript.world("notification_answered", { ask: juno, option: "Soho" });
+    const soho = transcript.send("Soho", { answers: juno });
+    transcript.startTurn([soho]);
+    transcript.wait(300);
+    transcript.step(
+      "tool",
+      booking("book", {
+        place: "Juno, Soho",
+        day: "Friday",
+        time: "20:00",
+        people: 2,
+      }),
+    );
+    transcript.wait(1800);
+    transcript.endStep();
+    writeWhole(transcript, "Booked: Juno in Soho, Friday at 8, a table for two.");
+    transcript.endTurn("completed");
+    transcript.wait(10 * 60 * 1000);
+    transcript.world("app_opened", { from: "notification" });
+    transcript.connect();
+    transcript.presence(true);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "22-waiting",
+      scenario: 22,
+      title: "Waiting",
+      summary:
+        "An ask waits for hours, through the app closing and the server restarting, and is still there " +
+        "when you come back. Stop cancels it, and the cancelled ask stays in the conversation.",
+      guarantees: ["G16"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Book Juno for Saturday.");
+    transcript.wait(300);
+    const juno = askWhichJuno(transcript);
+    transcript.endTurn("completed");
+    transcript.wait(5000);
+    transcript.disconnect("app_closed");
+    transcript.wait(2 * 60 * 60 * 1000);
+    transcript.restart();
+    transcript.wait(4 * 60 * 60 * 1000);
+    transcript.world("app_opened");
+    transcript.connect();
+    transcript.wait(6000);
+    transcript.cancelAsk(juno);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "23-your-own-way-then-stop",
+      scenario: 23,
+      title: "Your own way, then Stop",
+      summary:
+        "Instead of picking an option you write something else; any message counts as the answer, so the " +
+        "server marks it as answering the ask. The agent asks again, and this time you tap Stop: the ask " +
+        "ends as cancelled.",
+      guarantees: ["G16"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Book Juno for Saturday.");
+    transcript.wait(300);
+    askWhichJuno(transcript);
+    transcript.endTurn("completed");
+    transcript.wait(6000);
+    const instead = transcript.send("Actually, find somewhere new in Brixton instead.");
+    transcript.startTurn([instead]);
+    transcript.wait(300);
+    transcript.step("web_search", searching("new restaurants Brixton"));
+    transcript.wait(1500);
+    const time = transcript.ask({
+      question: "Same time, Saturday at 7:30?",
+      options: [{ label: "Yes" }, { label: "Any time that evening" }],
+    });
+    transcript.endTurn("completed");
+    transcript.wait(5000);
+    transcript.cancelAsk(time);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "24-the-reminder",
+      scenario: 24,
+      title: "The reminder",
+      summary:
+        "An ask made while you're away notifies you at once. Three hours later, still unanswered, it " +
+        "sends one reminder at normal level, and then nothing more. When you answer, nothing is pushed: " +
+        "you're looking.",
+      guarantees: ["G15", "G16", "G18"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.presence(true);
+    transcript.wait(2000);
+    sendAndStart(transcript, "Book Juno for Saturday at 7:30, for two.");
+    transcript.wait(400);
+    transcript.presence(false);
+    transcript.disconnect("app_closed");
+    transcript.wait(300);
+    const juno = askWhichJuno(transcript);
+    transcript.endTurn("completed");
+    transcript.remind();
+    transcript.wait(5 * 60 * 60 * 1000);
+    transcript.world("app_opened");
+    transcript.connect();
+    transcript.presence(true);
+    transcript.wait(4000);
+    const clapham = transcript.send("Clapham", { answers: juno });
+    transcript.startTurn([clapham]);
+    transcript.wait(300);
+    transcript.step(
+      "tool",
+      booking("check", {
+        place: "Juno, Clapham",
+        day: "Saturday",
+        time: "19:30",
+        people: 2,
+      }),
+    );
+    transcript.wait(1400);
+    transcript.endStep();
+    writeWhole(transcript, "Juno in Clapham has a table for two at 7:30 on Saturday. Shall I book it?");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "25-a-secret",
+      scenario: 25,
+      title: "A secret",
+      summary:
+        "The agent asks for a code that was texted to you, as a secret. You send it naming the ask: the " +
+        "agent receives it, but the conversation keeps an empty message marked secret, in the stream, the " +
+        "answer and everywhere after.",
+      guarantees: ["G17"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Book Juno in Clapham for Saturday at 7:30, for two.");
+    transcript.wait(300);
+    transcript.step(
+      "tool",
+      booking("book", {
+        place: "Juno, Clapham",
+        day: "Saturday",
+        time: "19:30",
+        people: 2,
+      }),
+    );
+    transcript.wait(1600);
+    const code = transcript.ask({ question: "Juno texted you a 6-digit code. What is it?", secret: true });
+    transcript.endTurn("completed");
+    transcript.wait(12_000);
+    const answer = transcript.send("481516", { answers: code });
+    transcript.startTurn([answer]);
+    transcript.wait(300);
+    transcript.step("tool", booking("confirm", { reference: "JC4821" }));
+    transcript.wait(1200);
+    transcript.endStep();
+    writeWhole(transcript, "Booked: Juno in Clapham, Saturday at 7:30, a table for two.");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "26-turning-on-notifications",
+      scenario: 26,
+      title: "Turning on notifications",
+      summary:
+        "At the first longer task, Ari offers a nudge and you allow notifications. The app registers the " +
+        "device with its push token and notification key and says you're looking; when you leave, the " +
+        "finished reply notifies you.",
+      guarantees: ["G15", "G18"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Go through my notes and tidy up the packing lists for the weekend.");
+    transcript.wait(300);
+    transcript.step("thinking", thinking);
+    transcript.wait(4000);
+    transcript.world("notifications_allowed");
+    transcript.registerDevice();
+    transcript.presence(true);
+    transcript.step("command", {
+      title: "Reading 3 files",
+      endedTitle: "Read 3 files",
+      fields: {
+        command: "cat notes/packing-*.md",
+        cwd: "/home/you/.ito/workspace",
+        actions: [
+          { type: "read", path: "notes/packing-saturday.md" },
+          { type: "read", path: "notes/packing-sunday.md" },
+          { type: "read", path: "notes/packing-old.md" },
+        ],
+      },
+    });
+    transcript.wait(900);
+    transcript.endStep({ fields: { exit_code: 0 } });
+    transcript.presence(false);
+    transcript.disconnect("app_closed");
+    transcript.step("file_change", {
+      title: "Editing 2 files",
+      endedTitle: "Edited 2 files",
+      fields: {
+        files: [
+          { path: "notes/packing-saturday.md", change: "modified", lines_added: 4, lines_removed: 2 },
+          { path: "notes/packing-old.md", change: "deleted" },
+        ],
+      },
+    });
+    transcript.wait(1500);
+    transcript.endStep();
+    writeWhole(
+      transcript,
+      "**Tidied.** Saturday's list now has the rain jacket and the bus card, and the old list is gone.",
+    );
+    transcript.endTurn("completed");
+    transcript.wait(3 * 60 * 1000);
+    transcript.world("app_opened", { from: "notification" });
+    transcript.connect();
+    transcript.presence(true);
     return transcript;
   },
 ];

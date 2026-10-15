@@ -28,7 +28,10 @@ export type Step =
   | { readonly at: number; readonly app: AppRequest }
   | { readonly at: number; readonly server: ServerResponse; readonly lost?: boolean }
   | { readonly at: number; readonly event: Event }
-  | { readonly at: number; readonly world: string; readonly until?: number; readonly to?: string };
+  | { readonly at: number; readonly world: string; readonly until?: number; readonly to?: string }
+  | { readonly at: number; readonly push: TranscriptPush };
+
+export type TranscriptPush = { readonly device: string; readonly level: string; readonly notification: unknown };
 
 export type Transcript = {
   readonly header: Header;

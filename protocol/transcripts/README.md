@@ -27,6 +27,7 @@ by the steps. Each step has `at`, in milliseconds from the start, and exactly on
 | `server` | the app receives the response to its last request: `status`, and `headers` and `body` where they matter; `"lost": true` means it never reached the app |
 | `event` | the app receives an event from `GET /v0/events` |
 | `world` | something happens outside the API |
+| `push` | the server sends a notification to a registered device: `device`, `level`, and the `notification` as the device shows it once decrypted (see [the push schema](../push.schema.json)) |
 
 Events keep the server's own time in their `at` field, so an event replayed after a disconnect
 shows when it really happened. Requests other than the first connection leave out the
@@ -37,13 +38,15 @@ shows when it really happened. Requests other than the first connection leave ou
 | Marker | What happens |
 | --- | --- |
 | `offline`, `online` | the network drops and returns; the stream breaks and requests fail |
-| `app_closed`, `app_opened` | the app leaves the screen and comes back; its stream closes meanwhile |
+| `app_closed`, `app_opened` | the app leaves the screen and comes back; its stream closes meanwhile. `from: notification` means a tap on a notification opened it |
 | `app_scrolled_up` | you scroll back while a reply streams; nothing changes on the wire |
 | `network_stall` | the network holds events back and releases them together at `until` |
 | `server_restarted` | the server restarts and keeps its data |
 | `server_restored` | the server restarts from a backup whose log ends at the event `to` |
 | `engine_compacting` | the agent's engine compacts its context and can't take new input until `until` |
 | `engine_stalls` | the agent's engine stops responding |
+| `notifications_allowed` | you allow notifications when the app offers them |
+| `notification_answered` | you answer an ask from its notification, without opening the app |
 
 ## Ids
 

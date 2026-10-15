@@ -45,6 +45,12 @@
           "$ref": "#/$defs/MessageEnded"
         },
         {
+          "$ref": "#/$defs/AskStarted"
+        },
+        {
+          "$ref": "#/$defs/AskEnded"
+        },
+        {
           "$ref": "#/$defs/TurnEnded"
         }
       ]
@@ -69,6 +75,12 @@
     },
     "StepId": {
       "description": "Opaque. The server makes it when a step starts.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "AskId": {
+      "description": "Opaque. The server makes it when the agent asks.",
       "type": "string",
       "minLength": 1,
       "maxLength": 64
@@ -136,7 +148,7 @@
           "description": "Agent messages only: the turn that wrote it."
         },
         "text": {
-          "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a reply that stands in for a turn that failed or was cut off before writing.",
+          "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, and for a reply that stands in for a turn that failed or was cut off before writing.",
           "type": "string"
         },
         "at": {
@@ -145,6 +157,14 @@
         },
         "position": {
           "$ref": "#/$defs/Position"
+        },
+        "answers": {
+          "$ref": "#/$defs/AskId",
+          "description": "User messages only: the ask this message answered. Any message you send while an ask waits answers it, whether or not you meant it to."
+        },
+        "secret": {
+          "description": "User messages only: a secret answer, such as a code. Its `text` is always empty: the agent received what you typed, and the conversation keeps nothing of it.",
+          "const": true
         },
         "ended_at": {
           "$ref": "#/$defs/Timestamp",
@@ -374,6 +394,96 @@
         }
       }
     },
+    "AskKind": {
+      "description": "`question` asks for information or a choice. `approval` asks before the agent does something consequential, and shows a `preview` of what would happen. Treat a kind you don't recognise as a question.",
+      "enum": ["question", "approval"]
+    },
+    "AskOption": {
+      "description": "A suggested answer. Tapping it sends its `label` as your message.",
+      "type": "object",
+      "required": ["label"],
+      "properties": {
+        "label": {
+          "description": "A short answer, in plain words.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "description": "A little more about the option, when the agent gave it.",
+          "type": "string"
+        },
+        "acts": {
+          "description": "Approvals only: present on the one option that goes ahead with the action, such as \"Book it\".",
+          "const": true
+        }
+      }
+    },
+    "AskOutcome": {
+      "description": "How an ask ended: `answered` by a message, or `cancelled` by you before you answered, or because the agent asked something else. Treat an outcome you don't recognise as ended.",
+      "enum": ["answered", "cancelled"]
+    },
+    "Ask": {
+      "description": "Something the agent asked you. Asking ends the agent's turn, and the ask waits as long as it takes: through the app closing, the phone going offline and the server restarting. The next message you send answers it, whether you tap an option, type your own answer or write about something else. At most one ask waits at a time.",
+      "type": "object",
+      "required": ["id", "turn", "kind", "question", "options", "allows_text", "secret", "at", "position"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/AskId"
+        },
+        "turn": {
+          "$ref": "#/$defs/TurnId",
+          "description": "The turn that asked."
+        },
+        "kind": {
+          "$ref": "#/$defs/AskKind"
+        },
+        "question": {
+          "description": "Plain words, written by the agent.",
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "description": "Suggested answers, in order. Empty when only a typed answer makes sense. An approval has options, and exactly one of them `acts`.",
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/AskOption"
+          }
+        },
+        "allows_text": {
+          "description": "Whether to offer a typed answer beside the options. Always true when there are no options.",
+          "type": "boolean"
+        },
+        "preview": {
+          "description": "Approvals only: what would happen, in plain text, to show before you agree.",
+          "type": "string",
+          "minLength": 1
+        },
+        "secret": {
+          "description": "Whether the answer is a secret, such as a code. Send it with `answers` set to this ask: the agent receives it, and it never enters the conversation's history.",
+          "type": "boolean"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "position": {
+          "$ref": "#/$defs/Position"
+        },
+        "ended_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it was answered or cancelled."
+        },
+        "outcome": {
+          "$ref": "#/$defs/AskOutcome",
+          "description": "Absent while the ask waits."
+        },
+        "answer": {
+          "$ref": "#/$defs/MessageId",
+          "description": "Present when the outcome is `answered`: the message that answered it."
+        }
+      }
+    },
     "StatusKind": {
       "description": "Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.",
       "enum": ["thinking", "working", "writing", "adjusting", "waiting", "stopping"]
@@ -449,7 +559,7 @@
       "title": "snapshot",
       "description": "The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.",
       "type": "object",
-      "required": ["type", "at", "reason", "messages", "has_more", "turn", "next", "steps"],
+      "required": ["type", "at", "reason", "messages", "has_more", "turn", "next", "steps", "asks"],
       "properties": {
         "id": {
           "$ref": "#/$defs/EventId"
@@ -481,6 +591,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/Step"
+          }
+        },
+        "asks": {
+          "description": "Every ask from the first of these messages on, in position order, including the one that waits for your answer (it has no outcome).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Ask"
           }
         },
         "turn": {
@@ -769,6 +886,46 @@
         "error": {
           "$ref": "#/$defs/Error",
           "description": "Present when the outcome is `failed`."
+        }
+      }
+    },
+    "AskStarted": {
+      "title": "ask.started",
+      "description": "The agent asks you something. The turn that asked ends next; the ask waits for your answer.",
+      "type": "object",
+      "required": ["id", "type", "at", "ask"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "ask.started"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "ask": {
+          "$ref": "#/$defs/Ask"
+        }
+      }
+    },
+    "AskEnded": {
+      "title": "ask.ended",
+      "description": "The ask is settled: a message answered it, or it was cancelled. It carries the ask as it ended. When a message answers it, `message.accepted` for that message comes first.",
+      "type": "object",
+      "required": ["id", "type", "at", "ask"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "ask.ended"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "ask": {
+          "$ref": "#/$defs/Ask"
         }
       }
     },

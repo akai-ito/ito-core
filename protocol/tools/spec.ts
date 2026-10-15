@@ -27,6 +27,10 @@ type AppRequest = { readonly method: string; readonly path: string; readonly bod
 
 type ServerResponse = { readonly status: number; readonly body?: unknown };
 
+type Push = { readonly device: string; readonly level: string; readonly notification: unknown };
+
+const pushLevels: ReadonlySet<string> = new Set(["active", "time-sensitive"]);
+
 type EventDefinition = { readonly properties?: { readonly type?: { readonly const?: unknown } } };
 
 // The published schemas tolerate unknown properties, because apps and servers must ignore what
@@ -41,15 +45,18 @@ const toClosed = (schema: unknown): unknown => {
 };
 
 export const loadSpec = (directory = protocolDirectory): Spec => {
-  const { events, openapi, document } = loadSchemas(directory);
+  const { events, push, openapi, document } = loadSchemas(directory);
   const ajv = new Ajv2020({ strict: true, allErrors: true });
   formats.default(ajv);
   ajv.addKeyword("example");
   ajv.addSchema(toClosed(events) as object);
+  ajv.addSchema(toClosed(push) as object);
   ajv.addSchema(toClosed(openapi) as object);
 
   const anyEvent = ajv.getSchema(events.$id);
   if (!anyEvent) throw new Error("events.schema.json did not load");
+  const anyNotification = ajv.getSchema(`${push.$id}#/$defs/Notification`);
+  if (!anyNotification) throw new Error("push.schema.json did not load");
   const byType = new Map(
     Object.entries(events.$defs as Readonly<Record<string, EventDefinition>>).flatMap(([name, definition]) => {
       const type = definition.properties?.type?.const;
@@ -106,11 +113,19 @@ export const loadSpec = (directory = protocolDirectory): Spec => {
     if (problem) throw new Error(`${where}: response ${problem}`);
   };
 
+  const checkPush = (where: string, pushed: Push): void => {
+    if (!pushLevels.has(pushed.level)) throw new Error(`${where}: push level ${pushed.level} is not in the spec`);
+    if (!anyNotification(pushed.notification)) {
+      throw new Error(`${where}: push ${ajv.errorsText(anyNotification.errors)}`);
+    }
+  };
+
   const checkLine = (name: string, pending: OpenApiOperation | undefined, line: Line): OpenApiOperation | undefined => {
     const where = `${name} at ${typeof line.at === "number" ? `${line.at} ms` : "given"}`;
     const event = (line.event ?? line.given) as Event | undefined;
     const problem = event ? checkEvent(event) : undefined;
     if (problem) throw new Error(`${where}: ${problem}`);
+    if (line.push) checkPush(where, line.push as Push);
     const app = line.app as AppRequest | undefined;
     const requested = app ? checkRequest(where, app) : pending;
     const server = line.server as ServerResponse | undefined;

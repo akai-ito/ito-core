@@ -1,13 +1,13 @@
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import { toCommandError, toTurnError, toWatchdogError } from "#conversation/failures.ts";
-import type { MessageId, TurnId } from "#conversation/ids.ts";
+import type { AskId, MessageId, TurnId } from "#conversation/ids.ts";
 import { isAdjustingAfterRead, route, type Conversation } from "#conversation/routing.ts";
 import { adjustingStatus, stoppingStatus, toStepStatus, writingStatus } from "#conversation/status.ts";
 import { toEndedStep, toStepTitle, toUpdatedStep } from "#conversation/steps.ts";
-import type { Engine, EngineEvent, Input } from "#engine/engine.ts";
+import type { AskFields, Engine, EngineEvent, Input } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Error as ErrorBody, Outcome, Status, Step } from "#protocol/types.ts";
+import type { Ask, Error as ErrorBody, Outcome, Status, Step } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { PendingWork, Store } from "#store/store.ts";
 
@@ -31,6 +31,8 @@ export type Turns = {
   readonly route: (message: MessageId, text: string) => void;
   readonly stop: (turn: TurnId, cut: Cut | undefined) => StopState | undefined;
   readonly retry: (failed: TurnId) => Result<RetryStarted, "not_found" | "not_failed">;
+  readonly ask: (fields: AskFields) => Result<Ask, "no_turn">;
+  readonly cancelAsk: (ask: AskId) => Result<Ask, "not_found">;
   readonly recover: () => void;
   readonly settled: () => Promise<void>;
   readonly close: () => Promise<void>;
@@ -40,7 +42,7 @@ type Writing = { readonly message: MessageId; readonly kind: "reply" | "note" };
 
 type Running = {
   readonly id: TurnId;
-  readonly phase: "running" | "stopping";
+  readonly phase: "running" | "stopping" | "asking";
   readonly cut: Cut | undefined;
   readonly writing: Writing | undefined;
   readonly hasStartedReply: boolean;
@@ -84,6 +86,8 @@ export const createTurns = (
 ): Turns => {
   const running = createCell<Running | undefined>(undefined);
   const actor = createCell<Promise<void>>(Promise.resolve());
+  const received = createCell<ReadonlyMap<MessageId, string>>(new Map());
+  const notes = createCell<readonly string[]>([]);
 
   const enqueue = (job: () => Promise<void> | void): Promise<void> =>
     actor.update(async (previous) => {
@@ -265,25 +269,56 @@ export const createTurns = (
     });
   };
 
+  const askNow = (turn: TurnId, fields: AskFields): Result<Ask, "no_turn"> => {
+    const state = current(turn);
+    if (state?.phase !== "running") return fail("no_turn");
+    endOpenMessage(turn);
+    const asked = store.startAsk(turn, fields);
+    change(turn, (latest) => ({ ...latest, phase: "asking", buffered: "" }));
+    return ok(asked);
+  };
+
+  const finishAsking = async (turn: TurnId): Promise<void> => {
+    if (current(turn)?.phase !== "asking") return;
+    try {
+      await engine.restart();
+    } finally {
+      completeTurn(turn);
+    }
+  };
+
+  const endAfterAsking = (turn: TurnId): void => {
+    change(turn, (latest) => ({
+      ...latest,
+      cancelForcedStop:
+        latest.cancelForcedStop ??
+        clock.after(limits.forcedStopMs, () => {
+          void finishAsking(turn);
+        }),
+    }));
+    void interruptEngine(turn, () => finishAsking(turn));
+  };
+
   const handle = (turn: TurnId, event: EngineEvent): void => {
     const state = current(turn);
     if (!state) return;
-    const isStopping = state.phase === "stopping";
+    const isQuiet = state.phase !== "running";
+    const isAsking = state.phase === "asking";
     switch (event.type) {
       case "step.started": {
-        if (!isStopping) startStep(turn, event);
+        if (!isQuiet) startStep(turn, event);
         return;
       }
       case "step.updated": {
-        if (!isStopping) updateStep(turn, event);
+        if (!isQuiet) updateStep(turn, event);
         return;
       }
       case "step.ended": {
-        if (!isStopping) endStep(turn, event);
+        if (!isQuiet) endStep(turn, event);
         return;
       }
       case "text.started": {
-        if (isStopping) return;
+        if (isQuiet) return;
         endOpenMessage(turn);
         if (event.kind === "reply") store.setStatus(turn, writingStatus);
         const message = store.startMessage(turn, event.kind);
@@ -297,11 +332,11 @@ export const createTurns = (
         return;
       }
       case "text": {
-        if (!isStopping) pushText(turn, event.text);
+        if (!isQuiet) pushText(turn, event.text);
         return;
       }
       case "text.ended": {
-        if (!isStopping) endOpenMessage(turn);
+        if (!isQuiet) endOpenMessage(turn);
         return;
       }
       case "input.read": {
@@ -310,11 +345,20 @@ export const createTurns = (
           ...latest,
           awaitingRead: latest.awaitingRead.filter((message) => message !== event.messageId),
         }));
-        if (!isStopping && isAdjustingAfterRead(state)) store.setStatus(turn, adjustingStatus);
+        if (!isQuiet && isAdjustingAfterRead(state)) store.setStatus(turn, adjustingStatus);
+        return;
+      }
+      case "ask": {
+        askNow(turn, event.fields);
+        return;
+      }
+      case "asked": {
+        if (isAsking) endAfterAsking(turn);
         return;
       }
       case "failed": {
-        if (isStopping) finishStop(turn);
+        if (isAsking) completeTurn(turn);
+        else if (isQuiet) finishStop(turn);
         else failTurn(turn, toTurnError(event.code, event.detail));
         return;
       }
@@ -322,11 +366,12 @@ export const createTurns = (
         return;
       }
       case "stopped": {
-        finishStop(turn);
+        if (isAsking) completeTurn(turn);
+        else finishStop(turn);
         return;
       }
       case "ended": {
-        if (isStopping) finishStop(turn);
+        if (state.phase === "stopping") finishStop(turn);
         else completeTurn(turn);
         return;
       }
@@ -336,6 +381,7 @@ export const createTurns = (
   const endUnfinished = (turn: TurnId, detail: string): void => {
     const state = current(turn);
     if (state?.phase === "stopping") finishStop(turn);
+    else if (state?.phase === "asking") completeTurn(turn);
     else if (state) failTurn(turn, toTurnError("engine_failed", detail));
   };
 
@@ -352,7 +398,21 @@ export const createTurns = (
     }
   };
 
-  const inputOf = (message: MessageId): Input => ({ messageId: message, text: store.messageText(message) ?? "" });
+  const lostSecret =
+    "(Their answer was a secret, and the server restarted before you could read it. Ask for it again.)";
+
+  const inputOf = (message: MessageId): Input => {
+    const text = received.get().get(message) ?? store.messageText(message) ?? "";
+    return { messageId: message, text: text === "" ? lostSecret : text };
+  };
+
+  const withNotes = (inputs: readonly Input[]): readonly Input[] => {
+    const pending = notes.get();
+    const [first, ...rest] = inputs;
+    if (!first || pending.length === 0) return inputs;
+    notes.set([]);
+    return [{ ...first, text: [...pending, first.text].join("\n\n") }, ...rest];
+  };
 
   const startTurn = (
     inputs: readonly MessageId[],
@@ -374,13 +434,9 @@ export const createTurns = (
       cancelForcedStop: undefined,
       steps: new Map(),
     });
-    void consume(
-      turn,
-      engine.start(
-        turn,
-        inputs.map((message) => inputOf(message)),
-      ),
-    );
+    const engineInputs = withNotes(inputs.map((message) => inputOf(message)));
+    received.update((texts) => new Map([...texts].filter(([message]) => !inputs.includes(message))));
+    void consume(turn, engine.start(turn, engineInputs));
   };
 
   const drain = (): void => {
@@ -421,7 +477,25 @@ export const createTurns = (
 
   return {
     route: (message, text) => {
+      received.update((texts) => new Map([...texts, [message, text]]));
       void enqueue(() => routeMessage(message, text));
+    },
+
+    ask: (fields) => {
+      const state = running.get();
+      return state ? askNow(state.id, fields) : fail("no_turn");
+    },
+
+    cancelAsk: (ask) => {
+      const before = store.findAsk(ask);
+      const cancelled = store.cancelAsk(ask);
+      if (before && !before.outcome && cancelled.ok) {
+        notes.update((current) => [
+          ...current,
+          `(You asked “${before.question}”, and they cancelled it without answering.)`,
+        ]);
+      }
+      return cancelled;
     },
 
     stop: (turn, cut) => {

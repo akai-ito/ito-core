@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -5,11 +6,21 @@ import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/prom
 import { createCell } from "#cell.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
+import { apnsSettings } from "#notifications/apns.ts";
+import { openNotification } from "#notifications/crypto.ts";
+import type { Envelope } from "#notifications/notifier.ts";
 import { createServer, databaseFile, type Server } from "#server.ts";
 import { openEventStream, type EventStream } from "./event-stream.ts";
+import { startFakeApns, type Pushed } from "./fake-apns.ts";
 import { createIdMatcher } from "./matching.ts";
 import { createScriptQueue, deriveScripts } from "./scripts.ts";
-import { readTranscript, type AppRequest, type ServerResponse, type Step } from "./transcript-file.ts";
+import {
+  readTranscript,
+  type AppRequest,
+  type ServerResponse,
+  type Step,
+  type TranscriptPush,
+} from "./transcript-file.ts";
 import { createVirtualClock } from "./virtual-clock.ts";
 
 export const transcriptToken = "ito_example_not_a_real_token_00000000000000000000";
@@ -24,6 +35,12 @@ type Received = { readonly status: number; readonly headers: Headers; readonly b
 
 type WorldStep = Extract<Step, { readonly world: string }>;
 
+type DeviceKey = { readonly id: string; readonly notificationKey: string };
+
+const apnsKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+  .privateKey.export({ type: "pkcs8", format: "pem" })
+  .toString();
+
 const fail = (message: string): never => {
   throw new Error(message);
 };
@@ -31,7 +48,7 @@ const fail = (message: string): never => {
 const isWorldStep = (step: Step): step is WorldStep => "world" in step;
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emst]_\d{4}_\d{5}$/u.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emsta]_\d{4}_\d{5}$/u.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap((item) => idsIn(item));
   return value && typeof value === "object" ? Object.values(value).flatMap((item) => idsIn(item)) : [];
 };
@@ -74,6 +91,8 @@ export const replay = async (name: string): Promise<void> => {
   const live = createCell<Live | undefined>(undefined);
   const stream = createCell<EventStream | undefined>(undefined);
   const response = createCell<Promise<Received> | undefined>(undefined);
+  const apns = await startFakeApns();
+  const deviceKey = createCell<DeviceKey | undefined>(undefined);
 
   const createReplayServer = (): Server =>
     createServer({
@@ -82,6 +101,7 @@ export const replay = async (name: string): Promise<void> => {
       name: "studio",
       agentName: "Ari",
       clock,
+      push: { hosts: { production: apns.origin, sandbox: apns.origin } },
     });
 
   const listen = async (server: Server): Promise<void> => {
@@ -144,8 +164,21 @@ export const replay = async (name: string): Promise<void> => {
     return recovered && "event" in recovered ? Date.parse(recovered.event.at) : stoppedAt;
   };
 
+  const comparePush = (received: Pushed, expected: TranscriptPush): string | undefined => {
+    const device = deviceKey.get();
+    if (!device) return "a push before any device registered";
+    const envelope = received.payload as Envelope;
+    const level = envelope.aps["interruption-level"];
+    return level === expected.level
+      ? ids.match(expected.notification, openNotification(envelope.ito, device))
+      : `push level ${level}, expected ${expected.level}`;
+  };
+
   const request = async (step: AppRequest): Promise<void> => {
     const translated = ids.translate(step);
+    const registered = /^\/v0\/devices\/(?<device>[^/]+)$/u.exec(translated.path)?.groups?.device;
+    const key = (translated.body as { readonly notification_key?: string } | undefined)?.notification_key;
+    if (registered && key && translated.method === "PUT") deviceKey.set({ id: registered, notificationKey: key });
     if (translated.method !== "GET" || translated.path !== "/v0/events") {
       response.set(send(origin(), translated));
       return;
@@ -197,6 +230,15 @@ export const replay = async (name: string): Promise<void> => {
       compareResponse(await withTimeout(pending, "a response"), step.server, index);
       return;
     }
+    if ("push" in step) {
+      await advance(time);
+      const received = await apns.next(waitMs);
+      check(
+        received ? comparePush(received, step.push) : `no push arrived, expected ${JSON.stringify(step.push)}`,
+        index,
+      );
+      return;
+    }
     if ("event" in step) {
       await advance(Math.max(time, Date.parse(step.event.at)));
       const current = stream.get() ?? fail(`${name}, step ${index + 1}: an event with no stream open`);
@@ -213,6 +255,10 @@ export const replay = async (name: string): Promise<void> => {
   const seeded = createReplayServer();
   seeded.store.importEvents(transcript.given);
   seeded.store.setSetting(tokenSetting, hashToken(transcriptToken));
+  seeded.store.setSetting(apnsSettings.privateKey, apnsKey);
+  seeded.store.setSetting(apnsSettings.keyId, "KEY1234567");
+  seeded.store.setSetting(apnsSettings.teamId, "TEAM123456");
+  seeded.store.setSetting(apnsSettings.bundleId, "com.example.ari");
   const restoreTargets = new Set(transcript.steps.filter((step) => isWorldStep(step)).map((step) => step.to));
   if (restoreTargets.has(transcript.given.at(-1)?.id)) seeded.store.backupTo(backupFile);
 
@@ -223,9 +269,12 @@ export const replay = async (name: string): Promise<void> => {
     await advance(start + (transcript.steps.at(-1)?.at ?? 0) + afterwardsMs);
     const extra = await stream.get()?.next(quietMs);
     if (extra !== undefined) fail(`${name}: an unexpected event after the last step: ${JSON.stringify(extra)}`);
+    const extraPush = await apns.next(quietMs);
+    if (extraPush) fail(`${name}: an unexpected push after the last step: ${JSON.stringify(extraPush.payload)}`);
   } finally {
     await stopServer();
     await seeded.close();
+    await apns.close();
     rmSync(directory, { recursive: true, force: true });
   }
 };

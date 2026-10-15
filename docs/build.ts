@@ -98,7 +98,7 @@ const toSiteLink = (prefix: string, href: string): string => {
   if (href === "guarantees.md") return `${prefix}guarantees/`;
   const transcript = /^transcripts\/(?<name>\d\d-[\da-z-]+)\.jsonl$/u.exec(href)?.groups?.name;
   if (transcript) return `${prefix}transcripts/${transcript}/`;
-  const isSpecFile = href === "openapi.yaml" || href === "events.schema.json";
+  const isSpecFile = ["openapi.yaml", "events.schema.json", "push.schema.json"].includes(href);
   return isSpecFile
     ? `${prefix}protocol/v0/${href}`
     : `https://github.com/akai-ito/ito-core/blob/main/protocol/${href}`;
@@ -206,8 +206,13 @@ const summariseEvent = (event: JsonObject): Summary => {
     }
     case "message.accepted":
     case "message.started": {
-      const message = event.message as { readonly role: string; readonly kind?: string; readonly text: string };
-      const text = message.text ? ` “${message.text}”` : "";
+      const message = event.message as {
+        readonly role: string;
+        readonly kind?: string;
+        readonly text: string;
+        readonly secret?: boolean;
+      };
+      const text = message.secret ? " (secret)" : message.text ? ` “${message.text}”` : "";
       return { who: "event", what: `${type} ${escapeHtml(message.kind ?? message.role)}${escapeHtml(text)}` };
     }
     case "turn.started": {
@@ -221,6 +226,12 @@ const summariseEvent = (event: JsonObject): Summary => {
     case "message.queued": {
       return { who: "event", what: `${type} waits as Next behind ${String(event.turn)}` };
     }
+    case "ask.started":
+    case "ask.ended": {
+      const ask = event.ask as { readonly kind: string; readonly question: string; readonly outcome?: string };
+      const outcome = ask.outcome ? ` · ${ask.outcome}` : "";
+      return { who: "event", what: `${type} ${escapeHtml(ask.kind)} · “${escapeHtml(ask.question)}”${outcome}` };
+    }
     case "message.read": {
       return { who: "event", what: `${type} taken into ${String(event.turn)}` };
     }
@@ -230,7 +241,19 @@ const summariseEvent = (event: JsonObject): Summary => {
   }
 };
 
+const summarisePush = (line: JsonObject): Summary => {
+  const push = line.push as {
+    readonly level: string;
+    readonly notification: { readonly kind: string; readonly text: string };
+  };
+  return {
+    who: "push",
+    what: `<strong>${escapeHtml(push.notification.kind)}</strong> · ${escapeHtml(push.level)} · “${escapeHtml(push.notification.text)}”`,
+  };
+};
+
 const summarise = (line: JsonObject): Summary => {
+  if (line.push) return summarisePush(line);
   if (line.app) return summariseRequest(line.app as AppRequest);
   if (line.server) return summariseResponse(line.server as ServerResponse, Boolean(line.lost));
   return line.world ? summariseWorld(line) : summariseEvent(line.event as JsonObject);
@@ -276,6 +299,7 @@ rmSync(site, { recursive: true, force: true });
 mkdirSync(specDirectory, { recursive: true });
 copyFileSync(path.join(protocolDirectory, "openapi.yaml"), path.join(specDirectory, "openapi.yaml"));
 copyFileSync(path.join(protocolDirectory, "events.schema.json"), path.join(specDirectory, "events.schema.json"));
+copyFileSync(path.join(protocolDirectory, "push.schema.json"), path.join(specDirectory, "push.schema.json"));
 const bundled = await bundle({ ref: path.join(protocolDirectory, "openapi.yaml"), config: await createConfig({}) });
 const openapi = bundled.bundle.parsed as { readonly info: { readonly version: string } };
 write(path.join(specDirectory, "openapi.json"), JSON.stringify(openapi, null, 2) + "\n");
@@ -303,7 +327,7 @@ write(
 <h1>Ito client API</h1>
 <p class="lead">Commands in, one resumable event stream out. Ari speaks it, and so can any other client.</p>
 <p class="links"><a class="button" href="api/">API reference</a><a href="guarantees/">Guarantees</a><a href="transcripts/">Golden transcripts</a></p>
-<p class="files">Spec: <a href="protocol/v0/openapi.yaml">openapi.yaml</a> · <a href="protocol/v0/events.schema.json">events.schema.json</a> · <a href="protocol/v0/openapi.json">bundled openapi.json</a></p></section>
+<p class="files">Spec: <a href="protocol/v0/openapi.yaml">openapi.yaml</a> · <a href="protocol/v0/events.schema.json">events.schema.json</a> · <a href="protocol/v0/push.schema.json">push.schema.json</a> · <a href="protocol/v0/openapi.json">bundled openapi.json</a></p></section>
 <article class="prose">${landing}</article>`,
   ),
 );

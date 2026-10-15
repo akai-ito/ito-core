@@ -1,0 +1,47 @@
+{"transcript":"26-turning-on-notifications","start":"2026-10-12T08:41:00.000Z","scenario":26,"title":"Turning on notifications","summary":"At the first longer task, Ari offers a nudge and you allow notifications. The app registers the device with its push token and notification key and says you're looking; when you leave, the finished reply notifies you.","guarantees":["G15","G18"],"app":{"cursor":"e_0009_63752"}}
+{"given":{"id":"e_0001_08318","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"e650397d-2de5-4f6d-b54c-30865f70c9e6","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z","position":1}}}
+{"given":{"id":"e_0002_55161","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_75644","inputs":["e650397d-2de5-4f6d-b54c-30865f70c9e6"]}}
+{"given":{"id":"e_0003_07438","type":"step.started","at":"2026-10-11T21:14:00.301Z","step":{"id":"s_0001_05982","turn":"t_0001_75644","kind":"thinking","title":"Thinking it through","at":"2026-10-11T21:14:00.301Z","position":3}}}
+{"given":{"id":"e_0004_28730","type":"turn.status","at":"2026-10-11T21:14:00.301Z","turn":"t_0001_75644","kind":"thinking","label":"Thinking it through"}}
+{"given":{"id":"e_0005_38526","type":"step.ended","at":"2026-10-11T21:14:01.801Z","step":{"id":"s_0001_05982","turn":"t_0001_75644","kind":"thinking","title":"Thought it through","at":"2026-10-11T21:14:00.301Z","position":3,"ended_at":"2026-10-11T21:14:01.801Z","outcome":"completed","duration_ms":1500}}}
+{"given":{"id":"e_0006_71612","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_63846","role":"agent","kind":"reply","turn":"t_0001_75644","text":"","at":"2026-10-11T21:14:01.801Z","position":6}}}
+{"given":{"id":"e_0007_10478","type":"message.delta","at":"2026-10-11T21:14:01.801Z","message":"m_0001_63846","offset":0,"text":"Fix it. The frame is sound; new brakes and a chain come to about £90, against roughly £600 for a comparable new bike. If the gears still slip after that, revisit."}}
+{"given":{"id":"e_0008_93308","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_63846","outcome":"completed","length":162}}
+{"given":{"id":"e_0009_63752","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_75644","outcome":"completed"}}
+{"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0009_63752"}}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"ec4d4743-f528-44cc-802c-c1c326b96ee5","text":"Go through my notes and tidy up the packing lists for the weekend."}}}
+{"at":2000,"event":{"id":"e_0010_56055","type":"message.accepted","at":"2026-10-12T08:41:02.000Z","message":{"id":"ec4d4743-f528-44cc-802c-c1c326b96ee5","role":"user","text":"Go through my notes and tidy up the packing lists for the weekend.","at":"2026-10-12T08:41:02.000Z","position":10}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"ec4d4743-f528-44cc-802c-c1c326b96ee5","role":"user","text":"Go through my notes and tidy up the packing lists for the weekend.","at":"2026-10-12T08:41:02.000Z","position":10}}}}
+{"at":2000,"event":{"id":"e_0011_55205","type":"turn.started","at":"2026-10-12T08:41:02.000Z","turn":"t_0002_26536","inputs":["ec4d4743-f528-44cc-802c-c1c326b96ee5"]}}
+{"at":2300,"event":{"id":"e_0012_38629","type":"step.started","at":"2026-10-12T08:41:02.300Z","step":{"id":"s_0002_92131","turn":"t_0002_26536","kind":"thinking","title":"Thinking it through","at":"2026-10-12T08:41:02.300Z","position":12}}}
+{"at":2300,"event":{"id":"e_0013_55812","type":"turn.status","at":"2026-10-12T08:41:02.300Z","turn":"t_0002_26536","kind":"thinking","label":"Thinking it through"}}
+{"at":6300,"world":"notifications_allowed"}
+{"at":6300,"app":{"method":"PUT","path":"/v0/devices/19407f39-4fac-484f-99ff-482a4ab1a12d","body":{"apns_token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","environment":"production","notification_key":"MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="}}}
+{"at":6300,"server":{"status":201,"body":{"device":{"id":"19407f39-4fac-484f-99ff-482a4ab1a12d","environment":"production","key_id":"861009ec","registered_at":"2026-10-12T08:41:06.300Z"}}}}
+{"at":6300,"app":{"method":"PUT","path":"/v0/devices/19407f39-4fac-484f-99ff-482a4ab1a12d/presence","body":{"looking":true}}}
+{"at":6300,"server":{"status":204}}
+{"at":6300,"event":{"id":"e_0014_60296","type":"step.ended","at":"2026-10-12T08:41:06.300Z","step":{"id":"s_0002_92131","turn":"t_0002_26536","kind":"thinking","title":"Thought it through","at":"2026-10-12T08:41:02.300Z","position":12,"ended_at":"2026-10-12T08:41:06.300Z","outcome":"completed","duration_ms":4000}}}
+{"at":6300,"event":{"id":"e_0015_84998","type":"step.started","at":"2026-10-12T08:41:06.300Z","step":{"id":"s_0003_71317","turn":"t_0002_26536","kind":"command","title":"Reading 3 files","at":"2026-10-12T08:41:06.300Z","position":15,"command":"cat notes/packing-*.md","cwd":"/home/you/.ito/workspace","actions":[{"type":"read","path":"notes/packing-saturday.md"},{"type":"read","path":"notes/packing-sunday.md"},{"type":"read","path":"notes/packing-old.md"}]}}}
+{"at":6300,"event":{"id":"e_0016_75148","type":"turn.status","at":"2026-10-12T08:41:06.300Z","turn":"t_0002_26536","kind":"working","label":"Reading 3 files"}}
+{"at":7200,"event":{"id":"e_0017_73417","type":"step.ended","at":"2026-10-12T08:41:07.200Z","step":{"id":"s_0003_71317","turn":"t_0002_26536","kind":"command","title":"Read 3 files","at":"2026-10-12T08:41:06.300Z","position":15,"command":"cat notes/packing-*.md","cwd":"/home/you/.ito/workspace","actions":[{"type":"read","path":"notes/packing-saturday.md"},{"type":"read","path":"notes/packing-sunday.md"},{"type":"read","path":"notes/packing-old.md"}],"exit_code":0,"ended_at":"2026-10-12T08:41:07.200Z","outcome":"completed","duration_ms":900}}}
+{"at":7200,"app":{"method":"PUT","path":"/v0/devices/19407f39-4fac-484f-99ff-482a4ab1a12d/presence","body":{"looking":false}}}
+{"at":7200,"server":{"status":204}}
+{"at":7200,"world":"app_closed"}
+{"at":9060,"push":{"device":"19407f39-4fac-484f-99ff-482a4ab1a12d","level":"active","notification":{"kind":"reply","text":"Tidied. Saturday's list now has the rain jacket and the bus card, and the old list is gone.","turn":"t_0002_26536","message":"m_0002_07750"}}}
+{"at":189060,"world":"app_opened","from":"notification"}
+{"at":189060,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0017_73417"}}}
+{"at":189060,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":189060,"event":{"id":"e_0018_45353","type":"step.started","at":"2026-10-12T08:41:07.200Z","step":{"id":"s_0004_59415","turn":"t_0002_26536","kind":"file_change","title":"Editing 2 files","at":"2026-10-12T08:41:07.200Z","position":18,"files":[{"path":"notes/packing-saturday.md","change":"modified","lines_added":4,"lines_removed":2},{"path":"notes/packing-old.md","change":"deleted"}]}}}
+{"at":189060,"event":{"id":"e_0019_56509","type":"turn.status","at":"2026-10-12T08:41:07.200Z","turn":"t_0002_26536","kind":"working","label":"Editing 2 files"}}
+{"at":189060,"event":{"id":"e_0020_06777","type":"step.ended","at":"2026-10-12T08:41:08.700Z","step":{"id":"s_0004_59415","turn":"t_0002_26536","kind":"file_change","title":"Edited 2 files","at":"2026-10-12T08:41:07.200Z","position":18,"files":[{"path":"notes/packing-saturday.md","change":"modified","lines_added":4,"lines_removed":2},{"path":"notes/packing-old.md","change":"deleted"}],"ended_at":"2026-10-12T08:41:08.700Z","outcome":"completed","duration_ms":1500}}}
+{"at":189060,"event":{"id":"e_0021_61007","type":"turn.status","at":"2026-10-12T08:41:08.700Z","turn":"t_0002_26536","kind":"writing","label":"Writing"}}
+{"at":189060,"event":{"id":"e_0022_22353","type":"message.started","at":"2026-10-12T08:41:08.700Z","message":{"id":"m_0002_07750","role":"agent","kind":"reply","turn":"t_0002_26536","text":"","at":"2026-10-12T08:41:08.700Z","position":22}}}
+{"at":189060,"event":{"id":"e_0023_12466","type":"message.delta","at":"2026-10-12T08:41:08.700Z","message":"m_0002_07750","offset":0,"text":"**Tidied.** Saturday's list "}}
+{"at":189060,"event":{"id":"e_0024_09961","type":"message.delta","at":"2026-10-12T08:41:08.820Z","message":"m_0002_07750","offset":28,"text":"now has the rain jacket and "}}
+{"at":189060,"event":{"id":"e_0025_05639","type":"message.delta","at":"2026-10-12T08:41:08.940Z","message":"m_0002_07750","offset":56,"text":"the bus card, and the old "}}
+{"at":189060,"event":{"id":"e_0026_30650","type":"message.delta","at":"2026-10-12T08:41:09.060Z","message":"m_0002_07750","offset":82,"text":"list is gone."}}
+{"at":189060,"event":{"id":"e_0027_76666","type":"message.ended","at":"2026-10-12T08:41:09.060Z","message":"m_0002_07750","outcome":"completed","length":95}}
+{"at":189060,"event":{"id":"e_0028_37924","type":"turn.ended","at":"2026-10-12T08:41:09.060Z","turn":"t_0002_26536","outcome":"completed"}}
+{"at":189060,"app":{"method":"PUT","path":"/v0/devices/19407f39-4fac-484f-99ff-482a4ab1a12d/presence","body":{"looking":true}}}
+{"at":189060,"server":{"status":204}}

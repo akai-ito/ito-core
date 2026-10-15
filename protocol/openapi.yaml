@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.2"
+  version: "0.3"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -15,6 +15,9 @@ info:
     - **Send** with `POST /v0/messages`. The app chooses the message id, so retrying is always
       safe.
     - **Stop** a turn, or **try again** after one failed, with commands on the turn.
+    - **Answer** what the agent asks by sending a message, or cancel the ask.
+    - **Notify** a device while you're not looking: register it, then say when the conversation is
+      on screen. [The push schema](push.schema.json) describes what it receives.
 
     **Versioning.** Routes carry the protocol's major version, and every response carries an
     `Ito-Protocol` header with the full version. Until 1.0, every protocol change may break, so
@@ -45,6 +48,10 @@ tags:
     description: Send messages, follow the conversation and read its history.
   - name: Turns
     description: Control the agent's work on a turn.
+  - name: Asks
+    description: Settle what the agent asked you.
+  - name: Notifications
+    description: Reach you through push notifications while you're not looking.
 paths:
   /.well-known/ito:
     get:
@@ -66,7 +73,7 @@ paths:
               schema: { $ref: "#/components/schemas/Discovery" }
               example:
                 product: ito
-                protocol: ["0.2"]
+                protocol: ["0.3"]
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/server:
     get:
@@ -84,8 +91,8 @@ paths:
               schema: { $ref: "#/components/schemas/ServerInfo" }
               example:
                 name: studio
-                version: 0.2.0
-                protocol: "0.2"
+                version: 0.3.0
+                protocol: "0.3"
                 agent: { name: Ari }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
@@ -143,6 +150,12 @@ paths:
         next.
 
         Sending the same id again returns the same message and changes nothing.
+
+        While an ask waits, the message answers it, whether or not it names the ask: `message.accepted`
+        for the message comes first, then `ask.ended`. Name the ask in `answers` when you send a
+        tapped option or a secret. The text of an answer to a secret ask is never stored, never
+        streamed and never sent back: the message keeps an empty text, marked `secret`, and only the
+        agent's next turn receives what you typed.
       requestBody:
         required: true
         content:
@@ -281,6 +294,107 @@ paths:
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/asks/{ask}/cancel:
+    post:
+      tags: [Asks]
+      operationId: cancelAsk
+      summary: Cancel an ask
+      description: |
+        What Stop does while an ask waits. The ask ends as `cancelled`, nothing is sent to the agent,
+        and it learns at the start of its next turn that you didn't answer. Cancelling an ask that
+        has already ended changes nothing, and the answer gives the ask as it ended.
+      parameters:
+        - $ref: "#/components/parameters/Ask"
+      responses:
+        "200":
+          description: The ask, as it ended.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AskResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/devices/{device}:
+    put:
+      tags: [Notifications]
+      operationId: registerDevice
+      summary: Register a device for notifications
+      description: |
+        Call it when the system gives the app a push token, and again whenever the token changes or
+        you rotate the key (every 30 days, say). The server keeps one registration per device and
+        always encrypts with its latest key. Keep the previous key on the device for a while: a
+        notification already on its way names the key that encrypted it.
+
+        The server pushes only while you're not looking: when a reply finishes, when a turn fails,
+        when the agent asks you something, and once more for an ask still waiting after three hours.
+      parameters:
+        - $ref: "#/components/parameters/Device"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterDevice" }
+            example:
+              apns_token: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+              environment: production
+              notification_key: MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=
+      responses:
+        "201":
+          description: Registered for the first time.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeviceResult" }
+        "200":
+          description: Registered again; the new token and key replace the old ones.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DeviceResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+    delete:
+      tags: [Notifications]
+      operationId: removeDevice
+      summary: Stop notifying a device
+      description: Forgets the device, its token and its key. Removing a device the server doesn't know changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/Device"
+      responses:
+        "204":
+          description: The device is no longer registered.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/devices/{device}/presence:
+    put:
+      tags: [Notifications]
+      operationId: setPresence
+      summary: Say whether you're looking
+      description: |
+        Send `looking: true` when the conversation comes on screen, and `false` when it leaves the
+        screen or the app goes to the background. Nothing is pushed while any device is looking and
+        holds a live event stream, so a device that crashed or lost its connection is still
+        notified. The server forgets presence when it restarts: send it again after reconnecting.
+      parameters:
+        - $ref: "#/components/parameters/Device"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Presence" }
+            example: { looking: true }
+      responses:
+        "204":
+          description: Noted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     token:
@@ -296,7 +410,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.2"
+        example: "0.3"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -309,6 +423,20 @@ components:
       required: true
       description: The turn's id, from `turn.started`.
       schema: { $ref: "events.schema.json#/$defs/TurnId" }
+    Ask:
+      name: ask
+      in: path
+      required: true
+      description: The ask's id, from `ask.started`.
+      schema: { $ref: "events.schema.json#/$defs/AskId" }
+    Device:
+      name: device
+      in: path
+      required: true
+      description: A random UUID the app makes once per install, and keeps.
+      schema:
+        type: string
+        format: uuid
   responses:
     InvalidRequest:
       description: The request is malformed, or not possible in the current state (`invalid_request`).
@@ -335,7 +463,7 @@ components:
               message: The server didn't accept this token.
               detail: Use the token ito serve printed, or run ito token new.
     NotFound:
-      description: The server doesn't know this turn or message (`not_found`).
+      description: The server doesn't know this turn, message, ask or device (`not_found`).
       headers:
         Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
       content:
@@ -401,6 +529,14 @@ components:
       $ref: "events.schema.json#/$defs/MessageEnded"
     TurnEnded:
       $ref: "events.schema.json#/$defs/TurnEnded"
+    AskStarted:
+      $ref: "events.schema.json#/$defs/AskStarted"
+    AskEnded:
+      $ref: "events.schema.json#/$defs/AskEnded"
+    Ask:
+      $ref: "events.schema.json#/$defs/Ask"
+    Notification:
+      $ref: "push.schema.json#/$defs/Notification"
     Message:
       $ref: "events.schema.json#/$defs/Message"
     Step:
@@ -457,6 +593,9 @@ components:
           minLength: 1
           maxLength: 32000
           pattern: \S
+        answers:
+          $ref: "events.schema.json#/$defs/AskId"
+          description: The ask this message answers, when you tap one of its options or answer a secret. When it names a secret ask, the text is never stored, even if the ask has stopped waiting. An ask the server doesn't know is an `invalid_request`.
     MessageResult:
       type: object
       required: [message]
@@ -464,7 +603,7 @@ components:
         message: { $ref: "events.schema.json#/$defs/Message" }
     MessagePage:
       type: object
-      required: [messages, steps, has_more]
+      required: [messages, steps, asks, has_more]
       properties:
         messages:
           description: Oldest first.
@@ -474,6 +613,10 @@ components:
           description: Every step from the first of these messages up to the message the page ends before, in position order.
           type: array
           items: { $ref: "events.schema.json#/$defs/Step" }
+        asks:
+          description: Every ask in the same span, in position order.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Ask" }
         has_more:
           description: Whether even older messages exist.
           type: boolean
@@ -511,6 +654,53 @@ components:
         retry_of:
           $ref: "events.schema.json#/$defs/TurnId"
           description: The failed turn.
+    AskResult:
+      type: object
+      required: [ask]
+      properties:
+        ask: { $ref: "events.schema.json#/$defs/Ask" }
+    RegisterDevice:
+      type: object
+      required: [apns_token, environment, notification_key]
+      properties:
+        apns_token:
+          description: The device token from Apple Push Notification service, in hex.
+          type: string
+          pattern: ^[0-9a-f]{64,200}$
+        environment:
+          description: "`sandbox` for builds from Xcode, `production` for TestFlight and the App Store."
+          enum: [sandbox, production]
+        notification_key:
+          description: A random 256-bit key the device made for its notifications, base64. The server encrypts each notification's text with it (AES-256-GCM), so Apple sees only ciphertext.
+          type: string
+          pattern: ^[A-Za-z0-9+/]{43}=$
+    Device:
+      type: object
+      required: [id, environment, key_id, registered_at]
+      properties:
+        id:
+          description: The device's id, as the app made it.
+          type: string
+          format: uuid
+        environment:
+          enum: [sandbox, production]
+        key_id:
+          description: Names the current key in each notification's `ito.k`, as the first 8 hex characters of the key's SHA-256.
+          type: string
+          pattern: ^[0-9a-f]{8}$
+        registered_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    DeviceResult:
+      type: object
+      required: [device]
+      properties:
+        device: { $ref: "#/components/schemas/Device" }
+    Presence:
+      type: object
+      required: [looking]
+      properties:
+        looking:
+          description: Whether the conversation is on this device's screen.
+          type: boolean
     ErrorResult:
       type: object
       required: [error]
