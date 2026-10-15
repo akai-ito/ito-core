@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { constants, copyFileSync, lstatSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
@@ -18,6 +18,7 @@ import {
   type EngineEvent,
   type EngineFailureCode,
   type Input,
+  type InputAttachment,
   type ToolServer,
 } from "#engine/engine.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -79,15 +80,46 @@ const toAccount = (account: Account): Readonly<Record<string, string>> => {
 };
 
 const uploadsFolder = "uploads";
+const maxNameBytes = 200;
+const maxExtensionBytes = 16;
 
-const isSameFile = (left: string, right: string): boolean =>
-  statSync(left).size === statSync(right).size && readFileSync(left).equals(readFileSync(right));
+type Placed = InputAttachment & { readonly path: string; readonly relative?: string };
 
-const placeName = (folder: string, source: string, name: string, attempt = 1): string => {
+const isSameFile = (source: string, target: string): boolean => {
+  const found = lstatSync(target, { throwIfNoEntry: false });
+  return (
+    found?.isFile() === true &&
+    found.size === statSync(source).size &&
+    readFileSync(source).equals(readFileSync(target))
+  );
+};
+
+const placeName = (
+  folder: string,
+  source: string,
+  name: string,
+  attempt = 1,
+): { readonly name: string; readonly isThere: boolean } => {
   const extension = path.extname(name);
   const candidate = attempt === 1 ? name : `${path.basename(name, extension)}-${String(attempt)}${extension}`;
   const target = path.join(folder, candidate);
-  return !existsSync(target) || isSameFile(source, target) ? candidate : placeName(folder, source, name, attempt + 1);
+  if (!lstatSync(target, { throwIfNoEntry: false })) return { name: candidate, isThere: false };
+  return isSameFile(source, target) ? { name: candidate, isThere: true } : placeName(folder, source, name, attempt + 1);
+};
+
+const fitName = (name: string): string => {
+  if (Buffer.byteLength(name) <= maxNameBytes) return name;
+  const extension = path.extname(name);
+  const ending = Buffer.byteLength(extension) <= maxExtensionBytes ? extension : "";
+  const graphemes = [...new Intl.Segmenter().segment(name.slice(0, name.length - ending.length))].map(
+    ({ segment }) => segment,
+  );
+  const totals = graphemes.reduce<readonly number[]>(
+    (sums, grapheme) => [...sums, (sums.at(-1) ?? 0) + Buffer.byteLength(grapheme)],
+    [],
+  );
+  const fitting = totals.findIndex((total) => total > maxNameBytes - Buffer.byteLength(ending));
+  return `${graphemes.slice(0, fitting).join("")}${ending}`;
 };
 
 const safeName = (name: string): string => {
@@ -97,23 +129,32 @@ const safeName = (name: string): string => {
     .filter((character) => character >= " ")
     .join("")
     .trim();
-  return printable === "" ? "file" : printable;
+  return printable === "" ? "file" : fitName(printable);
 };
 
-const toUserInputs = (workspace: string, { text, attachments = [] }: Input): readonly UserInput[] => {
-  const folder = path.join(workspace, uploadsFolder);
-  if (attachments.length > 0) mkdirSync(folder, { recursive: true });
-  const placed = attachments.map((attachment) => {
-    const name = placeName(folder, attachment.source, safeName(attachment.name));
-    copyFileSync(attachment.source, path.join(folder, name));
+const place = (folder: string, attachment: InputAttachment, log: Log): Placed => {
+  try {
+    mkdirSync(folder, { recursive: true });
+    if (!lstatSync(folder).isDirectory()) throw new Error(`${folder} isn't a folder`);
+    const { name, isThere } = placeName(folder, attachment.source, safeName(attachment.name));
+    if (!isThere) copyFileSync(attachment.source, path.join(folder, name), constants.COPYFILE_EXCL);
     return { ...attachment, path: path.join(folder, name), relative: `${uploadsFolder}/${name}` };
-  });
-  const note =
-    placed.length > 0
-      ? `(Attached, and saved in your workspace: ${placed.map((attachment) => attachment.relative).join(", ")})`
-      : "";
+  } catch (error) {
+    log(`Couldn't save ${attachment.name} in the workspace, so the agent is told it's missing`, error);
+    return { ...attachment, path: attachment.source };
+  }
+};
+
+const toUserInputs = (workspace: string, { text, attachments = [] }: Input, log: Log): readonly UserInput[] => {
+  const placed = attachments.map((attachment) => place(path.join(workspace, uploadsFolder), attachment, log));
+  const saved = placed.flatMap((attachment) => attachment.relative ?? []);
+  const unsaved = placed.filter((attachment) => attachment.relative === undefined).map(({ name }) => name);
+  const notes = [
+    saved.length > 0 && `(Attached, and saved in your workspace: ${saved.join(", ")})`,
+    unsaved.length > 0 && `(Attached, but it couldn't be saved in your workspace: ${unsaved.join(", ")})`,
+  ];
   return [
-    { type: "text", text: [text, note].filter(Boolean).join("\n\n"), text_elements: [] },
+    { type: "text", text: [text, ...notes].filter(Boolean).join("\n\n"), text_elements: [] },
     ...placed
       .filter((attachment) => attachment.kind === "image")
       .map((attachment): UserInput => ({ type: "localImage", path: attachment.path })),
@@ -286,7 +327,7 @@ export const createCodexEngine = ({
     const started = await opened.value.process.call("turn/start", {
       threadId: opened.value.threadId,
       clientUserMessageId: inputs[0]?.messageId ?? null,
-      input: inputs.flatMap((input) => toUserInputs(workspace, input)),
+      input: inputs.flatMap((input) => toUserInputs(workspace, input, log)),
       summary: "auto",
     });
     if (started.ok) return started.value.turn.id;
@@ -331,7 +372,7 @@ export const createCodexEngine = ({
         threadId: opened.value.threadId,
         expectedTurnId: codexTurn,
         clientUserMessageId: input.messageId,
-        input: [...toUserInputs(workspace, input)],
+        input: [...toUserInputs(workspace, input, log)],
       });
       if (steered.ok) return "taken";
       log("Codex didn't take a steer, so the message waits as Next", steered.failure.message);
