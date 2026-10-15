@@ -57,7 +57,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   app.setValidatorCompiler(createValidatorCompiler(schemas));
 
   app.addHook("onRequest", async (request, reply) => {
-    if (!request.url.startsWith("/v0/")) return;
+    if (!request.routeOptions.url?.startsWith("/v0/")) return;
     const verdict = gate.check(request.headers.authorization);
     if (verdict === "accepted") return;
     return verdict === "slow_down"
