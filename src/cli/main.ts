@@ -1,5 +1,6 @@
 import type { Io } from "#cli/io.ts";
 import { login } from "#cli/login.ts";
+import { setReportsToken } from "#cli/reports.ts";
 import { serve } from "#cli/serve.ts";
 import { newToken } from "#cli/token.ts";
 import { packageVersion } from "#version.ts";
@@ -8,6 +9,7 @@ export const usage = [
   "Usage:",
   "  ito serve [--engine codex|demo] [--port 8787] [--name <name>]",
   "  ito token new",
+  "  ito reports token",
   "  ito login [codex login options]",
   "  ito --version",
 ].join("\n");
@@ -25,6 +27,9 @@ export const main = async (argv: readonly string[], io: Io): Promise<number> => 
     }
     case "token": {
       return rest.length === 1 && rest[0] === "new" ? newToken(io) : usageError(io);
+    }
+    case "reports": {
+      return rest.length === 1 && rest[0] === "token" ? setReportsToken(io) : usageError(io);
     }
     case "login": {
       return login(rest, io);

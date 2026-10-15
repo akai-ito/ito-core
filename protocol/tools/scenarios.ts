@@ -780,6 +780,57 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.endTurn("completed");
     return transcript;
   },
+
+  () => {
+    const transcript = createTranscript({
+      name: "17-reporting-a-gap",
+      scenario: 17,
+      title: "Reporting a gap",
+      summary:
+        "The agent can't load a page it needs, so it gives its best answer, reports the gap to Ito and says so " +
+        "in one line. The report is a tool step titled by what it did, linking the issue it opened.",
+      guarantees: ["G10", "G14"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "What time does the Battersea parkrun start?");
+    transcript.wait(300);
+    transcript.step("web_search", searching("Battersea parkrun start time"));
+    transcript.wait(900);
+    transcript.step("command", {
+      title: "Fetching a web page",
+      endedTitle: "Fetched a web page",
+      fields: { command: "curl -sf https://www.parkrun.org.uk/battersea/", cwd: "/home/you/.ito/workspace" },
+    });
+    transcript.wait(700);
+    transcript.endStep({ fields: { exit_code: 22, output: "curl: (22) The requested URL returned error: 403\n" } });
+    transcript.step("tool", {
+      title: "Reporting it to Ito",
+      endedTitle: "Reported it to Ito",
+      fields: {
+        capability: "ito",
+        operation: "report_gap",
+        arguments: {
+          capability: "web search",
+          operation: "open a page",
+          tried: "Fetched the parkrun event page to read the start time",
+          failed: "The page answered 403 to every fetch",
+          would_help: "A browser that can load pages behind bot protection",
+        },
+      },
+    });
+    transcript.wait(1200);
+    transcript.endStep({ fields: { url: "https://github.com/akai-ito/ito-core/issues/42" } });
+    writeWhole(
+      transcript,
+      "Most parkruns start at 9:00, but I couldn't load Battersea's event page to confirm it, and I've " +
+        "reported that. Check the page before you go.",
+    );
+    transcript.endTurn("completed");
+    return transcript;
+  },
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

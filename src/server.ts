@@ -3,11 +3,16 @@ import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { createCell } from "#cell.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
-import type { Engine } from "#engine/engine.ts";
+import { codexVersion } from "#engine/codex/binary.ts";
+import type { Engine, ToolServer } from "#engine/engine.ts";
 import { createApp } from "#http/app.ts";
-import { createGate, tokenSetting } from "#http/auth.ts";
+import { createGate, createToken, tokenSetting } from "#http/auth.ts";
+import { registerTools, toolsPath } from "#http/tools.ts";
 import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
+import { createGitHub } from "#reports/github.ts";
+import { createReporter, defaultDailyLimit } from "#reports/reporter.ts";
+import { createReportTool } from "#reports/tool.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
@@ -23,9 +28,17 @@ export type ServerOptions = {
   readonly limits?: Limits;
   readonly heartbeatMs?: number;
   readonly logger?: FastifyServerOptions["logger"];
+  readonly reports?: Partial<ReportsOptions>;
 };
 
-export type EngineContext = { readonly settings: Settings; readonly log: Log; readonly info: Info };
+export type ReportsOptions = { readonly apiUrl: string; readonly repository: string; readonly dailyLimit: number };
+
+export type EngineContext = {
+  readonly settings: Settings;
+  readonly log: Log;
+  readonly info: Info;
+  readonly tools: () => ToolServer | undefined;
+};
 
 export type Server = {
   readonly app: FastifyInstance;
@@ -37,6 +50,11 @@ export type Server = {
 const dayMs = 24 * 60 * 60 * 1000;
 const textRetentionMs = 30 * dayMs;
 const defaultHeartbeatMs = 15_000;
+const defaultReports: ReportsOptions = {
+  apiUrl: "https://api.github.com",
+  repository: "akai-ito/ito-core",
+  dailyLimit: defaultDailyLimit,
+};
 
 export const databaseFile = (dataDirectory: string): string => path.join(dataDirectory, "ito.db");
 
@@ -57,7 +75,14 @@ export const createServer = (options: ServerOptions): Server => {
   const info: Info = (message, details) => {
     logInfo.get()(message, details);
   };
-  const engine = options.createEngine({ settings: store, log, info });
+  const toolsToken = createToken();
+  const toolServer = (): ToolServer | undefined => {
+    const address = app.server.address();
+    return address && typeof address === "object"
+      ? { url: `http://${address.address}:${String(address.port)}${toolsPath}`, token: toolsToken }
+      : undefined;
+  };
+  const engine = options.createEngine({ settings: store, log, info, tools: toolServer });
   const turns = createTurns(store, engine, clock, identifiers, log, options.limits ?? defaultLimits);
 
   const app = createApp({
@@ -75,6 +100,26 @@ export const createServer = (options: ServerOptions): Server => {
   });
   logInfo.set((message, details) => {
     app.log.info(details, message);
+  });
+  const reports = { ...defaultReports, ...options.reports };
+  const reporter = createReporter({
+    settings: store,
+    clock,
+    info,
+    versions: { ito: packageVersion(), codex: codexVersion() },
+    connect: (token) =>
+      createGitHub({
+        apiUrl: reports.apiUrl,
+        repository: reports.repository,
+        token,
+        userAgent: `ito/${packageVersion()}`,
+      }),
+    dailyLimit: reports.dailyLimit,
+  });
+  registerTools(app, {
+    token: toolsToken,
+    tools: [createReportTool(reporter, () => store.runningTurn()?.id)],
+    version: packageVersion(),
   });
 
   const compaction = createCell<Cancel | undefined>(undefined);
