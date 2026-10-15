@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { protocolDirectory } from "#protocol/schemas.ts";
 import { loadSpec, type Event, type Line } from "./spec.ts";
-import { byCodeUnits, listTranscriptFiles, transcriptDirectory } from "./transcript-files.ts";
+import { byCodeUnits, fixtureDirectory, listTranscriptFiles, transcriptDirectory } from "./transcript-files.ts";
 
 type Order = { readonly previousAt: number; readonly hasSteps: boolean };
 
@@ -41,7 +41,7 @@ type GuaranteeTable = ReadonlyMap<number, ReadonlySet<string>>;
 type GuaranteeHeader = { readonly scenario: number; readonly guarantees: readonly string[] };
 
 const lineKinds = ["given", "app", "server", "event", "world", "push"] as const;
-const scenarioCount = 26;
+const scenarioCount = 31;
 const disconnecting: ReadonlySet<string> = new Set(["offline", "app_closed", "server_restarted", "server_restored"]);
 const spec = loadSpec();
 
@@ -321,10 +321,18 @@ const checkPushes = (file: string, lines: readonly Line[]): void => {
   });
 };
 
+const checkFixtures = (file: string, lines: readonly Line[]): void => {
+  const missing = lines
+    .map((line) => (line.app as { readonly body_file?: string } | undefined)?.body_file)
+    .find((name) => name !== undefined && !existsSync(path.join(fixtureDirectory, name)));
+  if (missing) throw failure(file, `the fixture ${missing} isn't in transcripts/files`);
+};
+
 const checkTranscript = (file: string, content: string): Line => {
   const [first, ...lines] = toLines(file, content);
   const header = checkHeader(file, first);
   checkOrder(file, lines);
+  checkFixtures(file, lines);
   spec.checkLines(file, lines);
   checkDelivery(file, header, lines);
   checkPushes(file, lines);

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.3"
+  version: "0.4"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -15,6 +15,9 @@ info:
     - **Send** with `POST /v0/messages`. The app chooses the message id, so retrying is always
       safe.
     - **Stop** a turn, or **try again** after one failed, with commands on the turn.
+    - **Pair** a new app by exchanging the short-lived code in the QR code `ito pair` shows for a
+      token of its own.
+    - **Attach** photos and files: upload each one, then name them in a message.
     - **Answer** what the agent asks by sending a message, or cancel the ask.
     - **Notify** a device while you're not looking: register it, then say when the conversation is
       on screen. [The push schema](push.schema.json) describes what it receives.
@@ -46,6 +49,8 @@ tags:
     description: Find out what a server speaks and who it is.
   - name: Conversation
     description: Send messages, follow the conversation and read its history.
+  - name: Attachments
+    description: Upload the photos and files you attach to messages, and fetch them again.
   - name: Turns
     description: Control the agent's work on a turn.
   - name: Asks
@@ -73,7 +78,36 @@ paths:
               schema: { $ref: "#/components/schemas/Discovery" }
               example:
                 product: ito
-                protocol: ["0.3"]
+                protocol: ["0.4"]
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/pair:
+    post:
+      tags: [Connecting]
+      operationId: pair
+      summary: Exchange a pairing code for a token
+      description: |
+        The code comes from the QR code `ito pair` shows on the server, which holds
+        `ito://pair?address=…&code=…`. A code works once, for five minutes. The answer is a token
+        for this device alone: keep it like the token `ito serve` printed, since the server keeps only
+        its hash, and `ito token new` still replaces every token at once. A wrong, used or expired
+        code is refused, and repeated wrong codes are slowed down like wrong tokens.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Pair" }
+            example: { code: 7F3K-92QD, device_name: Sam's iPhone }
+      responses:
+        "201":
+          description: Paired; this is the device's token.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/PairingCodeRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/server:
     get:
@@ -91,9 +125,9 @@ paths:
               schema: { $ref: "#/components/schemas/ServerInfo" }
               example:
                 name: studio
-                version: 0.3.0
-                protocol: "0.3"
-                agent: { name: Ari }
+                version: 0.4.0
+                protocol: "0.4"
+                agent: { name: Ari, model: gpt-6.1-sol }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/events:
@@ -150,6 +184,10 @@ paths:
         next.
 
         Sending the same id again returns the same message and changes nothing.
+
+        To attach photos or files, upload each one first with `PUT /v0/attachments/{attachment}`,
+        then name them in `attachments`; the text may then be empty. An attachment belongs to one
+        message.
 
         While an ask waits, the message answers it, whether or not it names the ask: `message.accepted`
         for the message comes first, then `ask.ended`. Name the ask in `answers` when you send a
@@ -294,6 +332,71 @@ paths:
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/attachments/{attachment}:
+    put:
+      tags: [Attachments]
+      operationId: uploadAttachment
+      summary: Upload a photo or file
+      description: |
+        The body is the file's bytes, with its `Content-Type`. The app makes the attachment's id
+        before uploading, so retrying is always safe: the same bytes again change nothing, and
+        different bytes under the same id are an `id_conflict`. Upload before sending the message
+        that names it. Scale photos down first (about 2048 pixels on the long edge, as JPEG): that is
+        roughly what the model looks at. An attachment no message names is deleted after a day.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+        - name: name
+          in: query
+          required: true
+          description: The file's name, shown with the message and used in the agent's workspace.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          "*/*":
+            schema:
+              description: The file's bytes, at most 20 MB.
+      responses:
+        "201":
+          description: Uploaded.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachmentResult" }
+        "200":
+          description: Already uploaded with these bytes; nothing changed.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachmentResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    get:
+      tags: [Attachments]
+      operationId: getAttachment
+      summary: Fetch an attachment's bytes
+      description: The bytes, with the media type they were uploaded with. They never change, so keep them once fetched.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            "*/*":
+              schema:
+                description: The file's bytes.
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/asks/{ask}/cancel:
     post:
       tags: [Asks]
@@ -410,7 +513,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.3"
+        example: "0.4"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -423,6 +526,12 @@ components:
       required: true
       description: The turn's id, from `turn.started`.
       schema: { $ref: "events.schema.json#/$defs/TurnId" }
+    Attachment:
+      name: attachment
+      in: path
+      required: true
+      description: The attachment's id, as the app made it.
+      schema: { $ref: "events.schema.json#/$defs/AttachmentId" }
     Ask:
       name: ask
       in: path
@@ -462,22 +571,34 @@ components:
               code: token_rejected
               message: The server didn't accept this token.
               detail: Use the token ito serve printed, or run ito token new.
+    PairingCodeRejected:
+      description: The pairing code is wrong, already used or expired (`pairing_code_rejected`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+          example:
+            error:
+              code: pairing_code_rejected
+              message: That pairing code has expired or was already used.
+              detail: Run ito pair on the server for a new code.
     NotFound:
-      description: The server doesn't know this turn, message, ask or device (`not_found`).
+      description: The server doesn't know this turn, message, ask, attachment or device (`not_found`).
       headers:
         Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
     IdConflict:
-      description: A message with this id was already accepted with different text (`id_conflict`).
+      description: A message or attachment with this id was already accepted with different content (`id_conflict`).
       headers:
         Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
     TooLarge:
-      description: The message is longer than the server accepts (`too_large`).
+      description: The message or attachment is larger than the server accepts (`too_large`).
       headers:
         Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
       content:
@@ -535,6 +656,8 @@ components:
       $ref: "events.schema.json#/$defs/AskEnded"
     Ask:
       $ref: "events.schema.json#/$defs/Ask"
+    Attachment:
+      $ref: "events.schema.json#/$defs/Attachment"
     Notification:
       $ref: "push.schema.json#/$defs/Notification"
     Message:
@@ -579,23 +702,36 @@ components:
             name:
               description: What the agent is called; Ari until you choose another name.
               type: string
+            model:
+              description: The model the agent last ran on, as its engine names it. Absent until the agent has run once.
+              type: string
     SendMessage:
       type: object
-      required: [id, text]
+      required: [id]
+      anyOf:
+        - required: [text]
+          properties:
+            text: { type: string, pattern: \S }
+        - required: [attachments]
+          properties:
+            attachments: { type: array, minItems: 1 }
       properties:
         id:
           description: A random UUID the app makes when you tap Send. It is the message's id and its retry key.
           type: string
           format: uuid
         text:
-          description: What you wrote, as plain text or Markdown.
+          description: What you wrote, as plain text or Markdown. It may be empty, or left out, when the message carries attachments.
           type: string
-          minLength: 1
           maxLength: 32000
-          pattern: \S
         answers:
           $ref: "events.schema.json#/$defs/AskId"
           description: The ask this message answers, when you tap one of its options or answer a secret. When it names a secret ask, the text is never stored, even if the ask has stopped waiting. An ask the server doesn't know is an `invalid_request`.
+        attachments:
+          description: The photos and files to attach, uploaded first, in order. Naming one the server doesn't have, or one another message already carries, is an `invalid_request`.
+          type: array
+          maxItems: 10
+          items: { $ref: "events.schema.json#/$defs/AttachmentId" }
     MessageResult:
       type: object
       required: [message]
@@ -654,6 +790,32 @@ components:
         retry_of:
           $ref: "events.schema.json#/$defs/TurnId"
           description: The failed turn.
+    AttachmentResult:
+      type: object
+      required: [attachment]
+      properties:
+        attachment: { $ref: "events.schema.json#/$defs/Attachment" }
+    Pair:
+      type: object
+      required: [code, device_name]
+      properties:
+        code:
+          description: The code from the QR code, with or without its dash, in any case.
+          type: string
+          minLength: 8
+          maxLength: 16
+        device_name:
+          description: What to call this device, such as "Sam's iPhone"; `ito pair` shows it when pairing succeeds.
+          type: string
+          minLength: 1
+          maxLength: 80
+    PairResult:
+      type: object
+      required: [token]
+      properties:
+        token:
+          description: "This device's token. Send it as `Authorization: Bearer <token>`."
+          type: string
     AskResult:
       type: object
       required: [ask]

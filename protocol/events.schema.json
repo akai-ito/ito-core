@@ -85,6 +85,11 @@
       "minLength": 1,
       "maxLength": 64
     },
+    "AttachmentId": {
+      "description": "A random UUID the app makes before uploading. It is the attachment's id and its retry key.",
+      "type": "string",
+      "format": "uuid"
+    },
     "Timestamp": {
       "description": "Server time, RFC 3339 in UTC with milliseconds.",
       "type": "string",
@@ -102,7 +107,7 @@
       "enum": ["completed", "stopped", "interrupted", "failed"]
     },
     "Error": {
-      "description": "Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `not_found`, `id_conflict`, `too_large`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise.",
+      "description": "Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `pairing_code_rejected`, `not_found`, `id_conflict`, `too_large`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise.",
       "type": "object",
       "required": ["code", "message"],
       "properties": {
@@ -148,7 +153,7 @@
           "description": "Agent messages only: the turn that wrote it."
         },
         "text": {
-          "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, and for a reply that stands in for a turn that failed or was cut off before writing.",
+          "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing.",
           "type": "string"
         },
         "at": {
@@ -165,6 +170,13 @@
         "secret": {
           "description": "User messages only: a secret answer, such as a code. Its `text` is always empty: the agent received what you typed, and the conversation keeps nothing of it.",
           "const": true
+        },
+        "attachments": {
+          "description": "User messages only: the photos and files you attached, in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Attachment"
+          }
         },
         "ended_at": {
           "$ref": "#/$defs/Timestamp",
@@ -195,6 +207,49 @@
           "turn": {
             "$ref": "#/$defs/TurnId"
           }
+        }
+      }
+    },
+    "AttachmentKind": {
+      "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",
+      "enum": ["image", "file"]
+    },
+    "Attachment": {
+      "description": "A photo or file you attached to a message. Its bytes never change: fetch them once with `GET /v0/attachments/{attachment}` and keep them.",
+      "type": "object",
+      "required": ["id", "kind", "name", "media_type", "size"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "kind": {
+          "$ref": "#/$defs/AttachmentKind"
+        },
+        "name": {
+          "description": "The file's name, as uploaded.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "media_type": {
+          "description": "The media type it was uploaded with, such as `image/jpeg`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "size": {
+          "description": "In bytes.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "width": {
+          "description": "Images only: in pixels, when the server could read it.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "description": "Images only: in pixels, when the server could read it.",
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

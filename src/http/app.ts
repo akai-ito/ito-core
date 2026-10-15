@@ -7,13 +7,7 @@ import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
 import type { Presence } from "#notifications/presence.ts";
-import type {
-  Error as ErrorBody,
-  Presence as PresenceBody,
-  RegisterDevice,
-  SendMessage,
-  StopTurn,
-} from "#protocol/types.ts";
+import type { Error as ErrorBody, Presence as PresenceBody, RegisterDevice, StopTurn } from "#protocol/types.ts";
 import type { Store } from "#store/store.ts";
 import { toRetryFailure, type Turns } from "#turns/turns.ts";
 
@@ -32,6 +26,13 @@ export type AppOptions = {
 };
 
 type ErrorResult = { readonly error: ErrorBody };
+
+type SendBody = {
+  readonly id: string;
+  readonly text?: string;
+  readonly answers?: string;
+  readonly attachments?: readonly string[];
+};
 
 const maxReplay = 2000;
 const bodyLimitBytes = 256 * 1024;
@@ -93,8 +94,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     createEventStream({ store, clock, protocol, heartbeatMs, maxReplay, openStream: presence.openStream }),
   );
 
-  app.post<{ Body: SendMessage }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text, answers } = request.body;
+  app.post<{ Body: SendBody }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
+    const { id, text = "", answers } = request.body;
     const accepted = store.acceptMessage(toMessageId(id), text, answers === undefined ? undefined : toAskId(answers));
     if (!accepted.ok) {
       return accepted.failure === "unknown_ask"

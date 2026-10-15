@@ -10,7 +10,7 @@ where the protocol has to make it possible, marked *App*.
 | | Guarantee | Scenarios |
 | --- | --- | --- |
 | G1 | **Acknowledged means durable.** The server confirms a command only once its effect is on disk. A crash after the confirmation loses nothing. | 3, 12, 14 |
-| G2 | **Exactly once.** Each message carries a key the app chooses before sending. Sending it again, any number of times, has the effect of sending it once. The duplicate check happens inside the same transaction that accepts the message. | 2, 3, 10, 12, 15 |
+| G2 | **Exactly once.** Each message carries a key the app chooses before sending. Sending it again, any number of times, has the effect of sending it once. The duplicate check happens inside the same transaction that accepts the message. | 2, 3, 10, 12, 15, 29 |
 | G3 | **One order.** Everything in the conversation has one position, the same for every app. Messages take effect in the order the server accepted them, and an app's messages are accepted in the order it sent them. | 7, 9, 10, 12 |
 | G4 | **Exact resume.** Every event carries a cursor. Reconnecting with the last cursor the app applied delivers every later event once: nothing missing, nothing repeated, including reply text streamed in the meantime. | 2, 11, 13 |
 | G5 | **An honest reset.** When the server can't continue from a cursor (too old, restored from a backup, a different server), it says so and sends a fresh snapshot. It never resumes from the wrong place. Ids are never reused, even after a restore. | 14 |
@@ -19,14 +19,16 @@ where the protocol has to make it possible, marked *App*.
 | G8 | **Every turn ends, with a reason.** Completed, stopped, interrupted by a restart, or failed with a typed error. Nothing is left "still writing", and live status never outlives its turn. A turn that fails or is cut off before writing a reply still leaves one, empty and carrying the reason, so the conversation itself shows what happened. | 4, 6, 14, 15 |
 | G9 | **Stop jumps every queue.** Stop is a command of its own, addressed to one turn, safe to repeat, and handled ahead of everything else on both sides: never behind a send, a steer or a reconnect. It is confirmed only once the agent has really stopped. | 7 |
 | G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17 |
-| G11 | **The token stays secret.** It travels only over HTTPS (loopback excepted, for development), is never logged and is never sent back. | 1 |
+| G11 | **The token stays secret.** It travels only over HTTPS (loopback excepted, for development), is never logged and is never sent back. | 1, 31 |
 | G12 | **Versioned and tolerant.** The server states its protocol version before asking for the token. Both sides ignore what they don't recognise. A major mismatch says which side to update. | 1 |
-| G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2 |
+| G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2, 30 |
 | G14 | **The agent's steps are kept.** Every step the agent takes (thinking, a search, a command, an edit, a tool, a plan) streams as it happens and is stored in the conversation, in order with the messages, so it comes back in snapshots, in history and on every app. Every step ends with an outcome; a step still running when its turn ends, ends with the turn. | 4, 7, 9, 15, 16, 17 |
 | G15 | **Notified only while you're away.** The server pushes when a reply finishes, when a turn fails, when the agent asks you something, and once more for an ask still waiting after three hours, and never for progress or notes. Nothing is pushed while any of your devices is looking at the conversation with a live stream. | 18, 21, 24, 26 |
 | G16 | **Asks wait for you.** Asking ends the agent's turn, and the ask waits as long as it takes, through the app closing, the phone going offline and the server restarting. Your next message answers it, whichever way you write it, and only you can cancel it. Nothing happens on the agent's side until you answer. | 19, 20, 21, 22, 23, 24 |
 | G17 | **Secrets stay out of the conversation.** The answer to a secret ask reaches the agent and nothing else: it never enters the server's log, a snapshot, history, a notification or a response. | 25 |
 | G18 | **Notifications are private.** The text of every notification is encrypted on the server with a key the device made, so Apple's push service carries only ciphertext. | 18, 21, 24, 26 |
+| G19 | **Attachments stay as you sent them.** A photo or file is uploaded once, under an id the app chooses, so a retry never makes a second copy. Its bytes never change, every app can fetch them, and the agent works on its own copy, so nothing it does changes what you sent. | 27, 28, 29, 30 |
+| G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
 
 ## Scenario by scenario
 
@@ -235,7 +237,35 @@ where the protocol has to make it possible, marked *App*.
   made, and says when the conversation is on screen. The server forgets that when it restarts, so
   the app says it again after reconnecting. (G15, G18) *App:* when to offer notifications.
 
+### 27 · [Send a photo](transcripts/27-send-a-photo.jsonl)
+
+- The app uploads a photo under an id it made, then sends a message naming it. The message carries
+  the photo's name, media type, size and dimensions; the agent sees the image itself. (G19)
+
+### 28 · [Send a file](transcripts/28-send-a-file.jsonl)
+
+- A file lands in the agent's workspace under `uploads/`, with its own name, and the agent reads it
+  there like any file. The server keeps its own copy. (G19)
+
+### 29 · [An upload that fails](transcripts/29-an-upload-that-fails.jsonl)
+
+- A file over 20 MB is refused as `too_large` before it is stored.
+- Uploading again under the same id, after an answer was lost, returns the same attachment and
+  stores nothing new. (G2, G19)
+- A message may carry only attachments, with empty text. (G19)
+
+### 30 · [Another device sees an attachment](transcripts/30-another-device-sees-an-attachment.jsonl)
+
+- Attachments arrive with their messages, in snapshots and history, on every device, and their
+  bytes are one request away. (G13, G19)
+
+### 31 · [Pair with a QR code](transcripts/31-pair-with-a-qr-code.jsonl)
+
+- `ito pair` shows a QR code with the address and a code that works once, for five minutes. The app
+  exchanges it for a token of its own, and connects with it. (G11, G20)
+- A used, wrong or expired code is refused as `pairing_code_rejected`. (G20)
+
 ## Not in this version
 
-Attachments and voice, editing or deleting messages, more than one conversation, reactions, model
+Voice, editing or deleting messages, more than one conversation, reactions, model
 settings, and pairing beyond a pasted token.
