@@ -1,6 +1,8 @@
 import { toTimestamp } from "#clock.ts";
 import type { StepFacts } from "#engine/engine.ts";
 import type { Outcome, Step, StepKind } from "#protocol/types.ts";
+import { reportToolName } from "#reports/tool.ts";
+import { toolServerName } from "#tools/mcp.ts";
 
 export type Tense = "present" | "past";
 
@@ -123,6 +125,12 @@ const webSearchTitle = ({ query, url, pattern }: StepFacts): Title => {
     : title("Searching the web", "Searched the web");
 };
 
+const toolTitle = ({ capability = "a tool", operation, url }: StepFacts): Title => {
+  if (capability !== toolServerName || operation !== reportToolName)
+    return title(`Using ${capability}`, `Used ${capability}`);
+  return title("Reporting it to Ito", url?.includes("#issuecomment-") ? "Added to an Ito issue" : "Reported it to Ito");
+};
+
 const titleOf = (kind: StepKind, facts: StepFacts): Title => {
   switch (kind) {
     case "thinking": {
@@ -138,8 +146,7 @@ const titleOf = (kind: StepKind, facts: StepFacts): Title => {
       return fileChangeTitle(facts);
     }
     case "tool": {
-      const capability = facts.capability ?? "a tool";
-      return title(`Using ${capability}`, `Used ${capability}`);
+      return toolTitle(facts);
     }
     case "plan": {
       const items = facts.items?.length ?? 0;

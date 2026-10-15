@@ -39,6 +39,11 @@ const textsOf = (body: unknown, role: string): readonly string[] => {
     .map((item) => (item.content ?? []).map((part) => part.text ?? "").join(""));
 };
 
+const hasToolOutput = (body: unknown): boolean =>
+  ((body as { readonly input?: readonly InputItem[] } | undefined)?.input ?? []).some(
+    (item) => item.type === "custom_tool_call_output" || item.type === "function_call_output",
+  );
+
 const sendJson = (response: ServerResponse, status: number, body: unknown): void => {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
@@ -91,7 +96,26 @@ export const startMockModel = async (): Promise<MockModel> => {
     });
   };
 
-  const stream = async (response: ServerResponse, scenario: string, isSteered: boolean): Promise<void> => {
+  const reportThroughExec = async (send: Send): Promise<void> => {
+    const gap = {
+      capability: "web search",
+      operation: "open a page",
+      tried: "Opened the parkrun event page to read the start time",
+      failed: "The page answered 403",
+      would_help: "A browser that can load pages behind bot protection",
+    };
+    const item = { type: "custom_tool_call", id: nextId("ctc"), call_id: nextId("call"), name: "exec" };
+    const input = `const result = await tools.mcp__ito__report_gap(${JSON.stringify(gap)});\ntext(JSON.stringify(result));`;
+    await send("response.output_item.added", { item: { ...item, input: "" } });
+    await send("response.output_item.done", { item: { ...item, input } });
+  };
+
+  const stream = async (
+    response: ServerResponse,
+    scenario: string,
+    isSteered: boolean,
+    hasToolOutput: boolean,
+  ): Promise<void> => {
     response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
     const send = createSend(response);
     await send("response.created", { response: { id: nextId("resp") } });
@@ -108,6 +132,10 @@ export const startMockModel = async (): Promise<MockModel> => {
       await reason(send, "Working slowly");
       await say(send, "This note streams slowly so that it can be steered or stopped.", "commentary", 300);
       await say(send, "Slow answer.", "final_answer");
+    } else if (scenario === "report" && hasToolOutput) {
+      await say(send, "Most parkruns start at 9:00, and I've reported that.", "final_answer");
+    } else if (scenario === "report") {
+      await reportThroughExec(send);
     } else if (scenario === "search") {
       await search(send, "breakfast by the river");
       await say(send, "Found a place.", "final_answer");
@@ -143,7 +171,7 @@ export const startMockModel = async (): Promise<MockModel> => {
       });
       return;
     }
-    await stream(response, scenario ?? "reply", texts.at(-1)?.includes("STEER") ?? false);
+    await stream(response, scenario ?? "reply", texts.at(-1)?.includes("STEER") ?? false, hasToolOutput(body));
   };
 
   const server = createServer((request, response) => {

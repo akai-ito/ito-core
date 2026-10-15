@@ -1,3 +1,5 @@
+export const toolServerName = "ito";
+
 export type ToolResult = {
   readonly text: string;
   readonly isError?: boolean;
@@ -34,7 +36,7 @@ export const createMcpAnswerer =
           result: {
             protocolVersion: typeof requested === "string" ? requested : latestProtocol,
             capabilities: { tools: {} },
-            serverInfo: { name: "ito", title: "Ito", version },
+            serverInfo: { name: toolServerName, title: "Ito", version },
           },
         };
       }

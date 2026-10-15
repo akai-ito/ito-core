@@ -8,9 +8,10 @@ import type { ThreadStartResponse } from "#engine/codex/bindings/v2/ThreadStartR
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
 import { startCodexProcess, type CodexProcess } from "#engine/codex/codex-process.ts";
 import { initialTurnState, toEngineEvents, type TurnState } from "#engine/codex/mapping.ts";
-import type { Engine, EngineEvent, EngineFailureCode, Input } from "#engine/engine.ts";
+import type { Engine, EngineEvent, EngineFailureCode, Input, ToolServer } from "#engine/engine.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Settings } from "#store/store.ts";
+import { toolServerName } from "#tools/mcp.ts";
 import type { Info, Log } from "#turns/turns.ts";
 
 export type CodexEngineOptions = {
@@ -20,6 +21,7 @@ export type CodexEngineOptions = {
   readonly settings: Settings;
   readonly log: Log;
   readonly info: Info;
+  readonly tools?: () => ToolServer | undefined;
   readonly modelProvider?: string;
   readonly config?: Readonly<Record<string, JsonValue>>;
 };
@@ -44,11 +46,27 @@ type Scope = Readonly<Partial<Record<"threadId" | "turnId", unknown>>>;
 
 export const threadSetting = "codex_thread_id";
 
+const toolsTokenVariable = "ITO_TOOLS_TOKEN";
+
 const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "failed", "stopped"]);
 
 const signedOut: SessionFailure = { code: "engine_signed_out", detail: "Codex has no account signed in." };
 
 const toUserInput = ({ text }: Input): UserInput => ({ type: "text", text, text_elements: [] });
+
+const toolsConfig = (server: ToolServer | undefined): Readonly<Record<string, JsonValue>> =>
+  server
+    ? {
+        mcp_servers: {
+          [toolServerName]: {
+            url: server.url,
+            bearer_token_env_var: toolsTokenVariable,
+            default_tools_approval_mode: "approve",
+            omit_tools_from: ["deferred"],
+          },
+        },
+      }
+    : {};
 
 const fieldOf = (notification: ServerNotification, field: keyof Scope): string | undefined => {
   const value = (notification.params as Scope | null)?.[field];
@@ -67,6 +85,7 @@ export const createCodexEngine = ({
   settings,
   log,
   info,
+  tools,
   modelProvider,
   config,
 }: CodexEngineOptions): Engine => {
@@ -74,14 +93,19 @@ export const createCodexEngine = ({
   const session = createCell<Opening | undefined>(undefined);
   const generation = createCell(0);
   const openThreadId = createCell<string | undefined>(undefined);
-  const threadOptions: ThreadStartParams = {
+  const threadOptions = (server: ToolServer | undefined): ThreadStartParams => ({
     cwd: workspace,
     approvalPolicy: "never",
     sandbox: "workspace-write",
     baseInstructions: instructions,
-    config: { sandbox_workspace_write: { network_access: true }, web_search: "live", ...config },
+    config: {
+      sandbox_workspace_write: { network_access: true },
+      web_search: "live",
+      ...toolsConfig(server),
+      ...config,
+    },
     ...(modelProvider && { modelProvider }),
-  };
+  });
 
   const emit = (turn: TurnId, events: readonly EngineEvent[]): void => {
     for (const event of events) {
@@ -107,17 +131,17 @@ export const createCodexEngine = ({
     info(message, { model, reasoningEffort });
   };
 
-  const openThread = async (process: CodexProcess): Promise<Result<string, string>> => {
+  const openThread = async (process: CodexProcess, server: ToolServer | undefined): Promise<Result<string, string>> => {
     const stored = settings.setting(threadSetting);
     if (stored) {
-      const resumed = await process.call("thread/resume", { ...threadOptions, threadId: stored });
+      const resumed = await process.call("thread/resume", { ...threadOptions(server), threadId: stored });
       if (resumed.ok) {
         announce("Codex resumed the conversation's session", resumed.value);
         return ok(resumed.value.thread.id);
       }
       log("Codex couldn't resume the conversation's session, so it starts a new one", resumed.failure.message);
     }
-    const started = await process.call("thread/start", threadOptions);
+    const started = await process.call("thread/start", threadOptions(server));
     if (!started.ok) return fail(`Codex couldn't start a thread: ${started.failure.message}`);
     settings.setSetting(threadSetting, started.value.thread.id);
     announce("Codex started a session for the conversation", started.value);
@@ -128,9 +152,11 @@ export const createCodexEngine = ({
     const opened = generation.get();
     const isCurrent = (): boolean => generation.get() === opened;
     const isGivenUp = createCell(false);
+    const server = tools?.();
     const started = await startCodexProcess({
       codexHome,
       workspace,
+      environment: server ? { [toolsTokenVariable]: server.token } : {},
       onNotification: (notification) => {
         if (isCurrent()) route(notification);
       },
@@ -150,7 +176,7 @@ export const createCodexEngine = ({
     };
     const account = await process.call("account/read", { refreshToken: false });
     if (account.ok && account.value.account === null && account.value.requiresOpenaiAuth) return giveUp(signedOut);
-    const threadId = await openThread(process);
+    const threadId = await openThread(process, server);
     if (!threadId.ok) return giveUp({ code: "engine_failed", detail: threadId.failure });
     openThreadId.set(threadId.value);
     return ok({ process, threadId: threadId.value });

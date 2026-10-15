@@ -55,7 +55,7 @@ const parseServeOptions = (flags: readonly string[]): Result<ServeOptions, strin
 const toEngineFactory = (engine: EngineName, paths: Paths): ServerOptions["createEngine"] =>
   engine === "demo"
     ? () => createScriptEngine(systemClock, demoScripts)
-    : ({ settings, log, info }: EngineContext) =>
+    : ({ settings, log, info, tools }: EngineContext) =>
         createCodexEngine({
           codexHome: paths.codexHome,
           workspace: paths.workspace,
@@ -63,6 +63,7 @@ const toEngineFactory = (engine: EngineName, paths: Paths): ServerOptions["creat
           settings,
           log,
           info,
+          tools,
         });
 
 const firstRunMessage = (token: string, port: number): string =>
