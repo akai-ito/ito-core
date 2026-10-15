@@ -66,6 +66,35 @@ describe("the demo engine", () => {
     expect(busy.some((event) => event.type === "ask")).toBe(false);
   });
 
+  it("says which photos and files it was sent", async () => {
+    const clock = createVirtualClock(0);
+    const engine = createScriptEngine(clock, demoScripts);
+    const events = engine.start(turn, [
+      {
+        messageId: toMessageId("u_photo"),
+        text: "",
+        attachments: [
+          { kind: "image", name: "riverside.jpg", source: "/tmp/riverside.jpg" },
+          { kind: "file", name: "running-log.csv", source: "/tmp/running-log.csv" },
+        ],
+      },
+    ]);
+    const seen = createCell<readonly EngineEvent[]>([]);
+    const consumed = (async () => {
+      for await (const event of events) seen.set([...seen.get(), event]);
+    })();
+    const advance = async (): Promise<void> => {
+      if (!clock.runNext(Number.MAX_SAFE_INTEGER)) return;
+      await yieldToIo();
+      await advance();
+    };
+    await advance();
+    await consumed;
+    expect(replies(seen.get()).at(-1)).toMatch(
+      /^I can see riverside\.jpg \(a photo\) and running-log\.csv \(a file\)\./u,
+    );
+  });
+
   it("walks a trail of steps when asked to be busy", async () => {
     const events = await runToEnd("Be busy for me");
     const kinds = events
