@@ -180,6 +180,11 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(progressCount.get()).toBeGreaterThan(0);
     expect(settings.setting(threadSetting)).toBeDefined();
     expect(currentModel().developerTexts()).toContain(instructions);
+    expect(
+      currentModel()
+        .developerTexts()
+        .filter((text) => text.includes("<multi_agent_role>") || text.includes("<skills_instructions>")),
+    ).toEqual([]);
     expect(noted.get().map(([message]) => message)).toEqual(["Codex started a session for the conversation"]);
     expect(typeof noted.get()[0]?.[1].model).toBe("string");
   });

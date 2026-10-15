@@ -101,6 +101,8 @@ export const createCodexEngine = ({
     config: {
       sandbox_workspace_write: { network_access: true },
       web_search: "live",
+      agents: { enabled: false },
+      skills: { include_instructions: false },
       ...toolsConfig(server),
       ...config,
     },
