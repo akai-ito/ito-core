@@ -100,6 +100,19 @@ describe("notifications", () => {
       failure: "APNs answered 400: BadDeviceToken",
     });
     fake.answerWith(200);
+    const impatient = createApns(
+      () => credentials,
+      { production: fake.origin, sandbox: fake.origin },
+      systemClock,
+      200,
+    );
+    fake.holdAnswers(true);
+    expect(await impatient.send(device, { aps: {} }, Date.now())).toEqual({
+      ok: false,
+      failure: "APNs didn't answer within 0.2 seconds.",
+    });
+    fake.holdAnswers(false);
+    impatient.close();
     const unconfigured = createCell<ApnsCredentials | undefined>(undefined);
     const unset = createApns(() => unconfigured.get(), { production: fake.origin, sandbox: fake.origin }, systemClock);
     expect(await unset.send(device, { aps: {} }, Date.now())).toMatchObject({ ok: false });
