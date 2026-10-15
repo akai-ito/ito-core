@@ -15,6 +15,7 @@ import { ok } from "#result.ts";
 import type { AskFields } from "#engine/engine.ts";
 import type { Settings } from "#store/store.ts";
 import { startFakeGitHub, type FakeGitHub } from "./support/fake-github.ts";
+import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
 import { startMockModel, type MockModel } from "./support/mock-model.ts";
 import { startToolServer, type RunningToolServer } from "./support/tool-server.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
@@ -287,6 +288,27 @@ describe("the Codex engine against the pinned codex app-server", () => {
       "stopped",
     ]);
     expect(textOf(events)).not.toContain("never be read");
+  });
+
+  it("puts attachments in the workspace and shows the model the images", async () => {
+    turnCount.update((count) => count + 1);
+    const input: Input = {
+      messageId: toMessageId(randomUUID()),
+      text: "[[reply]] What's this?",
+      attachments: [
+        { kind: "image", name: "riverside.jpg", source: path.join(fixtureDirectory, "riverside.jpg") },
+        { kind: "file", name: "running-log.csv", source: path.join(fixtureDirectory, "running-log.csv") },
+      ],
+    };
+    const seen = createCell<readonly EngineEvent[]>([]);
+    for await (const event of currentEngine().start(currentTurn(), [input])) seen.set([...seen.get(), event]);
+    expect(seen.get().at(-1)).toEqual({ type: "ended" });
+    expect(existsSync(path.join(workspace, "uploads", "riverside.jpg"))).toBe(true);
+    expect(existsSync(path.join(workspace, "uploads", "running-log.csv"))).toBe(true);
+    expect(currentModel().images()).toBe(1);
+    expect(currentModel().userTexts().at(-1)).toContain(
+      "(Attached, and saved in your workspace: uploads/riverside.jpg, uploads/running-log.csv)",
+    );
   });
 
   it("maps a usage limit to usage_limit", async () => {

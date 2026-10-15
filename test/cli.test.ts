@@ -121,6 +121,40 @@ describe("the ito command", () => {
     expect(storedSetting(apnsSettings.bundleId)).toBe("com.example.ari");
   });
 
+  it("pairs a device with a short-lived code, and a new token resets every paired one", async () => {
+    const printed = createCell<readonly string[]>([]);
+    const controller = new AbortController();
+    const io: Io = {
+      environment: { ITO_HOME: home },
+      isTerminal: true,
+      print: (text) => {
+        printed.set([...printed.get(), text]);
+      },
+      printError: (text) => {
+        printed.set([...printed.get(), text]);
+      },
+      readSecret: () => Promise.resolve(""),
+      shutdown: controller.signal,
+    };
+    const pairing = main(["pair", "--address", "https://studio.example.ts.net:8443"], io);
+    await expect.poll(() => printed.get().join("\n")).toMatch(/the code [2-9A-Z]{4}-[2-9A-Z]{4}\./u);
+    const shown = /the code (?<code>[2-9A-Z]{4}-[2-9A-Z]{4})\./u.exec(printed.get().join("\n"))?.groups?.code ?? "";
+    expect(printed.get().join("\n")).toContain("https://studio.example.ts.net:8443");
+    const store = createStore(openDatabase(databaseFile(home)), systemClock, randomIdentifiers);
+    const codeHash = hashToken(shown.replace("-", ""));
+    expect(store.usePairingCode(codeHash, "iPhone")).toBe(true);
+    expect(store.usePairingCode(codeHash, "iPad")).toBe(false);
+    store.addToken(hashToken("ito_paired_for_this_test"), "iPhone");
+    store.close();
+    expect(await pairing).toBe(0);
+    expect(printed.get().at(-1)).toBe("Paired iPhone.");
+
+    expect(await run(["token", "new"], true)).toMatchObject({ code: 0 });
+    const after = createStore(openDatabase(databaseFile(home)), systemClock, randomIdentifiers);
+    expect(after.pairedTokenHashes()).toEqual([]);
+    after.close();
+  });
+
   it("refuses an unknown engine or a bad port before starting", async () => {
     expect(await run(["serve", "--engine", "gpt"])).toMatchObject({
       code: 1,

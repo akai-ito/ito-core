@@ -77,7 +77,7 @@ const firstRunMessage = (token: string, port: number): string =>
     "",
     `  tailscale serve --bg --https=${tailnetPort} ${port}`,
     "",
-    "Then add the server in Ari with the address Tailscale prints and this token.",
+    "Then add the server in Ari with the address Tailscale prints and this token, or run ito pair and scan its code.",
   ].join("\n");
 
 export const serve = async (flags: readonly string[], io: Io): Promise<number> => {
