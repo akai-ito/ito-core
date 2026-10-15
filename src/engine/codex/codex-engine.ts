@@ -5,12 +5,14 @@ import { createCell } from "#cell.ts";
 import type { TurnId } from "#conversation/ids.ts";
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
 import type { JsonValue } from "#engine/codex/bindings/serde_json/JsonValue.ts";
+import type { Account } from "#engine/codex/bindings/v2/Account.ts";
 import type { ThreadStartParams } from "#engine/codex/bindings/v2/ThreadStartParams.ts";
 import type { ThreadStartResponse } from "#engine/codex/bindings/v2/ThreadStartResponse.ts";
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
 import { startCodexProcess, type CodexProcess } from "#engine/codex/codex-process.ts";
 import { initialTurnState, toEngineEvents, type TurnState } from "#engine/codex/mapping.ts";
 import {
+  accountSetting,
   modelSetting,
   type Engine,
   type EngineEvent,
@@ -60,6 +62,21 @@ const toolsTokenVariable = "ITO_TOOLS_TOKEN";
 const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "failed", "stopped"]);
 
 const signedOut: SessionFailure = { code: "engine_signed_out", detail: "Codex has no account signed in." };
+
+const toAccount = (account: Account): Readonly<Record<string, string>> => {
+  switch (account.type) {
+    case "chatgpt": {
+      const domain = account.email?.split("@").at(-1);
+      return { kind: "chatgpt", plan: account.planType, ...(domain && { email_domain: domain }) };
+    }
+    case "apiKey": {
+      return { kind: "api_key" };
+    }
+    case "amazonBedrock": {
+      return { kind: "other" };
+    }
+  }
+};
 
 const uploadsFolder = "uploads";
 
@@ -223,6 +240,9 @@ export const createCodexEngine = ({
       return fail(failure);
     };
     const account = await process.call("account/read", { refreshToken: false });
+    if (account.ok && account.value.account) {
+      settings.setSetting(accountSetting, JSON.stringify(toAccount(account.value.account)));
+    }
     if (account.ok && account.value.account === null && account.value.requiresOpenaiAuth) return giveUp(signedOut);
     const threadId = await openThread(process, server);
     if (!threadId.ok) return giveUp({ code: "engine_failed", detail: threadId.failure });

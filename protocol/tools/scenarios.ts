@@ -140,7 +140,13 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(40);
     transcript.response(
       200,
-      { name: "studio", version: "0.4.0", protocol: "0.4", agent: { name: "Ari" } },
+      {
+        name: "studio",
+        version: "0.4.0",
+        protocol: "0.4",
+        agent: { name: "Ari" },
+        setup: { notifications: false, reports: false },
+      },
       { headers: { "Ito-Protocol": "0.4" } },
     );
     transcript.wait(10);
@@ -1416,7 +1422,13 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.request("GET", "/v0/server", { headers: { Authorization: `Bearer ${pairedToken}` } });
     transcript.response(
       200,
-      { name: "studio", version: "0.4.0", protocol: "0.4", agent: { name: "Ari" } },
+      {
+        name: "studio",
+        version: "0.4.0",
+        protocol: "0.4",
+        agent: { name: "Ari" },
+        setup: { notifications: false, reports: false },
+      },
       { headers: { "Ito-Protocol": "0.4" } },
     );
     transcript.wait(60_000);

@@ -8,7 +8,9 @@ import Fastify, {
 import { maxAttachmentBytes, toMediaType, type Attachments } from "#attachments/attachments.ts";
 import type { Clock } from "#clock.ts";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
-import { modelSetting } from "#engine/engine.ts";
+import { accountSetting, modelSetting } from "#engine/engine.ts";
+import { readApnsCredentials } from "#notifications/apns.ts";
+import { reportsTokenSetting } from "#reports/reporter.ts";
 import { toAskId, toDeviceId, toMessageId, toTurnId } from "#conversation/ids.ts";
 import { createToken, hashToken, type Gate } from "#http/auth.ts";
 import { createEventStream } from "#http/events.ts";
@@ -114,11 +116,20 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   app.get("/v0/server", () => {
     const model = store.setting(modelSetting);
+    const account = store.setting(accountSetting);
     return {
       name: info.name,
       version: info.version,
       protocol,
-      agent: { name: info.agentName, ...(model && { model }) },
+      agent: {
+        name: info.agentName,
+        ...(model && { model }),
+        ...(account && { account: JSON.parse(account) as unknown }),
+      },
+      setup: {
+        notifications: readApnsCredentials(store) !== undefined,
+        reports: store.setting(reportsTokenSetting) !== undefined,
+      },
     };
   });
 

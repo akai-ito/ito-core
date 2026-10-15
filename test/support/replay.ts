@@ -296,10 +296,13 @@ export const replay = async (name: string): Promise<void> => {
   }
   seeded.store.importEvents(transcript.given);
   seeded.store.setSetting(tokenSetting, hashToken(transcriptToken));
-  seeded.store.setSetting(apnsSettings.privateKey, apnsKey);
-  seeded.store.setSetting(apnsSettings.keyId, "KEY1234567");
-  seeded.store.setSetting(apnsSettings.teamId, "TEAM123456");
-  seeded.store.setSetting(apnsSettings.bundleId, "com.example.ari");
+  const registersDevices = transcript.steps.some((step) => "app" in step && step.app.path.startsWith("/v0/devices/"));
+  if (registersDevices) {
+    seeded.store.setSetting(apnsSettings.privateKey, apnsKey);
+    seeded.store.setSetting(apnsSettings.keyId, "KEY1234567");
+    seeded.store.setSetting(apnsSettings.teamId, "TEAM123456");
+    seeded.store.setSetting(apnsSettings.bundleId, "com.example.ari");
+  }
   const restoreTargets = new Set(transcript.steps.filter((step) => isWorldStep(step)).map((step) => step.to));
   if (restoreTargets.has(transcript.given.at(-1)?.id)) seeded.store.backupTo(backupFile);
 

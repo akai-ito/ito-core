@@ -727,6 +727,25 @@ export interface components {
         name: string;
         /** @description The model the agent last ran on, as its engine names it. Absent until the agent has run once. */
         model?: string;
+        /** @description How the agent's engine is signed in, as of its last run. Never the whole email address. */
+        account?: {
+          /**
+           * @description `chatgpt` for a ChatGPT sign-in, `api_key` for an API key, `other` for anything else.
+           * @enum {unknown}
+           */
+          kind: "chatgpt" | "api_key" | "other";
+          /** @description `chatgpt` only: the plan, such as `plus` or `pro`. */
+          plan?: string;
+          /** @description `chatgpt` only: the domain of the account's email, such as `gmail.com`. */
+          email_domain?: string;
+        };
+      };
+      /** @description What's set up on the server, so the app can say so in Settings rather than mid-conversation. */
+      setup: {
+        /** @description Whether the server can send push notifications (`ito push setup`). */
+        notifications: boolean;
+        /** @description Whether gap reports go out (`ito reports token`). */
+        reports: boolean;
       };
     };
     SendMessage:
@@ -1221,7 +1240,16 @@ export interface operations {
            *       "protocol": "0.4",
            *       "agent": {
            *         "name": "Ari",
-           *         "model": "gpt-6.1-sol"
+           *         "model": "gpt-6.1-sol",
+           *         "account": {
+           *           "kind": "chatgpt",
+           *           "plan": "plus",
+           *           "email_domain": "example.com"
+           *         }
+           *       },
+           *       "setup": {
+           *         "notifications": true,
+           *         "reports": false
            *       }
            *     }
            */

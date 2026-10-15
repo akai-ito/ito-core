@@ -13,6 +13,8 @@ export type ToolServer = { readonly url: string; readonly token: string };
 
 export const modelSetting = "agent_model";
 
+export const accountSetting = "agent_account";
+
 export type AskFields = Pick<Ask, "kind" | "question" | "options" | "allows_text" | "secret"> & {
   readonly preview?: string;
 };

@@ -5,6 +5,6 @@
 {"at":9300,"app":{"method":"POST","path":"/v0/pair","body":{"code":"7F3K-92QD","device_name":"iPhone"}}}
 {"at":9300,"server":{"status":201,"body":{"token":"ito_paired_example_not_a_real_token_000000000000000"}}}
 {"at":9500,"app":{"method":"GET","path":"/v0/server","headers":{"Authorization":"Bearer ito_paired_example_not_a_real_token_000000000000000"}}}
-{"at":9500,"server":{"status":200,"headers":{"Ito-Protocol":"0.4"},"body":{"name":"studio","version":"0.4.0","protocol":"0.4","agent":{"name":"Ari"}}}}
+{"at":9500,"server":{"status":200,"headers":{"Ito-Protocol":"0.4"},"body":{"name":"studio","version":"0.4.0","protocol":"0.4","agent":{"name":"Ari"},"setup":{"notifications":false,"reports":false}}}}
 {"at":69500,"app":{"method":"POST","path":"/v0/pair","body":{"code":"7F3K-92QD","device_name":"iPad"}}}
 {"at":69500,"server":{"status":401,"body":{"error":{"code":"pairing_code_rejected","message":"That pairing code has expired or was already used.","detail":"Run ito pair on the server for a new code."}}}}
