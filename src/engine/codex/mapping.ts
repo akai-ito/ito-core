@@ -2,6 +2,7 @@ import type { ServerNotification } from "#engine/codex/bindings/ServerNotificati
 import type { CodexErrorInfo } from "#engine/codex/bindings/v2/CodexErrorInfo.ts";
 import type { CommandAction } from "#engine/codex/bindings/v2/CommandAction.ts";
 import type { FileUpdateChange } from "#engine/codex/bindings/v2/FileUpdateChange.ts";
+import type { McpToolCallResult } from "#engine/codex/bindings/v2/McpToolCallResult.ts";
 import type { TurnPlanStep } from "#engine/codex/bindings/v2/TurnPlanStep.ts";
 import type { ThreadItem } from "#engine/codex/bindings/v2/ThreadItem.ts";
 import type { TurnError } from "#engine/codex/bindings/v2/TurnError.ts";
@@ -83,6 +84,20 @@ const ended = (key: string, isCompleted: boolean, facts: StepFacts = {}): Engine
   outcome: isCompleted ? "completed" : "failed",
   facts,
 });
+
+const fieldOf = (value: unknown, field: string): unknown =>
+  value && typeof value === "object" ? Reflect.get(value, field) : undefined;
+
+const resultText = (result: McpToolCallResult | null): string =>
+  (result?.content ?? [])
+    .map((part) => fieldOf(part, "text"))
+    .filter((text) => typeof text === "string")
+    .join("\n");
+
+const resultUrl = (result: McpToolCallResult | null): unknown => {
+  const url = fieldOf(result?.structuredContent, "url");
+  return typeof url === "string" ? url : undefined;
+};
 
 const withoutEmpty = (facts: Readonly<Record<string, unknown>>): StepFacts =>
   Object.fromEntries(
@@ -229,7 +244,15 @@ const endStep = (item: ThreadItem): EngineEvent | undefined => {
       return ended(item.id, true, searchFacts(item));
     }
     case "mcpToolCall": {
-      return ended(item.id, item.status === "completed", withoutEmpty({ detail: item.error?.message }));
+      const isCompleted = item.status === "completed";
+      return ended(
+        item.id,
+        isCompleted,
+        withoutEmpty({
+          detail: item.error?.message ?? (isCompleted ? undefined : resultText(item.result)),
+          url: resultUrl(item.result),
+        }),
+      );
     }
     case "dynamicToolCall": {
       return ended(item.id, item.success !== false);

@@ -77,6 +77,17 @@ To update, pull and restart; a reply being written at that moment ends as interr
 cd ~/ito-core && git pull && npm ci --omit=dev && systemctl --user restart ito
 ```
 
+The agent's instructions, Ari's voice and how it works, are in
+[agent/instructions.md](agent/instructions.md). Change them and restart: the next message picks
+them up, in the same conversation.
+
+Ari reports the gaps it hits, such as a page it couldn't load or a mistake you corrected, as
+public [issues labelled `gap`](https://github.com/akai-ito/ito-core/issues?q=label%3Agap) on
+ito-core, never with anything from your conversation. To switch it on, create a
+[fine-grained GitHub token](https://github.com/settings/personal-access-tokens/new) for
+akai-ito/ito-core with *Issues: read and write*, then run `node bin/ito.ts reports token` and paste
+it. Up to 20 reports a day are filed; any more go to Ito's log.
+
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, and the agent's working directory in `workspace`.
 

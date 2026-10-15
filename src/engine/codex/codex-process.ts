@@ -49,6 +49,7 @@ export type CodexProcess = {
 export type CodexProcessOptions = {
   readonly codexHome: string;
   readonly workspace: string;
+  readonly environment: Readonly<Record<string, string>>;
   readonly onNotification: (notification: ServerNotification) => void;
   readonly onExit: (description: string) => void;
 };
@@ -74,7 +75,7 @@ export const startCodexProcess = async (options: CodexProcessOptions): Promise<R
   mkdirSync(options.workspace, { recursive: true });
   const child = spawn(process.execPath, [codexScript(), "app-server"], {
     cwd: options.workspace,
-    env: { ...process.env, CODEX_HOME: options.codexHome },
+    env: { ...process.env, ...options.environment, CODEX_HOME: options.codexHome },
     stdio: ["pipe", "pipe", "pipe"],
     detached: true,
   });

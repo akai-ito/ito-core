@@ -7,16 +7,23 @@ import { createCell } from "#cell.ts";
 import { toMessageId, toTurnId, type TurnId } from "#conversation/ids.ts";
 import { createCodexEngine, threadSetting } from "#engine/codex/codex-engine.ts";
 import type { Engine, EngineEvent, Input } from "#engine/engine.ts";
+import { createGitHub } from "#reports/github.ts";
+import { createReporter, reportsTokenSetting } from "#reports/reporter.ts";
+import { createReportTool } from "#reports/tool.ts";
 import type { Settings } from "#store/store.ts";
+import { startFakeGitHub, type FakeGitHub } from "./support/fake-github.ts";
 import { startMockModel, type MockModel } from "./support/mock-model.ts";
+import { startToolServer, type RunningToolServer } from "./support/tool-server.ts";
+import { createVirtualClock } from "./support/virtual-clock.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-codex-"));
 const codexHome = path.join(home, "codex");
 const workspace = path.join(home, "workspace");
 const hasManagedConfig = existsSync("/etc/codex/managed_config.toml");
+const instructions = "You are Ari, in a test.";
 
-const createMemorySettings = (): Settings => {
-  const values = createCell<ReadonlyMap<string, string>>(new Map());
+const createMemorySettings = (initial: ReadonlyMap<string, string> = new Map()): Settings => {
+  const values = createCell(initial);
   return {
     setting: (key) => values.get().get(key),
     setSetting: (key, value) => {
@@ -32,9 +39,15 @@ const progressCount = createCell(0);
 const collectLog = (message: string, error: unknown): void => {
   logged.set([...logged.get(), `${message}: ${String(error)}`]);
 };
+const noted = createCell<readonly (readonly [string, Readonly<Record<string, unknown>>])[]>([]);
+const collectInfo = (message: string, details: Readonly<Record<string, unknown>>): void => {
+  noted.set([...noted.get(), [message, details]]);
+};
 const turnCount = createCell(0);
 const model = createCell<MockModel | undefined>(undefined);
 const engine = createCell<Engine | undefined>(undefined);
+const github = createCell<FakeGitHub | undefined>(undefined);
+const toolServer = createCell<RunningToolServer | undefined>(undefined);
 
 const writeCodexConfig = (baseUrl: string): void => {
   mkdirSync(codexHome, { recursive: true });
@@ -55,12 +68,15 @@ const writeCodexConfig = (baseUrl: string): void => {
   );
 };
 
-const openEngine = (baseUrl: string): Engine =>
+const openEngine = (baseUrl: string, given = instructions): Engine =>
   createCodexEngine({
     codexHome,
     workspace,
+    instructions: given,
     settings,
     log: collectLog,
+    info: collectInfo,
+    tools: () => toolServer.get()?.server,
     modelProvider: "mock",
     config: {
       model_providers: {
@@ -72,6 +88,12 @@ const openEngine = (baseUrl: string): Engine =>
 const currentEngine = (): Engine => {
   const current = engine.get();
   if (!current) throw new Error("No engine is running.");
+  return current;
+};
+
+const currentModel = (): MockModel => {
+  const current = model.get();
+  if (!current) throw new Error("No mock model is running.");
   return current;
 };
 
@@ -105,6 +127,18 @@ const typesOf = (events: readonly EngineEvent[]): readonly string[] =>
 
 describe("the Codex engine against the pinned codex app-server", () => {
   beforeAll(async () => {
+    const fake = await startFakeGitHub();
+    github.set(fake);
+    const reporter = createReporter({
+      settings: createMemorySettings(new Map([[reportsTokenSetting, fake.token]])),
+      clock: createVirtualClock(Date.parse("2026-10-15T12:00:00.000Z")),
+      info: collectInfo,
+      versions: { ito: "0.2.0", codex: "0.162.1" },
+      connect: (token) =>
+        createGitHub({ apiUrl: fake.apiUrl, repository: fake.repository, token, userAgent: "ito/test" }),
+      dailyLimit: 20,
+    });
+    toolServer.set(await startToolServer([createReportTool(reporter, () => currentTurn())]));
     const started = await startMockModel();
     model.set(started);
     writeCodexConfig(started.baseUrl);
@@ -114,6 +148,8 @@ describe("the Codex engine against the pinned codex app-server", () => {
   afterAll(async () => {
     await engine.get()?.close();
     await model.get()?.close();
+    await toolServer.get()?.close();
+    await github.get()?.close();
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -143,6 +179,14 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(textOf(events)).toBe("Let me think about that.Here is the answer.");
     expect(progressCount.get()).toBeGreaterThan(0);
     expect(settings.setting(threadSetting)).toBeDefined();
+    expect(currentModel().developerTexts()).toContain(instructions);
+    expect(
+      currentModel()
+        .developerTexts()
+        .filter((text) => text.includes("<multi_agent_role>") || text.includes("<skills_instructions>")),
+    ).toEqual([]);
+    expect(noted.get().map(([message]) => message)).toEqual(["Codex started a session for the conversation"]);
+    expect(typeof noted.get()[0]?.[1].model).toBe("string");
   });
 
   it("takes a steer mid-message and reads it", async () => {
@@ -189,6 +233,25 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(events.at(-1)).toEqual({ type: "ended" });
   });
 
+  it("files a gap report through Ito's tool server, as a tool step with the issue's link", async () => {
+    const events = await runTurn("[[report]] What time does the Battersea parkrun start?");
+    const reportStarted = events.find((event) => event.type === "step.started" && event.kind === "tool");
+    expect(reportStarted).toMatchObject({ facts: { capability: "ito", operation: "report_gap" } });
+    const reportEnded = events.find(
+      (event) =>
+        event.type === "step.ended" && reportStarted?.type === "step.started" && event.key === reportStarted.key,
+    );
+    const issue = `https://github.com/akai-ito/ito-core/issues/1`;
+    expect(reportEnded).toMatchObject({ outcome: "completed", facts: { url: issue } });
+    expect(textOf(events)).toBe("Most parkruns start at 9:00, and I've reported that.");
+    expect(
+      github
+        .get()
+        ?.issues()
+        .map(({ title }) => title),
+    ).toEqual(["Gap: web search · open a page"]);
+  });
+
   it("maps a usage limit to usage_limit", async () => {
     const events = await runTurn("[[usage]] Again");
     expect(events.at(-1)).toMatchObject({ type: "failed", code: "usage_limit" });
@@ -211,8 +274,10 @@ describe("the Codex engine against the pinned codex app-server", () => {
       const signedOutEngine = createCodexEngine({
         codexHome: signedOutHome,
         workspace,
+        instructions,
         settings: createMemorySettings(),
         log: collectLog,
+        info: collectInfo,
       });
       const events = signedOutEngine.start(toTurnId("t_signed_out"), [toInput("Hello?")]);
       const seen = createCell<readonly EngineEvent[]>([]);
@@ -230,6 +295,22 @@ describe("the Codex engine against the pinned codex app-server", () => {
     const events = await runTurn("[[reply]] Still there?");
     expect(events.at(-1)).toEqual({ type: "ended" });
     expect(settings.setting(threadSetting)).toBe(thread);
+    const [message, details] = noted.get().at(-1) ?? [];
+    expect(message).toBe("Codex resumed the conversation's session");
+    expect(typeof details?.model).toBe("string");
+    expect(logged.get()).toEqual([]);
+  });
+
+  it("resumes the same thread with new instructions", async () => {
+    const thread = settings.setting(threadSetting);
+    const changed = "You are Ari, with new instructions.";
+    await currentEngine().close();
+    engine.set(openEngine(currentModel().baseUrl, changed));
+    const events = await runTurn("[[reply]] Anything new?");
+    expect(events.at(-1)).toEqual({ type: "ended" });
+    expect(settings.setting(threadSetting)).toBe(thread);
+    expect(currentModel().developerTexts()).toContain(changed);
+    expect(currentModel().developerTexts()).not.toContain(instructions);
     expect(logged.get()).toEqual([]);
   });
 });

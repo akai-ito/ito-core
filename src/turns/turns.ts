@@ -25,6 +25,8 @@ export type Limits = {
 
 export type Log = (message: string, error: unknown) => void;
 
+export type Info = (message: string, details: Readonly<Record<string, unknown>>) => void;
+
 export type Turns = {
   readonly route: (message: MessageId, text: string) => void;
   readonly stop: (turn: TurnId, cut: Cut | undefined) => StopState | undefined;

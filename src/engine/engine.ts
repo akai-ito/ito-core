@@ -3,6 +3,8 @@ import type { Step, StepKind } from "#protocol/types.ts";
 
 export type Input = { readonly messageId: MessageId; readonly text: string };
 
+export type ToolServer = { readonly url: string; readonly token: string };
+
 export type StepFacts = Omit<
   Step,
   "id" | "turn" | "kind" | "title" | "at" | "position" | "ended_at" | "outcome" | "duration_ms"

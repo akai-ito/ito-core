@@ -19,13 +19,13 @@ export const createToken = (): string => `ito_${randomBytes(32).toString("base64
 
 export const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 
-const isMatching = (token: string, expectedHash: string): boolean => {
+export const isMatching = (token: string, expectedHash: string): boolean => {
   const actual = Buffer.from(hashToken(token), "hex");
   const expected = Buffer.from(expectedHash, "hex");
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 };
 
-const bearerToken = (authorization = ""): string | undefined =>
+export const bearerToken = (authorization = ""): string | undefined =>
   /^Bearer (?<token>\S+)$/u.exec(authorization)?.groups?.token;
 
 export const createGate = (

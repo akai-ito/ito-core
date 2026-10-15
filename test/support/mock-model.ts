@@ -3,7 +3,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
 
-export type MockModel = { readonly baseUrl: string; readonly close: () => Promise<void> };
+export type MockModel = {
+  readonly baseUrl: string;
+  readonly developerTexts: () => readonly string[];
+  readonly close: () => Promise<void>;
+};
 
 type InputItem = {
   readonly type?: string;
@@ -28,12 +32,17 @@ const readBody = async (request: IncomingMessage): Promise<unknown> => {
   return text ? JSON.parse(text) : undefined;
 };
 
-const userTexts = (body: unknown): readonly string[] => {
+const textsOf = (body: unknown, role: string): readonly string[] => {
   const input = (body as { readonly input?: readonly InputItem[] } | undefined)?.input ?? [];
   return input
-    .filter((item) => item.type === "message" && item.role === "user")
+    .filter((item) => item.type === "message" && item.role === role)
     .map((item) => (item.content ?? []).map((part) => part.text ?? "").join(""));
 };
+
+const hasToolOutput = (body: unknown): boolean =>
+  ((body as { readonly input?: readonly InputItem[] } | undefined)?.input ?? []).some(
+    (item) => item.type === "custom_tool_call_output" || item.type === "function_call_output",
+  );
 
 const sendJson = (response: ServerResponse, status: number, body: unknown): void => {
   response.writeHead(status, { "content-type": "application/json" });
@@ -50,6 +59,7 @@ const createSend =
 
 export const startMockModel = async (): Promise<MockModel> => {
   const counter = createCell(0);
+  const latestDeveloperTexts = createCell<readonly string[]>([]);
   const nextId = (prefix: string): string => `${prefix}_${String(counter.update((count) => count + 1))}`;
 
   const reason = async (send: Send, text: string): Promise<void> => {
@@ -86,7 +96,26 @@ export const startMockModel = async (): Promise<MockModel> => {
     });
   };
 
-  const stream = async (response: ServerResponse, scenario: string, isSteered: boolean): Promise<void> => {
+  const reportThroughExec = async (send: Send): Promise<void> => {
+    const gap = {
+      capability: "web search",
+      operation: "open a page",
+      tried: "Opened the parkrun event page to read the start time",
+      failed: "The page answered 403",
+      would_help: "A browser that can load pages behind bot protection",
+    };
+    const item = { type: "custom_tool_call", id: nextId("ctc"), call_id: nextId("call"), name: "exec" };
+    const input = `const result = await tools.mcp__ito__report_gap(${JSON.stringify(gap)});\ntext(JSON.stringify(result));`;
+    await send("response.output_item.added", { item: { ...item, input: "" } });
+    await send("response.output_item.done", { item: { ...item, input } });
+  };
+
+  const stream = async (
+    response: ServerResponse,
+    scenario: string,
+    isSteered: boolean,
+    hasToolOutput: boolean,
+  ): Promise<void> => {
     response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
     const send = createSend(response);
     await send("response.created", { response: { id: nextId("resp") } });
@@ -103,6 +132,10 @@ export const startMockModel = async (): Promise<MockModel> => {
       await reason(send, "Working slowly");
       await say(send, "This note streams slowly so that it can be steered or stopped.", "commentary", 300);
       await say(send, "Slow answer.", "final_answer");
+    } else if (scenario === "report" && hasToolOutput) {
+      await say(send, "Most parkruns start at 9:00, and I've reported that.", "final_answer");
+    } else if (scenario === "report") {
+      await reportThroughExec(send);
     } else if (scenario === "search") {
       await search(send, "breakfast by the river");
       await say(send, "Found a place.", "final_answer");
@@ -125,7 +158,8 @@ export const startMockModel = async (): Promise<MockModel> => {
       sendJson(response, 404, { error: { message: "not found" } });
       return;
     }
-    const texts = userTexts(body);
+    latestDeveloperTexts.set(textsOf(body, "developer"));
+    const texts = textsOf(body, "user");
     const scenario = markerPattern.exec(texts.findLast((text) => markerPattern.test(text)) ?? "")?.groups?.scenario;
     if (scenario === "signedout") {
       sendJson(response, 401, { error: { message: "Missing bearer or basic authentication in header" } });
@@ -137,7 +171,7 @@ export const startMockModel = async (): Promise<MockModel> => {
       });
       return;
     }
-    await stream(response, scenario ?? "reply", texts.at(-1)?.includes("STEER") ?? false);
+    await stream(response, scenario ?? "reply", texts.at(-1)?.includes("STEER") ?? false, hasToolOutput(body));
   };
 
   const server = createServer((request, response) => {
@@ -150,6 +184,7 @@ export const startMockModel = async (): Promise<MockModel> => {
 
   return {
     baseUrl: `http://127.0.0.1:${String(address.port)}/v1`,
+    developerTexts: () => latestDeveloperTexts.get(),
     close: async () => {
       server.closeAllConnections();
       server.close();
