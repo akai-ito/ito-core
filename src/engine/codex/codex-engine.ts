@@ -4,24 +4,29 @@ import type { TurnId } from "#conversation/ids.ts";
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
 import type { JsonValue } from "#engine/codex/bindings/serde_json/JsonValue.ts";
 import type { ThreadStartParams } from "#engine/codex/bindings/v2/ThreadStartParams.ts";
+import type { ThreadStartResponse } from "#engine/codex/bindings/v2/ThreadStartResponse.ts";
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
 import { startCodexProcess, type CodexProcess } from "#engine/codex/codex-process.ts";
 import { initialTurnState, toEngineEvents, type TurnState } from "#engine/codex/mapping.ts";
 import type { Engine, EngineEvent, EngineFailureCode, Input } from "#engine/engine.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Settings } from "#store/store.ts";
-import type { Log } from "#turns/turns.ts";
+import type { Info, Log } from "#turns/turns.ts";
 
 export type CodexEngineOptions = {
   readonly codexHome: string;
   readonly workspace: string;
+  readonly instructions: string;
   readonly settings: Settings;
   readonly log: Log;
+  readonly info: Info;
   readonly modelProvider?: string;
   readonly config?: Readonly<Record<string, JsonValue>>;
 };
 
 type Session = { readonly process: CodexProcess; readonly threadId: string };
+
+type SessionModel = Pick<ThreadStartResponse, "model" | "reasoningEffort">;
 
 type SessionFailure = { readonly code: EngineFailureCode; readonly detail: string };
 
@@ -58,8 +63,10 @@ const shutDown = async (opening: Opening | undefined, how: (process: CodexProces
 export const createCodexEngine = ({
   codexHome,
   workspace,
+  instructions,
   settings,
   log,
+  info,
   modelProvider,
   config,
 }: CodexEngineOptions): Engine => {
@@ -71,7 +78,14 @@ export const createCodexEngine = ({
     cwd: workspace,
     approvalPolicy: "never",
     sandbox: "workspace-write",
-    config: { sandbox_workspace_write: { network_access: true }, web_search: "live", ...config },
+    baseInstructions: instructions,
+    config: {
+      sandbox_workspace_write: { network_access: true },
+      web_search: "live",
+      agents: { enabled: false },
+      skills: { include_instructions: false },
+      ...config,
+    },
     ...(modelProvider && { modelProvider }),
   };
 
@@ -95,16 +109,24 @@ export const createCodexEngine = ({
     emit(current.id, isTurnScoped && events.length === 0 ? [{ type: "progress" }] : events);
   };
 
+  const announce = (message: string, { model, reasoningEffort }: SessionModel): void => {
+    info(message, { model, reasoningEffort });
+  };
+
   const openThread = async (process: CodexProcess): Promise<Result<string, string>> => {
     const stored = settings.setting(threadSetting);
     if (stored) {
       const resumed = await process.call("thread/resume", { ...threadOptions, threadId: stored });
-      if (resumed.ok) return ok(resumed.value.thread.id);
+      if (resumed.ok) {
+        announce("Codex resumed the conversation's session", resumed.value);
+        return ok(resumed.value.thread.id);
+      }
       log("Codex couldn't resume the conversation's session, so it starts a new one", resumed.failure.message);
     }
     const started = await process.call("thread/start", threadOptions);
     if (!started.ok) return fail(`Codex couldn't start a thread: ${started.failure.message}`);
     settings.setSetting(threadSetting, started.value.thread.id);
+    announce("Codex started a session for the conversation", started.value);
     return ok(started.value.thread.id);
   };
 

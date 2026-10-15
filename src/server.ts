@@ -10,7 +10,7 @@ import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
-import { createTurns, defaultLimits, type Limits, type Log, type Turns } from "#turns/turns.ts";
+import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
 import { packageVersion } from "#version.ts";
 
 export type ServerOptions = {
@@ -25,7 +25,7 @@ export type ServerOptions = {
   readonly logger?: FastifyServerOptions["logger"];
 };
 
-export type EngineContext = { readonly settings: Settings; readonly log: Log };
+export type EngineContext = { readonly settings: Settings; readonly log: Log; readonly info: Info };
 
 export type Server = {
   readonly app: FastifyInstance;
@@ -51,7 +51,13 @@ export const createServer = (options: ServerOptions): Server => {
   const log: Log = (message, error) => {
     logError.get()(message, error);
   };
-  const engine = options.createEngine({ settings: store, log });
+  const logInfo = createCell<Info>((message, details) => {
+    console.log(message, details);
+  });
+  const info: Info = (message, details) => {
+    logInfo.get()(message, details);
+  };
+  const engine = options.createEngine({ settings: store, log, info });
   const turns = createTurns(store, engine, clock, identifiers, log, options.limits ?? defaultLimits);
 
   const app = createApp({
@@ -66,6 +72,9 @@ export const createServer = (options: ServerOptions): Server => {
   });
   logError.set((message, error) => {
     app.log.error({ err: error }, message);
+  });
+  logInfo.set((message, details) => {
+    app.log.info(details, message);
   });
 
   const compaction = createCell<Cancel | undefined>(undefined);
