@@ -77,6 +77,10 @@ To update, pull and restart; a reply being written at that moment ends as interr
 cd ~/ito-core && git pull && npm ci --omit=dev && systemctl --user restart ito
 ```
 
+The agent's instructions, Ari's voice and how it works, are in
+[agent/instructions.md](agent/instructions.md). Change them and restart: the next message picks
+them up, in the same conversation.
+
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, and the agent's working directory in `workspace`.
 

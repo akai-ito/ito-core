@@ -14,6 +14,7 @@ const home = mkdtempSync(path.join(os.tmpdir(), "ito-codex-"));
 const codexHome = path.join(home, "codex");
 const workspace = path.join(home, "workspace");
 const hasManagedConfig = existsSync("/etc/codex/managed_config.toml");
+const instructions = "You are Ari, in a test.";
 
 const createMemorySettings = (): Settings => {
   const values = createCell<ReadonlyMap<string, string>>(new Map());
@@ -55,10 +56,11 @@ const writeCodexConfig = (baseUrl: string): void => {
   );
 };
 
-const openEngine = (baseUrl: string): Engine =>
+const openEngine = (baseUrl: string, given = instructions): Engine =>
   createCodexEngine({
     codexHome,
     workspace,
+    instructions: given,
     settings,
     log: collectLog,
     modelProvider: "mock",
@@ -72,6 +74,12 @@ const openEngine = (baseUrl: string): Engine =>
 const currentEngine = (): Engine => {
   const current = engine.get();
   if (!current) throw new Error("No engine is running.");
+  return current;
+};
+
+const currentModel = (): MockModel => {
+  const current = model.get();
+  if (!current) throw new Error("No mock model is running.");
   return current;
 };
 
@@ -143,6 +151,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(textOf(events)).toBe("Let me think about that.Here is the answer.");
     expect(progressCount.get()).toBeGreaterThan(0);
     expect(settings.setting(threadSetting)).toBeDefined();
+    expect(currentModel().developerTexts()).toContain(instructions);
   });
 
   it("takes a steer mid-message and reads it", async () => {
@@ -211,6 +220,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
       const signedOutEngine = createCodexEngine({
         codexHome: signedOutHome,
         workspace,
+        instructions,
         settings: createMemorySettings(),
         log: collectLog,
       });
@@ -230,6 +240,19 @@ describe("the Codex engine against the pinned codex app-server", () => {
     const events = await runTurn("[[reply]] Still there?");
     expect(events.at(-1)).toEqual({ type: "ended" });
     expect(settings.setting(threadSetting)).toBe(thread);
+    expect(logged.get()).toEqual([]);
+  });
+
+  it("resumes the same thread with new instructions", async () => {
+    const thread = settings.setting(threadSetting);
+    const changed = "You are Ari, with new instructions.";
+    await currentEngine().close();
+    engine.set(openEngine(currentModel().baseUrl, changed));
+    const events = await runTurn("[[reply]] Anything new?");
+    expect(events.at(-1)).toEqual({ type: "ended" });
+    expect(settings.setting(threadSetting)).toBe(thread);
+    expect(currentModel().developerTexts()).toContain(changed);
+    expect(currentModel().developerTexts()).not.toContain(instructions);
     expect(logged.get()).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import os from "node:os";
 import { parseArgs } from "node:util";
 import type { Io } from "#cli/io.ts";
@@ -15,6 +16,8 @@ import { createServer, type EngineContext, type ServerOptions } from "#server.ts
 export const defaultPort = 8787;
 
 export const tailnetPort = 8443;
+
+const instructionsFile = new URL("../../agent/instructions.md", import.meta.url);
 
 type EngineName = "codex" | "demo";
 
@@ -53,7 +56,13 @@ const toEngineFactory = (engine: EngineName, paths: Paths): ServerOptions["creat
   engine === "demo"
     ? () => createScriptEngine(systemClock, demoScripts)
     : ({ settings, log }: EngineContext) =>
-        createCodexEngine({ codexHome: paths.codexHome, workspace: paths.workspace, settings, log });
+        createCodexEngine({
+          codexHome: paths.codexHome,
+          workspace: paths.workspace,
+          instructions: readFileSync(instructionsFile, "utf8"),
+          settings,
+          log,
+        });
 
 const firstRunMessage = (token: string, port: number): string =>
   [

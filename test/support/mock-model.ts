@@ -3,7 +3,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
 
-export type MockModel = { readonly baseUrl: string; readonly close: () => Promise<void> };
+export type MockModel = {
+  readonly baseUrl: string;
+  readonly developerTexts: () => readonly string[];
+  readonly close: () => Promise<void>;
+};
 
 type InputItem = {
   readonly type?: string;
@@ -28,10 +32,10 @@ const readBody = async (request: IncomingMessage): Promise<unknown> => {
   return text ? JSON.parse(text) : undefined;
 };
 
-const userTexts = (body: unknown): readonly string[] => {
+const textsOf = (body: unknown, role: string): readonly string[] => {
   const input = (body as { readonly input?: readonly InputItem[] } | undefined)?.input ?? [];
   return input
-    .filter((item) => item.type === "message" && item.role === "user")
+    .filter((item) => item.type === "message" && item.role === role)
     .map((item) => (item.content ?? []).map((part) => part.text ?? "").join(""));
 };
 
@@ -50,6 +54,7 @@ const createSend =
 
 export const startMockModel = async (): Promise<MockModel> => {
   const counter = createCell(0);
+  const latestDeveloperTexts = createCell<readonly string[]>([]);
   const nextId = (prefix: string): string => `${prefix}_${String(counter.update((count) => count + 1))}`;
 
   const reason = async (send: Send, text: string): Promise<void> => {
@@ -125,7 +130,8 @@ export const startMockModel = async (): Promise<MockModel> => {
       sendJson(response, 404, { error: { message: "not found" } });
       return;
     }
-    const texts = userTexts(body);
+    latestDeveloperTexts.set(textsOf(body, "developer"));
+    const texts = textsOf(body, "user");
     const scenario = markerPattern.exec(texts.findLast((text) => markerPattern.test(text)) ?? "")?.groups?.scenario;
     if (scenario === "signedout") {
       sendJson(response, 401, { error: { message: "Missing bearer or basic authentication in header" } });
@@ -150,6 +156,7 @@ export const startMockModel = async (): Promise<MockModel> => {
 
   return {
     baseUrl: `http://127.0.0.1:${String(address.port)}/v1`,
+    developerTexts: () => latestDeveloperTexts.get(),
     close: async () => {
       server.closeAllConnections();
       server.close();

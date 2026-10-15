@@ -15,6 +15,7 @@ import type { Log } from "#turns/turns.ts";
 export type CodexEngineOptions = {
   readonly codexHome: string;
   readonly workspace: string;
+  readonly instructions: string;
   readonly settings: Settings;
   readonly log: Log;
   readonly modelProvider?: string;
@@ -58,6 +59,7 @@ const shutDown = async (opening: Opening | undefined, how: (process: CodexProces
 export const createCodexEngine = ({
   codexHome,
   workspace,
+  instructions,
   settings,
   log,
   modelProvider,
@@ -71,6 +73,7 @@ export const createCodexEngine = ({
     cwd: workspace,
     approvalPolicy: "never",
     sandbox: "workspace-write",
+    baseInstructions: instructions,
     config: { sandbox_workspace_write: { network_access: true }, web_search: "live", ...config },
     ...(modelProvider && { modelProvider }),
   };
