@@ -1,0 +1,50 @@
+{"transcript":"21-an-ask-while-you-re-away","start":"2026-10-12T08:41:00.000Z","scenario":21,"title":"An ask while you're away","summary":"The agent asks while you're away, so the ask arrives as a time-sensitive notification carrying its options. Answering from the notification is an ordinary send naming the ask; the agent carries on, and its reply notifies you too.","guarantees":["G15","G16","G18"],"app":{"cursor":"e_0009_44525"}}
+{"given":{"id":"e_0001_58443","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"1bd73a2b-843b-434b-8684-07a7bdf3a934","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z","position":1}}}
+{"given":{"id":"e_0002_76799","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_55713","inputs":["1bd73a2b-843b-434b-8684-07a7bdf3a934"]}}
+{"given":{"id":"e_0003_21201","type":"step.started","at":"2026-10-11T21:14:00.301Z","step":{"id":"s_0001_69692","turn":"t_0001_55713","kind":"thinking","title":"Thinking it through","at":"2026-10-11T21:14:00.301Z","position":3}}}
+{"given":{"id":"e_0004_88273","type":"turn.status","at":"2026-10-11T21:14:00.301Z","turn":"t_0001_55713","kind":"thinking","label":"Thinking it through"}}
+{"given":{"id":"e_0005_92858","type":"step.ended","at":"2026-10-11T21:14:01.801Z","step":{"id":"s_0001_69692","turn":"t_0001_55713","kind":"thinking","title":"Thought it through","at":"2026-10-11T21:14:00.301Z","position":3,"ended_at":"2026-10-11T21:14:01.801Z","outcome":"completed","duration_ms":1500}}}
+{"given":{"id":"e_0006_82124","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_14784","role":"agent","kind":"reply","turn":"t_0001_55713","text":"","at":"2026-10-11T21:14:01.801Z","position":6}}}
+{"given":{"id":"e_0007_64189","type":"message.delta","at":"2026-10-11T21:14:01.801Z","message":"m_0001_14784","offset":0,"text":"Fix it. The frame is sound; new brakes and a chain come to about £90, against roughly £600 for a comparable new bike. If the gears still slip after that, revisit."}}
+{"given":{"id":"e_0008_16621","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_14784","outcome":"completed","length":162}}
+{"given":{"id":"e_0009_44525","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_55713","outcome":"completed"}}
+{"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0009_44525"}}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"app":{"method":"PUT","path":"/v0/devices/504252c6-5d89-4892-b963-78bd21dcb66c","body":{"apns_token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","environment":"production","notification_key":"MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="}}}
+{"at":0,"server":{"status":201,"body":{"device":{"id":"504252c6-5d89-4892-b963-78bd21dcb66c","environment":"production","key_id":"861009ec","registered_at":"2026-10-12T08:41:00.000Z"}}}}
+{"at":0,"app":{"method":"PUT","path":"/v0/devices/504252c6-5d89-4892-b963-78bd21dcb66c/presence","body":{"looking":true}}}
+{"at":0,"server":{"status":204}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"de757056-edc5-4f6e-b5f8-b925c606fb15","text":"Book a table at Juno for Friday at 8, for two."}}}
+{"at":2000,"event":{"id":"e_0010_23284","type":"message.accepted","at":"2026-10-12T08:41:02.000Z","message":{"id":"de757056-edc5-4f6e-b5f8-b925c606fb15","role":"user","text":"Book a table at Juno for Friday at 8, for two.","at":"2026-10-12T08:41:02.000Z","position":10}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"de757056-edc5-4f6e-b5f8-b925c606fb15","role":"user","text":"Book a table at Juno for Friday at 8, for two.","at":"2026-10-12T08:41:02.000Z","position":10}}}}
+{"at":2000,"event":{"id":"e_0011_75098","type":"turn.started","at":"2026-10-12T08:41:02.000Z","turn":"t_0002_12357","inputs":["de757056-edc5-4f6e-b5f8-b925c606fb15"]}}
+{"at":2500,"app":{"method":"PUT","path":"/v0/devices/504252c6-5d89-4892-b963-78bd21dcb66c/presence","body":{"looking":false}}}
+{"at":2500,"server":{"status":204}}
+{"at":2500,"world":"app_closed"}
+{"at":3900,"push":{"device":"504252c6-5d89-4892-b963-78bd21dcb66c","level":"time-sensitive","notification":{"kind":"ask","text":"Which Juno did you mean?","ask":{"id":"a_0001_13084","options":["Clapham","Soho"],"allows_text":true,"secret":false}}}}
+{"at":93900,"world":"notification_answered","ask":"a_0001_13084","option":"Soho"}
+{"at":93900,"app":{"method":"POST","path":"/v0/messages","body":{"id":"c2432f00-720f-4baf-bdd8-2d81439ca44f","text":"Soho","answers":"a_0001_13084"}}}
+{"at":93900,"server":{"status":201,"body":{"message":{"id":"c2432f00-720f-4baf-bdd8-2d81439ca44f","role":"user","text":"Soho","at":"2026-10-12T08:42:33.900Z","position":17,"answers":"a_0001_13084"}}}}
+{"at":96120,"push":{"device":"504252c6-5d89-4892-b963-78bd21dcb66c","level":"active","notification":{"kind":"reply","text":"Booked: Juno in Soho, Friday at 8, a table for two.","turn":"t_0003_21200","message":"m_0002_06693"}}}
+{"at":696120,"world":"app_opened","from":"notification"}
+{"at":696120,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0011_75098"}}}
+{"at":696120,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":696120,"event":{"id":"e_0012_11638","type":"step.started","at":"2026-10-12T08:41:02.800Z","step":{"id":"s_0002_33487","turn":"t_0002_12357","kind":"web_search","title":"Searching the web for Juno restaurant London","at":"2026-10-12T08:41:02.800Z","position":12,"query":"Juno restaurant London"}}}
+{"at":696120,"event":{"id":"e_0013_45064","type":"turn.status","at":"2026-10-12T08:41:02.800Z","turn":"t_0002_12357","kind":"working","label":"Searching the web for Juno restaurant London"}}
+{"at":696120,"event":{"id":"e_0014_04141","type":"step.ended","at":"2026-10-12T08:41:03.900Z","step":{"id":"s_0002_33487","turn":"t_0002_12357","kind":"web_search","title":"Searched the web for Juno restaurant London","at":"2026-10-12T08:41:02.800Z","position":12,"query":"Juno restaurant London","ended_at":"2026-10-12T08:41:03.900Z","outcome":"completed","duration_ms":1100}}}
+{"at":696120,"event":{"id":"e_0015_68518","type":"ask.started","at":"2026-10-12T08:41:03.900Z","ask":{"id":"a_0001_13084","turn":"t_0002_12357","kind":"question","question":"Which Juno did you mean?","options":[{"label":"Clapham","description":"Abbeville Road, SW4"},{"label":"Soho","description":"Greek Street, W1"}],"allows_text":true,"secret":false,"at":"2026-10-12T08:41:03.900Z","position":15}}}
+{"at":696120,"event":{"id":"e_0016_59256","type":"turn.ended","at":"2026-10-12T08:41:03.900Z","turn":"t_0002_12357","outcome":"completed"}}
+{"at":696120,"event":{"id":"e_0017_65146","type":"message.accepted","at":"2026-10-12T08:42:33.900Z","message":{"id":"c2432f00-720f-4baf-bdd8-2d81439ca44f","role":"user","text":"Soho","at":"2026-10-12T08:42:33.900Z","position":17,"answers":"a_0001_13084"}}}
+{"at":696120,"event":{"id":"e_0018_21210","type":"ask.ended","at":"2026-10-12T08:42:33.900Z","ask":{"id":"a_0001_13084","turn":"t_0002_12357","kind":"question","question":"Which Juno did you mean?","options":[{"label":"Clapham","description":"Abbeville Road, SW4"},{"label":"Soho","description":"Greek Street, W1"}],"allows_text":true,"secret":false,"at":"2026-10-12T08:41:03.900Z","position":15,"ended_at":"2026-10-12T08:42:33.900Z","outcome":"answered","answer":"c2432f00-720f-4baf-bdd8-2d81439ca44f"}}}
+{"at":696120,"event":{"id":"e_0019_64037","type":"turn.started","at":"2026-10-12T08:42:33.900Z","turn":"t_0003_21200","inputs":["c2432f00-720f-4baf-bdd8-2d81439ca44f"]}}
+{"at":696120,"event":{"id":"e_0020_63230","type":"step.started","at":"2026-10-12T08:42:34.200Z","step":{"id":"s_0003_15652","turn":"t_0003_21200","kind":"tool","title":"Using booking","at":"2026-10-12T08:42:34.200Z","position":20,"capability":"booking","operation":"book","arguments":{"place":"Juno, Soho","day":"Friday","time":"20:00","people":2}}}}
+{"at":696120,"event":{"id":"e_0021_90521","type":"turn.status","at":"2026-10-12T08:42:34.200Z","turn":"t_0003_21200","kind":"working","label":"Using booking"}}
+{"at":696120,"event":{"id":"e_0022_85626","type":"step.ended","at":"2026-10-12T08:42:36.000Z","step":{"id":"s_0003_15652","turn":"t_0003_21200","kind":"tool","title":"Used booking","at":"2026-10-12T08:42:34.200Z","position":20,"capability":"booking","operation":"book","arguments":{"place":"Juno, Soho","day":"Friday","time":"20:00","people":2},"ended_at":"2026-10-12T08:42:36.000Z","outcome":"completed","duration_ms":1800}}}
+{"at":696120,"event":{"id":"e_0023_15570","type":"turn.status","at":"2026-10-12T08:42:36.000Z","turn":"t_0003_21200","kind":"writing","label":"Writing"}}
+{"at":696120,"event":{"id":"e_0024_65068","type":"message.started","at":"2026-10-12T08:42:36.000Z","message":{"id":"m_0002_06693","role":"agent","kind":"reply","turn":"t_0003_21200","text":"","at":"2026-10-12T08:42:36.000Z","position":24}}}
+{"at":696120,"event":{"id":"e_0025_56042","type":"message.delta","at":"2026-10-12T08:42:36.000Z","message":"m_0002_06693","offset":0,"text":"Booked: Juno in Soho, Friday "}}
+{"at":696120,"event":{"id":"e_0026_95225","type":"message.delta","at":"2026-10-12T08:42:36.120Z","message":"m_0002_06693","offset":29,"text":"at 8, a table for two."}}
+{"at":696120,"event":{"id":"e_0027_31802","type":"message.ended","at":"2026-10-12T08:42:36.120Z","message":"m_0002_06693","outcome":"completed","length":51}}
+{"at":696120,"event":{"id":"e_0028_23175","type":"turn.ended","at":"2026-10-12T08:42:36.120Z","turn":"t_0003_21200","outcome":"completed"}}
+{"at":696120,"app":{"method":"PUT","path":"/v0/devices/504252c6-5d89-4892-b963-78bd21dcb66c/presence","body":{"looking":true}}}
+{"at":696120,"server":{"status":204}}

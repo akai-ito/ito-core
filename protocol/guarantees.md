@@ -23,6 +23,10 @@ where the protocol has to make it possible, marked *App*.
 | G12 | **Versioned and tolerant.** The server states its protocol version before asking for the token. Both sides ignore what they don't recognise. A major mismatch says which side to update. | 1 |
 | G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2 |
 | G14 | **The agent's steps are kept.** Every step the agent takes (thinking, a search, a command, an edit, a tool, a plan) streams as it happens and is stored in the conversation, in order with the messages, so it comes back in snapshots, in history and on every app. Every step ends with an outcome; a step still running when its turn ends, ends with the turn. | 4, 7, 9, 15, 16, 17 |
+| G15 | **Notified only while you're away.** The server pushes when a reply finishes, when a turn fails, when the agent asks you something, and once more for an ask still waiting after three hours, and never for progress or notes. Nothing is pushed while any of your devices is looking at the conversation with a live stream. | 18, 21, 24, 26 |
+| G16 | **Asks wait for you.** Asking ends the agent's turn, and the ask waits as long as it takes, through the app closing, the phone going offline and the server restarting. Your next message answers it, whichever way you write it, and only you can cancel it. Nothing happens on the agent's side until you answer. | 19, 20, 21, 22, 23, 24 |
+| G17 | **Secrets stay out of the conversation.** The answer to a secret ask reaches the agent and nothing else: it never enters the server's log, a snapshot, history, a notification or a response. | 25 |
+| G18 | **Notifications are private.** The text of every notification is encrypted on the server with a key the device made, so Apple's push service carries only ciphertext. | 18, 21, 24, 26 |
 
 ## Scenario by scenario
 
@@ -176,8 +180,62 @@ where the protocol has to make it possible, marked *App*.
 - A command that couldn't fetch the page still ran: it's completed, with its exit code and
   output. (G14)
 
+### 18 · [A reply while you're away](transcripts/18-a-reply-while-you-re-away.jsonl)
+
+- With the conversation off screen, a finished reply arrives as a notification: its first line with
+  Markdown stripped, and the reply's id so a tap opens Ari there. A failed turn arrives as "Couldn't
+  finish: " and the error's message. (G15)
+- The notification's text travels encrypted with the device's own key. (G18)
+
+### 19 · [Ari asks before acting](transcripts/19-ari-asks-before-acting.jsonl)
+
+- An ask is part of the conversation, with its position: a question, its options and whether a typed
+  answer fits. Asking ends the turn. (G16)
+- Tapping an option sends its label as an ordinary message naming the ask; `message.accepted` comes
+  first, then `ask.ended`, and the message starts the next turn. (G16) *App:* the settled line,
+  worded from the question.
+
+### 20 · [An approval](transcripts/20-an-approval.jsonl)
+
+- An approval shows a `preview` of exactly what would happen, and marks the one option that acts.
+  Nothing happens until you agree. (G16)
+
+### 21 · [An ask while you're away](transcripts/21-an-ask-while-you-re-away.jsonl)
+
+- An ask made while you're away is a time-sensitive notification carrying its options and whether a
+  typed answer fits, so you can answer from the notification. That answer is an ordinary send.
+  (G15, G16, G18)
+
+### 22 · [Waiting](transcripts/22-waiting.jsonl)
+
+- An ask waits through the app closing and the server restarting. Cancelling it, which is what Stop
+  does while an ask waits, ends it as `cancelled`, and it stays in the conversation. (G16)
+
+### 23 · [Your own way, then Stop](transcripts/23-your-own-way-then-stop.jsonl)
+
+- A message that doesn't name the ask still answers it: the server marks it `answers`. (G16)
+- If the agent asks something new before you answer, the earlier ask ends as `cancelled`; at most
+  one ask waits. (G16)
+
+### 24 · [The reminder](transcripts/24-the-reminder.jsonl)
+
+- An ask still waiting after three hours, with nobody looking, sends one reminder at normal level:
+  "Still waiting on one thing: " and the question. Then nothing more. (G15, G16, G18)
+- With you looking, nothing is pushed. (G15)
+
+### 25 · [A secret](transcripts/25-a-secret.jsonl)
+
+- A secret ask's answer, sent naming the ask, reaches the agent, while the conversation keeps an
+  empty message marked `secret`: in the stream, in the send's response, and in snapshots and
+  history. (G17)
+
+### 26 · [Turning on notifications](transcripts/26-turning-on-notifications.jsonl)
+
+- The app registers the device with its push token, its APNs environment and a notification key it
+  made, and says when the conversation is on screen. The server forgets that when it restarts, so
+  the app says it again after reconnecting. (G15, G18) *App:* when to offer notifications.
+
 ## Not in this version
 
-Attachments and voice, push notifications, editing or deleting messages, more than one
-conversation, reactions, questions and approvals, model settings, and pairing beyond a pasted
-token.
+Attachments and voice, editing or deleting messages, more than one conversation, reactions, model
+settings, and pairing beyond a pasted token.

@@ -8,6 +8,7 @@ Read it rendered, with the guarantees and a timeline of every transcript, at
 | --- | --- |
 | [openapi.yaml](openapi.yaml) | The commands, as OpenAPI 3.1 |
 | [events.schema.json](events.schema.json) | Every event on the stream, as JSON Schema |
+| [push.schema.json](push.schema.json) | What a push notification carries, encrypted and decrypted |
 | [guarantees.md](guarantees.md) | What the server and the protocol promise |
 | [transcripts](transcripts) | One golden transcript per scenario: what crosses the API, step by step |
 | [types.ts](types.ts) | TypeScript types generated from the spec |
@@ -42,6 +43,10 @@ sequenceDiagram
 - **Send** messages under an id the app chooses, so retrying is always safe. The server answers
   once the message is on disk; what it does next arrives on the stream.
 - **Stop** a turn, or **try again** after one failed, with commands addressed to the turn.
+- **Answer** what the agent asks by sending a message, or cancel the ask. Asking ends the agent's
+  turn, and the ask waits for you as long as it takes.
+- **Notify** a device while you're not looking: the app registers it with a key it made, and says
+  when the conversation is on screen. Notifications travel encrypted.
 
 ## Events
 
@@ -58,6 +63,8 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `step.started` | The agent starts a step (thinking, a search, a command, an edit…), with its title |
 | `step.updated` | More is known about a running step |
 | `step.ended` | A step is over, with its outcome, duration and past-tense title |
+| `ask.started` | The agent asks you something; its turn ends next |
+| `ask.ended` | The ask is answered by a message, or cancelled |
 | `message.started` | The agent begins a reply, or a note while it works |
 | `message.delta` | Text appended to a message, at an offset |
 | `message.ended` | A message is finished: completed, stopped, interrupted or failed |

@@ -4,6 +4,7 @@ import { toTimestamp, type Clock } from "#clock.ts";
 import { toMessageId, toTurnId, type EventId, type MessageId, type TurnId } from "#conversation/ids.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type {
+  Ask,
   Error as ErrorBody,
   LiveTurn,
   Message,
@@ -45,6 +46,7 @@ export type Accepted = { readonly message: Message; readonly isNew: boolean };
 export type Page = {
   readonly messages: readonly Message[];
   readonly steps: readonly Step[];
+  readonly asks: readonly Ask[];
   readonly hasMore: boolean;
 };
 
@@ -275,6 +277,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           messages: window.map((row) => toMessage(row)),
           has_more: rows.length > snapshotSize,
           steps: window[0] ? [...stepsFrom(window[0].position)] : [],
+          asks: [],
           turn: turn ? toLiveTurn(turn) : null,
           next: next.map((row) => row.message),
         },
@@ -303,6 +306,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       return ok({
         messages: page.map((row) => toMessage(row)),
         steps: page[0] ? stepsFrom(page[0].position, anchor.position) : [],
+        asks: [],
         hasMore: rows.length > limit,
       });
     },

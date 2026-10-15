@@ -83,6 +83,10 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
         .run(toJson(step), step.outcome ?? null, step.id);
       return;
     }
+    case "ask.started":
+    case "ask.ended": {
+      return;
+    }
     case "turn.ended": {
       database
         .prepare("UPDATE turns SET outcome = ?, error = ?, status = NULL WHERE id = ?")

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akai-ito.github.io/ito-core/protocol/v0/push.schema.json",
+  "title": "Ito push notifications",
+  "description": "What the server sends through Apple Push Notification service to a registered device, and only while you're not looking at the conversation: when a reply finishes, when a turn fails, when the agent asks you something, and once more for an ask still waiting after three hours. The text is encrypted on the server with the device's notification key and decrypted on the device by Ari's notification service extension, so Apple sees only ciphertext.",
+  "$ref": "#/$defs/Envelope",
+  "$defs": {
+    "Envelope": {
+      "description": "The APNs payload. `aps.alert` is what the device shows when it can't decrypt; the notification service extension replaces it with the decrypted `Notification`.",
+      "type": "object",
+      "required": ["aps", "ito"],
+      "properties": {
+        "aps": {
+          "type": "object",
+          "required": ["alert", "mutable-content", "interruption-level"],
+          "properties": {
+            "alert": {
+              "type": "object",
+              "required": ["title", "body"],
+              "properties": {
+                "title": {
+                  "description": "The agent's name.",
+                  "type": "string"
+                },
+                "body": {
+                  "description": "Plain words for when decryption fails, by kind: \"Ari replied\", \"Ari couldn't finish\", \"Ari asked you something\" or \"Ari is still waiting on you\", with the agent's name.",
+                  "type": "string"
+                }
+              }
+            },
+            "mutable-content": {
+              "const": 1
+            },
+            "interruption-level": {
+              "description": "`time-sensitive` for an ask; `active` for everything else, including the reminder.",
+              "enum": ["active", "time-sensitive"]
+            },
+            "category": {
+              "description": "`ask` for an ask and its reminder, so the device can offer the options as actions.",
+              "const": "ask"
+            }
+          }
+        },
+        "ito": {
+          "type": "object",
+          "required": ["v", "k", "n", "c"],
+          "properties": {
+            "v": {
+              "description": "The scheme: AES-256-GCM, with the device's id as additional data.",
+              "const": 1
+            },
+            "k": {
+              "description": "The key that encrypted it: the first 8 hex characters of the key's SHA-256, as in the device's `key_id`.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}$"
+            },
+            "n": {
+              "description": "The 12-byte nonce, base64.",
+              "type": "string"
+            },
+            "c": {
+              "description": "The `Notification` as UTF-8 JSON, encrypted, followed by the 16-byte tag, base64.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "NotificationKind": {
+      "description": "Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once.",
+      "enum": ["reply", "failed", "ask", "reminder"]
+    },
+    "Notification": {
+      "description": "What the device shows, once decrypted.",
+      "type": "object",
+      "required": ["kind", "text"],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/NotificationKind"
+        },
+        "text": {
+          "description": "`reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: \"Couldn't finish: \" and the error's message. `ask`: the question. `reminder`: \"Still waiting on one thing: \" and the question.",
+          "type": "string",
+          "minLength": 1
+        },
+        "turn": {
+          "$ref": "events.schema.json#/$defs/TurnId",
+          "description": "`reply` and `failed`: the turn."
+        },
+        "message": {
+          "$ref": "events.schema.json#/$defs/MessageId",
+          "description": "`reply`: the reply, so that a tap opens the conversation there."
+        },
+        "ask": {
+          "description": "`ask` and `reminder`: what the device needs to answer from the notification. Answering is an ordinary send, with `answers` set to the ask.",
+          "type": "object",
+          "required": ["id", "options", "allows_text", "secret"],
+          "properties": {
+            "id": {
+              "$ref": "events.schema.json#/$defs/AskId"
+            },
+            "options": {
+              "description": "The options' labels, in order.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allows_text": {
+              "type": "boolean"
+            },
+            "secret": {
+              "description": "A secret can't be typed into a notification safely: offer to open Ari instead.",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}

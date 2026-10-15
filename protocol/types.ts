@@ -101,6 +101,12 @@ export interface paths {
      *     next.
      *
      *     Sending the same id again returns the same message and changes nothing.
+     *
+     *     While an ask waits, the message answers it, whether or not it names the ask: `message.accepted`
+     *     for the message comes first, then `ask.ended`. Name the ask in `answers` when you send a
+     *     tapped option or a secret. The text of an answer to a secret ask is never stored, never
+     *     streamed and never sent back: the message keeps an empty text, marked `secret`, and only the
+     *     agent's next turn receives what you typed.
      */
     post: operations["sendMessage"];
     delete?: never;
@@ -157,6 +163,81 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/asks/{ask}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Cancel an ask
+     * @description What Stop does while an ask waits. The ask ends as `cancelled`, nothing is sent to the agent,
+     *     and it learns at the start of its next turn that you didn't answer. Cancelling an ask that
+     *     has already ended changes nothing, and the answer gives the ask as it ended.
+     */
+    post: operations["cancelAsk"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/devices/{device}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Register a device for notifications
+     * @description Call it when the system gives the app a push token, and again whenever the token changes or
+     *     you rotate the key (every 30 days, say). The server keeps one registration per device and
+     *     always encrypts with its latest key. Keep the previous key on the device for a while: a
+     *     notification already on its way names the key that encrypted it.
+     *
+     *     The server pushes only while you're not looking: when a reply finishes, when a turn fails,
+     *     when the agent asks you something, and once more for an ask still waiting after three hours.
+     */
+    put: operations["registerDevice"];
+    post?: never;
+    /**
+     * Stop notifying a device
+     * @description Forgets the device, its token and its key. Removing a device the server doesn't know changes nothing.
+     */
+    delete: operations["removeDevice"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/devices/{device}/presence": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Say whether you're looking
+     * @description Send `looking: true` when the conversation comes on screen, and `false` when it leaves the
+     *     screen or the app goes to the background. Nothing is pushed while any device is looking and
+     *     holds a live event stream, so a device that crashed or lost its connection is still
+     *     notified.
+     */
+    put: operations["setPresence"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -175,6 +256,8 @@ export interface components {
       | components["schemas"]["MessageStarted"]
       | components["schemas"]["MessageDelta"]
       | components["schemas"]["MessageEnded"]
+      | components["schemas"]["AskStarted"]
+      | components["schemas"]["AskEnded"]
       | components["schemas"]["TurnEnded"];
     /**
      * snapshot
@@ -196,6 +279,8 @@ export interface components {
       has_more: boolean;
       /** @description Every step from the first of these messages on, including the running turn's steps, in position order. */
       steps: components["schemas"]["Step"][];
+      /** @description Every ask from the first of these messages on, in position order, including the one that waits for your answer (it has no outcome). */
+      asks: components["schemas"]["Ask"][];
       /** @description The running turn, or null when the agent is idle. */
       turn: components["schemas"]["LiveTurn"] | null;
       /** @description Messages waiting as Next, in the order they will be answered. */
@@ -354,6 +439,72 @@ export interface components {
       /** @description Present when the outcome is `failed`. */
       error?: components["schemas"]["Error"];
     };
+    /**
+     * ask.started
+     * @description The agent asks you something. The turn that asked ends next; the ask waits for your answer.
+     */
+    AskStarted: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "ask.started";
+      at: components["schemas"]["Timestamp"];
+      ask: components["schemas"]["Ask"];
+    };
+    /**
+     * ask.ended
+     * @description The ask is settled: a message answered it, or it was cancelled. It carries the ask as it ended. When a message answers it, `message.accepted` for that message comes first.
+     */
+    AskEnded: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "ask.ended";
+      at: components["schemas"]["Timestamp"];
+      ask: components["schemas"]["Ask"];
+    };
+    /** @description Something the agent asked you. Asking ends the agent's turn, and the ask waits as long as it takes: through the app closing, the phone going offline and the server restarting. The next message you send answers it, whether you tap an option, type your own answer or write about something else. At most one ask waits at a time. */
+    Ask: {
+      id: components["schemas"]["AskId"];
+      /** @description The turn that asked. */
+      turn: components["schemas"]["TurnId"];
+      kind: components["schemas"]["AskKind"];
+      /** @description Plain words, written by the agent. */
+      question: string;
+      /** @description Suggested answers, in order. Empty when only a typed answer makes sense. An approval has options, and exactly one of them `acts`. */
+      options: components["schemas"]["AskOption"][];
+      /** @description Whether to offer a typed answer beside the options. Always true when there are no options. */
+      allows_text: boolean;
+      /** @description Approvals only: what would happen, in plain text, to show before you agree. */
+      preview?: string;
+      /** @description Whether the answer is a secret, such as a code. Send it with `answers` set to this ask: the agent receives it, and it never enters the conversation's history. */
+      secret: boolean;
+      at: components["schemas"]["Timestamp"];
+      position: components["schemas"]["Position"];
+      /** @description When it was answered or cancelled. */
+      ended_at?: components["schemas"]["Timestamp"];
+      /** @description Absent while the ask waits. */
+      outcome?: components["schemas"]["AskOutcome"];
+      /** @description Present when the outcome is `answered`: the message that answered it. */
+      answer?: components["schemas"]["MessageId"];
+    };
+    /** @description What the device shows, once decrypted. */
+    Notification: {
+      kind: components["schemas"]["NotificationKind"];
+      /** @description `reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: "Couldn't finish: " and the error's message. `ask`: the question. `reminder`: "Still waiting on one thing: " and the question. */
+      text: string;
+      /** @description `reply` and `failed`: the turn. */
+      turn?: components["schemas"]["TurnId"];
+      /** @description `reply`: the reply, so that a tap opens the conversation there. */
+      message?: components["schemas"]["MessageId"];
+      /** @description `ask` and `reminder`: what the device needs to answer from the notification. Answering is an ordinary send, with `answers` set to the ask. */
+      ask?: {
+        id: components["schemas"]["AskId"];
+        /** @description The options' labels, in order. */
+        options: string[];
+        allows_text: boolean;
+        /** @description A secret can't be typed into a notification safely: offer to open Ari instead. */
+        secret: boolean;
+      };
+    };
     /** @description One message in the conversation. Messages are ordered by when they began. */
     Message: {
       id: components["schemas"]["MessageId"];
@@ -365,11 +516,18 @@ export interface components {
       kind?: components["schemas"]["MessageKind"];
       /** @description Agent messages only: the turn that wrote it. */
       turn?: components["schemas"]["TurnId"];
-      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a reply that stands in for a turn that failed or was cut off before writing. */
+      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, and for a reply that stands in for a turn that failed or was cut off before writing. */
       text: string;
       /** @description When the message began: when the server accepted it, or the agent's first word. */
       at: components["schemas"]["Timestamp"];
       position: components["schemas"]["Position"];
+      /** @description User messages only: the ask this message answered. Any message you send while an ask waits answers it, whether or not you meant it to. */
+      answers?: components["schemas"]["AskId"];
+      /**
+       * @description User messages only: a secret answer, such as a code. Its `text` is always empty: the agent received what you typed, and the conversation keeps nothing of it.
+       * @constant
+       */
+      secret?: true;
       /** @description Agent messages only: when it ended. */
       ended_at?: components["schemas"]["Timestamp"];
       /** @description Agent messages only. Absent while the message is still being written. */
@@ -504,6 +662,8 @@ export interface components {
       id: string;
       /** @description What you wrote, as plain text or Markdown. */
       text: string;
+      /** @description The ask this message answers, when you tap one of its options or answer a secret. When it names a secret ask, the text is never stored, even if the ask has stopped waiting. An ask the server doesn't know is an `invalid_request`. */
+      answers?: components["schemas"]["AskId"];
     };
     MessageResult: {
       message: components["schemas"]["Message"];
@@ -513,6 +673,8 @@ export interface components {
       messages: components["schemas"]["Message"][];
       /** @description Every step from the first of these messages up to the message the page ends before, in position order. */
       steps: components["schemas"]["Step"][];
+      /** @description Every ask in the same span, in position order. */
+      asks: components["schemas"]["Ask"][];
       /** @description Whether even older messages exist. */
       has_more: boolean;
     };
@@ -540,6 +702,39 @@ export interface components {
       /** @description The failed turn. */
       retry_of: components["schemas"]["TurnId"];
     };
+    AskResult: {
+      ask: components["schemas"]["Ask"];
+    };
+    RegisterDevice: {
+      /** @description The device token from Apple Push Notification service, in hex. */
+      apns_token: string;
+      /**
+       * @description `sandbox` for builds from Xcode, `production` for TestFlight and the App Store.
+       * @enum {unknown}
+       */
+      environment: "sandbox" | "production";
+      /** @description A random 256-bit key the device made for its notifications, base64. The server encrypts each notification's text with it (AES-256-GCM), so Apple sees only ciphertext. */
+      notification_key: string;
+    };
+    Device: {
+      /**
+       * Format: uuid
+       * @description The device's id, as the app made it.
+       */
+      id: string;
+      /** @enum {unknown} */
+      environment: "sandbox" | "production";
+      /** @description Names the current key in each notification's `ito.k`, as the first 8 hex characters of the key's SHA-256. */
+      key_id: string;
+      registered_at: components["schemas"]["Timestamp"];
+    };
+    DeviceResult: {
+      device: components["schemas"]["Device"];
+    };
+    Presence: {
+      /** @description Whether the conversation is on this device's screen. */
+      looking: boolean;
+    };
     ErrorResult: {
       error: components["schemas"]["Error"];
     };
@@ -562,6 +757,8 @@ export interface components {
     Timestamp: string;
     /** @description Where a message or a step sits in the conversation: strictly increasing in conversation order, with gaps. Snapshots and history pages carry messages and steps in separate lists; merge them by position. */
     Position: number;
+    /** @description Opaque. The server makes it when the agent asks. */
+    AskId: string;
     /**
      * @description How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.
      * @enum {unknown}
@@ -575,6 +772,28 @@ export interface components {
      */
     StepKind:
       "thinking" | "web_search" | "command" | "file_change" | "tool" | "plan" | "wait" | "image_view" | "compacting";
+    /**
+     * @description `question` asks for information or a choice. `approval` asks before the agent does something consequential, and shows a `preview` of what would happen. Treat a kind you don't recognise as a question.
+     * @enum {unknown}
+     */
+    AskKind: "question" | "approval";
+    /** @description A suggested answer. Tapping it sends its `label` as your message. */
+    AskOption: {
+      /** @description A short answer, in plain words. */
+      label: string;
+      /** @description A little more about the option, when the agent gave it. */
+      description?: string;
+      /**
+       * @description Approvals only: present on the one option that goes ahead with the action, such as "Book it".
+       * @constant
+       */
+      acts?: true;
+    };
+    /**
+     * @description How an ask ended: `answered` by a message, or `cancelled` by you before you answered, or because the agent asked something else. Treat an outcome you don't recognise as ended.
+     * @enum {unknown}
+     */
+    AskOutcome: "answered" | "cancelled";
     /**
      * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
      * @enum {unknown}
@@ -596,6 +815,11 @@ export interface components {
       /** @description The current live status, if there is one yet. */
       status: components["schemas"]["Status"] | null;
     };
+    /**
+     * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once.
+     * @enum {unknown}
+     */
+    NotificationKind: "reply" | "failed" | "ask" | "reminder";
   };
   responses: {
     /** @description The request is malformed, or not possible in the current state (`invalid_request`). */
@@ -636,7 +860,7 @@ export interface components {
         "application/json": components["schemas"]["ErrorResult"];
       };
     };
-    /** @description The server doesn't know this turn or message (`not_found`). */
+    /** @description The server doesn't know this turn, message, ask or device (`not_found`). */
     NotFound: {
       headers: {
         "Ito-Protocol": components["headers"]["ItoProtocol"];
@@ -692,6 +916,10 @@ export interface components {
   parameters: {
     /** @description The turn's id, from `turn.started`. */
     Turn: components["schemas"]["TurnId"];
+    /** @description The ask's id, from `ask.started`. */
+    Ask: components["schemas"]["AskId"];
+    /** @description A random UUID the app makes once per install, and keeps. */
+    Device: string;
   };
   requestBodies: never;
   headers: {
@@ -716,6 +944,10 @@ export type MessageStarted = components["schemas"]["MessageStarted"];
 export type MessageDelta = components["schemas"]["MessageDelta"];
 export type MessageEnded = components["schemas"]["MessageEnded"];
 export type TurnEnded = components["schemas"]["TurnEnded"];
+export type AskStarted = components["schemas"]["AskStarted"];
+export type AskEnded = components["schemas"]["AskEnded"];
+export type Ask = components["schemas"]["Ask"];
+export type Notification = components["schemas"]["Notification"];
 export type Message = components["schemas"]["Message"];
 export type Step = components["schemas"]["Step"];
 export type Status = components["schemas"]["Status"];
@@ -728,6 +960,11 @@ export type MessagePage = components["schemas"]["MessagePage"];
 export type StopTurn = components["schemas"]["StopTurn"];
 export type StopResult = components["schemas"]["StopResult"];
 export type RetryResult = components["schemas"]["RetryResult"];
+export type AskResult = components["schemas"]["AskResult"];
+export type RegisterDevice = components["schemas"]["RegisterDevice"];
+export type Device = components["schemas"]["Device"];
+export type DeviceResult = components["schemas"]["DeviceResult"];
+export type Presence = components["schemas"]["Presence"];
 export type ErrorResult = components["schemas"]["ErrorResult"];
 export type EventId = components["schemas"]["EventId"];
 export type MessageId = components["schemas"]["MessageId"];
@@ -735,13 +972,18 @@ export type MessageKind = components["schemas"]["MessageKind"];
 export type TurnId = components["schemas"]["TurnId"];
 export type Timestamp = components["schemas"]["Timestamp"];
 export type Position = components["schemas"]["Position"];
+export type AskId = components["schemas"]["AskId"];
 export type Outcome = components["schemas"]["Outcome"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
+export type AskKind = components["schemas"]["AskKind"];
+export type AskOption = components["schemas"]["AskOption"];
+export type AskOutcome = components["schemas"]["AskOutcome"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
 export type StatusDetail = components["schemas"]["StatusDetail"];
 export type LiveTurn = components["schemas"]["LiveTurn"];
+export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
 export type ResponseNotFound = components["responses"]["NotFound"];
@@ -750,6 +992,8 @@ export type ResponseTooLarge = components["responses"]["TooLarge"];
 export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
 export type ParameterTurn = components["parameters"]["Turn"];
+export type ParameterAsk = components["parameters"]["Ask"];
+export type ParameterDevice = components["parameters"]["Device"];
 export type HeaderItoProtocol = components["headers"]["ItoProtocol"];
 export type HeaderRetryAfter = components["headers"]["RetryAfter"];
 export type $defs = Record<string, never>;
@@ -774,7 +1018,7 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.2"
+           *         "0.3"
            *       ]
            *     }
            */
@@ -803,8 +1047,8 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.2.0",
-           *       "protocol": "0.2",
+           *       "version": "0.3.0",
+           *       "protocol": "0.3",
            *       "agent": {
            *         "name": "Ari"
            *       }
@@ -1031,6 +1275,136 @@ export interface operations {
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
       503: components["responses"]["Unavailable"];
+    };
+  };
+  cancelAsk: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The ask's id, from `ask.started`. */
+        ask: components["parameters"]["Ask"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The ask, as it ended. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AskResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  registerDevice: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A random UUID the app makes once per install, and keeps. */
+        device: components["parameters"]["Device"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "apns_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+         *       "environment": "production",
+         *       "notification_key": "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+         *     }
+         */
+        "application/json": components["schemas"]["RegisterDevice"];
+      };
+    };
+    responses: {
+      /** @description Registered again; the new token and key replace the old ones. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeviceResult"];
+        };
+      };
+      /** @description Registered for the first time. */
+      201: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeviceResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  removeDevice: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A random UUID the app makes once per install, and keeps. */
+        device: components["parameters"]["Device"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The device is no longer registered. */
+      204: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  setPresence: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A random UUID the app makes once per install, and keeps. */
+        device: components["parameters"]["Device"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "looking": true
+         *     }
+         */
+        "application/json": components["schemas"]["Presence"];
+      };
+    };
+    responses: {
+      /** @description Noted. */
+      204: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
     };
   };
 }

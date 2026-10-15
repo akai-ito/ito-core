@@ -236,6 +236,10 @@ tr.world .who {
   background: #4a3410;
   color: #f2c46d;
 }
+tr.push .who {
+  background: #4a1d33;
+  color: #ff9ec7;
+}
 .text {
   white-space: pre-wrap;
   background: var(--panel);

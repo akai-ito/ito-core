@@ -11,6 +11,8 @@ type Conversation = {
   readonly ended: ReadonlySet<string>;
   readonly running: ReadonlySet<string>;
   readonly steps: ReadonlyMap<string, StepState>;
+  readonly asks: ReadonlySet<string>;
+  readonly waiting: string | undefined;
   readonly lastPosition: number;
 };
 
@@ -20,16 +22,27 @@ type Positioned = { readonly id: string; readonly position: number };
 
 type SnapshotStep = Positioned & { readonly turn: string; readonly outcome?: string };
 
+type SnapshotAsk = Positioned & {
+  readonly turn: string;
+  readonly outcome?: string;
+  readonly answer?: string;
+};
+
+type Watch = { readonly isLooking: boolean; readonly isConnected: boolean };
+
 type Delivery = { readonly conversation: Conversation; readonly delivered: ReadonlySet<string> };
 
 type SnapshotMessage = Positioned & { readonly text: string; readonly outcome?: string };
+
+type AcceptedMessage = SnapshotMessage & { readonly answers?: string; readonly secret?: boolean };
 
 type GuaranteeTable = ReadonlyMap<number, ReadonlySet<string>>;
 
 type GuaranteeHeader = { readonly scenario: number; readonly guarantees: readonly string[] };
 
-const lineKinds = ["given", "app", "server", "event", "world"] as const;
-const scenarioCount = 17;
+const lineKinds = ["given", "app", "server", "event", "world", "push"] as const;
+const scenarioCount = 26;
+const disconnecting: ReadonlySet<string> = new Set(["offline", "app_closed", "server_restarted", "server_restored"]);
 const spec = loadSpec();
 
 const failure = (where: string, problem: string): Error => new Error(`${where}: ${problem}`);
@@ -116,13 +129,38 @@ const applyEvent = (conversation: Conversation, event: Event, where: string): Co
   switch (event.type) {
     case "message.accepted":
     case "message.started": {
-      const { id, text, position } = message as SnapshotMessage;
+      const { id, text, position, answers, secret } = message as AcceptedMessage;
       if (texts.has(id)) throw failure(where, `message ${id} begins twice`);
+      if (secret && text !== "") throw failure(where, `secret message ${id} carries its text`);
+      if (answers !== undefined && answers !== conversation.waiting) {
+        throw failure(where, `message ${id} answers ${answers}, which isn't waiting`);
+      }
       return {
         ...conversation,
         texts: new Map(texts).set(id, text),
         lastPosition: checkPosition(conversation, position, `message ${id}`, where),
       };
+    }
+    case "ask.started": {
+      const ask = event.ask as SnapshotAsk;
+      if (conversation.asks.has(ask.id)) throw failure(where, `ask ${ask.id} starts twice`);
+      if (!running.has(ask.turn)) throw failure(where, `ask ${ask.id} starts outside a running turn`);
+      if (conversation.waiting) throw failure(where, `ask ${ask.id} starts while ${conversation.waiting} waits`);
+      return {
+        ...conversation,
+        asks: new Set([...conversation.asks, ask.id]),
+        waiting: ask.id,
+        lastPosition: checkPosition(conversation, ask.position, `ask ${ask.id}`, where),
+      };
+    }
+    case "ask.ended": {
+      const ask = event.ask as SnapshotAsk;
+      if (conversation.waiting !== ask.id) throw failure(where, `ask ${ask.id} ends without waiting`);
+      if (!ask.outcome) throw failure(where, `ask ${ask.id} ends without an outcome`);
+      if (ask.outcome === "answered" && (ask.answer === undefined || !texts.has(ask.answer))) {
+        throw failure(where, `ask ${ask.id} is answered by a message the app hasn't seen`);
+      }
+      return { ...conversation, waiting: undefined };
     }
     case "step.started": {
       return startStep(conversation, event.step as SnapshotStep, where);
@@ -180,9 +218,13 @@ const checkAscending = (entries: readonly Positioned[], what: string, where: str
 const applySnapshot = (conversation: Conversation, event: Event, where: string): Conversation => {
   const messages = event.messages as readonly SnapshotMessage[];
   const steps = event.steps as readonly SnapshotStep[];
+  const asks = event.asks as readonly SnapshotAsk[];
   const turn = event.turn as { readonly id: string } | null;
   checkAscending(messages, "messages", where);
   checkAscending(steps, "steps", where);
+  checkAscending(asks, "asks", where);
+  const waiting = asks.filter((ask) => !ask.outcome);
+  if (waiting.length > 1) throw failure(where, "snapshot has more than one waiting ask");
   const first = messages[0]?.position ?? Infinity;
   const early = steps.find((step) => step.position < first);
   if (early) throw failure(where, `snapshot step ${early.id} comes before its first message`);
@@ -198,7 +240,14 @@ const applySnapshot = (conversation: Conversation, event: Event, where: string):
     steps: new Map(
       steps.map((step) => [step.id, { turn: step.turn, position: step.position, isEnded: Boolean(step.outcome) }]),
     ),
-    lastPosition: Math.max(0, ...messages.map((message) => message.position), ...steps.map((step) => step.position)),
+    asks: new Set(asks.map((ask) => ask.id)),
+    waiting: waiting[0]?.id,
+    lastPosition: Math.max(
+      0,
+      ...messages.map((message) => message.position),
+      ...steps.map((step) => step.position),
+      ...asks.map((ask) => ask.position),
+    ),
   };
 };
 
@@ -219,7 +268,15 @@ const checkDelivery = (file: string, header: Line, lines: readonly Line[]): void
   const applied = new Set(appliedEntries.map(([id]) => id));
   const appliedConversation = appliedEntries.reduce<Conversation>(
     (conversation, [id, event]) => applyEvent(conversation, event, `${file} (given ${id})`),
-    { texts: new Map(), ended: new Set(), running: new Set(), steps: new Map(), lastPosition: 0 },
+    {
+      texts: new Map(),
+      ended: new Set(),
+      running: new Set(),
+      steps: new Map(),
+      asks: new Set(),
+      waiting: undefined,
+      lastPosition: 0,
+    },
   );
 
   const deliver = ({ conversation, delivered }: Delivery, line: Line, index: number): Delivery => {
@@ -244,12 +301,33 @@ const checkDelivery = (file: string, header: Line, lines: readonly Line[]): void
   if (running.size > 0) throw failure(file, `turns never end: ${[...running].join(", ")}`);
 };
 
+const watch = (current: Watch, line: Line, where: string): Watch => {
+  const app = line.app as { readonly method?: string; readonly path?: string; readonly body?: unknown } | undefined;
+  if (app?.method === "GET" && app.path === "/v0/events") return { ...current, isConnected: true };
+  if (app?.method === "PUT" && app.path?.endsWith("/presence")) {
+    return { ...current, isLooking: (app.body as { readonly looking?: boolean } | undefined)?.looking === true };
+  }
+  if (typeof line.world === "string" && disconnecting.has(line.world)) {
+    return { isLooking: line.world !== "server_restarted" && current.isLooking, isConnected: false };
+  }
+  if (line.push && current.isLooking && current.isConnected) throw failure(where, "a push while you were looking");
+  return current;
+};
+
+const checkPushes = (file: string, lines: readonly Line[]): void => {
+  lines.reduce<Watch>((current, line, index) => watch(current, line, `${file}:${index + 2}`), {
+    isLooking: false,
+    isConnected: false,
+  });
+};
+
 const checkTranscript = (file: string, content: string): Line => {
   const [first, ...lines] = toLines(file, content);
   const header = checkHeader(file, first);
   checkOrder(file, lines);
   spec.checkLines(file, lines);
   checkDelivery(file, header, lines);
+  checkPushes(file, lines);
   return header;
 };
 
