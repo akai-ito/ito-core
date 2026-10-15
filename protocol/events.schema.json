@@ -107,7 +107,7 @@
       "enum": ["completed", "stopped", "interrupted", "failed"]
     },
     "Error": {
-      "description": "Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `pairing_code_rejected`, `not_found`, `id_conflict`, `too_large`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise.",
+      "description": "Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `pairing_code_rejected`, `not_found`, `id_conflict`, `too_large`, `attachment_missing`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise.",
       "type": "object",
       "required": ["code", "message"],
       "properties": {

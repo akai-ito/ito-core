@@ -191,7 +191,9 @@ paths:
 
         To attach photos or files, upload each one first with `PUT /v0/attachments/{attachment}`,
         then name them in `attachments`; the text may then be empty. An attachment belongs to one
-        message.
+        message. If one isn't on the server, because no message named it for a day, the message is
+        refused with `attachment_missing`: upload its attachments again under the same ids, then
+        send the same message again.
 
         While an ask waits, the message answers it, whether or not it names the ask: `message.accepted`
         for the message comes first, then `ask.ended`. Name the ask in `answers` when you send a
@@ -221,7 +223,20 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MessageResult" }
-        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "400":
+          description: >-
+            The request is malformed or not possible now (`invalid_request`), or an attachment it
+            names isn't on the server (`attachment_missing`).
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResult" }
+              example:
+                error:
+                  code: attachment_missing
+                  message: A photo or file in this message isn't on the server.
+                  detail: Uploads no message names are deleted after a day. Upload this message's attachments again, then send it again.
         "401": { $ref: "#/components/responses/TokenRejected" }
         "409": { $ref: "#/components/responses/IdConflict" }
         "413": { $ref: "#/components/responses/TooLarge" }

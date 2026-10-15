@@ -128,7 +128,9 @@ export interface paths {
      *
      *     To attach photos or files, upload each one first with `PUT /v0/attachments/{attachment}`,
      *     then name them in `attachments`; the text may then be empty. An attachment belongs to one
-     *     message.
+     *     message. If one isn't on the server, because no message named it for a day, the message is
+     *     refused with `attachment_missing`: upload its attachments again under the same ids, then
+     *     send the same message again.
      *
      *     While an ask waits, the message answers it, whether or not it names the ask: `message.accepted`
      *     for the message comes first, then `ask.ended`. Name the ask in `answers` when you send a
@@ -694,7 +696,7 @@ export interface components {
       label: components["schemas"]["StatusLabel"];
       detail?: components["schemas"]["StatusDetail"];
     };
-    /** @description Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `pairing_code_rejected`, `not_found`, `id_conflict`, `too_large`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise. */
+    /** @description Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `pairing_code_rejected`, `not_found`, `id_conflict`, `too_large`, `attachment_missing`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise. */
     Error: {
       /**
        * @description Stable and snake_case.
@@ -1362,7 +1364,25 @@ export interface operations {
           "application/json": components["schemas"]["MessageResult"];
         };
       };
-      400: components["responses"]["InvalidRequest"];
+      /** @description The request is malformed or not possible now (`invalid_request`), or an attachment it names isn't on the server (`attachment_missing`). */
+      400: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "attachment_missing",
+           *         "message": "A photo or file in this message isn't on the server.",
+           *         "detail": "Uploads no message names are deleted after a day. Upload this message's attachments again, then send it again."
+           *       }
+           *     }
+           */
+          "application/json": components["schemas"]["ErrorResult"];
+        };
+      };
       401: components["responses"]["TokenRejected"];
       409: components["responses"]["IdConflict"];
       413: components["responses"]["TooLarge"];

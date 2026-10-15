@@ -165,7 +165,14 @@ export const createApp = (options: AppOptions): FastifyInstance => {
           return reply.code(400).send(toErrorResult("invalid_request", `No ask ${String(answers)}.`));
         }
         case "unknown_attachment": {
-          return reply.code(400).send(toErrorResult("invalid_request", "Upload every attachment before sending."));
+          return reply
+            .code(400)
+            .send(
+              toErrorResult(
+                "attachment_missing",
+                "Uploads no message names are deleted after a day. Upload this message's attachments again, then send it again.",
+              ),
+            );
         }
         case "attachment_taken": {
           return reply.code(400).send(toErrorResult("invalid_request", "An attachment belongs to one message."));

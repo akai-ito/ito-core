@@ -10,6 +10,7 @@ export type CommandFailureCode =
   | "not_found"
   | "id_conflict"
   | "too_large"
+  | "attachment_missing"
   | "slow_down"
   | "unavailable"
   | "internal";
@@ -33,6 +34,7 @@ const commandMessages: Readonly<Record<CommandFailureCode, string>> = {
   not_found: "The server doesn't know that.",
   id_conflict: "A different message was already sent with this id.",
   too_large: "The message is longer than the server accepts.",
+  attachment_missing: "A photo or file in this message isn't on the server.",
   slow_down: "Too many attempts; wait a moment and try again.",
   unavailable: "The server is starting or shutting down.",
   internal: "The server hit an unexpected error; Details has the cause.",

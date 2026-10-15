@@ -123,6 +123,7 @@ export type Transcript = {
   readonly remind: () => void;
   readonly upload: (file: string, options?: UploadOptions) => string;
   readonly uploadTooLarge: (name: string, size: number) => void;
+  readonly forgetUnsentUploads: () => void;
   readonly fetchAttachment: (id: string) => void;
   readonly showPairingCode: (code: string) => void;
   readonly pair: (code: string, deviceName: string, token: string) => void;
@@ -674,6 +675,17 @@ export const createTranscript = (header: Header): Transcript => {
       },
     });
     const isKnown = project(log.get()).byId.has(id);
+    if (!isKnown && attached.some((attachment) => !attachments.get().has(attachment))) {
+      response(400, {
+        error: {
+          code: "attachment_missing",
+          message: "A photo or file in this message isn't on the server.",
+          detail:
+            "Uploads no message names are deleted after a day. Upload this message's attachments again, then send it again.",
+        },
+      });
+      return id;
+    }
     if (!isKnown) {
       const isSecret = options.answers !== undefined && askById(options.answers).secret;
       const answering = waiting.get();
@@ -792,6 +804,16 @@ export const createTranscript = (header: Header): Transcript => {
         detail: "Attachments can be up to 20 MB.",
       },
     });
+  };
+
+  const forgetUnsentUploads = (): void => {
+    const sent = new Set(
+      project(log.get())
+        .byId.values()
+        .flatMap((message) => message.attachments ?? [])
+        .map((attachment) => attachment.id),
+    );
+    attachments.update((current) => new Map([...current].filter(([id]) => sent.has(id))));
   };
 
   const fetchAttachment = (id: string): void => {
@@ -969,6 +991,7 @@ export const createTranscript = (header: Header): Transcript => {
     remind,
     upload,
     uploadTooLarge,
+    forgetUnsentUploads,
     fetchAttachment,
     showPairingCode,
     pair,

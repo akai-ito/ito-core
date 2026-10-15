@@ -1354,7 +1354,9 @@ const scenarios: readonly (() => Transcript)[] = [
       summary:
         "A video over 20 MB is refused as too large. A photo's upload succeeds but its answer is lost, so " +
         "the app uploads it again under the same id and gets the same attachment; a message with only the " +
-        "photo and no text follows.",
+        "photo and no text follows. Later, a file waits in a draft for two days, past the day the server " +
+        "keeps an upload no message names, so sending is refused as attachment_missing until the app " +
+        "uploads it again.",
       guarantees: ["G2", "G19"],
     });
     yesterday(transcript);
@@ -1373,6 +1375,40 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.step("thinking", thinking);
     transcript.wait(1800);
     writeWhole(transcript, "The river at Hampton Court on a clear morning. Want me to plan a walk from there?");
+    transcript.endTurn("completed");
+    transcript.wait(5 * 60 * 1000);
+    const log = transcript.upload("running-log.csv");
+    transcript.wait(1000);
+    transcript.disconnect("app_closed");
+    transcript.wait(2 * 24 * 60 * 60 * 1000);
+    transcript.forgetUnsentUploads();
+    transcript.world("app_opened");
+    transcript.connect();
+    transcript.wait(4000);
+    const question = transcript.send("Which of these runs had my fastest pace?", { attachments: [log] });
+    transcript.wait(300);
+    transcript.upload("running-log.csv", { id: log });
+    transcript.wait(200);
+    transcript.send("Which of these runs had my fastest pace?", { id: question, attachments: [log] });
+    transcript.startTurn([question]);
+    transcript.wait(300);
+    transcript.step("command", {
+      title: "Reading running-log.csv",
+      endedTitle: "Read running-log.csv",
+      fields: {
+        command: "cat uploads/running-log.csv",
+        cwd: "/home/you/.ito/workspace",
+        actions: [{ type: "read", path: "uploads/running-log.csv" }],
+      },
+    });
+    transcript.wait(400);
+    transcript.endStep({
+      fields: {
+        exit_code: 0,
+        output: "date,distance_km,time\n2026-10-03,12.0,1:04:10\n2026-10-07,8.5,0:44:52\n2026-10-11,18.0,1:39:37\n",
+      },
+    });
+    writeWhole(transcript, "The 7th: 8.5 km in 44:52, about 5:17 a kilometre.");
     transcript.endTurn("completed");
     return transcript;
   },
