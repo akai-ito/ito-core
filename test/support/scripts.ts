@@ -47,8 +47,12 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
 const toTimed = (event: LoggedEvent): TimedEvent | undefined => {
   const at = Date.parse(event.at);
   switch (event.type) {
+    case "ask.started": {
+      const { kind, question, options, allows_text, preview, secret } = event.ask;
+      const fields = { kind, question, options, allows_text, ...(preview && { preview }), secret };
+      return { at, event: { type: "ask", fields } };
+    }
     case "turn.status":
-    case "ask.started":
     case "ask.ended": {
       return;
     }

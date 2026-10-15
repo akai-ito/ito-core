@@ -49,4 +49,22 @@ export const migrations: readonly string[] = [
   );
   UPDATE events SET body = json_set(body, '$.message.position', seq)
     WHERE type IN ('message.accepted', 'message.started');`,
+  `ALTER TABLE messages ADD COLUMN answers TEXT;
+  ALTER TABLE messages ADD COLUMN secret INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE asks (
+    id TEXT PRIMARY KEY,
+    turn TEXT NOT NULL,
+    position INTEGER NOT NULL UNIQUE,
+    body TEXT NOT NULL,
+    outcome TEXT,
+    reminded INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE devices (
+    id TEXT PRIMARY KEY,
+    apns_token TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    notification_key TEXT NOT NULL,
+    key_id TEXT NOT NULL,
+    registered_at TEXT NOT NULL
+  );`,
 ];

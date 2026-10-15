@@ -193,14 +193,14 @@ describe("Ito's tools over MCP", () => {
     await github.get()?.close();
   });
 
-  it("answers only the session's token, and lists report_gap", async () => {
+  it("answers only the session's token, and lists Ito's tools", async () => {
     expect(await statusOf(post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, "ito_wrong"))).toBe(401);
     expect(await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {} })).toMatchObject({
       id: 1,
       result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "ito" } },
     });
     expect(await statusOf(post({ jsonrpc: "2.0", method: "notifications/initialized" }))).toBe(202);
-    expect(await rpc("tools/list")).toMatchObject({ result: { tools: [{ name: "report_gap" }] } });
+    expect(await rpc("tools/list")).toMatchObject({ result: { tools: [{ name: "report_gap" }, { name: "ask" }] } });
     const { url } = toolServer();
     expect(await statusOf(fetch(url))).toBe(405);
     expect(await rpc("resources/list")).toMatchObject({ error: { code: -32_601 } });

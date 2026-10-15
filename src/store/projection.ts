@@ -12,8 +12,10 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
     case "message.accepted": {
       const { message } = event;
       database
-        .prepare("INSERT INTO messages (id, position, role, text, at) VALUES (?, ?, 'user', ?, ?)")
-        .run(message.id, seq, message.text, message.at);
+        .prepare(
+          "INSERT INTO messages (id, position, role, text, at, answers, secret) VALUES (?, ?, 'user', ?, ?, ?, ?)",
+        )
+        .run(message.id, seq, message.text, message.at, message.answers ?? null, message.secret ? 1 : 0);
       return;
     }
     case "message.started": {
@@ -83,8 +85,18 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
         .run(toJson(step), step.outcome ?? null, step.id);
       return;
     }
-    case "ask.started":
+    case "ask.started": {
+      const { ask } = event;
+      database
+        .prepare("INSERT INTO asks (id, turn, position, body) VALUES (?, ?, ?, ?)")
+        .run(ask.id, ask.turn, ask.position, toJson(ask));
+      return;
+    }
     case "ask.ended": {
+      const { ask } = event;
+      database
+        .prepare("UPDATE asks SET body = ?, outcome = ? WHERE id = ?")
+        .run(toJson(ask), ask.outcome ?? null, ask.id);
       return;
     }
     case "turn.ended": {

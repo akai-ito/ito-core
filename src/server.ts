@@ -13,6 +13,7 @@ import { loadSchemas } from "#protocol/schemas.ts";
 import { createGitHub } from "#reports/github.ts";
 import { createReporter, defaultDailyLimit } from "#reports/reporter.ts";
 import { createReportTool } from "#reports/tool.ts";
+import { createAskTool } from "#asks/tool.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
@@ -118,7 +119,7 @@ export const createServer = (options: ServerOptions): Server => {
   });
   registerTools(app, {
     token: toolsToken,
-    tools: [createReportTool(reporter, () => store.runningTurn()?.id)],
+    tools: [createReportTool(reporter, () => store.runningTurn()?.id), createAskTool(turns)],
     version: packageVersion(),
   });
 

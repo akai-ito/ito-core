@@ -1,9 +1,13 @@
 import type { MessageId, TurnId } from "#conversation/ids.ts";
-import type { Step, StepKind } from "#protocol/types.ts";
+import type { Ask, Step, StepKind } from "#protocol/types.ts";
 
 export type Input = { readonly messageId: MessageId; readonly text: string };
 
 export type ToolServer = { readonly url: string; readonly token: string };
+
+export type AskFields = Pick<Ask, "kind" | "question" | "options" | "allows_text" | "secret"> & {
+  readonly preview?: string;
+};
 
 export type StepFacts = Omit<
   Step,
@@ -34,6 +38,8 @@ export type EngineEvent =
   | { readonly type: "text.ended" }
   | { readonly type: "input.read"; readonly messageId: MessageId }
   | { readonly type: "failed"; readonly code: EngineFailureCode; readonly detail: string }
+  | { readonly type: "ask"; readonly fields: AskFields }
+  | { readonly type: "asked" }
   | { readonly type: "progress" }
   | { readonly type: "stopped" }
   | { readonly type: "ended" };

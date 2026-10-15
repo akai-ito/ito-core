@@ -1,7 +1,7 @@
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOptions } from "fastify";
 import type { Clock } from "#clock.ts";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
-import { toMessageId, toTurnId } from "#conversation/ids.ts";
+import { toAskId, toMessageId, toTurnId } from "#conversation/ids.ts";
 import type { Gate } from "#http/auth.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
@@ -83,12 +83,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   app.get("/v0/events", createEventStream({ store, clock, protocol, heartbeatMs, maxReplay }));
 
   app.post<{ Body: SendMessage }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text } = request.body;
-    const accepted = store.acceptMessage(toMessageId(id), text);
+    const { id, text, answers } = request.body;
+    const accepted = store.acceptMessage(toMessageId(id), text, answers === undefined ? undefined : toAskId(answers));
     if (!accepted.ok) {
-      return reply
-        .code(409)
-        .send(toErrorResult("id_conflict", `Message ${id} was already accepted with different text.`));
+      return accepted.failure === "unknown_ask"
+        ? reply.code(400).send(toErrorResult("invalid_request", `No ask ${String(answers)}.`))
+        : reply.code(409).send(toErrorResult("id_conflict", `Message ${id} was already accepted with different text.`));
     }
     if (accepted.value.isNew) turns.route(toMessageId(id), text);
     return reply.code(accepted.value.isNew ? 201 : 200).send({ message: accepted.value.message });
@@ -138,6 +138,19 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         return reply.code(started.failure === "not_found" ? 404 : 400).send({ error: toRetryFailure(started.failure) });
       }
       return reply.code(started.value.isNew ? 202 : 200).send({ turn: started.value.turn, retry_of: turn });
+    },
+  );
+
+  app.post<{ Params: { readonly ask: string } }>(
+    "/v0/asks/:ask/cancel",
+    { schema: schemaFor("cancelAsk") },
+    async (request, reply) => {
+      const cancelled = turns.cancelAsk(toAskId(request.params.ask));
+      return cancelled.ok
+        ? { ask: cancelled.value }
+        : reply
+            .code(404)
+            .send(toErrorResult("not_found", `No ask ${request.params.ask}.`, "That question isn't on the server."));
     },
   );
 

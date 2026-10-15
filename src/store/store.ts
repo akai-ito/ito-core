@@ -1,7 +1,17 @@
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Clock } from "#clock.ts";
-import { toMessageId, toTurnId, type EventId, type MessageId, type TurnId } from "#conversation/ids.ts";
+import {
+  toDeviceId,
+  toMessageId,
+  toTurnId,
+  type AskId,
+  type DeviceId,
+  type EventId,
+  type MessageId,
+  type TurnId,
+} from "#conversation/ids.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type {
   Ask,
@@ -15,7 +25,7 @@ import type {
   StepKind,
 } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
-import type { StepFacts } from "#engine/engine.ts";
+import type { AskFields, StepFacts } from "#engine/engine.ts";
 import { project, type LoggedEvent } from "#store/projection.ts";
 
 export type LogEntry = { readonly seq: number; readonly event: LoggedEvent };
@@ -50,6 +60,20 @@ export type Page = {
   readonly hasMore: boolean;
 };
 
+export type AcceptFailure = "id_conflict" | "unknown_ask";
+
+export type Registration = {
+  readonly apnsToken: string;
+  readonly environment: "sandbox" | "production";
+  readonly notificationKey: string;
+};
+
+export type StoredDevice = Registration & {
+  readonly id: DeviceId;
+  readonly keyId: string;
+  readonly registeredAt: string;
+};
+
 export type Settings = {
   readonly setting: (key: string) => string | undefined;
   readonly setSetting: (key: string, value: string) => void;
@@ -59,7 +83,7 @@ export type Store = Settings & {
   readonly subscribe: (listener: Listener) => () => void;
   readonly eventsAfter: (cursor: EventId) => Result<readonly LogEntry[], ReplayGap>;
   readonly snapshot: (reason: Snapshot["reason"]) => SnapshotEntry;
-  readonly acceptMessage: (id: MessageId, text: string) => Result<Accepted, "id_conflict">;
+  readonly acceptMessage: (id: MessageId, text: string, answers?: AskId) => Result<Accepted, AcceptFailure>;
   readonly listMessages: (before: MessageId, limit: number) => Result<Page, "not_found">;
   readonly messageText: (message: MessageId) => string | undefined;
   readonly pendingWork: () => readonly PendingWork[];
@@ -80,6 +104,18 @@ export type Store = Settings & {
   readonly appendText: (message: MessageId, text: string) => void;
   readonly endMessage: (message: MessageId, outcome: Outcome, length: number, error?: ErrorBody) => void;
   readonly endTurn: (turn: TurnId, outcome: Outcome, error?: ErrorBody) => void;
+  readonly startAsk: (turn: TurnId, fields: AskFields) => Ask;
+  readonly cancelAsk: (ask: AskId) => Result<Ask, "not_found">;
+  readonly findAsk: (ask: AskId) => Ask | undefined;
+  readonly waitingAsk: () => Ask | undefined;
+  readonly isReminded: (ask: AskId) => boolean;
+  readonly markReminded: (ask: AskId) => void;
+  readonly registerDevice: (
+    id: DeviceId,
+    registration: Registration,
+  ) => { readonly device: StoredDevice; readonly isNew: boolean };
+  readonly removeDevice: (id: DeviceId) => void;
+  readonly devices: () => readonly StoredDevice[];
   readonly importEvents: (events: readonly LoggedEvent[]) => void;
   readonly compactText: (before: string) => void;
   readonly backupTo: (filePath: string) => void;
@@ -97,6 +133,19 @@ type MessageRow = {
   readonly ended_at: string | null;
   readonly outcome: Outcome | null;
   readonly error: string | null;
+  readonly answers: string | null;
+  readonly secret: number;
+};
+
+type AskRow = { readonly body: string; readonly reminded: number };
+
+type DeviceRow = {
+  readonly id: string;
+  readonly apns_token: string;
+  readonly environment: "sandbox" | "production";
+  readonly notification_key: string;
+  readonly key_id: string;
+  readonly registered_at: string;
 };
 
 type TurnRow = {
@@ -127,7 +176,15 @@ const parseIds = (json: string): readonly string[] => JSON.parse(json) as readon
 
 const toMessage = (row: MessageRow): Message =>
   row.role === "user"
-    ? { id: row.id, role: "user", text: row.text, at: row.at, position: row.position }
+    ? {
+        id: row.id,
+        role: "user",
+        text: row.text,
+        at: row.at,
+        position: row.position,
+        ...(row.answers && { answers: row.answers }),
+        ...(row.secret === 1 && { secret: true }),
+      }
     : {
         id: row.id,
         role: "agent",
@@ -164,6 +221,20 @@ const toPendingWork = (row: PendingRow): PendingWork =>
 const toLogEntry = (row: EventRow): LogEntry => ({ seq: row.seq, event: JSON.parse(row.body) as LoggedEvent });
 
 const toStep = (row: StepRow): Step => JSON.parse(row.body) as Step;
+
+const toAsk = (row: AskRow): Ask => JSON.parse(row.body) as Ask;
+
+const toDevice = (row: DeviceRow): StoredDevice => ({
+  id: toDeviceId(row.id),
+  apnsToken: row.apns_token,
+  environment: row.environment,
+  notificationKey: row.notification_key,
+  keyId: row.key_id,
+  registeredAt: row.registered_at,
+});
+
+export const toKeyId = (notificationKey: string): string =>
+  createHash("sha256").update(Buffer.from(notificationKey, "base64")).digest("hex").slice(0, 8);
 
 export const createStore = (database: DatabaseSync, clock: Clock, identifiers: Identifiers): Store => {
   const listeners = createCell<ReadonlySet<Listener>>(new Set());
@@ -216,6 +287,28 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         .prepare("SELECT body FROM steps WHERE position >= ? AND position < ? ORDER BY position")
         .all(from, until) as unknown as readonly StepRow[]
     ).map((row) => toStep(row));
+
+  const asksFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Ask[] =>
+    (
+      database
+        .prepare("SELECT body, reminded FROM asks WHERE position >= ? AND position < ? ORDER BY position")
+        .all(from, until) as unknown as readonly AskRow[]
+    ).map((row) => toAsk(row));
+
+  const askRow = (id: string): (AskRow & { readonly outcome: string | null }) | undefined =>
+    database.prepare("SELECT body, reminded, outcome FROM asks WHERE id = ?").get(id) as
+      (AskRow & { readonly outcome: string | null }) | undefined;
+
+  const waitingRow = (): AskRow | undefined =>
+    database.prepare("SELECT body, reminded FROM asks WHERE outcome IS NULL ORDER BY position DESC LIMIT 1").get() as
+      AskRow | undefined;
+
+  const endAsk = (ask: Ask, outcome: "answered" | "cancelled", answer?: MessageId): Ask => {
+    const at = now();
+    const ended: Ask = { ...ask, ended_at: at, outcome, ...(answer && { answer }) };
+    append({ id: identifiers.event(), type: "ask.ended", at, ask: ended });
+    return ended;
+  };
 
   const messageRow = (id: string): MessageRow | undefined =>
     database.prepare("SELECT * FROM messages WHERE id = ?").get(id) as MessageRow | undefined;
@@ -277,21 +370,36 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           messages: window.map((row) => toMessage(row)),
           has_more: rows.length > snapshotSize,
           steps: window[0] ? [...stepsFrom(window[0].position)] : [],
-          asks: [],
+          asks: window[0] ? [...asksFrom(window[0].position)] : [],
           turn: turn ? toLiveTurn(turn) : null,
           next: next.map((row) => row.message),
         },
       };
     },
 
-    acceptMessage: (id, text) =>
+    acceptMessage: (id, text, answers) =>
       transaction(() => {
         const existing = messageRow(id);
-        if (existing)
-          return existing.text === text ? ok({ message: toMessage(existing), isNew: false }) : fail("id_conflict");
+        if (existing) {
+          const isSame = existing.secret === 1 || existing.text === text;
+          return isSame ? ok({ message: toMessage(existing), isNew: false }) : fail("id_conflict");
+        }
+        const named = answers === undefined ? undefined : askRow(answers);
+        if (answers !== undefined && !named) return fail("unknown_ask");
+        const isSecret = named !== undefined && toAsk(named).secret;
+        const waiting = waitingRow();
         const at = now();
-        const message: Message = { id, role: "user", text, at, position: nextSeq() };
+        const message: Message = {
+          id,
+          role: "user",
+          text: isSecret ? "" : text,
+          at,
+          position: nextSeq(),
+          ...(waiting && { answers: toAsk(waiting).id }),
+          ...(isSecret && { secret: true }),
+        };
         append({ id: identifiers.event(), type: "message.accepted", at, message });
+        if (waiting) endAsk(toAsk(waiting), "answered", id);
         return ok({ message, isNew: true });
       }),
 
@@ -306,7 +414,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       return ok({
         messages: page.map((row) => toMessage(row)),
         steps: page[0] ? stepsFrom(page[0].position, anchor.position) : [],
-        asks: [],
+        asks: page[0] ? asksFrom(page[0].position, anchor.position) : [],
         hasMore: rows.length > limit,
       });
     },
@@ -425,6 +533,79 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     endTurn: (turn, outcome, error) => {
       record((stamp) => ({ ...stamp, type: "turn.ended", turn, outcome, ...(error && { error }) }));
     },
+
+    startAsk: (turn, fields) =>
+      transaction(() => {
+        const waiting = waitingRow();
+        if (waiting) endAsk(toAsk(waiting), "cancelled");
+        const at = now();
+        const ask: Ask = {
+          id: identifiers.ask(),
+          turn,
+          kind: fields.kind,
+          question: fields.question,
+          options: fields.options,
+          allows_text: fields.allows_text,
+          ...(fields.preview && { preview: fields.preview }),
+          secret: fields.secret,
+          at,
+          position: nextSeq(),
+        };
+        append({ id: identifiers.event(), type: "ask.started", at, ask });
+        return ask;
+      }),
+
+    cancelAsk: (ask) =>
+      transaction(() => {
+        const row = askRow(ask);
+        if (!row) return fail("not_found");
+        return ok(row.outcome ? toAsk(row) : endAsk(toAsk(row), "cancelled"));
+      }),
+
+    findAsk: (ask) => {
+      const row = askRow(ask);
+      return row ? toAsk(row) : undefined;
+    },
+
+    waitingAsk: () => {
+      const row = waitingRow();
+      return row ? toAsk(row) : undefined;
+    },
+
+    isReminded: (ask) => askRow(ask)?.reminded === 1,
+
+    markReminded: (ask) => {
+      database.prepare("UPDATE asks SET reminded = 1 WHERE id = ?").run(ask);
+    },
+
+    registerDevice: (id, registration) => {
+      const isNew = database.prepare("SELECT 1 FROM devices WHERE id = ?").get(id) === undefined;
+      const device: StoredDevice = {
+        id,
+        ...registration,
+        keyId: toKeyId(registration.notificationKey),
+        registeredAt: now(),
+      };
+      database
+        .prepare(
+          `INSERT INTO devices (id, apns_token, environment, notification_key, key_id, registered_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET apns_token = excluded.apns_token, environment = excluded.environment,
+              notification_key = excluded.notification_key, key_id = excluded.key_id,
+              registered_at = excluded.registered_at`,
+        )
+        .run(id, device.apnsToken, device.environment, device.notificationKey, device.keyId, device.registeredAt);
+      return { device, isNew };
+    },
+
+    removeDevice: (id) => {
+      database.prepare("DELETE FROM devices WHERE id = ?").run(id);
+    },
+
+    devices: () =>
+      (database.prepare("SELECT * FROM devices ORDER BY registered_at").all() as unknown as readonly DeviceRow[]).map(
+        (row) => toDevice(row),
+      ),
 
     setting: readSetting,
 

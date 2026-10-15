@@ -10,6 +10,9 @@ import type { Engine, EngineEvent, Input } from "#engine/engine.ts";
 import { createGitHub } from "#reports/github.ts";
 import { createReporter, reportsTokenSetting } from "#reports/reporter.ts";
 import { createReportTool } from "#reports/tool.ts";
+import { createAskTool } from "#asks/tool.ts";
+import { ok } from "#result.ts";
+import type { AskFields } from "#engine/engine.ts";
 import type { Settings } from "#store/store.ts";
 import { startFakeGitHub, type FakeGitHub } from "./support/fake-github.ts";
 import { startMockModel, type MockModel } from "./support/mock-model.ts";
@@ -47,6 +50,7 @@ const turnCount = createCell(0);
 const model = createCell<MockModel | undefined>(undefined);
 const engine = createCell<Engine | undefined>(undefined);
 const github = createCell<FakeGitHub | undefined>(undefined);
+const asked = createCell<readonly AskFields[]>([]);
 const toolServer = createCell<RunningToolServer | undefined>(undefined);
 
 const writeCodexConfig = (baseUrl: string): void => {
@@ -138,7 +142,19 @@ describe("the Codex engine against the pinned codex app-server", () => {
         createGitHub({ apiUrl: fake.apiUrl, repository: fake.repository, token, userAgent: "ito/test" }),
       dailyLimit: 20,
     });
-    toolServer.set(await startToolServer([createReportTool(reporter, () => currentTurn())]));
+    const askTool = createAskTool({
+      ask: (fields) => {
+        asked.set([...asked.get(), fields]);
+        return ok({
+          id: `a_test_${String(asked.get().length)}`,
+          turn: currentTurn(),
+          ...fields,
+          at: new Date().toISOString(),
+          position: 1,
+        });
+      },
+    });
+    toolServer.set(await startToolServer([createReportTool(reporter, () => currentTurn()), askTool]));
     const started = await startMockModel();
     model.set(started);
     writeCodexConfig(started.baseUrl);
@@ -250,6 +266,27 @@ describe("the Codex engine against the pinned codex app-server", () => {
         ?.issues()
         .map(({ title }) => title),
     ).toEqual(["Gap: web search · open a page"]);
+  });
+
+  it("ends the turn when the agent asks through Ito's ask tool", async () => {
+    const events = await runTurn("[[ask]] Book a table at Juno for Saturday.", async (event) => {
+      if (event.type === "asked") await currentEngine().interrupt(currentTurn());
+    });
+    expect(asked.get()).toEqual([
+      {
+        kind: "question",
+        question: "Which Juno did you mean?",
+        options: [{ label: "Clapham" }, { label: "Soho" }],
+        allows_text: true,
+        secret: false,
+      },
+    ]);
+    expect(events.filter((event) => event.type === "step.started")).toEqual([]);
+    expect(events.map((event) => event.type).filter((type) => type === "asked" || type === "stopped")).toEqual([
+      "asked",
+      "stopped",
+    ]);
+    expect(textOf(events)).not.toContain("never be read");
   });
 
   it("maps a usage limit to usage_limit", async () => {
