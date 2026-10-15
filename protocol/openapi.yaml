@@ -362,7 +362,7 @@ paths:
         content:
           "*/*":
             schema:
-              description: The file's bytes, at most 20 MB.
+              description: The file's bytes, at most 20 MB (20 × 1024 × 1024 bytes).
       responses:
         "201":
           description: Uploaded.
