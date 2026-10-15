@@ -1,8 +1,16 @@
-import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOptions } from "fastify";
+import { createReadStream } from "node:fs";
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyServerOptions,
+} from "fastify";
+import { maxAttachmentBytes, toMediaType, type Attachments } from "#attachments/attachments.ts";
 import type { Clock } from "#clock.ts";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
+import { modelSetting } from "#engine/engine.ts";
 import { toAskId, toDeviceId, toMessageId, toTurnId } from "#conversation/ids.ts";
-import type { Gate } from "#http/auth.ts";
+import { createToken, hashToken, type Gate } from "#http/auth.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
@@ -21,11 +29,22 @@ export type AppOptions = {
   readonly info: ServerInfo;
   readonly gate: Gate;
   readonly presence: Presence;
+  readonly attachments: Attachments;
   readonly heartbeatMs: number;
   readonly logger: FastifyServerOptions["logger"];
 };
 
 type ErrorResult = { readonly error: ErrorBody };
+
+type PairBody = { readonly code: string; readonly device_name: string };
+
+const toCode = (code: string): string => code.replaceAll(/[^0-9a-z]/giu, "").toUpperCase();
+
+const tooLargeAttachment = toCommandError(
+  "too_large",
+  "Attachments can be up to 20 MB.",
+  "That file is larger than Ito accepts.",
+);
 
 type SendBody = {
   readonly id: string;
@@ -45,7 +64,7 @@ const isTooLong = (error: FastifyError): boolean =>
   error.validation?.some((issue) => issue.keyword === "maxLength" && issue.instancePath === "/text") ?? false;
 
 export const createApp = (options: AppOptions): FastifyInstance => {
-  const { store, turns, clock, schemas, info, gate, presence, heartbeatMs, logger } = options;
+  const { store, turns, clock, schemas, info, gate, presence, attachments, heartbeatMs, logger } = options;
   const protocol = protocolVersion(schemas.document);
   const routeSchemas = toRouteSchemas(schemas);
   const schemaFor = (operationId: string): RouteSchema => routeSchemas.get(operationId) ?? {};
@@ -57,8 +76,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   });
   app.setValidatorCompiler(createValidatorCompiler(schemas));
 
+  const slowDown = (reply: FastifyReply): FastifyReply =>
+    reply.code(429).header("retry-after", String(gate.retryAfterSeconds())).send(toErrorResult("slow_down"));
+
   app.addHook("onRequest", async (request, reply) => {
-    if (!request.routeOptions.url?.startsWith("/v0/")) return;
+    const route = request.routeOptions.url;
+    if (!route?.startsWith("/v0/") || route === "/v0/pair") return;
     const verdict = gate.check(request.headers.authorization);
     if (verdict === "accepted") return;
     return verdict === "slow_down"
@@ -72,6 +95,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
+    if (error.statusCode === 413 && request.url.startsWith("/v0/attachments/"))
+      return reply.code(413).send({ error: tooLargeAttachment });
     if (isTooLong(error) || error.statusCode === 413)
       return reply.code(413).send(toErrorResult("too_large", error.message));
     if (error.validation || (error.statusCode !== undefined && error.statusCode < 500)) {
@@ -87,7 +112,28 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   app.get("/.well-known/ito", () => ({ product: "ito", protocol: [protocol] }));
 
-  app.get("/v0/server", () => ({ name: info.name, version: info.version, protocol, agent: { name: info.agentName } }));
+  app.get("/v0/server", () => {
+    const model = store.setting(modelSetting);
+    return {
+      name: info.name,
+      version: info.version,
+      protocol,
+      agent: { name: info.agentName, ...(model && { model }) },
+    };
+  });
+
+  app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
+    if (gate.isSlowedDown()) return slowDown(reply);
+    const { code, device_name: deviceName } = request.body;
+    if (!store.usePairingCode(hashToken(toCode(code)), deviceName)) {
+      return gate.refuse() === "slow_down"
+        ? slowDown(reply)
+        : reply.code(401).send(toErrorResult("pairing_code_rejected", "Run ito pair on the server for a new code."));
+    }
+    const token = createToken();
+    store.addToken(hashToken(token), deviceName);
+    return reply.code(201).send({ token });
+  });
 
   app.get(
     "/v0/events",
@@ -95,12 +141,30 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   );
 
   app.post<{ Body: SendBody }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text = "", answers } = request.body;
-    const accepted = store.acceptMessage(toMessageId(id), text, answers === undefined ? undefined : toAskId(answers));
+    const { id, text = "", answers, attachments: attached = [] } = request.body;
+    const accepted = store.acceptMessage(
+      toMessageId(id),
+      text,
+      answers === undefined ? undefined : toAskId(answers),
+      attached,
+    );
     if (!accepted.ok) {
-      return accepted.failure === "unknown_ask"
-        ? reply.code(400).send(toErrorResult("invalid_request", `No ask ${String(answers)}.`))
-        : reply.code(409).send(toErrorResult("id_conflict", `Message ${id} was already accepted with different text.`));
+      switch (accepted.failure) {
+        case "unknown_ask": {
+          return reply.code(400).send(toErrorResult("invalid_request", `No ask ${String(answers)}.`));
+        }
+        case "unknown_attachment": {
+          return reply.code(400).send(toErrorResult("invalid_request", "Upload every attachment before sending."));
+        }
+        case "attachment_taken": {
+          return reply.code(400).send(toErrorResult("invalid_request", "An attachment belongs to one message."));
+        }
+        case "id_conflict": {
+          return reply
+            .code(409)
+            .send(toErrorResult("id_conflict", `Message ${id} was already accepted with different text.`));
+        }
+      }
     }
     if (accepted.value.isNew) turns.route(toMessageId(id), text, accepted.value.message.secret === true);
     return reply.code(accepted.value.isNew ? 201 : 200).send({ message: accepted.value.message });
@@ -150,6 +214,48 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         return reply.code(started.failure === "not_found" ? 404 : 400).send({ error: toRetryFailure(started.failure) });
       }
       return reply.code(started.value.isNew ? 202 : 200).send({ turn: started.value.turn, retry_of: turn });
+    },
+  );
+
+  void app.register((uploads, _options, registered) => {
+    uploads.removeAllContentTypeParsers();
+    uploads.addContentTypeParser("*", { parseAs: "buffer", bodyLimit: maxAttachmentBytes }, (_request, body, done) => {
+      done(null, body);
+    });
+    uploads.put<{ Params: { readonly attachment: string }; Querystring: { readonly name: string }; Body: Buffer }>(
+      "/v0/attachments/:attachment",
+      { schema: schemaFor("uploadAttachment"), bodyLimit: maxAttachmentBytes },
+      async (request, reply) => {
+        const mediaType = toMediaType(request.headers["content-type"]);
+        const saved = attachments.save(request.params.attachment, request.query.name, mediaType, request.body);
+        return saved.ok
+          ? reply.code(saved.value.isNew ? 201 : 200).send({ attachment: saved.value.attachment })
+          : reply.code(409).send(toErrorResult("id_conflict", "Different bytes were already uploaded with this id."));
+      },
+    );
+    registered();
+  });
+
+  app.get<{ Params: { readonly attachment: string } }>(
+    "/v0/attachments/:attachment",
+    { schema: schemaFor("getAttachment") },
+    async (request, reply) => {
+      const found = attachments.find(request.params.attachment);
+      return found
+        ? reply
+            .header("content-type", found.media_type)
+            .header("content-length", String(found.size))
+            .header("cache-control", "private, max-age=31536000, immutable")
+            .send(createReadStream(attachments.pathOf(found.id)))
+        : reply
+            .code(404)
+            .send(
+              toErrorResult(
+                "not_found",
+                `No attachment ${request.params.attachment}.`,
+                "That file isn't on the server.",
+              ),
+            );
     },
   );
 

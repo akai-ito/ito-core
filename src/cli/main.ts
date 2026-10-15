@@ -1,5 +1,6 @@
 import type { Io } from "#cli/io.ts";
 import { login } from "#cli/login.ts";
+import { pair } from "#cli/pair.ts";
 import { pushUsage, setUpPush } from "#cli/push.ts";
 import { setReportsToken } from "#cli/reports.ts";
 import { serve } from "#cli/serve.ts";
@@ -10,6 +11,7 @@ export const usage = [
   "Usage:",
   "  ito serve [--engine codex|demo] [--port 8787] [--name <name>]",
   "  ito token new",
+  "  ito pair [--address <https://machine.tailnet.ts.net:8443>]",
   "  ito reports token",
   `  ${pushUsage}`,
   "  ito login [codex login options]",
@@ -36,6 +38,9 @@ export const main = async (argv: readonly string[], io: Io): Promise<number> => 
     case "push": {
       const [subcommand, ...flags] = rest;
       return subcommand === "setup" ? setUpPush(flags, io) : usageError(io);
+    }
+    case "pair": {
+      return pair(rest, io);
     }
     case "login": {
       return login(rest, io);

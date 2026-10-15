@@ -6,6 +6,7 @@ export type TurnFailureCode = EngineFailureCode | "server_disk_full";
 export type CommandFailureCode =
   | "invalid_request"
   | "token_rejected"
+  | "pairing_code_rejected"
   | "not_found"
   | "id_conflict"
   | "too_large"
@@ -28,6 +29,7 @@ const turnMessages: Readonly<Record<TurnFailureCode, string>> = {
 const commandMessages: Readonly<Record<CommandFailureCode, string>> = {
   invalid_request: "The request isn't valid.",
   token_rejected: "The server didn't accept this token.",
+  pairing_code_rejected: "That pairing code has expired or was already used.",
   not_found: "The server doesn't know that.",
   id_conflict: "A different message was already sent with this id.",
   too_large: "The message is longer than the server accepts.",

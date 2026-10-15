@@ -26,6 +26,12 @@ export type Limits = {
 
 export type Log = (message: string, error: unknown) => void;
 
+export type TurnsOptions = {
+  readonly limits?: Limits;
+  readonly attachmentPath?: (id: string) => string;
+  readonly secrets?: Secrets;
+};
+
 export type Info = (message: string, details: Readonly<Record<string, unknown>>) => void;
 
 export type Turns = {
@@ -84,8 +90,7 @@ export const createTurns = (
   clock: Clock,
   identifiers: Identifiers,
   log: Log,
-  limits: Limits = defaultLimits,
-  secrets: Secrets = createSecrets(),
+  { limits = defaultLimits, attachmentPath = (id: string) => id, secrets = createSecrets() }: TurnsOptions = {},
 ): Turns => {
   const running = createCell<Running | undefined>(undefined);
   const actor = createCell<Promise<void>>(Promise.resolve());
@@ -426,8 +431,17 @@ export const createTurns = (
     "(Their answer was a secret, and the server restarted before you could read it. Ask for it again.)";
 
   const inputOf = (message: MessageId): Input => {
+    const attached = store.messageAttachments(message).map((attachment) => ({
+      kind: attachment.kind,
+      name: attachment.name,
+      source: attachmentPath(attachment.id),
+    }));
     const text = received.get().get(message) ?? store.messageText(message) ?? "";
-    return { messageId: message, text: text === "" ? lostSecret : text };
+    return {
+      messageId: message,
+      text: text === "" && attached.length === 0 ? lostSecret : text,
+      ...(attached.length > 0 && { attachments: attached }),
+    };
   };
 
   const withNotes = (inputs: readonly Input[]): readonly Input[] => {
@@ -476,7 +490,7 @@ export const createTurns = (
     startTurn(leadingMessages(pending));
   };
 
-  const routeMessage = async (message: MessageId, text: string): Promise<void> => {
+  const routeMessage = async (message: MessageId): Promise<void> => {
     const decision = route(conversation(), message);
     switch (decision.kind) {
       case "start": {
@@ -488,7 +502,7 @@ export const createTurns = (
         return;
       }
       case "steer": {
-        const outcome = await engine.steer(decision.turn, { messageId: message, text });
+        const outcome = await engine.steer(decision.turn, inputOf(message));
         if (outcome === "taken" && current(decision.turn)) {
           change(decision.turn, (state) => ({ ...state, awaitingRead: [...state.awaitingRead, message] }));
           return;
@@ -504,7 +518,7 @@ export const createTurns = (
     route: (message, text, isSecret = false) => {
       if (isSecret) secrets.add(text);
       received.update((texts) => new Map([...texts, [message, text]]));
-      void enqueue(() => routeMessage(message, text));
+      void enqueue(() => routeMessage(message));
     },
 
     ask: (fields) => {

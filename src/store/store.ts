@@ -15,6 +15,7 @@ import {
 import type { Identifiers } from "#identifiers.ts";
 import type {
   Ask,
+  Attachment,
   Error as ErrorBody,
   LiveTurn,
   Message,
@@ -60,7 +61,11 @@ export type Page = {
   readonly hasMore: boolean;
 };
 
-export type AcceptFailure = "id_conflict" | "unknown_ask";
+export type AcceptFailure = "id_conflict" | "unknown_ask" | "unknown_attachment" | "attachment_taken";
+
+export type SavedAttachment = { readonly attachment: Attachment; readonly isNew: boolean };
+
+export type PairingCode = { readonly expiresAt: string; readonly deviceName: string | undefined };
 
 export type Registration = {
   readonly apnsToken: string;
@@ -83,9 +88,25 @@ export type Store = Settings & {
   readonly subscribe: (listener: Listener) => () => void;
   readonly eventsAfter: (cursor: EventId) => Result<readonly LogEntry[], ReplayGap>;
   readonly snapshot: (reason: Snapshot["reason"]) => SnapshotEntry;
-  readonly acceptMessage: (id: MessageId, text: string, answers?: AskId) => Result<Accepted, AcceptFailure>;
+  readonly acceptMessage: (
+    id: MessageId,
+    text: string,
+    answers?: AskId,
+    attachments?: readonly string[],
+  ) => Result<Accepted, AcceptFailure>;
+  readonly saveAttachment: (attachment: Attachment, sha256: string) => Result<SavedAttachment, "id_conflict">;
+  readonly findAttachment: (id: string) => { readonly attachment: Attachment; readonly sha256: string } | undefined;
+  readonly unattachedBefore: (before: string) => readonly string[];
+  readonly deleteAttachment: (id: string) => void;
+  readonly pairedTokenHashes: () => readonly string[];
+  readonly addToken: (hash: string, deviceName: string) => void;
+  readonly clearPairedTokens: () => void;
+  readonly createPairingCode: (hash: string, expiresAt: string) => void;
+  readonly usePairingCode: (hash: string, deviceName: string) => boolean;
+  readonly pairingCode: (hash: string) => PairingCode | undefined;
   readonly listMessages: (before: MessageId, limit: number) => Result<Page, "not_found">;
   readonly messageText: (message: MessageId) => string | undefined;
+  readonly messageAttachments: (message: MessageId) => readonly Attachment[];
   readonly pendingWork: () => readonly PendingWork[];
   readonly runningTurn: () => StoredTurn | undefined;
   readonly findTurn: (turn: TurnId) => StoredTurn | undefined;
@@ -136,7 +157,10 @@ type MessageRow = {
   readonly error: string | null;
   readonly answers: string | null;
   readonly secret: number;
+  readonly attachments: string | null;
 };
+
+type AttachmentRow = { readonly body: string; readonly sha256: string; readonly message: string | null };
 
 type AskRow = { readonly body: string; readonly reminded: number };
 
@@ -185,6 +209,7 @@ const toMessage = (row: MessageRow): Message =>
         position: row.position,
         ...(row.answers && { answers: row.answers }),
         ...(row.secret === 1 && { secret: true }),
+        ...(row.attachments && { attachments: JSON.parse(row.attachments) as Attachment[] }),
       }
     : {
         id: row.id,
@@ -311,6 +336,9 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     return ended;
   };
 
+  const attachmentRow = (id: string): AttachmentRow | undefined =>
+    database.prepare("SELECT body, sha256, message FROM attachments WHERE id = ?").get(id) as AttachmentRow | undefined;
+
   const messageRow = (id: string): MessageRow | undefined =>
     database.prepare("SELECT * FROM messages WHERE id = ?").get(id) as MessageRow | undefined;
 
@@ -378,7 +406,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       };
     },
 
-    acceptMessage: (id, text, answers) =>
+    acceptMessage: (id, text, answers, attachments = []) =>
       transaction(() => {
         const existing = messageRow(id);
         if (existing) {
@@ -387,6 +415,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         }
         const named = answers === undefined ? undefined : askRow(answers);
         if (answers !== undefined && !named) return fail("unknown_ask");
+        const attachedRows = attachments.map((attachment) => attachmentRow(attachment));
+        if (attachedRows.includes(undefined)) return fail("unknown_attachment");
+        if (attachedRows.some((row) => row?.message !== null)) return fail("attachment_taken");
+        const attached = attachedRows.flatMap((row) => (row ? [JSON.parse(row.body) as Attachment] : []));
         const isSecret = named !== undefined && toAsk(named).secret;
         const waiting = waitingRow();
         const at = now();
@@ -398,6 +430,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           position: nextSeq(),
           ...(waiting && { answers: toAsk(waiting).id }),
           ...(isSecret && { secret: true }),
+          ...(attached.length > 0 && { attachments: attached }),
         };
         append({ id: identifiers.event(), type: "message.accepted", at, message });
         if (waiting) endAsk(toAsk(waiting), "answered", id);
@@ -421,6 +454,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     },
 
     messageText: (message) => messageRow(message)?.text,
+
+    messageAttachments: (message) => {
+      const row = messageRow(message);
+      return row?.attachments ? (JSON.parse(row.attachments) as Attachment[]) : [];
+    },
 
     pendingWork: () =>
       (database.prepare("SELECT * FROM pending ORDER BY position").all() as unknown as readonly PendingRow[]).map(
@@ -616,6 +654,71 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       (database.prepare("SELECT * FROM devices ORDER BY registered_at").all() as unknown as readonly DeviceRow[]).map(
         (row) => toDevice(row),
       ),
+
+    saveAttachment: (attachment, sha256) =>
+      transaction(() => {
+        const existing = attachmentRow(attachment.id);
+        if (existing) {
+          return existing.sha256 === sha256
+            ? ok({ attachment: JSON.parse(existing.body) as Attachment, isNew: false })
+            : fail("id_conflict");
+        }
+        database
+          .prepare("INSERT INTO attachments (id, body, sha256, at) VALUES (?, ?, ?, ?)")
+          .run(attachment.id, JSON.stringify(attachment), sha256, now());
+        return ok({ attachment, isNew: true });
+      }),
+
+    findAttachment: (id) => {
+      const row = attachmentRow(id);
+      return row ? { attachment: JSON.parse(row.body) as Attachment, sha256: row.sha256 } : undefined;
+    },
+
+    unattachedBefore: (before) =>
+      (
+        database
+          .prepare("SELECT id FROM attachments WHERE message IS NULL AND at < ?")
+          .all(before) as unknown as readonly {
+          readonly id: string;
+        }[]
+      ).map((row) => row.id),
+
+    deleteAttachment: (id) => {
+      database.prepare("DELETE FROM attachments WHERE id = ? AND message IS NULL").run(id);
+    },
+
+    pairedTokenHashes: () =>
+      (database.prepare("SELECT hash FROM tokens").all() as unknown as readonly { readonly hash: string }[]).map(
+        (row) => row.hash,
+      ),
+
+    addToken: (hash, deviceName) => {
+      database
+        .prepare("INSERT INTO tokens (hash, device_name, created_at) VALUES (?, ?, ?)")
+        .run(hash, deviceName, now());
+    },
+
+    clearPairedTokens: () => {
+      database.prepare("DELETE FROM tokens").run();
+    },
+
+    createPairingCode: (hash, expiresAt) => {
+      database.prepare("INSERT OR REPLACE INTO pairing_codes (hash, expires_at) VALUES (?, ?)").run(hash, expiresAt);
+    },
+
+    usePairingCode: (hash, deviceName) =>
+      transaction(() => {
+        const used = database
+          .prepare("UPDATE pairing_codes SET device_name = ? WHERE hash = ? AND device_name IS NULL AND expires_at > ?")
+          .run(deviceName, hash, now());
+        return used.changes > 0;
+      }),
+
+    pairingCode: (hash) => {
+      const row = database.prepare("SELECT expires_at, device_name FROM pairing_codes WHERE hash = ?").get(hash) as
+        { readonly expires_at: string; readonly device_name: string | null } | undefined;
+      return row ? { expiresAt: row.expires_at, deviceName: row.device_name ?? undefined } : undefined;
+    },
 
     setting: readSetting,
 

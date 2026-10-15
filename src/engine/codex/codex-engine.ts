@@ -1,3 +1,5 @@
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import path from "node:path";
 import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
 import type { TurnId } from "#conversation/ids.ts";
@@ -8,7 +10,14 @@ import type { ThreadStartResponse } from "#engine/codex/bindings/v2/ThreadStartR
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
 import { startCodexProcess, type CodexProcess } from "#engine/codex/codex-process.ts";
 import { initialTurnState, toEngineEvents, type TurnState } from "#engine/codex/mapping.ts";
-import type { Engine, EngineEvent, EngineFailureCode, Input, ToolServer } from "#engine/engine.ts";
+import {
+  modelSetting,
+  type Engine,
+  type EngineEvent,
+  type EngineFailureCode,
+  type Input,
+  type ToolServer,
+} from "#engine/engine.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Settings } from "#store/store.ts";
 import { toolServerName } from "#tools/mcp.ts";
@@ -52,7 +61,43 @@ const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "faile
 
 const signedOut: SessionFailure = { code: "engine_signed_out", detail: "Codex has no account signed in." };
 
-const toUserInput = ({ text }: Input): UserInput => ({ type: "text", text, text_elements: [] });
+const uploadsFolder = "uploads";
+
+const freeName = (folder: string, name: string, attempt = 1): string => {
+  const extension = path.extname(name);
+  const candidate = attempt === 1 ? name : `${path.basename(name, extension)}-${String(attempt)}${extension}`;
+  return existsSync(path.join(folder, candidate)) ? freeName(folder, name, attempt + 1) : candidate;
+};
+
+const safeName = (name: string): string => {
+  const printable = path
+    .basename(name)
+    .split(/(?=[\s\S])/u)
+    .filter((character) => character >= " ")
+    .join("")
+    .trim();
+  return printable === "" ? "file" : printable;
+};
+
+const toUserInputs = (workspace: string, { text, attachments = [] }: Input): readonly UserInput[] => {
+  const folder = path.join(workspace, uploadsFolder);
+  if (attachments.length > 0) mkdirSync(folder, { recursive: true });
+  const placed = attachments.map((attachment) => {
+    const name = freeName(folder, safeName(attachment.name));
+    copyFileSync(attachment.source, path.join(folder, name));
+    return { ...attachment, path: path.join(folder, name), relative: `${uploadsFolder}/${name}` };
+  });
+  const note =
+    placed.length > 0
+      ? `(Attached, and saved in your workspace: ${placed.map((attachment) => attachment.relative).join(", ")})`
+      : "";
+  return [
+    { type: "text", text: [text, note].filter(Boolean).join("\n\n"), text_elements: [] },
+    ...placed
+      .filter((attachment) => attachment.kind === "image")
+      .map((attachment): UserInput => ({ type: "localImage", path: attachment.path })),
+  ];
+};
 
 const toolsConfig = (server: ToolServer | undefined): Readonly<Record<string, JsonValue>> =>
   server
@@ -130,6 +175,7 @@ export const createCodexEngine = ({
   };
 
   const announce = (message: string, { model, reasoningEffort }: SessionModel): void => {
+    settings.setSetting(modelSetting, model);
     info(message, { model, reasoningEffort });
   };
 
@@ -216,7 +262,7 @@ export const createCodexEngine = ({
     const started = await opened.value.process.call("turn/start", {
       threadId: opened.value.threadId,
       clientUserMessageId: inputs[0]?.messageId ?? null,
-      input: inputs.map((input) => toUserInput(input)),
+      input: inputs.flatMap((input) => toUserInputs(workspace, input)),
       summary: "auto",
     });
     if (started.ok) return started.value.turn.id;
@@ -261,7 +307,7 @@ export const createCodexEngine = ({
         threadId: opened.value.threadId,
         expectedTurnId: codexTurn,
         clientUserMessageId: input.messageId,
-        input: [toUserInput(input)],
+        input: [...toUserInputs(workspace, input)],
       });
       if (steered.ok) return "taken";
       log("Codex didn't take a steer, so the message waits as Next", steered.failure.message);
