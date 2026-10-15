@@ -62,10 +62,49 @@ describe("step titles", () => {
       "Opening example.com",
       "Opened example.com",
     ]);
+    expect(both("web_search", { query: "cafés near Battersea Park open at 9" })).toEqual([
+      "Searching the web for cafés near Battersea Park open at 9",
+      "Searched the web for cafés near Battersea Park open at 9",
+    ]);
     expect(both("wait", { wait_ms: 1000 })).toEqual(["Waiting 1 second", "Waited 1 second"]);
     expect(both("plan", { items: [{ text: "Book", state: "pending" }] })).toEqual([
       "Planning 1 step",
       "Planned 1 step",
+    ]);
+  });
+
+  it("keep web search titles short and plain", () => {
+    const queries = [
+      "site:nationaltrail.co.uk Thames Path London Richmond Hampton Court Greenwich",
+      "Thames Path walking guide",
+    ];
+    expect(
+      both("web_search", {
+        query: `site:nationaltrail.co.uk Thames Path London Richmond Hampton Court Greenwich ...`,
+        queries,
+      }),
+    ).toEqual([
+      "Searching nationaltrail.co.uk for Thames Path London Richmond Hampton Court Greenwich",
+      "Searched nationaltrail.co.uk for Thames Path London Richmond Hampton Court Greenwich",
+    ]);
+    expect(both("web_search", { query: 'site:www.parkrun.org.uk "Battersea" start time OR "start times"' })).toEqual([
+      "Searching parkrun.org.uk for Battersea start time start times",
+      "Searched parkrun.org.uk for Battersea start time start times",
+    ]);
+    expect(both("web_search", { query: "site:a.com OR site:b.com opening hours -reddit" })).toEqual([
+      "Searching the web for opening hours",
+      "Searched the web for opening hours",
+    ]);
+    expect(
+      toStepTitle(
+        "web_search",
+        { query: "best quiet cafés with good coffee and space to work near the river in south west London" },
+        "present",
+      ),
+    ).toBe("Searching the web for best quiet cafés with good coffee and space to work near the…");
+    expect(both("web_search", { query: "site:nationaltrail.co.uk" })).toEqual([
+      "Searching nationaltrail.co.uk",
+      "Searched nationaltrail.co.uk",
     ]);
   });
 });
