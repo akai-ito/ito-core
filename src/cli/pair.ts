@@ -73,7 +73,10 @@ export const pair = async (flags: readonly string[], io: Io): Promise<number> =>
       ].join("\n"),
     );
     const outcome = await waitForPairing(store, hash, io);
-    if (outcome === "stopped") return 1;
+    if (outcome === "stopped") {
+      store.forgetPairingCode(hash);
+      return 1;
+    }
     if (outcome === "expired") {
       io.printError("The code expired. Run ito pair again for a new one.");
       return 1;

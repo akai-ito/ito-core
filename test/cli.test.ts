@@ -142,16 +142,31 @@ describe("the ito command", () => {
     expect(printed.get().join("\n")).toContain("https://studio.example.ts.net:8443");
     const store = createStore(openDatabase(databaseFile(home)), systemClock, randomIdentifiers);
     const codeHash = hashToken(shown.replace("-", ""));
-    expect(store.usePairingCode(codeHash, "iPhone")).toBe(true);
-    expect(store.usePairingCode(codeHash, "iPad")).toBe(false);
-    store.addToken(hashToken("ito_paired_for_this_test"), "iPhone");
-    store.close();
+    expect(store.pairDevice(codeHash, "iPhone", hashToken("ito_paired_for_this_test"))).toBe(true);
+    expect(store.pairDevice(codeHash, "iPad", hashToken("ito_paired_for_this_test_too"))).toBe(false);
+    expect(store.pairedTokenHashes()).toEqual([hashToken("ito_paired_for_this_test")]);
     expect(await pairing).toBe(0);
     expect(printed.get().at(-1)).toBe("Paired iPhone.");
 
+    const stopped = new AbortController();
+    const cancelled = main(["pair", "--address", "https://studio.example.ts.net:8443"], {
+      ...io,
+      shutdown: stopped.signal,
+    });
+    await expect.poll(() => printed.get().filter((line) => line.includes("The code works once")).length).toBe(2);
+    const cancelledCode =
+      /the code (?<code>[2-9A-Z]{4}-[2-9A-Z]{4})\./u.exec(printed.get().at(-1) ?? "")?.groups?.code ?? "";
+    stopped.abort();
+    expect(await cancelled).toBe(1);
+    const cancelledHash = hashToken(cancelledCode.replace("-", ""));
+    expect(store.pairDevice(cancelledHash, "iPad", hashToken("unused"))).toBe(false);
+
+    store.createPairingCode(hashToken("ABCDEFGH"), new Date(Date.now() + 60_000).toISOString());
+    store.close();
     expect(await run(["token", "new"], true)).toMatchObject({ code: 0 });
     const after = createStore(openDatabase(databaseFile(home)), systemClock, randomIdentifiers);
     expect(after.pairedTokenHashes()).toEqual([]);
+    expect(after.pairingCode(hashToken("ABCDEFGH"))).toBeUndefined();
     after.close();
   });
 

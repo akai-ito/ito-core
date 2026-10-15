@@ -61,7 +61,8 @@ export type Page = {
   readonly hasMore: boolean;
 };
 
-export type AcceptFailure = "id_conflict" | "unknown_ask" | "unknown_attachment" | "attachment_taken";
+export type AcceptFailure =
+  "id_conflict" | "unknown_ask" | "unknown_attachment" | "attachment_taken" | "secret_attachments";
 
 export type SavedAttachment = { readonly attachment: Attachment; readonly isNew: boolean };
 
@@ -99,10 +100,10 @@ export type Store = Settings & {
   readonly unattachedBefore: (before: string) => readonly string[];
   readonly deleteAttachment: (id: string) => void;
   readonly pairedTokenHashes: () => readonly string[];
-  readonly addToken: (hash: string, deviceName: string) => void;
-  readonly clearPairedTokens: () => void;
+  readonly clearPairing: () => void;
   readonly createPairingCode: (hash: string, expiresAt: string) => void;
-  readonly usePairingCode: (hash: string, deviceName: string) => boolean;
+  readonly forgetPairingCode: (hash: string) => void;
+  readonly pairDevice: (codeHash: string, deviceName: string, tokenHash: string) => boolean;
   readonly pairingCode: (hash: string) => PairingCode | undefined;
   readonly listMessages: (before: MessageId, limit: number) => Result<Page, "not_found">;
   readonly messageText: (message: MessageId) => string | undefined;
@@ -410,11 +411,16 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       transaction(() => {
         const existing = messageRow(id);
         if (existing) {
-          const isSame = existing.secret === 1 || existing.text === text;
-          return isSame ? ok({ message: toMessage(existing), isNew: false }) : fail("id_conflict");
+          const message = toMessage(existing);
+          const isSame =
+            (existing.secret === 1 || existing.text === text) &&
+            JSON.stringify((message.attachments ?? []).map((attachment) => attachment.id)) ===
+              JSON.stringify(attachments);
+          return isSame ? ok({ message, isNew: false }) : fail("id_conflict");
         }
         const named = answers === undefined ? undefined : askRow(answers);
         if (answers !== undefined && !named) return fail("unknown_ask");
+        if (named && toAsk(named).secret && attachments.length > 0) return fail("secret_attachments");
         const attachedRows = attachments.map((attachment) => attachmentRow(attachment));
         if (attachedRows.includes(undefined)) return fail("unknown_attachment");
         if (attachedRows.some((row) => row?.message !== null)) return fail("attachment_taken");
@@ -692,26 +698,31 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         (row) => row.hash,
       ),
 
-    addToken: (hash, deviceName) => {
-      database
-        .prepare("INSERT INTO tokens (hash, device_name, created_at) VALUES (?, ?, ?)")
-        .run(hash, deviceName, now());
-    },
-
-    clearPairedTokens: () => {
-      database.prepare("DELETE FROM tokens").run();
+    clearPairing: () => {
+      transaction(() => {
+        database.prepare("DELETE FROM tokens").run();
+        database.prepare("DELETE FROM pairing_codes").run();
+      });
     },
 
     createPairingCode: (hash, expiresAt) => {
       database.prepare("INSERT OR REPLACE INTO pairing_codes (hash, expires_at) VALUES (?, ?)").run(hash, expiresAt);
     },
 
-    usePairingCode: (hash, deviceName) =>
+    forgetPairingCode: (hash) => {
+      database.prepare("DELETE FROM pairing_codes WHERE hash = ? AND device_name IS NULL").run(hash);
+    },
+
+    pairDevice: (codeHash, deviceName, tokenHash) =>
       transaction(() => {
         const used = database
           .prepare("UPDATE pairing_codes SET device_name = ? WHERE hash = ? AND device_name IS NULL AND expires_at > ?")
-          .run(deviceName, hash, now());
-        return used.changes > 0;
+          .run(deviceName, codeHash, now());
+        if (used.changes === 0) return false;
+        database
+          .prepare("INSERT INTO tokens (hash, device_name, created_at) VALUES (?, ?, ?)")
+          .run(tokenHash, deviceName, now());
+        return true;
       }),
 
     pairingCode: (hash) => {

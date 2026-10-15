@@ -21,7 +21,7 @@ export const newToken = (io: Io): number => {
   const token = createToken();
   try {
     store.setSetting(tokenSetting, hashToken(token));
-    store.clearPairedTokens();
+    store.clearPairing();
   } finally {
     store.close();
   }

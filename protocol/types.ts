@@ -136,7 +136,7 @@ export interface paths {
      *     for the message comes first, then `ask.ended`. Name the ask in `answers` when you send a
      *     tapped option or a secret. The text of an answer to a secret ask is never stored, never
      *     streamed and never sent back: the message keeps an empty text, marked `secret`, and only the
-     *     agent's next turn receives what you typed.
+     *     agent's next turn receives what you typed. A secret answer can't carry attachments.
      */
     post: operations["sendMessage"];
     delete?: never;
@@ -761,7 +761,7 @@ export interface components {
           text?: string;
           /** @description The ask this message answers, when you tap one of its options or answer a secret. When it names a secret ask, the text is never stored, even if the ask has stopped waiting. An ask the server doesn't know is an `invalid_request`. */
           answers?: components["schemas"]["AskId"];
-          /** @description The photos and files to attach, uploaded first, in order. Naming one the server doesn't have, or one another message already carries, is an `invalid_request`. */
+          /** @description The photos and files to attach, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`. Naming one another message already carries, or attaching anything to a secret answer, is an `invalid_request`. */
           attachments?: components["schemas"]["AttachmentId"][];
         }
       | {
@@ -879,7 +879,7 @@ export interface components {
     AskId: string;
     /**
      * Format: uuid
-     * @description A random UUID the app makes before uploading. It is the attachment's id and its retry key.
+     * @description A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.
      */
     AttachmentId: string;
     /**
@@ -1518,8 +1518,10 @@ export interface operations {
           "*/*": unknown;
         };
       };
+      400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+      429: components["responses"]["SlowDown"];
     };
   };
   uploadAttachment: {

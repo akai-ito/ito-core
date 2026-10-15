@@ -86,9 +86,10 @@
       "maxLength": 64
     },
     "AttachmentId": {
-      "description": "A random UUID the app makes before uploading. It is the attachment's id and its retry key.",
+      "description": "A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.",
       "type": "string",
-      "format": "uuid"
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
     "Timestamp": {
       "description": "Server time, RFC 3339 in UTC with milliseconds.",

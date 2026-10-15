@@ -36,7 +36,7 @@ const webpDimensions = (bytes: Buffer): Dimensions | undefined => {
   return undefined;
 };
 
-export const readDimensions = (bytes: Buffer, mediaType: string): Dimensions | undefined => {
+const readHeader = (bytes: Buffer, mediaType: string): Dimensions | undefined => {
   switch (mediaType.toLowerCase()) {
     case "image/jpeg": {
       return bytes[0] === markerByte && bytes[1] === startOfImage ? jpegDimensions(bytes) : undefined;
@@ -58,4 +58,9 @@ export const readDimensions = (bytes: Buffer, mediaType: string): Dimensions | u
       return undefined;
     }
   }
+};
+
+export const readDimensions = (bytes: Buffer, mediaType: string): Dimensions | undefined => {
+  const dimensions = readHeader(bytes, mediaType);
+  return dimensions && dimensions.width > 0 && dimensions.height > 0 ? dimensions : undefined;
 };

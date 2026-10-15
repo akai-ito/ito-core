@@ -45,6 +45,7 @@ describe("image dimensions", () => {
 
   it("are left out for anything else, or for bytes that don't match their type", () => {
     expect(readDimensions(png(10, 10), "image/jpeg")).toBeUndefined();
+    expect(readDimensions(png(0, 0), "image/png")).toBeUndefined();
     expect(readDimensions(Buffer.from("date,km\n"), "text/csv")).toBeUndefined();
     expect(isImage("IMAGE/PNG")).toBe(true);
     expect(isImage("image/heic")).toBe(false);

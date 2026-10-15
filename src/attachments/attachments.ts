@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isImage, readDimensions } from "#attachments/media.ts";
 import type { Attachment } from "#protocol/types.ts";
@@ -46,8 +46,11 @@ export const createAttachments = (store: Store, directory: string): Attachments 
         ...(dimensions && { width: dimensions.width, height: dimensions.height }),
       };
       const partial = `${pathOf(id)}.part`;
-      writeFileSync(partial, bytes);
+      writeFileSync(partial, bytes, { flush: true });
       renameSync(partial, pathOf(id));
+      const folder = openSync(directory, "r");
+      fsyncSync(folder);
+      closeSync(folder);
       return store.saveAttachment(attachment, sha256);
     },
     find: (id) => store.findAttachment(id)?.attachment,

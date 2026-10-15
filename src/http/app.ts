@@ -136,13 +136,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);
     const { code, device_name: deviceName } = request.body;
-    if (!store.usePairingCode(hashToken(toCode(code)), deviceName)) {
+    const token = createToken();
+    if (!store.pairDevice(hashToken(toCode(code)), deviceName, hashToken(token))) {
       return gate.refuse() === "slow_down"
         ? slowDown(reply)
         : reply.code(401).send(toErrorResult("pairing_code_rejected", "Run ito pair on the server for a new code."));
     }
-    const token = createToken();
-    store.addToken(hashToken(token), deviceName);
     return reply.code(201).send({ token });
   });
 
@@ -177,10 +176,15 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         case "attachment_taken": {
           return reply.code(400).send(toErrorResult("invalid_request", "An attachment belongs to one message."));
         }
+        case "secret_attachments": {
+          return reply.code(400).send(toErrorResult("invalid_request", "A secret answer can't carry attachments."));
+        }
         case "id_conflict": {
           return reply
             .code(409)
-            .send(toErrorResult("id_conflict", `Message ${id} was already accepted with different text.`));
+            .send(
+              toErrorResult("id_conflict", `Message ${id} was already accepted with different text or attachments.`),
+            );
         }
       }
     }
@@ -240,12 +244,17 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     uploads.addContentTypeParser("*", { parseAs: "buffer", bodyLimit: maxAttachmentBytes }, (_request, body, done) => {
       done(null, body);
     });
-    uploads.put<{ Params: { readonly attachment: string }; Querystring: { readonly name: string }; Body: Buffer }>(
+    uploads.put<{
+      Params: { readonly attachment: string };
+      Querystring: { readonly name: string };
+      Body: Buffer | undefined;
+    }>(
       "/v0/attachments/:attachment",
       { schema: schemaFor("uploadAttachment"), bodyLimit: maxAttachmentBytes },
       async (request, reply) => {
         const mediaType = toMediaType(request.headers["content-type"]);
-        const saved = attachments.save(request.params.attachment, request.query.name, mediaType, request.body);
+        const bytes = request.body ?? Buffer.alloc(0);
+        const saved = attachments.save(request.params.attachment, request.query.name, mediaType, bytes);
         return saved.ok
           ? reply.code(saved.value.isNew ? 201 : 200).send({ attachment: saved.value.attachment })
           : reply.code(409).send(toErrorResult("id_conflict", "Different bytes were already uploaded with this id."));
