@@ -14,6 +14,9 @@ import { createGitHub } from "#reports/github.ts";
 import { createReporter, defaultDailyLimit } from "#reports/reporter.ts";
 import { createReportTool } from "#reports/tool.ts";
 import { createAskTool } from "#asks/tool.ts";
+import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
+import { createNotifier, defaultReminderMs } from "#notifications/notifier.ts";
+import { createPresence } from "#notifications/presence.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
@@ -30,7 +33,10 @@ export type ServerOptions = {
   readonly heartbeatMs?: number;
   readonly logger?: FastifyServerOptions["logger"];
   readonly reports?: Partial<ReportsOptions>;
+  readonly push?: Partial<PushOptions>;
 };
+
+export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
 
 export type ReportsOptions = { readonly apiUrl: string; readonly repository: string; readonly dailyLimit: number };
 
@@ -85,14 +91,20 @@ export const createServer = (options: ServerOptions): Server => {
   };
   const engine = options.createEngine({ settings: store, log, info, tools: toolServer });
   const turns = createTurns(store, engine, clock, identifiers, log, options.limits ?? defaultLimits);
+  const agentName = options.agentName ?? "Ari";
+  const presence = createPresence();
+  const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
+  const apns = createApns(() => readApnsCredentials(store), push.hosts, clock);
+  const notifier = createNotifier({ store, apns, clock, presence, agentName, log, reminderMs: push.reminderMs });
 
   const app = createApp({
     store,
     turns,
     clock,
     schemas: loadSchemas(),
-    info: { name: options.name, version: packageVersion(), agentName: options.agentName ?? "Ari" },
+    info: { name: options.name, version: packageVersion(), agentName },
     gate: createGate(() => store.setting(tokenSetting), clock),
+    presence,
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
   });
@@ -133,9 +145,11 @@ export const createServer = (options: ServerOptions): Server => {
 
   const shutdown = async (): Promise<void> => {
     compaction.get()?.();
+    notifier.close();
     await app.close();
     await turns.close();
     await engine.close();
+    apns.close();
     store.close();
   };
   const closing = createCell<Promise<void> | undefined>(undefined);

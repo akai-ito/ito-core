@@ -877,7 +877,6 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2200);
     writeWhole(transcript, saturdayAnswer);
     transcript.endTurn("completed");
-    transcript.wait(1);
     transcript.startTurn([bus]);
     transcript.wait(300);
     transcript.step("web_search", searching("37 bus Saturday first departure"));

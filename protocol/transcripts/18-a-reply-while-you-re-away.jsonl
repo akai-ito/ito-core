@@ -26,35 +26,35 @@
 {"at":3200,"server":{"status":204}}
 {"at":3200,"world":"app_closed"}
 {"at":7020,"push":{"device":"545b5899-36cc-430d-9929-31d5e4f3bb14","level":"active","notification":{"kind":"reply","text":"Here's a shape for Saturday:","turn":"t_0002_04934","message":"m_0002_88780"}}}
-{"at":67321,"push":{"device":"545b5899-36cc-430d-9929-31d5e4f3bb14","level":"active","notification":{"kind":"failed","text":"Couldn't finish: The model service isn't responding right now.","turn":"t_0003_72432"}}}
-{"at":1267321,"world":"app_opened","from":"notification","turn":"t_0002_04934"}
-{"at":1267321,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0013_53042"}}}
-{"at":1267321,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":1267321,"event":{"id":"e_0014_35579","type":"step.started","at":"2026-10-12T08:41:03.500Z","step":{"id":"s_0002_16814","turn":"t_0002_04934","kind":"thinking","title":"Thinking it through","at":"2026-10-12T08:41:03.500Z","position":14}}}
-{"at":1267321,"event":{"id":"e_0015_17924","type":"turn.status","at":"2026-10-12T08:41:03.500Z","turn":"t_0002_04934","kind":"thinking","label":"Thinking it through"}}
-{"at":1267321,"event":{"id":"e_0016_81786","type":"step.ended","at":"2026-10-12T08:41:05.700Z","step":{"id":"s_0002_16814","turn":"t_0002_04934","kind":"thinking","title":"Thought it through","at":"2026-10-12T08:41:03.500Z","position":14,"ended_at":"2026-10-12T08:41:05.700Z","outcome":"completed","duration_ms":2200}}}
-{"at":1267321,"event":{"id":"e_0017_79860","type":"turn.status","at":"2026-10-12T08:41:05.700Z","turn":"t_0002_04934","kind":"writing","label":"Writing"}}
-{"at":1267321,"event":{"id":"e_0018_14251","type":"message.started","at":"2026-10-12T08:41:05.700Z","message":{"id":"m_0002_88780","role":"agent","kind":"reply","turn":"t_0002_04934","text":"","at":"2026-10-12T08:41:05.700Z","position":18}}}
-{"at":1267321,"event":{"id":"e_0019_04240","type":"message.delta","at":"2026-10-12T08:41:05.700Z","message":"m_0002_88780","offset":0,"text":"Here's a shape for "}}
-{"at":1267321,"event":{"id":"e_0020_00282","type":"message.delta","at":"2026-10-12T08:41:05.820Z","message":"m_0002_88780","offset":19,"text":"Saturday:\n\n- **07:30** Long "}}
-{"at":1267321,"event":{"id":"e_0021_88288","type":"message.delta","at":"2026-10-12T08:41:05.940Z","message":"m_0002_88780","offset":47,"text":"run, 18 km along the river; "}}
-{"at":1267321,"event":{"id":"e_0022_64168","type":"message.delta","at":"2026-10-12T08:41:06.060Z","message":"m_0002_88780","offset":75,"text":"flat, and the café opens at "}}
-{"at":1267321,"event":{"id":"e_0023_71868","type":"message.delta","at":"2026-10-12T08:41:06.180Z","message":"m_0002_88780","offset":103,"text":"9.\n- **10:00** Breakfast, "}}
-{"at":1267321,"event":{"id":"e_0024_54233","type":"message.delta","at":"2026-10-12T08:41:06.300Z","message":"m_0002_88780","offset":129,"text":"then a slow hour with your "}}
-{"at":1267321,"event":{"id":"e_0025_98622","type":"message.delta","at":"2026-10-12T08:41:06.420Z","message":"m_0002_88780","offset":156,"text":"book.\n- **13:00** Lunch at "}}
-{"at":1267321,"event":{"id":"e_0026_65423","type":"message.delta","at":"2026-10-12T08:41:06.540Z","message":"m_0002_88780","offset":183,"text":"home; keep it light before "}}
-{"at":1267321,"event":{"id":"e_0027_21789","type":"message.delta","at":"2026-10-12T08:41:06.660Z","message":"m_0002_88780","offset":210,"text":"the afternoon.\n- **15:00** A "}}
-{"at":1267321,"event":{"id":"e_0028_59555","type":"message.delta","at":"2026-10-12T08:41:06.780Z","message":"m_0002_88780","offset":239,"text":"walk in the botanic garden, "}}
-{"at":1267321,"event":{"id":"e_0029_03150","type":"message.delta","at":"2026-10-12T08:41:06.900Z","message":"m_0002_88780","offset":267,"text":"phone in your pocket.\n\nEarly "}}
-{"at":1267321,"event":{"id":"e_0030_27185","type":"message.delta","at":"2026-10-12T08:41:07.020Z","message":"m_0002_88780","offset":296,"text":"night: you're up at 7."}}
-{"at":1267321,"event":{"id":"e_0031_34769","type":"message.ended","at":"2026-10-12T08:41:07.020Z","message":"m_0002_88780","outcome":"completed","length":318}}
-{"at":1267321,"event":{"id":"e_0032_07141","type":"turn.ended","at":"2026-10-12T08:41:07.020Z","turn":"t_0002_04934","outcome":"completed"}}
-{"at":1267321,"event":{"id":"e_0033_44372","type":"turn.started","at":"2026-10-12T08:41:07.021Z","turn":"t_0003_72432","inputs":["0052f675-d6e7-42ef-8a4f-6c744e9b9f17"]}}
-{"at":1267321,"event":{"id":"e_0034_36131","type":"step.started","at":"2026-10-12T08:41:07.321Z","step":{"id":"s_0003_67833","turn":"t_0003_72432","kind":"web_search","title":"Searching the web for 37 bus Saturday first departure","at":"2026-10-12T08:41:07.321Z","position":34,"query":"37 bus Saturday first departure"}}}
-{"at":1267321,"event":{"id":"e_0035_26217","type":"turn.status","at":"2026-10-12T08:41:07.321Z","turn":"t_0003_72432","kind":"working","label":"Searching the web for 37 bus Saturday first departure"}}
-{"at":1267321,"event":{"id":"e_0036_48714","type":"step.ended","at":"2026-10-12T08:42:07.321Z","step":{"id":"s_0003_67833","turn":"t_0003_72432","kind":"web_search","title":"Searching the web for 37 bus Saturday first departure","at":"2026-10-12T08:41:07.321Z","position":34,"query":"37 bus Saturday first departure","ended_at":"2026-10-12T08:42:07.321Z","outcome":"failed","duration_ms":60000}}}
-{"at":1267321,"event":{"id":"e_0037_23048","type":"message.started","at":"2026-10-12T08:42:07.321Z","message":{"id":"m_0003_13830","role":"agent","kind":"reply","turn":"t_0003_72432","text":"","at":"2026-10-12T08:42:07.321Z","position":37}}}
-{"at":1267321,"event":{"id":"e_0038_62120","type":"message.ended","at":"2026-10-12T08:42:07.321Z","message":"m_0003_13830","outcome":"failed","length":0,"error":{"code":"model_unavailable","message":"The model service isn't responding right now.","detail":"The model service answered 503 Service Unavailable."}}}
-{"at":1267321,"event":{"id":"e_0039_55524","type":"turn.ended","at":"2026-10-12T08:42:07.321Z","turn":"t_0003_72432","outcome":"failed","error":{"code":"model_unavailable","message":"The model service isn't responding right now.","detail":"The model service answered 503 Service Unavailable."}}}
-{"at":1267321,"app":{"method":"PUT","path":"/v0/devices/545b5899-36cc-430d-9929-31d5e4f3bb14/presence","body":{"looking":true}}}
-{"at":1267321,"server":{"status":204}}
+{"at":67320,"push":{"device":"545b5899-36cc-430d-9929-31d5e4f3bb14","level":"active","notification":{"kind":"failed","text":"Couldn't finish: The model service isn't responding right now.","turn":"t_0003_72432"}}}
+{"at":1267320,"world":"app_opened","from":"notification","turn":"t_0002_04934"}
+{"at":1267320,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0013_53042"}}}
+{"at":1267320,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":1267320,"event":{"id":"e_0014_35579","type":"step.started","at":"2026-10-12T08:41:03.500Z","step":{"id":"s_0002_16814","turn":"t_0002_04934","kind":"thinking","title":"Thinking it through","at":"2026-10-12T08:41:03.500Z","position":14}}}
+{"at":1267320,"event":{"id":"e_0015_17924","type":"turn.status","at":"2026-10-12T08:41:03.500Z","turn":"t_0002_04934","kind":"thinking","label":"Thinking it through"}}
+{"at":1267320,"event":{"id":"e_0016_81786","type":"step.ended","at":"2026-10-12T08:41:05.700Z","step":{"id":"s_0002_16814","turn":"t_0002_04934","kind":"thinking","title":"Thought it through","at":"2026-10-12T08:41:03.500Z","position":14,"ended_at":"2026-10-12T08:41:05.700Z","outcome":"completed","duration_ms":2200}}}
+{"at":1267320,"event":{"id":"e_0017_79860","type":"turn.status","at":"2026-10-12T08:41:05.700Z","turn":"t_0002_04934","kind":"writing","label":"Writing"}}
+{"at":1267320,"event":{"id":"e_0018_14251","type":"message.started","at":"2026-10-12T08:41:05.700Z","message":{"id":"m_0002_88780","role":"agent","kind":"reply","turn":"t_0002_04934","text":"","at":"2026-10-12T08:41:05.700Z","position":18}}}
+{"at":1267320,"event":{"id":"e_0019_04240","type":"message.delta","at":"2026-10-12T08:41:05.700Z","message":"m_0002_88780","offset":0,"text":"Here's a shape for "}}
+{"at":1267320,"event":{"id":"e_0020_00282","type":"message.delta","at":"2026-10-12T08:41:05.820Z","message":"m_0002_88780","offset":19,"text":"Saturday:\n\n- **07:30** Long "}}
+{"at":1267320,"event":{"id":"e_0021_88288","type":"message.delta","at":"2026-10-12T08:41:05.940Z","message":"m_0002_88780","offset":47,"text":"run, 18 km along the river; "}}
+{"at":1267320,"event":{"id":"e_0022_64168","type":"message.delta","at":"2026-10-12T08:41:06.060Z","message":"m_0002_88780","offset":75,"text":"flat, and the café opens at "}}
+{"at":1267320,"event":{"id":"e_0023_71868","type":"message.delta","at":"2026-10-12T08:41:06.180Z","message":"m_0002_88780","offset":103,"text":"9.\n- **10:00** Breakfast, "}}
+{"at":1267320,"event":{"id":"e_0024_54233","type":"message.delta","at":"2026-10-12T08:41:06.300Z","message":"m_0002_88780","offset":129,"text":"then a slow hour with your "}}
+{"at":1267320,"event":{"id":"e_0025_98622","type":"message.delta","at":"2026-10-12T08:41:06.420Z","message":"m_0002_88780","offset":156,"text":"book.\n- **13:00** Lunch at "}}
+{"at":1267320,"event":{"id":"e_0026_65423","type":"message.delta","at":"2026-10-12T08:41:06.540Z","message":"m_0002_88780","offset":183,"text":"home; keep it light before "}}
+{"at":1267320,"event":{"id":"e_0027_21789","type":"message.delta","at":"2026-10-12T08:41:06.660Z","message":"m_0002_88780","offset":210,"text":"the afternoon.\n- **15:00** A "}}
+{"at":1267320,"event":{"id":"e_0028_59555","type":"message.delta","at":"2026-10-12T08:41:06.780Z","message":"m_0002_88780","offset":239,"text":"walk in the botanic garden, "}}
+{"at":1267320,"event":{"id":"e_0029_03150","type":"message.delta","at":"2026-10-12T08:41:06.900Z","message":"m_0002_88780","offset":267,"text":"phone in your pocket.\n\nEarly "}}
+{"at":1267320,"event":{"id":"e_0030_27185","type":"message.delta","at":"2026-10-12T08:41:07.020Z","message":"m_0002_88780","offset":296,"text":"night: you're up at 7."}}
+{"at":1267320,"event":{"id":"e_0031_34769","type":"message.ended","at":"2026-10-12T08:41:07.020Z","message":"m_0002_88780","outcome":"completed","length":318}}
+{"at":1267320,"event":{"id":"e_0032_07141","type":"turn.ended","at":"2026-10-12T08:41:07.020Z","turn":"t_0002_04934","outcome":"completed"}}
+{"at":1267320,"event":{"id":"e_0033_44372","type":"turn.started","at":"2026-10-12T08:41:07.020Z","turn":"t_0003_72432","inputs":["0052f675-d6e7-42ef-8a4f-6c744e9b9f17"]}}
+{"at":1267320,"event":{"id":"e_0034_36131","type":"step.started","at":"2026-10-12T08:41:07.320Z","step":{"id":"s_0003_67833","turn":"t_0003_72432","kind":"web_search","title":"Searching the web for 37 bus Saturday first departure","at":"2026-10-12T08:41:07.320Z","position":34,"query":"37 bus Saturday first departure"}}}
+{"at":1267320,"event":{"id":"e_0035_26217","type":"turn.status","at":"2026-10-12T08:41:07.320Z","turn":"t_0003_72432","kind":"working","label":"Searching the web for 37 bus Saturday first departure"}}
+{"at":1267320,"event":{"id":"e_0036_48714","type":"step.ended","at":"2026-10-12T08:42:07.320Z","step":{"id":"s_0003_67833","turn":"t_0003_72432","kind":"web_search","title":"Searching the web for 37 bus Saturday first departure","at":"2026-10-12T08:41:07.320Z","position":34,"query":"37 bus Saturday first departure","ended_at":"2026-10-12T08:42:07.320Z","outcome":"failed","duration_ms":60000}}}
+{"at":1267320,"event":{"id":"e_0037_23048","type":"message.started","at":"2026-10-12T08:42:07.320Z","message":{"id":"m_0003_13830","role":"agent","kind":"reply","turn":"t_0003_72432","text":"","at":"2026-10-12T08:42:07.320Z","position":37}}}
+{"at":1267320,"event":{"id":"e_0038_62120","type":"message.ended","at":"2026-10-12T08:42:07.320Z","message":"m_0003_13830","outcome":"failed","length":0,"error":{"code":"model_unavailable","message":"The model service isn't responding right now.","detail":"The model service answered 503 Service Unavailable."}}}
+{"at":1267320,"event":{"id":"e_0039_55524","type":"turn.ended","at":"2026-10-12T08:42:07.320Z","turn":"t_0003_72432","outcome":"failed","error":{"code":"model_unavailable","message":"The model service isn't responding right now.","detail":"The model service answered 503 Service Unavailable."}}}
+{"at":1267320,"app":{"method":"PUT","path":"/v0/devices/545b5899-36cc-430d-9929-31d5e4f3bb14/presence","body":{"looking":true}}}
+{"at":1267320,"server":{"status":204}}

@@ -228,7 +228,7 @@ export interface paths {
      * @description Send `looking: true` when the conversation comes on screen, and `false` when it leaves the
      *     screen or the app goes to the background. Nothing is pushed while any device is looking and
      *     holds a live event stream, so a device that crashed or lost its connection is still
-     *     notified.
+     *     notified. The server forgets presence when it restarts: send it again after reconnecting.
      */
     put: operations["setPresence"];
     post?: never;

@@ -115,6 +115,7 @@ export type Store = Settings & {
     registration: Registration,
   ) => { readonly device: StoredDevice; readonly isNew: boolean };
   readonly removeDevice: (id: DeviceId) => void;
+  readonly lastReply: (turn: TurnId) => OpenMessage | undefined;
   readonly devices: () => readonly StoredDevice[];
   readonly importEvents: (events: readonly LoggedEvent[]) => void;
   readonly compactText: (before: string) => void;
@@ -600,6 +601,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     removeDevice: (id) => {
       database.prepare("DELETE FROM devices WHERE id = ?").run(id);
+    },
+
+    lastReply: (turn) => {
+      const row = database
+        .prepare(
+          "SELECT id, text FROM messages WHERE turn = ? AND kind = 'reply' AND text != '' ORDER BY position DESC LIMIT 1",
+        )
+        .get(turn) as { readonly id: string; readonly text: string } | undefined;
+      return row ? { id: toMessageId(row.id), text: row.text } : undefined;
     },
 
     devices: () =>

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createCell } from "#cell.ts";
+import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
 import type {
   Ask,
   AskKind,
@@ -134,7 +135,6 @@ const defaultPieceLength = 28;
 const defaultPieceIntervalMs = 120;
 const messagesPerSnapshot = 50;
 const reminderAfterMs = 3 * 60 * 60 * 1000;
-const pushTextLength = 200;
 
 const toToken = (seed: string): string => {
   const digest = createHash("sha256").update(seed).digest();
@@ -216,23 +216,6 @@ const between = <Entry extends { readonly position: number }>(
     .filter((entry) => entry.position >= from && entry.position < until)
     .toArray()
     .toSorted((left, right) => left.position - right.position);
-
-const firstLine = (markdown: string): string => {
-  const line =
-    markdown
-      .split("\n")
-      .map((text) =>
-        text
-          .replaceAll(/^#+\s+|^\s*[-*+]\s+|^\s*>\s?/gu, "")
-          .replaceAll(/!?\[([^\]]*)\]\([^)]*\)/gu, "$1")
-          .replaceAll(/[*_`~]/gu, "")
-          .trim(),
-      )
-      .find(Boolean) ?? "";
-  if (line.length <= pushTextLength) return line;
-  const cut = line.lastIndexOf(" ", pushTextLength - 1);
-  return `${line.slice(0, cut > 0 ? cut : pushTextLength - 1)}…`;
-};
 
 const statusKindFor = (kind: StepKind): StatusKind => {
   if (kind === "thinking" || kind === "plan") return "thinking";
@@ -595,10 +578,10 @@ export const createTranscript = (header: Header): Transcript => {
       .toArray()
       .at(-1);
     if (outcome === "completed" && !hasAsked && lastReply) {
-      push("active", { kind: "reply", text: firstLine(lastReply.text), turn: running.id, message: lastReply.id });
+      push("active", { kind: "reply", text: toFirstLine(lastReply.text), turn: running.id, message: lastReply.id });
     }
     if (outcome === "failed" && error) {
-      push("active", { kind: "failed", text: `Couldn't finish: ${error.message}`, turn: running.id });
+      push("active", { kind: "failed", text: toFailedText(error.message), turn: running.id });
     }
     return running.id;
   };
@@ -720,7 +703,7 @@ export const createTranscript = (header: Header): Transcript => {
     const asked = askById(id);
     push("active", {
       kind: "reminder",
-      text: `Still waiting on one thing: ${asked.question}`,
+      text: toReminderText(asked.question),
       ask: {
         id,
         options: asked.options.map((option) => option.label),
