@@ -7,6 +7,7 @@ import type { Io } from "#cli/io.ts";
 import { main, usage } from "#cli/main.ts";
 import { systemClock } from "#clock.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
+import { reportsTokenSetting } from "#reports/reporter.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { databaseFile } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
@@ -17,7 +18,7 @@ const home = mkdtempSync(path.join(os.tmpdir(), "ito-cli-"));
 
 type Run = { readonly code: number; readonly printed: string; readonly errors: string };
 
-const run = async (argv: readonly string[], isTerminal = false): Promise<Run> => {
+const run = async (argv: readonly string[], isTerminal = false, secret = ""): Promise<Run> => {
   const printed = createCell<readonly string[]>([]);
   const errors = createCell<readonly string[]>([]);
   const io: Io = {
@@ -29,18 +30,21 @@ const run = async (argv: readonly string[], isTerminal = false): Promise<Run> =>
     printError: (text) => {
       errors.set([...errors.get(), text]);
     },
+    readSecret: () => Promise.resolve(secret),
     shutdown: AbortSignal.abort(),
   };
   const code = await main(argv, io);
   return { code, printed: printed.get().join("\n"), errors: errors.get().join("\n") };
 };
 
-const storedTokenHash = (): string | undefined => {
+const storedSetting = (key: string): string | undefined => {
   const store = createStore(openDatabase(databaseFile(home)), systemClock, randomIdentifiers);
-  const hash = store.setting(tokenSetting);
+  const value = store.setting(key);
   store.close();
-  return hash;
+  return value;
 };
+
+const storedTokenHash = (): string | undefined => storedSetting(tokenSetting);
 
 const printedToken = (text: string): string => /ito_[\w-]{43}/u.exec(text)?.[0] ?? "";
 
@@ -68,6 +72,18 @@ describe("the ito command", () => {
     expect([first.code, second.code]).toEqual([0, 0]);
     expect(printedToken(first.printed)).not.toBe(printedToken(second.printed));
     expect(storedTokenHash()).toBe(hashToken(printedToken(second.printed)));
+  });
+
+  it("keeps the reports token, asked for in a terminal without showing it", async () => {
+    const refused = await run(["reports", "token"], false, "github_pat_example");
+    expect(refused).toMatchObject({ code: 1, errors: expect.stringContaining("in a terminal") as string });
+    expect(await run(["reports", "token"], true, "  ")).toMatchObject({ code: 1 });
+    expect(storedSetting(reportsTokenSetting)).toBeUndefined();
+
+    const saved = await run(["reports", "token"], true, " github_pat_example\n");
+    expect(saved.code).toBe(0);
+    expect(saved.printed).not.toContain("github_pat_example");
+    expect(storedSetting(reportsTokenSetting)).toBe("github_pat_example");
   });
 
   it("refuses an unknown engine or a bad port before starting", async () => {
