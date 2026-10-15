@@ -296,8 +296,8 @@ export const replay = async (name: string): Promise<void> => {
   }
   seeded.store.importEvents(transcript.given);
   seeded.store.setSetting(tokenSetting, hashToken(transcriptToken));
-  const registersDevices = transcript.steps.some((step) => "app" in step && step.app.path.startsWith("/v0/devices/"));
-  if (registersDevices) {
+  const hasDevices = transcript.steps.some((step) => "app" in step && step.app.path.startsWith("/v0/devices/"));
+  if (hasDevices) {
     seeded.store.setSetting(apnsSettings.privateKey, apnsKey);
     seeded.store.setSetting(apnsSettings.keyId, "KEY1234567");
     seeded.store.setSetting(apnsSettings.teamId, "TEAM123456");
