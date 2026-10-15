@@ -402,7 +402,7 @@ export interface components {
       query?: string;
       /** @description `web_search`: every query, when there were several. */
       queries?: string[];
-      /** @description `web_search`: the page opened or searched within. */
+      /** @description `web_search`: the page opened or searched within. `tool`: what the tool made, such as the issue a gap report opened or added to. */
       url?: string;
       /** @description `web_search`: the words looked for on a page. */
       pattern?: string;

@@ -29,7 +29,7 @@ type GuaranteeTable = ReadonlyMap<number, ReadonlySet<string>>;
 type GuaranteeHeader = { readonly scenario: number; readonly guarantees: readonly string[] };
 
 const lineKinds = ["given", "app", "server", "event", "world"] as const;
-const scenarioCount = 16;
+const scenarioCount = 17;
 const spec = loadSpec();
 
 const failure = (where: string, problem: string): Error => new Error(`${where}: ${problem}`);
