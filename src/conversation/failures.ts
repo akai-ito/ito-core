@@ -6,9 +6,11 @@ export type TurnFailureCode = EngineFailureCode | "server_disk_full";
 export type CommandFailureCode =
   | "invalid_request"
   | "token_rejected"
+  | "pairing_code_rejected"
   | "not_found"
   | "id_conflict"
   | "too_large"
+  | "attachment_missing"
   | "slow_down"
   | "unavailable"
   | "internal";
@@ -28,9 +30,11 @@ const turnMessages: Readonly<Record<TurnFailureCode, string>> = {
 const commandMessages: Readonly<Record<CommandFailureCode, string>> = {
   invalid_request: "The request isn't valid.",
   token_rejected: "The server didn't accept this token.",
+  pairing_code_rejected: "That pairing code has expired or was already used.",
   not_found: "The server doesn't know that.",
   id_conflict: "A different message was already sent with this id.",
   too_large: "The message is longer than the server accepts.",
+  attachment_missing: "A photo or file in this message isn't on the server.",
   slow_down: "Too many attempts; wait a moment and try again.",
   unavailable: "The server is starting or shutting down.",
   internal: "The server hit an unexpected error; Details has the cause.",

@@ -74,6 +74,19 @@ const writeWhole = (transcript: Transcript, text: string, pieces?: number): void
   transcript.endMessage("completed");
 };
 
+const firstAttachment = (transcript: Transcript): string => {
+  const found = transcript
+    .lines()
+    .flatMap((line) => {
+      const event = (line.given ?? line.event) as
+        { readonly message?: { readonly attachments?: readonly { readonly id: string }[] } } | undefined;
+      return event?.message?.attachments ?? [];
+    })
+    .at(0);
+  if (!found) throw new Error("no attachment in the history");
+  return found.id;
+};
+
 const junoOptions = [
   { label: "Clapham", description: "Abbeville Road, SW4" },
   { label: "Soho", description: "Greek Street, W1" },
@@ -105,7 +118,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.begin(todayAt);
     transcript.request("GET", "/.well-known/ito");
     transcript.wait(40);
-    transcript.response(200, { product: "ito", protocol: ["0.3"] }, { headers: { "Ito-Protocol": "0.3" } });
+    transcript.response(200, { product: "ito", protocol: ["0.4"] }, { headers: { "Ito-Protocol": "0.4" } });
     transcript.wait(20);
     transcript.request("GET", "/v0/server", {
       headers: { Authorization: "Bearer ito_example_mistyped_token_0000000000000000000" },
@@ -120,15 +133,21 @@ const scenarios: readonly (() => Transcript)[] = [
           detail: "Use the token ito serve printed, or run ito token new.",
         },
       },
-      { headers: { "Ito-Protocol": "0.3" } },
+      { headers: { "Ito-Protocol": "0.4" } },
     );
     transcript.wait(9000);
     transcript.request("GET", "/v0/server", { headers: { Authorization: authorization } });
     transcript.wait(40);
     transcript.response(
       200,
-      { name: "studio", version: "0.3.0", protocol: "0.3", agent: { name: "Ari" } },
-      { headers: { "Ito-Protocol": "0.3" } },
+      {
+        name: "studio",
+        version: "0.4.0",
+        protocol: "0.4",
+        agent: { name: "Ari" },
+        setup: { notifications: false, reports: false },
+      },
+      { headers: { "Ito-Protocol": "0.4" } },
     );
     transcript.wait(10);
     transcript.connect({ headers: { Authorization: authorization } });
@@ -1254,6 +1273,202 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.world("app_opened", { from: "notification" });
     transcript.connect();
     transcript.presence(true);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "27-send-a-photo",
+      scenario: 27,
+      title: "Send a photo",
+      summary:
+        "The app uploads a photo under an id it made, then sends a message naming it. The message carries " +
+        "the photo's name, type, size and dimensions, and the agent sees the image itself.",
+      guarantees: ["G19"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    const photo = transcript.upload("riverside.jpg");
+    transcript.wait(200);
+    const question = transcript.send("Is this the Thames Path, near Hampton Court?", { attachments: [photo] });
+    transcript.startTurn([question]);
+    transcript.wait(300);
+    transcript.step("thinking", thinking);
+    transcript.wait(2400);
+    writeWhole(
+      transcript,
+      "Yes: that's the towpath on the Surrey bank, just upstream of the palace. Keep the river on your " +
+        "right and you'll reach the bridge in about ten minutes.",
+    );
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "28-send-a-file",
+      scenario: 28,
+      title: "Send a file",
+      summary:
+        "A file attached to a message lands in the agent's workspace as uploads/ and its name, and the " +
+        "agent reads it there like any other file.",
+      guarantees: ["G19"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    const log = transcript.upload("running-log.csv");
+    transcript.wait(200);
+    const question = transcript.send("How far did I run this month?", { attachments: [log] });
+    transcript.startTurn([question]);
+    transcript.wait(300);
+    transcript.step("command", {
+      title: "Reading running-log.csv",
+      endedTitle: "Read running-log.csv",
+      fields: {
+        command: "cat uploads/running-log.csv",
+        cwd: "/home/you/.ito/workspace",
+        actions: [{ type: "read", path: "uploads/running-log.csv" }],
+      },
+    });
+    transcript.wait(400);
+    transcript.endStep({
+      fields: {
+        exit_code: 0,
+        output: "date,distance_km,time\n2026-10-03,12.0,1:04:10\n2026-10-07,8.5,0:44:52\n2026-10-11,18.0,1:39:37\n",
+      },
+    });
+    writeWhole(transcript, "38.5 km over three runs. The longest was 18 km on the 11th, in 1:39:37.");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "29-an-upload-that-fails",
+      scenario: 29,
+      title: "An upload that fails",
+      summary:
+        "A video over 20 MB is refused as too large. A photo's upload succeeds but its answer is lost, so " +
+        "the app uploads it again under the same id and gets the same attachment; a message with only the " +
+        "photo and no text follows. Later, a file waits in a draft for two days, past the day the server " +
+        "keeps an upload no message names, so sending is refused as attachment_missing until the app " +
+        "uploads it again.",
+      guarantees: ["G2", "G19"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    transcript.uploadTooLarge("harbour.mov", 21_000_000);
+    transcript.wait(4000);
+    const photo = transcript.upload("riverside.jpg", { isLost: true });
+    transcript.wait(3000);
+    transcript.upload("riverside.jpg", { id: photo });
+    transcript.wait(200);
+    const message = transcript.send("", { attachments: [photo] });
+    transcript.startTurn([message]);
+    transcript.wait(300);
+    transcript.step("thinking", thinking);
+    transcript.wait(1800);
+    writeWhole(transcript, "The river at Hampton Court on a clear morning. Want me to plan a walk from there?");
+    transcript.endTurn("completed");
+    transcript.wait(5 * 60 * 1000);
+    const log = transcript.upload("running-log.csv");
+    transcript.wait(1000);
+    transcript.disconnect("app_closed");
+    transcript.wait(2 * 24 * 60 * 60 * 1000);
+    transcript.forgetUnsentUploads();
+    transcript.world("app_opened");
+    transcript.connect();
+    transcript.wait(4000);
+    const question = transcript.send("Which of these runs had my fastest pace?", { attachments: [log] });
+    transcript.wait(300);
+    transcript.upload("running-log.csv", { id: log });
+    transcript.wait(200);
+    transcript.send("Which of these runs had my fastest pace?", { id: question, attachments: [log] });
+    transcript.startTurn([question]);
+    transcript.wait(300);
+    transcript.step("command", {
+      title: "Reading running-log.csv",
+      endedTitle: "Read running-log.csv",
+      fields: {
+        command: "cat uploads/running-log.csv",
+        cwd: "/home/you/.ito/workspace",
+        actions: [{ type: "read", path: "uploads/running-log.csv" }],
+      },
+    });
+    transcript.wait(400);
+    transcript.endStep({
+      fields: {
+        exit_code: 0,
+        output: "date,distance_km,time\n2026-10-03,12.0,1:04:10\n2026-10-07,8.5,0:44:52\n2026-10-11,18.0,1:39:37\n",
+      },
+    });
+    writeWhole(transcript, "The 7th: 8.5 km in 44:52, about 5:17 a kilometre.");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "30-another-device-sees-an-attachment",
+      scenario: 30,
+      title: "Another device sees an attachment",
+      summary:
+        "A photo sent from the phone yesterday arrives on another device in its first snapshot, as part of " +
+        "the message. That device fetches the bytes once and keeps them.",
+      guarantees: ["G13", "G19"],
+    });
+    transcript.time(yesterdayAt);
+    transcript.exchange(
+      "Is this the Thames Path, near Hampton Court?",
+      "Yes: that's the towpath on the Surrey bank, just upstream of the palace.",
+      ["riverside.jpg"],
+    );
+    transcript.begin(todayAt);
+    transcript.connect();
+    transcript.wait(800);
+    transcript.fetchAttachment(firstAttachment(transcript));
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "31-pair-with-a-qr-code",
+      scenario: 31,
+      title: "Pair with a QR code",
+      summary:
+        "ito pair shows a QR code holding the address and a short-lived code. The app exchanges the code " +
+        "for a token of its own and connects with it; the same code is refused afterwards.",
+      guarantees: ["G11", "G20"],
+    });
+    const pairedToken = "ito_paired_example_not_a_real_token_000000000000000";
+    transcript.begin(todayAt);
+    transcript.showPairingCode("7F3K-92QD");
+    transcript.wait(9000);
+    transcript.request("GET", "/.well-known/ito");
+    transcript.response(200, { product: "ito", protocol: ["0.4"] }, { headers: { "Ito-Protocol": "0.4" } });
+    transcript.wait(300);
+    transcript.pair("7F3K-92QD", "iPhone", pairedToken);
+    transcript.wait(200);
+    transcript.request("GET", "/v0/server", { headers: { Authorization: `Bearer ${pairedToken}` } });
+    transcript.response(
+      200,
+      {
+        name: "studio",
+        version: "0.4.0",
+        protocol: "0.4",
+        agent: { name: "Ari" },
+        setup: { notifications: false, reports: false },
+      },
+      { headers: { "Ito-Protocol": "0.4" } },
+    );
+    transcript.wait(60_000);
+    transcript.pair("7F3K-92QD", "iPad", "unused");
     return transcript;
   },
 ];

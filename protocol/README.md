@@ -43,6 +43,9 @@ sequenceDiagram
 - **Send** messages under an id the app chooses, so retrying is always safe. The server answers
   once the message is on disk; what it does next arrives on the stream.
 - **Stop** a turn, or **try again** after one failed, with commands addressed to the turn.
+- **Attach** photos and files: upload each under an id the app makes, then name them in a message.
+- **Pair** a new app with the short-lived code in the QR code `ito pair` shows, for a token of its
+  own.
 - **Answer** what the agent asks by sending a message, or cancel the ask. Asking ends the agent's
   turn, and the ask waits for you as long as it takes.
 - **Notify** a device while you're not looking: the app registers it with a key it made, and says

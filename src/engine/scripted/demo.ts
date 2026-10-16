@@ -172,7 +172,12 @@ const scriptFor = (inputs: readonly Input[], now: number): readonly TimedEvent[]
       ending(start, { type: "failed", code: "model_unavailable", detail: "The demo engine was asked to fail." }),
     ];
   }
-  const reply = writeMessage("reply", text.includes("long") ? longReply : shortReply, lastAt(start) + 800);
+  const attached = inputs.flatMap((input) => input.attachments ?? []);
+  const seen =
+    attached.length > 0
+      ? `I can see ${attached.map((attachment) => `${attachment.name} (${attachment.kind === "image" ? "a photo" : "a file"})`).join(" and ")}.\n\n`
+      : "";
+  const reply = writeMessage("reply", seen + (text.includes("long") ? longReply : shortReply), lastAt(start) + 800);
   return [...start, ...reply, ending(reply, { type: "ended" })];
 };
 

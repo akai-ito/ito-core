@@ -14,6 +14,7 @@ import { createGitHub } from "#reports/github.ts";
 import { createReporter, defaultDailyLimit } from "#reports/reporter.ts";
 import { createReportTool } from "#reports/tool.ts";
 import { createAskTool } from "#asks/tool.ts";
+import { createAttachments, type Attachments } from "#attachments/attachments.ts";
 import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
 import { createNotifier, defaultReminderMs } from "#notifications/notifier.ts";
 import { createPresence } from "#notifications/presence.ts";
@@ -52,6 +53,7 @@ export type Server = {
   readonly app: FastifyInstance;
   readonly store: Store;
   readonly turns: Turns;
+  readonly attachments: Attachments;
   readonly close: () => Promise<void>;
 };
 
@@ -91,8 +93,13 @@ export const createServer = (options: ServerOptions): Server => {
       : undefined;
   };
   const engine = options.createEngine({ settings: store, log, info, tools: toolServer });
+  const attachments = createAttachments(store, path.join(options.dataDirectory, "attachments"));
   const secrets = createSecrets();
-  const turns = createTurns(store, engine, clock, identifiers, log, options.limits ?? defaultLimits, secrets);
+  const turns = createTurns(store, engine, clock, identifiers, log, {
+    limits: options.limits ?? defaultLimits,
+    attachmentPath: attachments.pathOf,
+    secrets,
+  });
   const agentName = options.agentName ?? "Ari";
   const presence = createPresence();
   const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
@@ -105,8 +112,9 @@ export const createServer = (options: ServerOptions): Server => {
     clock,
     schemas: loadSchemas(),
     info: { name: options.name, version: packageVersion(), agentName },
-    gate: createGate(() => store.setting(tokenSetting), clock),
+    gate: createGate(() => [store.setting(tokenSetting) ?? "", ...store.pairedTokenHashes()].filter(Boolean), clock),
     presence,
+    attachments,
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
   });
@@ -140,6 +148,7 @@ export const createServer = (options: ServerOptions): Server => {
   const compaction = createCell<Cancel | undefined>(undefined);
   const compact = (): void => {
     store.compactText(toTimestamp(clock.now() - textRetentionMs));
+    attachments.sweep(toTimestamp(clock.now() - dayMs));
     compaction.set(clock.after(dayMs, compact));
   };
   compact();
@@ -160,6 +169,7 @@ export const createServer = (options: ServerOptions): Server => {
     app,
     store,
     turns,
+    attachments,
     close: () => {
       const pending = closing.get() ?? shutdown();
       closing.set(pending);

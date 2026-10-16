@@ -67,4 +67,22 @@ export const migrations: readonly string[] = [
     key_id TEXT NOT NULL,
     registered_at TEXT NOT NULL
   );`,
+  `ALTER TABLE messages ADD COLUMN attachments TEXT;
+  CREATE TABLE attachments (
+    id TEXT PRIMARY KEY,
+    body TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    at TEXT NOT NULL,
+    message TEXT
+  );
+  CREATE TABLE tokens (
+    hash TEXT PRIMARY KEY,
+    device_name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE pairing_codes (
+    hash TEXT PRIMARY KEY,
+    expires_at TEXT NOT NULL,
+    device_name TEXT
+  );`,
 ];

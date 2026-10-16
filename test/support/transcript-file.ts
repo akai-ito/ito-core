@@ -16,6 +16,8 @@ export type AppRequest = {
   readonly path: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: unknown;
+  readonly body_file?: string;
+  readonly body_size?: number;
 };
 
 export type ServerResponse = {

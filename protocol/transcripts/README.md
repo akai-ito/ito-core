@@ -23,7 +23,7 @@ by the steps. Each step has `at`, in milliseconds from the start, and exactly on
 
 | Field | A step where… |
 | --- | --- |
-| `app` | the app sends a request: `method`, `path`, and `headers` and `body` where they matter |
+| `app` | the app sends a request: `method`, `path`, and `headers` and `body` where they matter. An upload names its bytes instead: `body_file`, a file in [files](files), or `body_size`, that many bytes |
 | `server` | the app receives the response to its last request: `status`, and `headers` and `body` where they matter; `"lost": true` means it never reached the app |
 | `event` | the app receives an event from `GET /v0/events` |
 | `world` | something happens outside the API |
@@ -31,7 +31,8 @@ by the steps. Each step has `at`, in milliseconds from the start, and exactly on
 
 Events keep the server's own time in their `at` field, so an event replayed after a disconnect
 shows when it really happened. Requests other than the first connection leave out the
-`Authorization` header; every one of them carries it.
+`Authorization` header; every one of them carries it, except `POST /v0/pair`, which needs none. A
+request that shows its own `Authorization` header uses the token it names.
 
 ## World markers
 
@@ -47,6 +48,7 @@ shows when it really happened. Requests other than the first connection leave ou
 | `engine_stalls` | the agent's engine stops responding |
 | `notifications_allowed` | you allow notifications when the app offers them |
 | `notification_answered` | you answer an ask from its notification, without opening the app |
+| `pairing_code_shown` | `ito pair` shows a QR code holding the address and this `code` |
 
 ## Ids
 

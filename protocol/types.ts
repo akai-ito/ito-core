@@ -26,6 +26,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/pair": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Exchange a pairing code for a token
+     * @description The code comes from the QR code `ito pair` shows on the server, which holds
+     *     `ito://pair?address=…&code=…`. A code works once, for five minutes. The answer is a token
+     *     for this device alone: keep it like the token `ito serve` printed, since the server keeps only
+     *     its hash, and `ito token new` still replaces every token at once. A wrong, used or expired
+     *     code is refused, and repeated wrong codes are slowed down like wrong tokens.
+     */
+    post: operations["pair"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/server": {
     parameters: {
       query?: never;
@@ -102,11 +126,17 @@ export interface paths {
      *
      *     Sending the same id again returns the same message and changes nothing.
      *
+     *     To attach photos or files, upload each one first with `PUT /v0/attachments/{attachment}`,
+     *     then name them in `attachments`; the text may then be empty. An attachment belongs to one
+     *     message. If one isn't on the server, because no message named it for a day, the message is
+     *     refused with `attachment_missing`: upload its attachments again under the same ids, then
+     *     send the same message again.
+     *
      *     While an ask waits, the message answers it, whether or not it names the ask: `message.accepted`
      *     for the message comes first, then `ask.ended`. Name the ask in `answers` when you send a
      *     tapped option or a secret. The text of an answer to a secret ask is never stored, never
      *     streamed and never sent back: the message keeps an empty text, marked `secret`, and only the
-     *     agent's next turn receives what you typed.
+     *     agent's next turn receives what you typed. A secret answer can't carry attachments.
      */
     post: operations["sendMessage"];
     delete?: never;
@@ -157,6 +187,34 @@ export interface paths {
      *     Only a failed turn can be tried again.
      */
     post: operations["retryTurn"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/attachments/{attachment}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Fetch an attachment's bytes
+     * @description The bytes, with the media type they were uploaded with. They never change, so keep them once fetched.
+     */
+    get: operations["getAttachment"];
+    /**
+     * Upload a photo or file
+     * @description The body is the file's bytes, with its `Content-Type`. The app makes the attachment's id
+     *     before uploading, so retrying is always safe: the same bytes again change nothing, and
+     *     different bytes under the same id are an `id_conflict`. Upload before sending the message
+     *     that names it. Scale photos down first (about 2048 pixels on the long edge, as JPEG): that is
+     *     roughly what the model looks at. An attachment no message names is deleted after a day.
+     */
+    put: operations["uploadAttachment"];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -486,6 +544,21 @@ export interface components {
       /** @description Present when the outcome is `answered`: the message that answered it. */
       answer?: components["schemas"]["MessageId"];
     };
+    /** @description A photo or file you attached to a message. Its bytes never change: fetch them once with `GET /v0/attachments/{attachment}` and keep them. */
+    Attachment: {
+      id: components["schemas"]["AttachmentId"];
+      kind: components["schemas"]["AttachmentKind"];
+      /** @description The file's name, as uploaded. */
+      name: string;
+      /** @description The media type it was uploaded with, such as `image/jpeg`. */
+      media_type: string;
+      /** @description In bytes. */
+      size: number;
+      /** @description Images only: in pixels, when the server could read it. */
+      width?: number;
+      /** @description Images only: in pixels, when the server could read it. */
+      height?: number;
+    };
     /** @description What the device shows, once decrypted. */
     Notification: {
       kind: components["schemas"]["NotificationKind"];
@@ -516,7 +589,7 @@ export interface components {
       kind?: components["schemas"]["MessageKind"];
       /** @description Agent messages only: the turn that wrote it. */
       turn?: components["schemas"]["TurnId"];
-      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, and for a reply that stands in for a turn that failed or was cut off before writing. */
+      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing. */
       text: string;
       /** @description When the message began: when the server accepted it, or the agent's first word. */
       at: components["schemas"]["Timestamp"];
@@ -528,6 +601,8 @@ export interface components {
        * @constant
        */
       secret?: true;
+      /** @description User messages only: the photos and files you attached, in order. */
+      attachments?: components["schemas"]["Attachment"][];
       /** @description Agent messages only: when it ended. */
       ended_at?: components["schemas"]["Timestamp"];
       /** @description Agent messages only. Absent while the message is still being written. */
@@ -621,7 +696,7 @@ export interface components {
       label: components["schemas"]["StatusLabel"];
       detail?: components["schemas"]["StatusDetail"];
     };
-    /** @description Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `not_found`, `id_conflict`, `too_large`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise. */
+    /** @description Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `pairing_code_rejected`, `not_found`, `id_conflict`, `too_large`, `attachment_missing`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise. */
     Error: {
       /**
        * @description Stable and snake_case.
@@ -652,19 +727,49 @@ export interface components {
       agent: {
         /** @description What the agent is called; Ari until you choose another name. */
         name: string;
+        /** @description The model the agent last ran on, as its engine names it. Absent until the agent has run once. */
+        model?: string;
+        /** @description How the agent's engine is signed in, as of its last run. Never the whole email address. */
+        account?: {
+          /**
+           * @description `chatgpt` for a ChatGPT sign-in, `api_key` for an API key, `other` for anything else.
+           * @enum {unknown}
+           */
+          kind: "chatgpt" | "api_key" | "other";
+          /** @description `chatgpt` only: the plan, such as `plus` or `pro`. */
+          plan?: string;
+          /** @description `chatgpt` only: the domain of the account's email, such as `gmail.com`. */
+          email_domain?: string;
+        };
+      };
+      /** @description What's set up on the server, so the app can say so in Settings rather than mid-conversation. */
+      setup: {
+        /** @description Whether the server can send push notifications (`ito push setup`). */
+        notifications: boolean;
+        /** @description Whether gap reports go out (`ito reports token`). */
+        reports: boolean;
       };
     };
-    SendMessage: {
-      /**
-       * Format: uuid
-       * @description A random UUID the app makes when you tap Send. It is the message's id and its retry key.
-       */
-      id: string;
-      /** @description What you wrote, as plain text or Markdown. */
-      text: string;
-      /** @description The ask this message answers, when you tap one of its options or answer a secret. When it names a secret ask, the text is never stored, even if the ask has stopped waiting. An ask the server doesn't know is an `invalid_request`. */
-      answers?: components["schemas"]["AskId"];
-    };
+    SendMessage:
+      | {
+          /**
+           * Format: uuid
+           * @description A random UUID the app makes when you tap Send. It is the message's id and its retry key.
+           */
+          id: string;
+          /** @description What you wrote, as plain text or Markdown. It may be empty, or left out, when the message carries attachments. */
+          text?: string;
+          /** @description The ask this message answers, when you tap one of its options or answer a secret. When it names a secret ask, the text is never stored, even if the ask has stopped waiting. An ask the server doesn't know is an `invalid_request`. */
+          answers?: components["schemas"]["AskId"];
+          /** @description The photos and files to attach, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`. Naming one another message already carries, or attaching anything to a secret answer, is an `invalid_request`. */
+          attachments?: components["schemas"]["AttachmentId"][];
+        }
+      | {
+          text: string;
+        }
+      | {
+          attachments: unknown[];
+        };
     MessageResult: {
       message: components["schemas"]["Message"];
     };
@@ -701,6 +806,19 @@ export interface components {
       turn: components["schemas"]["TurnId"];
       /** @description The failed turn. */
       retry_of: components["schemas"]["TurnId"];
+    };
+    AttachmentResult: {
+      attachment: components["schemas"]["Attachment"];
+    };
+    Pair: {
+      /** @description The code from the QR code, with or without its dash, in any case. */
+      code: string;
+      /** @description What to call this device, such as "Sam's iPhone"; `ito pair` shows it when pairing succeeds. */
+      device_name: string;
+    };
+    PairResult: {
+      /** @description This device's token. Send it as `Authorization: Bearer <token>`. */
+      token: string;
     };
     AskResult: {
       ask: components["schemas"]["Ask"];
@@ -759,6 +877,16 @@ export interface components {
     Position: number;
     /** @description Opaque. The server makes it when the agent asks. */
     AskId: string;
+    /**
+     * Format: uuid
+     * @description A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.
+     */
+    AttachmentId: string;
+    /**
+     * @description `image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.
+     * @enum {unknown}
+     */
+    AttachmentKind: "image" | "file";
     /**
      * @description How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.
      * @enum {unknown}
@@ -860,7 +988,26 @@ export interface components {
         "application/json": components["schemas"]["ErrorResult"];
       };
     };
-    /** @description The server doesn't know this turn, message, ask or device (`not_found`). */
+    /** @description The pairing code is wrong, already used or expired (`pairing_code_rejected`). */
+    PairingCodeRejected: {
+      headers: {
+        "Ito-Protocol": components["headers"]["ItoProtocol"];
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "error": {
+         *         "code": "pairing_code_rejected",
+         *         "message": "That pairing code has expired or was already used.",
+         *         "detail": "Run ito pair on the server for a new code."
+         *       }
+         *     }
+         */
+        "application/json": components["schemas"]["ErrorResult"];
+      };
+    };
+    /** @description The server doesn't know this turn, message, ask, attachment or device (`not_found`). */
     NotFound: {
       headers: {
         "Ito-Protocol": components["headers"]["ItoProtocol"];
@@ -870,7 +1017,7 @@ export interface components {
         "application/json": components["schemas"]["ErrorResult"];
       };
     };
-    /** @description A message with this id was already accepted with different text (`id_conflict`). */
+    /** @description A message or attachment with this id was already accepted with different content (`id_conflict`). */
     IdConflict: {
       headers: {
         "Ito-Protocol": components["headers"]["ItoProtocol"];
@@ -880,7 +1027,7 @@ export interface components {
         "application/json": components["schemas"]["ErrorResult"];
       };
     };
-    /** @description The message is longer than the server accepts (`too_large`). */
+    /** @description The message or attachment is larger than the server accepts (`too_large`). */
     TooLarge: {
       headers: {
         "Ito-Protocol": components["headers"]["ItoProtocol"];
@@ -916,6 +1063,8 @@ export interface components {
   parameters: {
     /** @description The turn's id, from `turn.started`. */
     Turn: components["schemas"]["TurnId"];
+    /** @description The attachment's id, as the app made it. */
+    Attachment: components["schemas"]["AttachmentId"];
     /** @description The ask's id, from `ask.started`. */
     Ask: components["schemas"]["AskId"];
     /** @description A random UUID the app makes once per install, and keeps. */
@@ -947,6 +1096,7 @@ export type TurnEnded = components["schemas"]["TurnEnded"];
 export type AskStarted = components["schemas"]["AskStarted"];
 export type AskEnded = components["schemas"]["AskEnded"];
 export type Ask = components["schemas"]["Ask"];
+export type Attachment = components["schemas"]["Attachment"];
 export type Notification = components["schemas"]["Notification"];
 export type Message = components["schemas"]["Message"];
 export type Step = components["schemas"]["Step"];
@@ -960,6 +1110,9 @@ export type MessagePage = components["schemas"]["MessagePage"];
 export type StopTurn = components["schemas"]["StopTurn"];
 export type StopResult = components["schemas"]["StopResult"];
 export type RetryResult = components["schemas"]["RetryResult"];
+export type AttachmentResult = components["schemas"]["AttachmentResult"];
+export type Pair = components["schemas"]["Pair"];
+export type PairResult = components["schemas"]["PairResult"];
 export type AskResult = components["schemas"]["AskResult"];
 export type RegisterDevice = components["schemas"]["RegisterDevice"];
 export type Device = components["schemas"]["Device"];
@@ -973,6 +1126,8 @@ export type TurnId = components["schemas"]["TurnId"];
 export type Timestamp = components["schemas"]["Timestamp"];
 export type Position = components["schemas"]["Position"];
 export type AskId = components["schemas"]["AskId"];
+export type AttachmentId = components["schemas"]["AttachmentId"];
+export type AttachmentKind = components["schemas"]["AttachmentKind"];
 export type Outcome = components["schemas"]["Outcome"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
@@ -986,12 +1141,14 @@ export type LiveTurn = components["schemas"]["LiveTurn"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
+export type ResponsePairingCodeRejected = components["responses"]["PairingCodeRejected"];
 export type ResponseNotFound = components["responses"]["NotFound"];
 export type ResponseIdConflict = components["responses"]["IdConflict"];
 export type ResponseTooLarge = components["responses"]["TooLarge"];
 export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
 export type ParameterTurn = components["parameters"]["Turn"];
+export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
 export type ParameterDevice = components["parameters"]["Device"];
 export type HeaderItoProtocol = components["headers"]["ItoProtocol"];
@@ -1018,13 +1175,47 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.3"
+           *         "0.4"
            *       ]
            *     }
            */
           "application/json": components["schemas"]["Discovery"];
         };
       };
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  pair: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "code": "7F3K-92QD",
+         *       "device_name": "Sam's iPhone"
+         *     }
+         */
+        "application/json": components["schemas"]["Pair"];
+      };
+    };
+    responses: {
+      /** @description Paired; this is the device's token. */
+      201: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PairResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["PairingCodeRejected"];
       429: components["responses"]["SlowDown"];
     };
   };
@@ -1047,10 +1238,20 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.3.0",
-           *       "protocol": "0.3",
+           *       "version": "0.4.0",
+           *       "protocol": "0.4",
            *       "agent": {
-           *         "name": "Ari"
+           *         "name": "Ari",
+           *         "model": "gpt-6.1-sol",
+           *         "account": {
+           *           "kind": "chatgpt",
+           *           "plan": "plus",
+           *           "email_domain": "example.com"
+           *         }
+           *       },
+           *       "setup": {
+           *         "notifications": true,
+           *         "reports": false
            *       }
            *     }
            */
@@ -1163,7 +1364,25 @@ export interface operations {
           "application/json": components["schemas"]["MessageResult"];
         };
       };
-      400: components["responses"]["InvalidRequest"];
+      /** @description The request is malformed or not possible now (`invalid_request`), or an attachment it names isn't on the server (`attachment_missing`). */
+      400: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "error": {
+           *         "code": "attachment_missing",
+           *         "message": "A photo or file in this message isn't on the server.",
+           *         "detail": "Uploads no message names are deleted after a day. Upload this message's attachments again, then send it again."
+           *       }
+           *     }
+           */
+          "application/json": components["schemas"]["ErrorResult"];
+        };
+      };
       401: components["responses"]["TokenRejected"];
       409: components["responses"]["IdConflict"];
       413: components["responses"]["TooLarge"];
@@ -1275,6 +1494,80 @@ export interface operations {
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
       503: components["responses"]["Unavailable"];
+    };
+  };
+  getAttachment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The attachment's id, as the app made it. */
+        attachment: components["parameters"]["Attachment"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The file. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": unknown;
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  uploadAttachment: {
+    parameters: {
+      query: {
+        /** @description The file's name, shown with the message and used in the agent's workspace. */
+        name: string;
+      };
+      header?: never;
+      path: {
+        /** @description The attachment's id, as the app made it. */
+        attachment: components["parameters"]["Attachment"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "*/*": unknown;
+      };
+    };
+    responses: {
+      /** @description Already uploaded with these bytes; nothing changed. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AttachmentResult"];
+        };
+      };
+      /** @description Uploaded. */
+      201: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AttachmentResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      409: components["responses"]["IdConflict"];
+      413: components["responses"]["TooLarge"];
+      429: components["responses"]["SlowDown"];
     };
   };
   cancelAsk: {

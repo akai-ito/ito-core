@@ -4,6 +4,8 @@ import { protocolDirectory } from "#protocol/schemas.ts";
 
 export const transcriptDirectory = path.join(protocolDirectory, "transcripts");
 
+export const fixtureDirectory = path.join(transcriptDirectory, "files");
+
 export const byCodeUnits = (left: unknown, right: unknown): number => {
   const leftText = String(left);
   const rightText = String(right);

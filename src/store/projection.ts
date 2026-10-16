@@ -13,9 +13,22 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       const { message } = event;
       database
         .prepare(
-          "INSERT INTO messages (id, position, role, text, at, answers, secret) VALUES (?, ?, 'user', ?, ?, ?, ?)",
+          `INSERT INTO messages (id, position, role, text, at, answers, secret, attachments)
+            VALUES (?, ?, 'user', ?, ?, ?, ?, ?)`,
         )
-        .run(message.id, seq, message.text, message.at, message.answers ?? null, message.secret ? 1 : 0);
+        .run(
+          message.id,
+          seq,
+          message.text,
+          message.at,
+          message.answers ?? null,
+          message.secret ? 1 : 0,
+          message.attachments?.length ? toJson(message.attachments) : null,
+        );
+      const attached = message.attachments ?? [];
+      for (const attachment of attached) {
+        database.prepare("UPDATE attachments SET message = ? WHERE id = ?").run(message.id, attachment.id);
+      }
       return;
     }
     case "message.started": {

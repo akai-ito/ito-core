@@ -21,9 +21,12 @@ export const newToken = (io: Io): number => {
   const token = createToken();
   try {
     store.setSetting(tokenSetting, hashToken(token));
+    store.clearPairing();
   } finally {
     store.close();
   }
-  io.print(tokenMessage("Your new token, shown once. The old one stops working now:", token));
+  io.print(
+    tokenMessage("Your new token, shown once. Every older token, paired devices' included, stops working now:", token),
+  );
   return 0;
 };

@@ -7,6 +7,7 @@ import { toPaths, type Paths } from "#cli/paths.ts";
 import { tokenMessage } from "#cli/token.ts";
 import { systemClock } from "#clock.ts";
 import { createCodexEngine } from "#engine/codex/codex-engine.ts";
+import { modelSetting } from "#engine/engine.ts";
 import { demoScripts } from "#engine/scripted/demo.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { createToken, hashToken, tokenSetting } from "#http/auth.ts";
@@ -54,7 +55,10 @@ const parseServeOptions = (flags: readonly string[]): Result<ServeOptions, strin
 
 const toEngineFactory = (engine: EngineName, paths: Paths): ServerOptions["createEngine"] =>
   engine === "demo"
-    ? () => createScriptEngine(systemClock, demoScripts)
+    ? ({ settings }: EngineContext) => {
+        settings.setSetting(modelSetting, "demo");
+        return createScriptEngine(systemClock, demoScripts);
+      }
     : ({ settings, log, info, tools }: EngineContext) =>
         createCodexEngine({
           codexHome: paths.codexHome,
@@ -73,7 +77,7 @@ const firstRunMessage = (token: string, port: number): string =>
     "",
     `  tailscale serve --bg --https=${tailnetPort} ${port}`,
     "",
-    "Then add the server in Ari with the address Tailscale prints and this token.",
+    "Then add the server in Ari with the address Tailscale prints and this token, or run ito pair and scan its code.",
   ].join("\n");
 
 export const serve = async (flags: readonly string[], io: Io): Promise<number> => {

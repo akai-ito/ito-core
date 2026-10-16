@@ -49,6 +49,17 @@ describe("the token gate", () => {
     expect(accepted.statusCode).toBe(200);
   });
 
+  it("lets a pairing request through without a token, however it's spelled", async () => {
+    for (const url of ["/v0/pair", "/v0/pair?from=qr", "/v%30/pair"]) {
+      const answer = await server.app.inject({
+        method: "POST",
+        url,
+        payload: { code: "ABCD-EFGH", device_name: "iPhone" },
+      });
+      expect(answer.json(), url).toMatchObject({ error: { code: "pairing_code_rejected" } });
+    }
+  });
+
   it("guards a request that names the whole URL", async () => {
     await server.app.listen({ port: 0, host: "127.0.0.1" });
     const address = server.app.server.address();

@@ -8,6 +8,8 @@ export type GateVerdict = "accepted" | "rejected" | "slow_down";
 
 export type Gate = {
   readonly check: (authorization: string | undefined) => GateVerdict;
+  readonly refuse: () => GateVerdict;
+  readonly isSlowedDown: () => boolean;
   readonly retryAfterSeconds: () => number;
 };
 
@@ -29,22 +31,26 @@ export const bearerToken = (authorization = ""): string | undefined =>
   /^Bearer (?<token>\S+)$/u.exec(authorization)?.groups?.token;
 
 export const createGate = (
-  expectedHash: () => string | undefined,
+  expectedHashes: () => readonly string[],
   clock: Clock,
   budget: FailureBudget = defaultBudget,
 ): Gate => {
   const failures = createCell<readonly number[]>([]);
   const recent = (): readonly number[] => failures.get().filter((at) => clock.now() - at < budget.windowMs);
 
+  const refuse = (): GateVerdict => {
+    if (recent().length >= budget.failures) return "slow_down";
+    failures.set([...recent(), clock.now()]);
+    return "rejected";
+  };
+
   return {
     check: (authorization) => {
       const token = bearerToken(authorization);
-      const hash = expectedHash();
-      if (token && hash && isMatching(token, hash)) return "accepted";
-      if (recent().length >= budget.failures) return "slow_down";
-      failures.set([...recent(), clock.now()]);
-      return "rejected";
+      return token && expectedHashes().some((hash) => isMatching(token, hash)) ? "accepted" : refuse();
     },
+    refuse,
+    isSlowedDown: () => recent().length >= budget.failures,
     retryAfterSeconds: () => {
       const [oldest] = recent();
       return oldest === undefined ? 0 : Math.ceil((budget.windowMs - (clock.now() - oldest)) / 1000);

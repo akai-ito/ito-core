@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { isImage, readDimensions } from "#attachments/media.ts";
 import { createCell } from "#cell.ts";
 import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
 import type {
   Ask,
   AskKind,
+  Attachment,
   AskOption,
   Error as ErrorBody,
   LiveTurn,
@@ -17,6 +21,7 @@ import type {
   StepKind,
 } from "#protocol/types.ts";
 import type { Event, Line } from "./spec.ts";
+import { fixtureDirectory } from "./transcript-files.ts";
 
 export type Header = {
   readonly name: string;
@@ -32,11 +37,23 @@ type HttpHeaders = Readonly<Record<string, string>>;
 
 type AppStart = { readonly cursor?: string; readonly oldestCached?: string };
 
-type RequestOptions = { readonly body?: unknown; readonly headers?: HttpHeaders };
+type RequestOptions = {
+  readonly body?: unknown;
+  readonly headers?: HttpHeaders;
+  readonly bodyFile?: string;
+  readonly bodySize?: number;
+};
 
 type ResponseOptions = { readonly headers?: HttpHeaders; readonly isLost?: boolean };
 
-type SendOptions = { readonly id?: string; readonly isLost?: boolean; readonly answers?: string };
+type SendOptions = {
+  readonly id?: string;
+  readonly isLost?: boolean;
+  readonly answers?: string;
+  readonly attachments?: readonly string[];
+};
+
+type UploadOptions = { readonly id?: string; readonly name?: string; readonly isLost?: boolean };
 
 type AskFields = {
   readonly kind?: AskKind;
@@ -84,7 +101,7 @@ export type Transcript = {
   readonly connect: (options?: { readonly headers?: HttpHeaders }) => void;
   readonly disconnect: (marker: string, fields?: Fields) => void;
   readonly stall: (durationMs: number) => void;
-  readonly exchange: (user: string, agent: string) => Exchange;
+  readonly exchange: (user: string, agent: string, files?: readonly string[]) => Exchange;
   readonly send: (text: string, options?: SendOptions) => string;
   readonly startTurn: (inputs: readonly string[], options?: { readonly retryOf?: string }) => string;
   readonly status: (kind: StatusKind, label: string, detail?: string) => void;
@@ -104,6 +121,12 @@ export type Transcript = {
   readonly registerDevice: () => string;
   readonly presence: (isLooking: boolean) => void;
   readonly remind: () => void;
+  readonly upload: (file: string, options?: UploadOptions) => string;
+  readonly uploadTooLarge: (name: string, size: number) => void;
+  readonly forgetUnsentUploads: () => void;
+  readonly fetchAttachment: (id: string) => void;
+  readonly showPairingCode: (code: string) => void;
+  readonly pair: (code: string, deviceName: string, token: string) => void;
   readonly listMessages: (before: string, limit: number) => void;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
@@ -135,6 +158,15 @@ const defaultPieceLength = 28;
 const defaultPieceIntervalMs = 120;
 const messagesPerSnapshot = 50;
 const reminderAfterMs = 3 * 60 * 60 * 1000;
+const mediaTypes: Readonly<Record<string, string>> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  csv: "text/csv",
+  mov: "video/quicktime",
+};
+
+const mediaTypeOf = (name: string): string => mediaTypes[name.split(".").at(-1) ?? ""] ?? "application/octet-stream";
 
 const toToken = (seed: string): string => {
   const digest = createHash("sha256").update(seed).digest();
@@ -268,6 +300,8 @@ export const createTranscript = (header: Header): Transcript => {
   const askedAt = createCell<number | undefined>(undefined);
   const isReminded = createCell(false);
   const device = createCell<Device | undefined>(undefined);
+  const attachments = createCell<ReadonlyMap<string, Attachment>>(new Map());
+  const pairingCodes = createCell<ReadonlySet<string>>(new Set());
 
   const timestamp = (): string => new Date(now.get()).toISOString();
 
@@ -351,6 +385,8 @@ export const createTranscript = (header: Header): Transcript => {
         path,
         ...(options.headers && { headers: options.headers }),
         ...(options.body !== undefined && { body: options.body }),
+        ...(options.bodyFile && { body_file: options.bodyFile }),
+        ...(options.bodySize !== undefined && { body_size: options.bodySize }),
       },
     });
   };
@@ -586,10 +622,32 @@ export const createTranscript = (header: Header): Transcript => {
     return running.id;
   };
 
-  const exchange = (user: string, agent: string): Exchange => {
+  const describeAttachment = (file: string, id: string, name = file): Attachment => {
+    const mediaType = mediaTypeOf(name);
+    const bytes = readFileSync(path.join(fixtureDirectory, file));
+    const dimensions = isImage(mediaType) ? readDimensions(bytes, mediaType) : undefined;
+    return {
+      id,
+      kind: isImage(mediaType) ? "image" : "file",
+      name,
+      media_type: mediaType,
+      size: bytes.length,
+      ...(dimensions && { width: dimensions.width, height: dimensions.height }),
+    };
+  };
+
+  const exchange = (user: string, agent: string, files: readonly string[] = []): Exchange => {
     const userMessageId = newUserId();
+    const attached = files.map((file) => describeAttachment(file, newUserId()));
     emit("message.accepted", {
-      message: { id: userMessageId, role: "user", text: user, at: timestamp(), position: nextPosition() },
+      message: {
+        id: userMessageId,
+        role: "user",
+        text: user,
+        at: timestamp(),
+        position: nextPosition(),
+        ...(attached.length > 0 && { attachments: attached }),
+      },
     });
     wait(1);
     const turnId = startTurn([userMessageId]);
@@ -607,8 +665,27 @@ export const createTranscript = (header: Header): Transcript => {
 
   const send = (text: string, options: SendOptions = {}): string => {
     const id = options.id ?? newUserId();
-    request("POST", "/v0/messages", { body: { id, text, ...(options.answers && { answers: options.answers }) } });
+    const attached = options.attachments ?? [];
+    request("POST", "/v0/messages", {
+      body: {
+        id,
+        text,
+        ...(options.answers && { answers: options.answers }),
+        ...(attached.length > 0 && { attachments: attached }),
+      },
+    });
     const isKnown = project(log.get()).byId.has(id);
+    if (!isKnown && attached.some((attachment) => !attachments.get().has(attachment))) {
+      response(400, {
+        error: {
+          code: "attachment_missing",
+          message: "A photo or file in this message isn't on the server.",
+          detail:
+            "Uploads no message names are deleted after a day. Upload this message's attachments again, then send it again.",
+        },
+      });
+      return id;
+    }
     if (!isKnown) {
       const isSecret = options.answers !== undefined && askById(options.answers).secret;
       const answering = waiting.get();
@@ -621,6 +698,13 @@ export const createTranscript = (header: Header): Transcript => {
           position: nextPosition(),
           ...(answering && { answers: answering }),
           ...(isSecret && { secret: true }),
+          ...(attached.length > 0 && {
+            attachments: attached.map((attachment) => {
+              const found = attachments.get().get(attachment);
+              if (!found) throw new Error(`unknown attachment ${attachment}`);
+              return found;
+            }),
+          }),
         },
       });
       if (answering) endAsk(answering, "answered", id);
@@ -692,6 +776,77 @@ export const createTranscript = (header: Header): Transcript => {
     request("PUT", `/v0/devices/${current.id}/presence`, { body: { looking: isLooking } });
     response(204, undefined);
     device.set({ ...current, isLooking });
+  };
+
+  const upload = (file: string, options: UploadOptions = {}): string => {
+    const id = options.id ?? newUserId();
+    const name = options.name ?? file;
+    request("PUT", `/v0/attachments/${id}?name=${encodeURIComponent(name)}`, {
+      headers: { "Content-Type": mediaTypeOf(name) },
+      bodyFile: file,
+    });
+    const attachment = attachments.get().get(id) ?? describeAttachment(file, id, name);
+    const isKnown = attachments.get().has(id);
+    attachments.update((current) => new Map([...current, [id, attachment]]));
+    response(isKnown ? 200 : 201, { attachment }, { isLost: options.isLost });
+    return id;
+  };
+
+  const uploadTooLarge = (name: string, size: number): void => {
+    request("PUT", `/v0/attachments/${newUserId()}?name=${encodeURIComponent(name)}`, {
+      headers: { "Content-Type": mediaTypeOf(name) },
+      bodySize: size,
+    });
+    response(413, {
+      error: {
+        code: "too_large",
+        message: "That file is larger than Ito accepts.",
+        detail: "Attachments can be up to 20 MB.",
+      },
+    });
+  };
+
+  const forgetUnsentUploads = (): void => {
+    const sent = new Set(
+      project(log.get())
+        .byId.values()
+        .flatMap((message) => message.attachments ?? [])
+        .map((attachment) => attachment.id),
+    );
+    attachments.update((current) => new Map([...current].filter(([id]) => sent.has(id))));
+  };
+
+  const fetchAttachment = (id: string): void => {
+    const found =
+      attachments.get().get(id) ??
+      project(log.get())
+        .byId.values()
+        .flatMap((message) => message.attachments ?? [])
+        .find((attachment) => attachment.id === id);
+    if (!found) throw new Error(`unknown attachment ${id}`);
+    request("GET", `/v0/attachments/${id}`);
+    response(200, undefined, { headers: { "Content-Type": found.media_type, "Content-Length": String(found.size) } });
+  };
+
+  const showPairingCode = (code: string): void => {
+    pairingCodes.update((current) => new Set([...current, code]));
+    world("pairing_code_shown", { code });
+  };
+
+  const pair = (code: string, deviceName: string, token: string): void => {
+    request("POST", "/v0/pair", { body: { code, device_name: deviceName } });
+    if (pairingCodes.get().has(code)) {
+      pairingCodes.update((current) => new Set([...current].filter((known) => known !== code)));
+      response(201, { token });
+      return;
+    }
+    response(401, {
+      error: {
+        code: "pairing_code_rejected",
+        message: "That pairing code has expired or was already used.",
+        detail: "Run ito pair on the server for a new code.",
+      },
+    });
   };
 
   const remind = (): void => {
@@ -834,6 +989,12 @@ export const createTranscript = (header: Header): Transcript => {
     registerDevice,
     presence,
     remind,
+    upload,
+    uploadTooLarge,
+    forgetUnsentUploads,
+    fetchAttachment,
+    showPairingCode,
+    pair,
     listMessages,
     restart,
     restore,

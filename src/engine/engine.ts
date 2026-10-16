@@ -1,9 +1,19 @@
 import type { MessageId, TurnId } from "#conversation/ids.ts";
 import type { Ask, Step, StepKind } from "#protocol/types.ts";
 
-export type Input = { readonly messageId: MessageId; readonly text: string };
+export type InputAttachment = { readonly kind: "image" | "file"; readonly name: string; readonly source: string };
+
+export type Input = {
+  readonly messageId: MessageId;
+  readonly text: string;
+  readonly attachments?: readonly InputAttachment[];
+};
 
 export type ToolServer = { readonly url: string; readonly token: string };
+
+export const modelSetting = "agent_model";
+
+export const accountSetting = "agent_account";
 
 export type AskFields = Pick<Ask, "kind" | "question" | "options" | "allows_text" | "secret"> & {
   readonly preview?: string;

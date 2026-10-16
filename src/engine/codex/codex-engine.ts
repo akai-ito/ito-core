@@ -1,14 +1,26 @@
+import { constants, copyFileSync, lstatSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
 import type { TurnId } from "#conversation/ids.ts";
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
 import type { JsonValue } from "#engine/codex/bindings/serde_json/JsonValue.ts";
+import type { Account } from "#engine/codex/bindings/v2/Account.ts";
 import type { ThreadStartParams } from "#engine/codex/bindings/v2/ThreadStartParams.ts";
 import type { ThreadStartResponse } from "#engine/codex/bindings/v2/ThreadStartResponse.ts";
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
 import { startCodexProcess, type CodexProcess } from "#engine/codex/codex-process.ts";
 import { initialTurnState, toEngineEvents, type TurnState } from "#engine/codex/mapping.ts";
-import type { Engine, EngineEvent, EngineFailureCode, Input, ToolServer } from "#engine/engine.ts";
+import {
+  accountSetting,
+  modelSetting,
+  type Engine,
+  type EngineEvent,
+  type EngineFailureCode,
+  type Input,
+  type InputAttachment,
+  type ToolServer,
+} from "#engine/engine.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Settings } from "#store/store.ts";
 import { toolServerName } from "#tools/mcp.ts";
@@ -52,7 +64,102 @@ const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "faile
 
 const signedOut: SessionFailure = { code: "engine_signed_out", detail: "Codex has no account signed in." };
 
-const toUserInput = ({ text }: Input): UserInput => ({ type: "text", text, text_elements: [] });
+const toAccount = (account: Account): Readonly<Record<string, string>> => {
+  switch (account.type) {
+    case "chatgpt": {
+      const domain = account.email?.split("@").at(-1);
+      return { kind: "chatgpt", plan: account.planType, ...(domain && { email_domain: domain }) };
+    }
+    case "apiKey": {
+      return { kind: "api_key" };
+    }
+    case "amazonBedrock": {
+      return { kind: "other" };
+    }
+  }
+};
+
+const uploadsFolder = "uploads";
+const maxNameBytes = 200;
+const maxExtensionBytes = 16;
+
+type Placed = InputAttachment & { readonly path: string; readonly relative?: string };
+
+const isSameFile = (source: string, target: string): boolean => {
+  const found = lstatSync(target, { throwIfNoEntry: false });
+  return (
+    found?.isFile() === true &&
+    found.size === statSync(source).size &&
+    readFileSync(source).equals(readFileSync(target))
+  );
+};
+
+const placeName = (
+  folder: string,
+  source: string,
+  name: string,
+  attempt = 1,
+): { readonly name: string; readonly isThere: boolean } => {
+  const extension = path.extname(name);
+  const candidate = attempt === 1 ? name : `${path.basename(name, extension)}-${String(attempt)}${extension}`;
+  const target = path.join(folder, candidate);
+  if (!lstatSync(target, { throwIfNoEntry: false })) return { name: candidate, isThere: false };
+  return isSameFile(source, target) ? { name: candidate, isThere: true } : placeName(folder, source, name, attempt + 1);
+};
+
+const fitName = (name: string): string => {
+  if (Buffer.byteLength(name) <= maxNameBytes) return name;
+  const extension = path.extname(name);
+  const ending = Buffer.byteLength(extension) <= maxExtensionBytes ? extension : "";
+  const graphemes = [...new Intl.Segmenter().segment(name.slice(0, name.length - ending.length))].map(
+    ({ segment }) => segment,
+  );
+  const totals = graphemes.reduce<readonly number[]>(
+    (sums, grapheme) => [...sums, (sums.at(-1) ?? 0) + Buffer.byteLength(grapheme)],
+    [],
+  );
+  const fitting = totals.findIndex((total) => total > maxNameBytes - Buffer.byteLength(ending));
+  return `${graphemes.slice(0, fitting).join("")}${ending}`;
+};
+
+const safeName = (name: string): string => {
+  const printable = path
+    .basename(name)
+    .split(/(?=[\s\S])/u)
+    .filter((character) => character >= " ")
+    .join("")
+    .trim();
+  return printable === "" ? "file" : fitName(printable);
+};
+
+const place = (folder: string, attachment: InputAttachment, log: Log): Placed => {
+  try {
+    mkdirSync(folder, { recursive: true });
+    if (!lstatSync(folder).isDirectory()) throw new Error(`${folder} isn't a folder`);
+    const { name, isThere } = placeName(folder, attachment.source, safeName(attachment.name));
+    if (!isThere) copyFileSync(attachment.source, path.join(folder, name), constants.COPYFILE_EXCL);
+    return { ...attachment, path: path.join(folder, name), relative: `${uploadsFolder}/${name}` };
+  } catch (error) {
+    log(`Couldn't save ${attachment.name} in the workspace, so the agent is told it's missing`, error);
+    return { ...attachment, path: attachment.source };
+  }
+};
+
+const toUserInputs = (workspace: string, { text, attachments = [] }: Input, log: Log): readonly UserInput[] => {
+  const placed = attachments.map((attachment) => place(path.join(workspace, uploadsFolder), attachment, log));
+  const saved = placed.flatMap((attachment) => attachment.relative ?? []);
+  const unsaved = placed.filter((attachment) => attachment.relative === undefined).map(({ name }) => name);
+  const notes = [
+    saved.length > 0 && `(Attached, and saved in your workspace: ${saved.join(", ")})`,
+    unsaved.length > 0 && `(Attached, but it couldn't be saved in your workspace: ${unsaved.join(", ")})`,
+  ];
+  return [
+    { type: "text", text: [text, ...notes].filter(Boolean).join("\n\n"), text_elements: [] },
+    ...placed
+      .filter((attachment) => attachment.kind === "image")
+      .map((attachment): UserInput => ({ type: "localImage", path: attachment.path })),
+  ];
+};
 
 const toolsConfig = (server: ToolServer | undefined): Readonly<Record<string, JsonValue>> =>
   server
@@ -130,6 +237,7 @@ export const createCodexEngine = ({
   };
 
   const announce = (message: string, { model, reasoningEffort }: SessionModel): void => {
+    settings.setSetting(modelSetting, model);
     info(message, { model, reasoningEffort });
   };
 
@@ -177,6 +285,9 @@ export const createCodexEngine = ({
       return fail(failure);
     };
     const account = await process.call("account/read", { refreshToken: false });
+    if (account.ok && account.value.account) {
+      settings.setSetting(accountSetting, JSON.stringify(toAccount(account.value.account)));
+    }
     if (account.ok && account.value.account === null && account.value.requiresOpenaiAuth) return giveUp(signedOut);
     const threadId = await openThread(process, server);
     if (!threadId.ok) return giveUp({ code: "engine_failed", detail: threadId.failure });
@@ -216,7 +327,7 @@ export const createCodexEngine = ({
     const started = await opened.value.process.call("turn/start", {
       threadId: opened.value.threadId,
       clientUserMessageId: inputs[0]?.messageId ?? null,
-      input: inputs.map((input) => toUserInput(input)),
+      input: inputs.flatMap((input) => toUserInputs(workspace, input, log)),
       summary: "auto",
     });
     if (started.ok) return started.value.turn.id;
@@ -261,7 +372,7 @@ export const createCodexEngine = ({
         threadId: opened.value.threadId,
         expectedTurnId: codexTurn,
         clientUserMessageId: input.messageId,
-        input: [toUserInput(input)],
+        input: [...toUserInputs(workspace, input, log)],
       });
       if (steered.ok) return "taken";
       log("Codex didn't take a steer, so the message waits as Next", steered.failure.message);
