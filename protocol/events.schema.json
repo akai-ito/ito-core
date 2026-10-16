@@ -51,6 +51,9 @@
           "$ref": "#/$defs/AskEnded"
         },
         {
+          "$ref": "#/$defs/ThreadChanged"
+        },
+        {
           "$ref": "#/$defs/TurnEnded"
         }
       ]
@@ -254,9 +257,70 @@
         }
       }
     },
+    "ThreadEntryId": {
+      "description": "Opaque, and kept when an entry is edited.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "ThreadEntryKind": {
+      "description": "Where an entry sits in what Ari knows: `you` (facts about you), `people` (the people in your life), `preferences` (how you like things) or `notes` (what Ari keeps for you). Show a kind you don't recognise with the notes.",
+      "enum": ["you", "people", "preferences", "notes"]
+    },
+    "ThreadChange": {
+      "enum": ["added", "updated", "removed"]
+    },
+    "ThreadEntry": {
+      "description": "One thing Ari knows: a Markdown file in the Thread, the git repository on your server.",
+      "type": "object",
+      "required": ["id", "kind", "title", "text", "created_at", "updated_at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ThreadEntryId"
+        },
+        "kind": {
+          "$ref": "#/$defs/ThreadEntryKind"
+        },
+        "title": {
+          "description": "A short phrase that reads after \"Remembered\", such as \"your longest run\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "description": "The entry in plain words, addressed to you; Markdown.",
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "description": "The file in the Thread, such as `you/longest-run.md`.",
+          "type": "string"
+        },
+        "created_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "source": {
+          "$ref": "#/$defs/MessageId",
+          "description": "The message Ari learned it from, when there is one."
+        }
+      }
+    },
     "StepKind": {
       "description": "What kind of thing the agent did. Show the title of a kind you don't recognise.",
-      "enum": ["thinking", "web_search", "command", "file_change", "tool", "plan", "wait", "image_view", "compacting"]
+      "enum": [
+        "thinking",
+        "web_search",
+        "command",
+        "file_change",
+        "tool",
+        "plan",
+        "wait",
+        "image_view",
+        "compacting",
+        "memory"
+      ]
     },
     "Step": {
       "description": "One thing the agent did while working on a turn: thinking, a web search, a command, an edit, a tool, a plan, a wait. Its title is plain words written by the server, safe to show as it is. Its other fields carry the specifics exactly as the agent used them (commands, paths, queries, URLs, output); show what you choose. Fields beyond the common ones belong to particular kinds, and a step carries those its kind has.",
@@ -447,6 +511,27 @@
         "path": {
           "description": "`image_view`: the image looked at.",
           "type": "string"
+        },
+        "entry": {
+          "description": "`memory`: the entry in what Ari knows that the step changed.",
+          "type": "object",
+          "required": ["id", "kind", "title"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/ThreadEntryId"
+            },
+            "kind": {
+              "$ref": "#/$defs/ThreadEntryKind"
+            },
+            "title": {
+              "description": "The entry's title, as Ari wrote it.",
+              "type": "string"
+            }
+          }
+        },
+        "change": {
+          "description": "`memory`: whether the step added, updated or removed the entry.",
+          "$ref": "#/$defs/ThreadChange"
         }
       }
     },
@@ -982,6 +1067,33 @@
         },
         "ask": {
           "$ref": "#/$defs/Ask"
+        }
+      }
+    },
+    "ThreadChanged": {
+      "title": "thread.changed",
+      "description": "Something Ari knows was added, corrected or forgotten, by Ari or by you. It names the entry but never carries its words, so the conversation keeps nothing of an entry you forget: fetch it with `GET /v0/thread/{entry}`.",
+      "type": "object",
+      "required": ["id", "type", "at", "entry", "change", "by"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "thread.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "entry": {
+          "$ref": "#/$defs/ThreadEntryId"
+        },
+        "change": {
+          "$ref": "#/$defs/ThreadChange"
+        },
+        "by": {
+          "description": "`agent` when Ari changed it, `you` when an app did.",
+          "enum": ["agent", "you"]
         }
       }
     },

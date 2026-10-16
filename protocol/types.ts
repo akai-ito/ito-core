@@ -221,6 +221,53 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/thread": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read what Ari knows
+     * @description Every entry, newest change first. `thread.changed` on the event stream says when to read again.
+     */
+    get: operations["listThread"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/thread/{entry}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read one entry */
+    get: operations["getThreadEntry"];
+    /**
+     * Correct an entry
+     * @description Replaces the entry's words, and its title if given. The change is one commit in the Thread, and `thread.changed` follows with `by` set to `you`.
+     */
+    put: operations["correctThreadEntry"];
+    post?: never;
+    /**
+     * Forget an entry
+     * @description Ari stops knowing it: the file is removed from the Thread and from its git history, and
+     *     `thread.changed` follows with `removed`. Forgetting an entry the server doesn't have changes
+     *     nothing.
+     */
+    delete: operations["forgetThreadEntry"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/asks/{ask}/cancel": {
     parameters: {
       query?: never;
@@ -316,6 +363,7 @@ export interface components {
       | components["schemas"]["MessageEnded"]
       | components["schemas"]["AskStarted"]
       | components["schemas"]["AskEnded"]
+      | components["schemas"]["ThreadChanged"]
       | components["schemas"]["TurnEnded"];
     /**
      * snapshot
@@ -559,6 +607,38 @@ export interface components {
       /** @description Images only: in pixels, when the server could read it. */
       height?: number;
     };
+    /** @description One thing Ari knows: a Markdown file in the Thread, the git repository on your server. */
+    ThreadEntry: {
+      id: components["schemas"]["ThreadEntryId"];
+      kind: components["schemas"]["ThreadEntryKind"];
+      /** @description A short phrase that reads after "Remembered", such as "your longest run". */
+      title: string;
+      /** @description The entry in plain words, addressed to you; Markdown. */
+      text: string;
+      /** @description The file in the Thread, such as `you/longest-run.md`. */
+      path?: string;
+      created_at: components["schemas"]["Timestamp"];
+      updated_at: components["schemas"]["Timestamp"];
+      /** @description The message Ari learned it from, when there is one. */
+      source?: components["schemas"]["MessageId"];
+    };
+    /**
+     * thread.changed
+     * @description Something Ari knows was added, corrected or forgotten, by Ari or by you. It names the entry but never carries its words, so the conversation keeps nothing of an entry you forget: fetch it with `GET /v0/thread/{entry}`.
+     */
+    ThreadChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "thread.changed";
+      at: components["schemas"]["Timestamp"];
+      entry: components["schemas"]["ThreadEntryId"];
+      change: components["schemas"]["ThreadChange"];
+      /**
+       * @description `agent` when Ari changed it, `you` when an app did.
+       * @enum {unknown}
+       */
+      by: "agent" | "you";
+    };
     /** @description What the device shows, once decrypted. */
     Notification: {
       kind: components["schemas"]["NotificationKind"];
@@ -689,6 +769,15 @@ export interface components {
       wait_ms?: number;
       /** @description `image_view`: the image looked at. */
       path?: string;
+      /** @description `memory`: the entry in what Ari knows that the step changed. */
+      entry?: {
+        id: components["schemas"]["ThreadEntryId"];
+        kind: components["schemas"]["ThreadEntryKind"];
+        /** @description The entry's title, as Ari wrote it. */
+        title: string;
+      };
+      /** @description `memory`: whether the step added, updated or removed the entry. */
+      change?: components["schemas"]["ThreadChange"];
     };
     /** @description What the agent is doing right now. */
     Status: {
@@ -820,6 +909,16 @@ export interface components {
       /** @description This device's token. Send it as `Authorization: Bearer <token>`. */
       token: string;
     };
+    ThreadPage: {
+      entries: components["schemas"]["ThreadEntry"][];
+    };
+    ThreadEntryResult: {
+      entry: components["schemas"]["ThreadEntry"];
+    };
+    CorrectThreadEntry: {
+      title?: string;
+      text: string;
+    };
     AskResult: {
       ask: components["schemas"]["Ask"];
     };
@@ -899,7 +998,25 @@ export interface components {
      * @enum {unknown}
      */
     StepKind:
-      "thinking" | "web_search" | "command" | "file_change" | "tool" | "plan" | "wait" | "image_view" | "compacting";
+      | "thinking"
+      | "web_search"
+      | "command"
+      | "file_change"
+      | "tool"
+      | "plan"
+      | "wait"
+      | "image_view"
+      | "compacting"
+      | "memory";
+    /** @description Opaque, and kept when an entry is edited. */
+    ThreadEntryId: string;
+    /**
+     * @description Where an entry sits in what Ari knows: `you` (facts about you), `people` (the people in your life), `preferences` (how you like things) or `notes` (what Ari keeps for you). Show a kind you don't recognise with the notes.
+     * @enum {unknown}
+     */
+    ThreadEntryKind: "you" | "people" | "preferences" | "notes";
+    /** @enum {unknown} */
+    ThreadChange: "added" | "updated" | "removed";
     /**
      * @description `question` asks for information or a choice. `approval` asks before the agent does something consequential, and shows a `preview` of what would happen. Treat a kind you don't recognise as a question.
      * @enum {unknown}
@@ -1007,7 +1124,7 @@ export interface components {
         "application/json": components["schemas"]["ErrorResult"];
       };
     };
-    /** @description The server doesn't know this turn, message, ask, attachment or device (`not_found`). */
+    /** @description The server doesn't know this turn, message, ask, attachment, entry or device (`not_found`). */
     NotFound: {
       headers: {
         "Ito-Protocol": components["headers"]["ItoProtocol"];
@@ -1063,6 +1180,8 @@ export interface components {
   parameters: {
     /** @description The turn's id, from `turn.started`. */
     Turn: components["schemas"]["TurnId"];
+    /** @description The entry's id. */
+    ThreadEntry: components["schemas"]["ThreadEntryId"];
     /** @description The attachment's id, as the app made it. */
     Attachment: components["schemas"]["AttachmentId"];
     /** @description The ask's id, from `ask.started`. */
@@ -1097,6 +1216,8 @@ export type AskStarted = components["schemas"]["AskStarted"];
 export type AskEnded = components["schemas"]["AskEnded"];
 export type Ask = components["schemas"]["Ask"];
 export type Attachment = components["schemas"]["Attachment"];
+export type ThreadEntry = components["schemas"]["ThreadEntry"];
+export type ThreadChanged = components["schemas"]["ThreadChanged"];
 export type Notification = components["schemas"]["Notification"];
 export type Message = components["schemas"]["Message"];
 export type Step = components["schemas"]["Step"];
@@ -1113,6 +1234,9 @@ export type RetryResult = components["schemas"]["RetryResult"];
 export type AttachmentResult = components["schemas"]["AttachmentResult"];
 export type Pair = components["schemas"]["Pair"];
 export type PairResult = components["schemas"]["PairResult"];
+export type ThreadPage = components["schemas"]["ThreadPage"];
+export type ThreadEntryResult = components["schemas"]["ThreadEntryResult"];
+export type CorrectThreadEntry = components["schemas"]["CorrectThreadEntry"];
 export type AskResult = components["schemas"]["AskResult"];
 export type RegisterDevice = components["schemas"]["RegisterDevice"];
 export type Device = components["schemas"]["Device"];
@@ -1131,6 +1255,9 @@ export type AttachmentKind = components["schemas"]["AttachmentKind"];
 export type Outcome = components["schemas"]["Outcome"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
+export type ThreadEntryId = components["schemas"]["ThreadEntryId"];
+export type ThreadEntryKind = components["schemas"]["ThreadEntryKind"];
+export type ThreadChange = components["schemas"]["ThreadChange"];
 export type AskKind = components["schemas"]["AskKind"];
 export type AskOption = components["schemas"]["AskOption"];
 export type AskOutcome = components["schemas"]["AskOutcome"];
@@ -1148,6 +1275,7 @@ export type ResponseTooLarge = components["responses"]["TooLarge"];
 export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
 export type ParameterTurn = components["parameters"]["Turn"];
+export type ParameterThreadEntry = components["parameters"]["ThreadEntry"];
 export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
 export type ParameterDevice = components["parameters"]["Device"];
@@ -1175,7 +1303,7 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.4"
+           *         "0.5"
            *       ]
            *     }
            */
@@ -1238,8 +1366,8 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.4.0",
-           *       "protocol": "0.4",
+           *       "version": "0.5.0",
+           *       "protocol": "0.5",
            *       "agent": {
            *         "name": "Ari",
            *         "model": "gpt-6.1-sol",
@@ -1568,6 +1696,113 @@ export interface operations {
       409: components["responses"]["IdConflict"];
       413: components["responses"]["TooLarge"];
       429: components["responses"]["SlowDown"];
+    };
+  };
+  listThread: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description What Ari knows. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadPage"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getThreadEntry: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The entry's id. */
+        entry: components["parameters"]["ThreadEntry"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The entry. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadEntryResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  correctThreadEntry: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The entry's id. */
+        entry: components["parameters"]["ThreadEntry"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "text": "Your longest run is 21 km, from the Battersea half."
+         *     }
+         */
+        "application/json": components["schemas"]["CorrectThreadEntry"];
+      };
+    };
+    responses: {
+      /** @description Corrected. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadEntryResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  forgetThreadEntry: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The entry's id. */
+        entry: components["parameters"]["ThreadEntry"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Forgotten. */
+      204: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components["responses"]["TokenRejected"];
     };
   };
   cancelAsk: {

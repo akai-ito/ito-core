@@ -155,6 +155,18 @@ const toolTitle = ({ capability = "a tool", operation, url }: StepFacts): Title 
   return title("Reporting it to Ito", url?.includes("#issuecomment-") ? "Added to an Ito issue" : "Reported it to Ito");
 };
 
+const memoryVerbs = {
+  added: title("Remembering", "Remembered"),
+  updated: title("Updating", "Updated"),
+  removed: title("Forgetting", "Forgot"),
+} as const;
+
+const memoryTitle = ({ entry, change = "added" }: StepFacts): Title => {
+  const verb = memoryVerbs[change];
+  const what = entry?.title ?? "something";
+  return title(`${verb.present} ${what}`, `${verb.past} ${what}`);
+};
+
 const titleOf = (kind: StepKind, facts: StepFacts): Title => {
   switch (kind) {
     case "thinking": {
@@ -188,6 +200,9 @@ const titleOf = (kind: StepKind, facts: StepFacts): Title => {
     }
     case "compacting": {
       return title("Tidying up its notes", "Tidied up its notes");
+    }
+    case "memory": {
+      return memoryTitle(facts);
     }
   }
 };

@@ -41,7 +41,7 @@ type GuaranteeTable = ReadonlyMap<number, ReadonlySet<string>>;
 type GuaranteeHeader = { readonly scenario: number; readonly guarantees: readonly string[] };
 
 const lineKinds = ["given", "app", "server", "event", "world", "push"] as const;
-const scenarioCount = 31;
+const scenarioCount = 33;
 const disconnecting: ReadonlySet<string> = new Set(["offline", "app_closed", "server_restarted", "server_restored"]);
 const spec = loadSpec();
 

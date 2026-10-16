@@ -68,6 +68,7 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `step.ended` | A step is over, with its outcome, duration and past-tense title |
 | `ask.started` | The agent asks you something; its turn ends next |
 | `ask.ended` | The ask is answered by a message, or cancelled |
+| `thread.changed` | Something Ari knows was added, corrected or forgotten |
 | `message.started` | The agent begins a reply, or a note while it works |
 | `message.delta` | Text appended to a message, at an offset |
 | `message.ended` | A message is finished: completed, stopped, interrupted or failed |

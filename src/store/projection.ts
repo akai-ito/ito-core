@@ -105,6 +105,9 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
         .run(ask.id, ask.turn, ask.position, toJson(ask));
       return;
     }
+    case "thread.changed": {
+      return;
+    }
     case "ask.ended": {
       const { ask } = event;
       database

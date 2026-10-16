@@ -8,6 +8,8 @@ import type {
   Ask,
   AskKind,
   Attachment,
+  ThreadEntry,
+  ThreadEntryKind,
   AskOption,
   Error as ErrorBody,
   LiveTurn,
@@ -55,6 +57,8 @@ type SendOptions = {
 
 type UploadOptions = { readonly id?: string; readonly name?: string; readonly isLost?: boolean };
 
+type Memory = { readonly kind: ThreadEntryKind; readonly title: string; readonly text: string };
+
 type AskFields = {
   readonly kind?: AskKind;
   readonly question: string;
@@ -101,7 +105,11 @@ export type Transcript = {
   readonly connect: (options?: { readonly headers?: HttpHeaders }) => void;
   readonly disconnect: (marker: string, fields?: Fields) => void;
   readonly stall: (durationMs: number) => void;
-  readonly exchange: (user: string, agent: string, files?: readonly string[]) => Exchange;
+  readonly exchange: (user: string, agent: string, files?: readonly string[], memories?: readonly Memory[]) => Exchange;
+  readonly remember: (memory: Memory) => string;
+  readonly listThread: () => void;
+  readonly correctEntry: (entry: string, text: string) => void;
+  readonly forgetEntry: (entry: string) => void;
   readonly send: (text: string, options?: SendOptions) => string;
   readonly startTurn: (inputs: readonly string[], options?: { readonly retryOf?: string }) => string;
   readonly status: (kind: StatusKind, label: string, detail?: string) => void;
@@ -133,7 +141,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "k";
 
 type Counters = Readonly<Record<IdPrefix, number>>;
 
@@ -267,7 +275,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emsta]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstak]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -276,15 +284,22 @@ const toCounters = (log: readonly Event[]): Counters => {
   const ids = log.flatMap(idsIn);
   const highest = (prefix: IdPrefix): number =>
     ids.filter((id) => id.startsWith(`${prefix}_`)).reduce((max, id) => Math.max(max, Number(id.split("_", 2)[1])), 0);
-  return { e: highest("e"), m: highest("m"), t: highest("t"), s: highest("s"), a: highest("a") };
+  return { e: highest("e"), m: highest("m"), t: highest("t"), s: highest("s"), a: highest("a"), k: highest("k") };
 };
+
+const slugOf = (title: string): string =>
+  title
+    .toLowerCase()
+    .replace(/^(?:your|my) /u, "")
+    .replaceAll(/[^\p{L}\p{N}]+/gu, "-")
+    .replaceAll(/^-|-$/gu, "");
 
 // A small model of the server's event log. Scenarios drive it the way the server and an app would,
 // and it records what crosses the API, so offsets, ids and delivery after a disconnect can't drift.
 export const createTranscript = (header: Header): Transcript => {
   const lines = createCell<readonly Line[]>([]);
   const log = createCell<readonly Event[]>([]);
-  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0, a: 0 }, issued: new Set() });
+  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0, a: 0, k: 0 }, issued: new Set() });
   const users = createCell(0);
   const now = createCell(0);
   const start = createCell<Start | undefined>(undefined);
@@ -302,6 +317,7 @@ export const createTranscript = (header: Header): Transcript => {
   const device = createCell<Device | undefined>(undefined);
   const attachments = createCell<ReadonlyMap<string, Attachment>>(new Map());
   const pairingCodes = createCell<ReadonlySet<string>>(new Set());
+  const thread = createCell<ReadonlyMap<string, ThreadEntry>>(new Map());
 
   const timestamp = (): string => new Date(now.get()).toISOString();
 
@@ -636,7 +652,12 @@ export const createTranscript = (header: Header): Transcript => {
     };
   };
 
-  const exchange = (user: string, agent: string, files: readonly string[] = []): Exchange => {
+  const exchange = (
+    user: string,
+    agent: string,
+    files: readonly string[] = [],
+    memories: readonly Memory[] = [],
+  ): Exchange => {
     const userMessageId = newUserId();
     const attached = files.map((file) => describeAttachment(file, newUserId()));
     emit("message.accepted", {
@@ -654,6 +675,10 @@ export const createTranscript = (header: Header): Transcript => {
     wait(300);
     step("thinking", { title: "Thinking it through", endedTitle: "Thought it through" });
     wait(1500);
+    for (const memory of memories) {
+      remember(memory);
+      wait(400);
+    }
     const agentMessageId = reply();
     write(agent, { pieces: 1 });
     wait(600);
@@ -776,6 +801,60 @@ export const createTranscript = (header: Header): Transcript => {
     request("PUT", `/v0/devices/${current.id}/presence`, { body: { looking: isLooking } });
     response(204, undefined);
     device.set({ ...current, isLooking });
+  };
+
+  const remember = (memory: Memory): string => {
+    const running = runningTurn();
+    const id = newId("k");
+    const entry: ThreadEntry = {
+      id,
+      kind: memory.kind,
+      title: memory.title,
+      text: memory.text,
+      path: `${memory.kind}/${slugOf(memory.title)}.md`,
+      created_at: timestamp(),
+      updated_at: timestamp(),
+      ...(running.inputs[0] && { source: running.inputs[0] }),
+    };
+    step("memory", {
+      title: `Remembering ${memory.title}`,
+      endedTitle: `Remembered ${memory.title}`,
+      fields: { entry: { id, kind: memory.kind, title: memory.title }, change: "added" },
+    });
+    wait(300);
+    thread.update((current) => new Map([...current, [id, entry]]));
+    emit("thread.changed", { entry: id, change: "added", by: "agent" });
+    endStep();
+    return id;
+  };
+
+  const listThread = (): void => {
+    request("GET", "/v0/thread");
+    const entries = thread
+      .get()
+      .values()
+      .toArray()
+      .toSorted((left, right) => right.updated_at.localeCompare(left.updated_at));
+    response(200, { entries });
+  };
+
+  const correctEntry = (id: string, text: string): void => {
+    request("PUT", `/v0/thread/${id}`, { body: { text } });
+    const known = thread.get().get(id);
+    if (!known) throw new Error(`unknown entry ${id}`);
+    const entry = { ...known, text, updated_at: timestamp() };
+    thread.update((current) => new Map([...current, [id, entry]]));
+    emit("thread.changed", { entry: id, change: "updated", by: "you" });
+    response(200, { entry });
+  };
+
+  const forgetEntry = (id: string): void => {
+    request("DELETE", `/v0/thread/${id}`);
+    if (thread.get().has(id)) {
+      thread.update((current) => new Map([...current].filter(([known]) => known !== id)));
+      emit("thread.changed", { entry: id, change: "removed", by: "you" });
+    }
+    response(204, undefined);
   };
 
   const upload = (file: string, options: UploadOptions = {}): string => {
@@ -992,6 +1071,10 @@ export const createTranscript = (header: Header): Transcript => {
     upload,
     uploadTooLarge,
     forgetUnsentUploads,
+    remember,
+    listThread,
+    correctEntry,
+    forgetEntry,
     fetchAttachment,
     showPairingCode,
     pair,
