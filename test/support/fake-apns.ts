@@ -9,6 +9,7 @@ export type FakeApns = {
   readonly pushed: () => readonly Pushed[];
   readonly next: (waitMs: number) => Promise<Pushed | undefined>;
   readonly answerWith: (status: number) => void;
+  readonly holdAnswers: (isHeld: boolean) => void;
   readonly close: () => Promise<void>;
 };
 
@@ -16,6 +17,7 @@ export const startFakeApns = async (): Promise<FakeApns> => {
   const pushed = createCell<readonly Pushed[]>([]);
   const taken = createCell(0);
   const status = createCell(200);
+  const isHolding = createCell(false);
   const waiters = createCell<readonly (() => void)[]>([]);
 
   const server: Http2Server = createServer((request, response) => {
@@ -26,6 +28,7 @@ export const startFakeApns = async (): Promise<FakeApns> => {
     });
     request.on("end", () => {
       pushed.set([...pushed.get(), { path: request.url, headers: request.headers, payload: JSON.parse(body.get()) }]);
+      if (isHolding.get()) return;
       const answer = status.get();
       response.writeHead(answer, { "content-type": "application/json" });
       response.end(
@@ -70,6 +73,9 @@ export const startFakeApns = async (): Promise<FakeApns> => {
     next,
     answerWith: (answer) => {
       status.set(answer);
+    },
+    holdAnswers: (isHeld) => {
+      isHolding.set(isHeld);
     },
     close: async () => {
       server.close();

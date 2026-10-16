@@ -40,6 +40,7 @@ export const apnsSettings = {
 } as const;
 
 const tokenLifetimeMs = 50 * 60 * 1000;
+const defaultAnswerWithinMs = 30_000;
 
 export const readApnsCredentials = (settings: Settings): ApnsCredentials | undefined => {
   const privateKey = settings.setting(apnsSettings.privateKey);
@@ -75,7 +76,12 @@ const toOutcome = (status: number, body: string): Result<ApnsOutcome, string> =>
   return status === 410 ? ok("gone") : fail(`APNs answered ${String(status)}: ${reasonOf(body)}`);
 };
 
-export const createApns = (credentials: () => ApnsCredentials | undefined, hosts: ApnsHosts, clock: Clock): Apns => {
+export const createApns = (
+  credentials: () => ApnsCredentials | undefined,
+  hosts: ApnsHosts,
+  clock: Clock,
+  answerWithinMs = defaultAnswerWithinMs,
+): Apns => {
   const sessions = createCell<ReadonlyMap<string, ClientHttp2Session>>(new Map());
   const token = createCell<ProviderToken | undefined>(undefined);
 
@@ -138,6 +144,10 @@ export const createApns = (credentials: () => ApnsCredentials | undefined, hosts
         });
         request.on("error", (error: Error) => {
           resolve(fail(`APNs couldn't be reached: ${error.message}`));
+        });
+        request.setTimeout(answerWithinMs, () => {
+          request.close();
+          resolve(fail(`APNs didn't answer within ${String(answerWithinMs / 1000)} seconds.`));
         });
         request.end(JSON.stringify(payload));
       });
