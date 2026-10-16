@@ -19,6 +19,7 @@ import { createNotifier, defaultReminderMs } from "#notifications/notifier.ts";
 import { createPresence } from "#notifications/presence.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
+import { createSecrets } from "#conversation/secrets.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
 import { packageVersion } from "#version.ts";
 
@@ -90,7 +91,8 @@ export const createServer = (options: ServerOptions): Server => {
       : undefined;
   };
   const engine = options.createEngine({ settings: store, log, info, tools: toolServer });
-  const turns = createTurns(store, engine, clock, identifiers, log, options.limits ?? defaultLimits);
+  const secrets = createSecrets();
+  const turns = createTurns(store, engine, clock, identifiers, log, options.limits ?? defaultLimits, secrets);
   const agentName = options.agentName ?? "Ari";
   const presence = createPresence();
   const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
@@ -131,7 +133,7 @@ export const createServer = (options: ServerOptions): Server => {
   });
   registerTools(app, {
     token: toolsToken,
-    tools: [createReportTool(reporter, () => store.runningTurn()?.id), createAskTool(turns)],
+    tools: [createReportTool(reporter, () => store.runningTurn()?.id, secrets), createAskTool(turns)],
     version: packageVersion(),
   });
 
