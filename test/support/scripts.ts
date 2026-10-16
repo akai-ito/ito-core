@@ -38,6 +38,7 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     }
     case "message.accepted":
     case "message.queued":
+    case "thread.changed":
     case "turn.started": {
       return false;
     }
@@ -53,6 +54,7 @@ const toTimed = (event: LoggedEvent): TimedEvent | undefined => {
       return { at, event: { type: "ask", fields } };
     }
     case "turn.status":
+    case "thread.changed":
     case "ask.ended": {
       return;
     }

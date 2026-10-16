@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.4"
+  version: "0.5"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -19,6 +19,7 @@ info:
       token of its own.
     - **Attach** photos and files: upload each one, then name them in a message.
     - **Answer** what the agent asks by sending a message, or cancel the ask.
+    - **Read what Ari knows,** and correct or forget any of it.
     - **Notify** a device while you're not looking: register it, then say when the conversation is
       on screen. [The push schema](push.schema.json) describes what it receives.
 
@@ -55,6 +56,8 @@ tags:
     description: Control the agent's work on a turn.
   - name: Asks
     description: Settle what the agent asked you.
+  - name: Thread
+    description: What Ari knows about you, kept as Markdown in a git repository on your server.
   - name: Notifications
     description: Reach you through push notifications while you're not looking.
 paths:
@@ -78,7 +81,7 @@ paths:
               schema: { $ref: "#/components/schemas/Discovery" }
               example:
                 product: ito
-                protocol: ["0.4"]
+                protocol: ["0.5"]
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/pair:
     post:
@@ -125,8 +128,8 @@ paths:
               schema: { $ref: "#/components/schemas/ServerInfo" }
               example:
                 name: studio
-                version: 0.4.0
-                protocol: "0.4"
+                version: 0.5.0
+                protocol: "0.5"
                 agent:
                   name: Ari
                   model: gpt-6.1-sol
@@ -418,6 +421,78 @@ paths:
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/thread:
+    get:
+      tags: [Thread]
+      operationId: listThread
+      summary: Read what Ari knows
+      description: Every entry, newest change first. `thread.changed` on the event stream says when to read again.
+      responses:
+        "200":
+          description: What Ari knows.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadPage" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/thread/{entry}:
+    get:
+      tags: [Thread]
+      operationId: getThreadEntry
+      summary: Read one entry
+      parameters:
+        - $ref: "#/components/parameters/ThreadEntry"
+      responses:
+        "200":
+          description: The entry.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadEntryResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Thread]
+      operationId: correctThreadEntry
+      summary: Correct an entry
+      description: Replaces the entry's words, and its title if given. The change is one commit in the Thread, and `thread.changed` follows with `by` set to `you`.
+      parameters:
+        - $ref: "#/components/parameters/ThreadEntry"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CorrectThreadEntry" }
+            example: { text: "Your longest run is 21 km, from the Battersea half." }
+      responses:
+        "200":
+          description: Corrected.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadEntryResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Thread]
+      operationId: forgetThreadEntry
+      summary: Forget an entry
+      description: |
+        Ari stops knowing it: the file is removed from the Thread and from its git history, and
+        `thread.changed` follows with `removed`. Forgetting an entry the server doesn't have changes
+        nothing.
+      parameters:
+        - $ref: "#/components/parameters/ThreadEntry"
+      responses:
+        "204":
+          description: Forgotten.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/asks/{ask}/cancel:
     post:
       tags: [Asks]
@@ -534,7 +609,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.4"
+        example: "0.5"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -547,6 +622,12 @@ components:
       required: true
       description: The turn's id, from `turn.started`.
       schema: { $ref: "events.schema.json#/$defs/TurnId" }
+    ThreadEntry:
+      name: entry
+      in: path
+      required: true
+      description: The entry's id.
+      schema: { $ref: "events.schema.json#/$defs/ThreadEntryId" }
     Attachment:
       name: attachment
       in: path
@@ -605,7 +686,7 @@ components:
               message: That pairing code has expired or was already used.
               detail: Run ito pair on the server for a new code.
     NotFound:
-      description: The server doesn't know this turn, message, ask, attachment or device (`not_found`).
+      description: The server doesn't know this turn, message, ask, attachment, entry or device (`not_found`).
       headers:
         Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
       content:
@@ -679,6 +760,10 @@ components:
       $ref: "events.schema.json#/$defs/Ask"
     Attachment:
       $ref: "events.schema.json#/$defs/Attachment"
+    ThreadEntry:
+      $ref: "events.schema.json#/$defs/ThreadEntry"
+    ThreadChanged:
+      $ref: "events.schema.json#/$defs/ThreadChanged"
     Notification:
       $ref: "push.schema.json#/$defs/Notification"
     Message:
@@ -863,6 +948,29 @@ components:
         token:
           description: "This device's token. Send it as `Authorization: Bearer <token>`."
           type: string
+    ThreadPage:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items: { $ref: "events.schema.json#/$defs/ThreadEntry" }
+    ThreadEntryResult:
+      type: object
+      required: [entry]
+      properties:
+        entry: { $ref: "events.schema.json#/$defs/ThreadEntry" }
+    CorrectThreadEntry:
+      type: object
+      required: [text]
+      properties:
+        title:
+          type: string
+          minLength: 1
+        text:
+          type: string
+          minLength: 1
+          pattern: \S
     AskResult:
       type: object
       required: [ask]

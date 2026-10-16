@@ -74,6 +74,13 @@ const writeWhole = (transcript: Transcript, text: string, pieces?: number): void
   transcript.endMessage("completed");
 };
 
+const entryIds = (transcript: Transcript): readonly string[] =>
+  transcript
+    .lines()
+    .map((line) => (line.given ?? line.event) as { readonly type?: string; readonly entry?: string } | undefined)
+    .filter((event) => event?.type === "thread.changed")
+    .map((event) => event?.entry ?? "");
+
 const firstAttachment = (transcript: Transcript): string => {
   const found = transcript
     .lines()
@@ -118,7 +125,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.begin(todayAt);
     transcript.request("GET", "/.well-known/ito");
     transcript.wait(40);
-    transcript.response(200, { product: "ito", protocol: ["0.4"] }, { headers: { "Ito-Protocol": "0.4" } });
+    transcript.response(200, { product: "ito", protocol: ["0.5"] }, { headers: { "Ito-Protocol": "0.5" } });
     transcript.wait(20);
     transcript.request("GET", "/v0/server", {
       headers: { Authorization: "Bearer ito_example_mistyped_token_0000000000000000000" },
@@ -133,7 +140,7 @@ const scenarios: readonly (() => Transcript)[] = [
           detail: "Use the token ito serve printed, or run ito token new.",
         },
       },
-      { headers: { "Ito-Protocol": "0.4" } },
+      { headers: { "Ito-Protocol": "0.5" } },
     );
     transcript.wait(9000);
     transcript.request("GET", "/v0/server", { headers: { Authorization: authorization } });
@@ -142,12 +149,12 @@ const scenarios: readonly (() => Transcript)[] = [
       200,
       {
         name: "studio",
-        version: "0.4.0",
-        protocol: "0.4",
+        version: "0.5.0",
+        protocol: "0.5",
         agent: { name: "Ari" },
         setup: { notifications: false, reports: false },
       },
-      { headers: { "Ito-Protocol": "0.4" } },
+      { headers: { "Ito-Protocol": "0.5" } },
     );
     transcript.wait(10);
     transcript.connect({ headers: { Authorization: authorization } });
@@ -1451,7 +1458,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.showPairingCode("7F3K-92QD");
     transcript.wait(9000);
     transcript.request("GET", "/.well-known/ito");
-    transcript.response(200, { product: "ito", protocol: ["0.4"] }, { headers: { "Ito-Protocol": "0.4" } });
+    transcript.response(200, { product: "ito", protocol: ["0.5"] }, { headers: { "Ito-Protocol": "0.5" } });
     transcript.wait(300);
     transcript.pair("7F3K-92QD", "iPhone", pairedToken);
     transcript.wait(200);
@@ -1460,15 +1467,76 @@ const scenarios: readonly (() => Transcript)[] = [
       200,
       {
         name: "studio",
-        version: "0.4.0",
-        protocol: "0.4",
+        version: "0.5.0",
+        protocol: "0.5",
         agent: { name: "Ari" },
         setup: { notifications: false, reports: false },
       },
-      { headers: { "Ito-Protocol": "0.4" } },
+      { headers: { "Ito-Protocol": "0.5" } },
     );
     transcript.wait(60_000);
     transcript.pair("7F3K-92QD", "iPad", "unused");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "32-ari-remembers-something",
+      scenario: 32,
+      title: "Ari remembers something",
+      summary:
+        "You mention a new best, and Ari keeps it: a memory step on the trail names what it remembered, " +
+        "and thread.changed tells every device, without carrying the words.",
+      guarantees: ["G21"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Did the Battersea half on Sunday: 21 km, my longest yet.");
+    transcript.wait(300);
+    transcript.step("thinking", thinking);
+    transcript.wait(900);
+    transcript.remember({
+      kind: "you",
+      title: "your longest run",
+      text: "Your longest run is 21 km, from the Battersea half on Sunday 18 October.",
+    });
+    transcript.wait(200);
+    writeWhole(transcript, "Three kilometres past your old best. I'll plan around 21 from now on.");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "33-correct-and-forget",
+      scenario: 33,
+      title: "Correct and forget",
+      summary:
+        "In What Ari knows you read the entries, correct one and forget another. Each change is one " +
+        "request, and thread.changed tells every device; a forgotten entry is gone from the Thread.",
+      guarantees: ["G21"],
+    });
+    transcript.time(yesterdayAt);
+    transcript.exchange(
+      "I live in Clapham now, and Sam's at 14 Elm Road.",
+      "Noted, both of them.",
+      [],
+      [
+        { kind: "you", title: "where you live", text: "You live in Clapham." },
+        { kind: "people", title: "Sam's address", text: "Sam lives at 14 Elm Road." },
+      ],
+    );
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(1500);
+    transcript.listThread();
+    transcript.wait(4000);
+    const [home = "", sam = ""] = entryIds(transcript);
+    transcript.correctEntry(home, "You live in Clapham, near Abbeville Road.");
+    transcript.wait(3000);
+    transcript.forgetEntry(sam);
     return transcript;
   },
 ];

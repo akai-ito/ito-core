@@ -29,6 +29,7 @@ where the protocol has to make it possible, marked *App*.
 | G18 | **Notifications are private.** The text of every notification is encrypted on the server with a key the device made, so Apple's push service carries only ciphertext. | 18, 21, 24, 26 |
 | G19 | **Attachments stay as you sent them.** A photo or file is uploaded once, under an id the app chooses, so a retry never makes a second copy. Its bytes never change, every app can fetch them, and the agent works on its own copy, so nothing it does changes what you sent. | 27, 28, 29, 30 |
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
+| G21 | **What Ari knows is yours.** Every change Ari makes to what it knows shows on the trail, every device hears of every change, and you can correct or forget any entry. A forgotten entry is gone from the Thread and its history, and the conversation never carried its words. | 32, 33 |
 
 ## Scenario by scenario
 
@@ -266,6 +267,17 @@ where the protocol has to make it possible, marked *App*.
 - `ito pair` shows a QR code with the address and a code that works once, for five minutes. The app
   exchanges it for a token of its own, and connects with it. (G11, G20)
 - A used, wrong or expired code is refused as `pairing_code_rejected`. (G20)
+
+### 32 · [Ari remembers something](transcripts/32-ari-remembers-something.jsonl)
+
+- When Ari keeps something, a `memory` step names it in plain words ("Remembered your longest run")
+  and carries the entry's id, kind and title. (G21)
+- `thread.changed` tells every device which entry changed, never its words. (G21)
+
+### 33 · [Correct and forget](transcripts/33-correct-and-forget.jsonl)
+
+- What Ari knows is one request away, newest change first. A correction or a forget is one request,
+  and every device hears of it through `thread.changed`. (G21)
 
 ## Not in this version
 
