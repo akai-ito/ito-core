@@ -90,7 +90,8 @@ Capabilities, such as Reports, install with the server from
 them on and set them up in Ari's Settings › Capabilities. Each runs as its own process with only its
 own setup values. Reports files the gaps Ari hits, such as a page it couldn't load or a mistake you
 corrected, as public
-[issues labelled `gap`](https://github.com/akai-ito/ito-core/issues?q=label%3Agap) on ito-core, never with anything from your conversation: give it a
+[issues labelled `gap`](https://github.com/akai-ito/ito-core/issues?q=label%3Agap) on ito-core,
+never with anything from your conversation: give it a
 [fine-grained GitHub token](https://github.com/settings/personal-access-tokens/new) for
 akai-ito/ito-core with *Issues: read and write*. Up to 20 reports a day are filed; any more go to
 Ito's log. To work on a capability, point the server at a working copy with
