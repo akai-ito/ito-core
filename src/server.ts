@@ -61,6 +61,7 @@ export type EngineContext = {
   readonly tools: () => ToolServer | undefined;
   readonly skills: () => string;
   readonly inMind: () => string;
+  readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
 };
 
 export type Server = {
@@ -137,6 +138,7 @@ export const createServer = (options: ServerOptions): Server => {
     tools: toolServer,
     skills,
     inMind: memory.inMindText,
+    callTool: (name, input) => callTool(name, input),
   });
   host.subscribe(() => {
     void engine.refresh();

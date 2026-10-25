@@ -1,10 +1,18 @@
+import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { setImmediate as yieldToIo } from "node:timers/promises";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
 import { toMessageId, toTurnId } from "#conversation/ids.ts";
 import type { EngineEvent } from "#engine/engine.ts";
 import { demoScripts } from "#engine/scripted/demo.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
+import { systemClock } from "#clock.ts";
+import { wordEmbedder } from "#memory/embedder.ts";
+import type { Step } from "#protocol/types.ts";
+import { createServer } from "#server.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
 
 const turn = toTurnId("t_demo");
@@ -104,5 +112,56 @@ describe("the demo engine", () => {
     expect(events).toContainEqual(
       expect.objectContaining({ type: "step.ended", key: "search", outcome: "completed", facts: { exit_code: 1 } }),
     );
+  });
+});
+
+describe("the demo engine's memory", () => {
+  it("writes Alex's page, moves the old state to Earlier the second time, and recalls it", async () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), "ito-demo-memory-"));
+    const server = createServer({
+      dataDirectory: home,
+      name: "demo",
+      embedder: wordEmbedder,
+      timeZone: "UTC",
+      createEngine: ({ callTool }) => createScriptEngine(systemClock, demoScripts, callTool),
+    });
+    await server.memory.ready;
+    const send = async (text: string): Promise<readonly Step[]> => {
+      const before = new Set(server.store.snapshot("no_cursor").event.steps.map(({ id }) => id));
+      const accepted = server.store.acceptMessage(toMessageId(randomUUID()), text);
+      if (!accepted.ok) throw new Error(accepted.failure);
+      server.turns.route(toMessageId(accepted.value.message.id), text);
+      await vi.waitFor(
+        () => {
+          const { messages, turn } = server.store.snapshot("no_cursor").event;
+          expect(messages.at(-1)).toMatchObject({ role: "agent", outcome: "completed" });
+          expect(turn).toBeNull();
+        },
+        { timeout: 15_000, interval: 100 },
+      );
+      return server.store
+        .snapshot("no_cursor")
+        .event.steps.filter(({ id, kind }) => kind === "memory" && !before.has(id));
+    };
+
+    try {
+      const first = await send("remember Alex");
+      const second = await send("remember Alex again");
+      const recalled = await send("recall Alex");
+      const change = await server.memory.change(second.find(({ action }) => action === "updated")?.change ?? "");
+
+      expect(first.map(({ title }) => title)).toEqual(["Updated Alex", "Added to today's journal"]);
+      expect(second.map(({ title }) => title)).toEqual(["Used Alex", "Updated Alex", "Added to today's journal"]);
+      expect(recalled).toMatchObject([
+        {
+          action: "used",
+          pages: expect.arrayContaining([{ address: "memory:people/alex", title: "Alex" }]) as unknown,
+        },
+      ]);
+      expect(change?.after).toContain("## Earlier");
+    } finally {
+      await server.close();
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

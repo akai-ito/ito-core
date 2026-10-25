@@ -58,9 +58,9 @@ const parseServeOptions = (flags: readonly string[]): Result<ServeOptions, strin
 
 const toEngineFactory = (engine: EngineName, paths: Paths): ServerOptions["createEngine"] =>
   engine === "demo"
-    ? ({ settings }: EngineContext) => {
+    ? ({ settings, callTool }: EngineContext) => {
         settings.setSetting(modelSetting, "demo");
-        return createScriptEngine(systemClock, demoScripts);
+        return createScriptEngine(systemClock, demoScripts, callTool);
       }
     : ({ settings, log, info, tools, skills, inMind }: EngineContext) => {
         const voice = readFileSync(instructionsFile, "utf8");

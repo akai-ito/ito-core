@@ -3,6 +3,11 @@ import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import type { TurnId } from "#conversation/ids.ts";
 import type { Engine, EngineEvent, Input, SteerOutcome } from "#engine/engine.ts";
+import type { ToolResult } from "#tools/mcp.ts";
+
+export type CallTool = (name: string, input: unknown) => Promise<ToolResult>;
+
+export type Act = { readonly at: number; readonly act: (callTool: CallTool) => Promise<void> };
 
 export type TimedEvent = { readonly at: number; readonly event: EngineEvent };
 
@@ -10,6 +15,7 @@ export type Steered = { readonly outcome: SteerOutcome; readonly events?: readon
 
 export type TurnScript = {
   readonly events: readonly TimedEvent[];
+  readonly acts?: readonly Act[];
   readonly steer: (input: Input, now: number) => Steered;
   readonly stoppedAt: (requestedAt: number) => number;
 };
@@ -22,19 +28,23 @@ type Playing = {
   readonly queue: AsyncQueue<EngineEvent>;
   readonly script: TurnScript;
   readonly scheduled: readonly Scheduled[];
+  readonly acting: readonly Cancel[];
 };
+
+const noTools: CallTool = (name) => Promise.resolve({ text: `The demo has no tool ${name}.`, isError: true });
 
 const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "failed", "stopped"]);
 
 const isTerminal = (event: EngineEvent): boolean => terminalTypes.has(event.type);
 
-export const createScriptEngine = (clock: Clock, scriptFor: ScriptSource): Engine => {
+export const createScriptEngine = (clock: Clock, scriptFor: ScriptSource, callTool = noTools): Engine => {
   const playing = createCell<ReadonlyMap<TurnId, Playing>>(new Map());
 
   const finish = (turn: TurnId): void => {
     const current = playing.get().get(turn);
     if (!current) return;
     for (const { cancel } of current.scheduled) cancel();
+    for (const cancel of current.acting) cancel();
     current.queue.end();
     playing.update((turns) => new Map([...turns].filter(([id]) => id !== turn)));
   };
@@ -74,7 +84,12 @@ export const createScriptEngine = (clock: Clock, scriptFor: ScriptSource): Engin
     start: (turn, inputs) => {
       const queue = createAsyncQueue<EngineEvent>();
       const script = scriptFor(turn, inputs, clock.now());
-      playing.update((turns) => new Map([...turns, [turn, { queue, script, scheduled: [] }]]));
+      const acting = (script.acts ?? []).map(({ at, act }) =>
+        clock.after(Math.max(0, at - clock.now()), () => {
+          void act(callTool);
+        }),
+      );
+      playing.update((turns) => new Map([...turns, [turn, { queue, script, scheduled: [], acting }]]));
       schedule(turn, script.events);
       return queue;
     },
