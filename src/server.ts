@@ -136,6 +136,7 @@ export const createServer = (options: ServerOptions): Server => {
     gate: createGate(() => [store.setting(tokenSetting) ?? "", ...store.pairedTokenHashes()].filter(Boolean), clock),
     presence,
     attachments,
+    host,
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
   });

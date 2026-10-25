@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
+import { findInstalled } from "#capabilities/installed.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
@@ -28,6 +29,7 @@ import { createVirtualClock } from "./virtual-clock.ts";
 
 export const transcriptToken = "ito_example_not_a_real_token_00000000000000000000";
 
+const capabilities = findInstalled(path.join(import.meta.dirname, "capabilities")).filter(({ id }) => id === "reports");
 const waitMs = 4000;
 const quietMs = 300;
 const afterwardsMs = 70_000;
@@ -120,9 +122,11 @@ export const replay = async (name: string): Promise<void> => {
       agentName: "Ari",
       clock,
       push: { hosts: { production: apns.origin, sandbox: apns.origin } },
+      capabilities,
     });
 
   const listen = async (server: Server): Promise<void> => {
+    await server.host.ready;
     live.set({ server, origin: await server.app.listen({ port: 0, host: "127.0.0.1" }) });
   };
 
