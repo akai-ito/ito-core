@@ -1,12 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { onSetting, valuesSetting } from "#capabilities/host.ts";
 import { systemClock } from "#clock.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { randomIdentifiers } from "#identifiers.ts";
@@ -22,10 +23,16 @@ const binary = path.join(import.meta.dirname, "..", "bin", "ito.ts");
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-crash-"));
 const eventWaitMs = 5000;
 
-const seedToken = (): void => {
+const capabilities = path.join(import.meta.dirname, "support", "capabilities");
+
+const seedSettings = (settings: readonly (readonly [string, string])[]): void => {
   const store = createStore(openDatabase(databaseFile(home)), systemClock, randomIdentifiers);
-  store.setSetting(tokenSetting, hashToken(token));
+  for (const [key, value] of settings) store.setSetting(key, value);
   store.close();
+};
+
+const seedToken = (): void => {
+  seedSettings([[tokenSetting, hashToken(token)]]);
 };
 
 const findFreePort = async (): Promise<number> => {
@@ -48,7 +55,7 @@ const isAnswering = async (url: string): Promise<boolean> => {
 
 const startIto = async (port: number): Promise<ChildProcess> => {
   const child = spawn(process.execPath, [binary, "serve", "--engine", "demo", "--port", String(port)], {
-    env: { ...process.env, ITO_HOME: home },
+    env: { ...process.env, ITO_HOME: home, ITO_CAPABILITIES: capabilities },
     stdio: "ignore",
   });
   const waitUntilReady = async (attempt: number): Promise<void> => {
@@ -89,6 +96,15 @@ const replyText = (events: readonly Event[], message: string): string =>
   events.map((event) => (event.type === "message.delta" && event.message === message ? event.text : "")).join("");
 
 const isReply = (message: Message, id: string): boolean => message.id === id;
+
+const isAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 describe("a crash mid-reply", () => {
   afterAll(() => {
@@ -152,5 +168,25 @@ describe("a crash mid-reply", () => {
       second.kill("SIGTERM");
       await once(second, "exit");
     }
+  });
+
+  it("leaves no capability running behind it", async () => {
+    seedSettings([
+      [onSetting("echo"), "true"],
+      [valuesSetting("echo"), JSON.stringify({ token: "secret-1" })],
+    ]);
+    const pidFile = path.join(home, "capabilities", "echo", "pid");
+    const server = await startIto(await findFreePort());
+    await vi.waitFor(() => {
+      expect(existsSync(pidFile)).toBe(true);
+    });
+    const pid = Number(readFileSync(pidFile, "utf8"));
+
+    server.kill("SIGKILL");
+    await once(server, "exit");
+
+    await vi.waitFor(() => {
+      expect(isAlive(pid)).toBe(false);
+    });
   });
 });

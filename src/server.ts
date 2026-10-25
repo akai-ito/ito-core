@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { createCell } from "#cell.ts";
+import { createHost, type Host, type Installed } from "#capabilities/host.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
 import type { Engine, ToolServer } from "#engine/engine.ts";
@@ -36,6 +37,7 @@ export type ServerOptions = {
   readonly logger?: FastifyServerOptions["logger"];
   readonly reports?: Partial<ReportsOptions>;
   readonly push?: Partial<PushOptions>;
+  readonly capabilities?: readonly Installed[];
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
@@ -54,6 +56,7 @@ export type Server = {
   readonly store: Store;
   readonly turns: Turns;
   readonly attachments: Attachments;
+  readonly host: Host;
   readonly close: () => Promise<void>;
 };
 
@@ -105,6 +108,13 @@ export const createServer = (options: ServerOptions): Server => {
   const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
   const apns = createApns(() => readApnsCredentials(store), push.hosts, clock);
   const notifier = createNotifier({ store, apns, clock, presence, agentName, log, reminderMs: push.reminderMs });
+  const host = createHost({
+    installed: options.capabilities ?? [],
+    settings: store,
+    folders: path.join(options.dataDirectory, "capabilities"),
+    clock,
+    info,
+  });
 
   const app = createApp({
     store,
@@ -160,6 +170,7 @@ export const createServer = (options: ServerOptions): Server => {
     await app.close();
     await turns.close();
     await engine.close();
+    await host.close();
     apns.close();
     store.close();
   };
@@ -170,6 +181,7 @@ export const createServer = (options: ServerOptions): Server => {
     store,
     turns,
     attachments,
+    host,
     close: () => {
       const pending = closing.get() ?? shutdown();
       closing.set(pending);

@@ -2,6 +2,7 @@ import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import { parseArgs } from "node:util";
+import { bundledDirectory, findInstalled } from "#capabilities/installed.ts";
 import type { Io } from "#cli/io.ts";
 import { toPaths, type Paths } from "#cli/paths.ts";
 import { tokenMessage } from "#cli/token.ts";
@@ -92,6 +93,7 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
     dataDirectory: paths.home,
     createEngine: toEngineFactory(engine, paths),
     name,
+    capabilities: findInstalled(io.environment.ITO_CAPABILITIES ?? bundledDirectory),
     logger: { level: "info", redact: ["req.headers.authorization"] },
   });
   await server.app.listen({

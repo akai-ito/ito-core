@@ -20,7 +20,7 @@ import type { TurnStartParams } from "#engine/codex/bindings/v2/TurnStartParams.
 import type { TurnStartResponse } from "#engine/codex/bindings/v2/TurnStartResponse.ts";
 import type { TurnSteerParams } from "#engine/codex/bindings/v2/TurnSteerParams.ts";
 import type { TurnSteerResponse } from "#engine/codex/bindings/v2/TurnSteerResponse.ts";
-import { createConnection, type IncomingRequest, type RpcFailure } from "#engine/codex/json-rpc.ts";
+import { createConnection, type IncomingRequest, type RpcFailure } from "#json-rpc.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { packageVersion } from "#version.ts";
 
@@ -104,6 +104,7 @@ export const startCodexProcess = async (options: CodexProcessOptions): Promise<R
     onMalformed: (line) => {
       stderr.update((kept) => [...kept, `Unreadable output: ${line}`].slice(-keptStderrLines));
     },
+    closedMessage: "The Codex process exited.",
   });
 
   const killGroup = async (): Promise<void> => {
