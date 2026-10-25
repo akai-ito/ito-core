@@ -45,5 +45,9 @@ export default defineConfig(
     },
   },
   { files: ["src/cell.ts"], rules: { "functional/immutable-data": "off" } },
+  {
+    files: ["test/support/capabilities/*.ts"],
+    rules: { "functional/immutable-data": "off", "unicorn/no-process-exit": "off" },
+  },
   { files: ["*.config.ts"], rules: { "no-restricted-syntax": ["error", ...shapeRules] } },
 );

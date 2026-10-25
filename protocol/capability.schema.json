@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akai-ito.github.io/ito-core/protocol/v0/capability.schema.json",
+  "title": "Ito capability protocol",
+  "description": "What Ito's server and a capability say to each other. The server starts each capability as its own process and they exchange JSON-RPC 2.0 messages, one JSON object per line, on the capability's standard input and output; the `jsonrpc` member is left out, as in Codex's app server. Standard error is the capability's log. A capability exits when its standard input closes.",
+  "$defs": {
+    "ProtocolVersion": {
+      "description": "The capability protocol's version, as `MAJOR.MINOR`. Until 1.0 the server and a capability must speak the same `0.MINOR`.",
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "InitializeParams": {
+      "description": "`initialize`, from the server, first after starting the process.",
+      "type": "object",
+      "required": ["protocol"],
+      "properties": { "protocol": { "$ref": "#/$defs/ProtocolVersion" } }
+    },
+    "InitializeResult": {
+      "description": "The answer to `initialize`: the capability's protocol version and its manifest.",
+      "type": "object",
+      "required": ["protocol", "manifest"],
+      "properties": {
+        "protocol": { "$ref": "#/$defs/ProtocolVersion" },
+        "manifest": { "$ref": "#/$defs/Manifest" }
+      }
+    },
+    "Manifest": {
+      "description": "Everything the server needs to show, set up and offer a capability, as data.",
+      "type": "object",
+      "required": ["id", "version", "kind", "title", "summary", "setup", "operations", "skill", "uses"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Lowercase letters, digits and dashes; it names the capability's commands (`ito <id> …`), folder and endpoints.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "version": {
+          "description": "The capability's own version, as `MAJOR.MINOR`, which apps use to decide whether they know its screen.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+$"
+        },
+        "kind": {
+          "description": "`domain` for a topic of your life, `hand` for a way to act that isn't one.",
+          "enum": ["domain", "hand"]
+        },
+        "title": { "description": "Its name in Settings, such as Reports.", "type": "string", "minLength": 1 },
+        "summary": {
+          "description": "One sentence on what it does, for Settings and for the agent.",
+          "type": "string",
+          "minLength": 1
+        },
+        "setup": {
+          "description": "The fields of its setup sheet, in order.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/Field" }
+        },
+        "operations": {
+          "description": "What the agent can do with it.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/Operation" }
+        },
+        "skill": {
+          "description": "Markdown the agent reads before using it: when and how. The server adds a reference of its commands.",
+          "type": "string"
+        },
+        "uses": {
+          "description": "What it reaches beyond its own folder, shown before you switch it on.",
+          "type": "object",
+          "required": ["hosts", "folders"],
+          "additionalProperties": false,
+          "properties": {
+            "hosts": { "type": "array", "items": { "type": "string" } },
+            "folders": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "Field": {
+      "description": "One field of a setup sheet. A `password` goes to the server once and never comes back to any app.",
+      "type": "object",
+      "required": ["name", "kind", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "kind": { "enum": ["text", "password", "toggle", "choice"] },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "optional": { "description": "True when the capability can run without it.", "type": "boolean" },
+        "choices": {
+          "description": "`choice` only: what can be picked.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["value", "label"],
+            "additionalProperties": false,
+            "properties": { "value": { "type": "string" }, "label": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "Operation": {
+      "description": "One thing the agent can do. Every operation is a command, `ito <capability> <name>`; with `tool`, it is also one of the agent's tools.",
+      "type": "object",
+      "required": ["name", "title", "running", "done", "description", "input"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "title": { "description": "What it does, as a tool's title.", "type": "string", "minLength": 1 },
+        "running": { "description": "Its step's title while it runs, such as Reporting it to Ito.", "type": "string" },
+        "done": { "description": "Its step's title once it has run, such as Reported it to Ito.", "type": "string" },
+        "description": { "description": "When and how to use it, for the agent.", "type": "string", "minLength": 1 },
+        "input": {
+          "description": "A JSON Schema object for its input; each property becomes a `--flag` of its command.",
+          "type": "object",
+          "required": ["type"],
+          "properties": { "type": { "const": "object" } }
+        },
+        "tool": {
+          "description": "The tool's name, when the operation is also one of the agent's tools.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "publishes": {
+          "description": "True when its input ends up in public, so the server removes your secret answers from it first.",
+          "type": "boolean"
+        }
+      }
+    },
+    "Values": {
+      "description": "Setup values by field name: a string for `text`, `password` and `choice`, a boolean for `toggle`.",
+      "type": "object",
+      "additionalProperties": { "type": ["string", "boolean"] }
+    },
+    "StartParams": {
+      "description": "`start`, from the server, when the capability is on and set up: its values, its own secrets among them, and its private folder, which is also its working directory. An error answer shows the capability as needing you, with the error's message.",
+      "type": "object",
+      "required": ["values", "folder"],
+      "properties": { "values": { "$ref": "#/$defs/Values" }, "folder": { "type": "string" } }
+    },
+    "CheckParams": {
+      "description": "`check`, from the server, to test setup values before they're saved; it may come before `start`.",
+      "type": "object",
+      "required": ["values"],
+      "properties": { "values": { "$ref": "#/$defs/Values" } }
+    },
+    "CheckResult": {
+      "description": "The answer to `check`: nothing when the values work, otherwise what's wrong, in plain words.",
+      "type": "object",
+      "properties": { "problem": { "type": "string" } }
+    },
+    "CallParams": {
+      "description": "`call`, from the server, to run an operation. An error answer's message goes to the agent.",
+      "type": "object",
+      "required": ["operation", "input"],
+      "properties": {
+        "operation": { "type": "string" },
+        "input": { "type": "object" },
+        "turn": { "description": "The turn the agent is in, when there is one.", "type": "string" }
+      }
+    },
+    "CallResult": {
+      "description": "The answer to `call`: text for the agent, and optionally the same as data.",
+      "type": "object",
+      "required": ["text"],
+      "properties": { "text": { "type": "string" }, "data": { "type": "object" } }
+    },
+    "CancelParams": {
+      "description": "`cancel`, a notification from the server: stop working on the `call` with this request id, and answer it with an error.",
+      "type": "object",
+      "required": ["id"],
+      "properties": { "id": { "type": ["integer", "string"] } }
+    },
+    "StatusParams": {
+      "description": "`status`, a notification from the capability: whether it's working, or needs you, and why.",
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["ok", "needs_you"] },
+        "detail": { "description": "What's wrong, such as GitHub rejected the token.", "type": "string" }
+      }
+    }
+  }
+}

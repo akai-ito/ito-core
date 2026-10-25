@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "type": "module",
+  "ito": {
+    "capabilities": {
+      "echo": "echo.ts"
+    }
+  }
+}

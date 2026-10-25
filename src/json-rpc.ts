@@ -17,10 +17,17 @@ export type ConnectionOptions = {
   readonly onNotification: (notification: IncomingNotification) => void;
   readonly onRequest: (request: IncomingRequest) => Result<unknown, RpcFailure>;
   readonly onMalformed: (line: string) => void;
+  readonly closedMessage: string;
 };
 
+export type Cancellation = { readonly signal: AbortSignal; readonly method: string };
+
 export type Connection = {
-  readonly request: (method: string, parameters: unknown) => Promise<Result<unknown, RpcFailure>>;
+  readonly request: (
+    method: string,
+    parameters: unknown,
+    cancellation?: Cancellation,
+  ) => Promise<Result<unknown, RpcFailure>>;
   readonly notify: (method: string, parameters?: unknown) => void;
   readonly closed: Promise<void>;
 };
@@ -29,7 +36,7 @@ type Message = Readonly<Record<string, unknown>>;
 
 type Settle = (outcome: Result<unknown, RpcFailure>) => void;
 
-export const connectionClosed: RpcFailure = { code: -32_099, message: "The Codex process exited." };
+const closedCode = -32_099;
 
 const isMessage = (value: unknown): value is Message =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -56,9 +63,12 @@ export const createConnection = ({
   onNotification,
   onRequest,
   onMalformed,
+  closedMessage,
 }: ConnectionOptions): Connection => {
   const nextId = createCell(1);
   const pending = createCell<ReadonlyMap<RequestId, Settle>>(new Map());
+  const isClosed = createCell(false);
+  const closed = fail({ code: closedCode, message: closedMessage });
 
   const send = (message: Message): void => {
     if (output.writable) output.write(`${JSON.stringify(message)}\n`);
@@ -93,16 +103,28 @@ export const createConnection = ({
   const pump = async (): Promise<void> => {
     const lines = createInterface({ input, crlfDelay: Infinity });
     for await (const line of lines) if (line.trim() !== "") receive(line);
-    for (const id of pending.get().keys()) settle(id, fail(connectionClosed));
+    isClosed.set(true);
+    for (const id of pending.get().keys()) settle(id, closed);
   };
 
   return {
-    request: (method, parameters) =>
+    request: (method, parameters, cancellation) =>
       new Promise((resolve) => {
+        if (isClosed.get()) {
+          resolve(closed);
+          return;
+        }
         const id = nextId.get();
         nextId.set(id + 1);
         pending.update((current) => new Map([...current, [id, resolve]]));
         send({ id, method, params: parameters });
+        cancellation?.signal.addEventListener(
+          "abort",
+          () => {
+            if (pending.get().has(id)) send({ method: cancellation.method, params: { id } });
+          },
+          { once: true },
+        );
       }),
     notify: (method, parameters) => {
       send(parameters === undefined ? { method } : { method, params: parameters });
