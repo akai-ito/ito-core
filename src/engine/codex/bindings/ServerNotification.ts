@@ -60,6 +60,7 @@ import type { ThreadNameUpdatedNotification } from "./v2/ThreadNameUpdatedNotifi
 import type { ThreadPredictionUpdatedNotification } from "./v2/ThreadPredictionUpdatedNotification.ts";
 import type { ThreadProjectUpdatedNotification } from "./v2/ThreadProjectUpdatedNotification.ts";
 import type { ThreadQueueChangedNotification } from "./v2/ThreadQueueChangedNotification.ts";
+import type { ThreadReadStateChangedNotification } from "./v2/ThreadReadStateChangedNotification.ts";
 import type { ThreadRealtimeClosedNotification } from "./v2/ThreadRealtimeClosedNotification.ts";
 import type { ThreadRealtimeErrorNotification } from "./v2/ThreadRealtimeErrorNotification.ts";
 import type { ThreadRealtimeItemAddedNotification } from "./v2/ThreadRealtimeItemAddedNotification.ts";
@@ -93,6 +94,7 @@ export type ServerNotification =
   | { method: "error"; params: ErrorNotification }
   | { method: "thread/started"; params: ThreadStartedNotification }
   | { method: "thread/status/changed"; params: ThreadStatusChangedNotification }
+  | { method: "thread/readState/changed"; params: ThreadReadStateChangedNotification }
   | { method: "thread/archived"; params: ThreadArchivedNotification }
   | { method: "thread/deleted"; params: ThreadDeletedNotification }
   | { method: "thread/unarchived"; params: ThreadUnarchivedNotification }

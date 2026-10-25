@@ -412,8 +412,9 @@ describe("the Codex engine against the pinned codex app-server", () => {
     const events = await runTurn("[[reply]] Anything new?");
     expect(events.at(-1)).toEqual({ type: "ended" });
     expect(settings.setting(threadSetting)).toBe(thread);
-    expect(currentModel().developerTexts()).toContain(changed);
-    expect(currentModel().developerTexts()).not.toContain(instructions);
+    expect(currentModel().developerTexts()).toContain(
+      `<model_instructions>\nThe following instructions replace the previous base instructions:\n\n${changed}\n</model_instructions>`,
+    );
     expect(logged.get()).toEqual([]);
   });
 });

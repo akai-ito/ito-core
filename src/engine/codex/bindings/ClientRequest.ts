@@ -24,6 +24,7 @@ import type { ExperimentalFeatureListParams } from "./v2/ExperimentalFeatureList
 import type { ExternalAgentConfigDetectParams } from "./v2/ExternalAgentConfigDetectParams.ts";
 import type { ExternalAgentConfigImportHistoryRecordParams } from "./v2/ExternalAgentConfigImportHistoryRecordParams.ts";
 import type { ExternalAgentConfigImportParams } from "./v2/ExternalAgentConfigImportParams.ts";
+import type { FeedbackSaveParams } from "./v2/FeedbackSaveParams.ts";
 import type { FeedbackUploadParams } from "./v2/FeedbackUploadParams.ts";
 import type { FsCopyParams } from "./v2/FsCopyParams.ts";
 import type { FsCreateDirectoryParams } from "./v2/FsCreateDirectoryParams.ts";
@@ -197,6 +198,7 @@ export type ClientRequest =
   | { method: "account/workspaceMessages/read"; id: RequestId; params: undefined }
   | { method: "account/sendAddCreditsNudgeEmail"; id: RequestId; params: SendAddCreditsNudgeEmailParams }
   | { method: "feedback/upload"; id: RequestId; params: FeedbackUploadParams }
+  | { method: "feedback/save"; id: RequestId; params: FeedbackSaveParams }
   | { method: "command/exec"; id: RequestId; params: CommandExecParams }
   | { method: "command/exec/write"; id: RequestId; params: CommandExecWriteParams }
   | { method: "command/exec/terminate"; id: RequestId; params: CommandExecTerminateParams }

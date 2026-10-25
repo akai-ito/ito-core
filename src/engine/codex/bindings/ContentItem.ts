@@ -7,4 +7,4 @@ export type ContentItem =
   | { type: "input_text"; text: string }
   | ({ type: "input_image"; detail?: ImageDetail } & ({ image_url: string } | { file_id: string }))
   | { type: "input_audio"; audio_url: string }
-  | { type: "output_text"; text: string };
+  | { type: "output_text"; text: string; annotations?: unknown[]; logprobs?: unknown[] };
