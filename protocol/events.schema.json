@@ -256,7 +256,18 @@
     },
     "StepKind": {
       "description": "What kind of thing the agent did. Show the title of a kind you don't recognise.",
-      "enum": ["thinking", "web_search", "command", "file_change", "tool", "plan", "wait", "image_view", "compacting"]
+      "enum": [
+        "thinking",
+        "web_search",
+        "command",
+        "file_change",
+        "tool",
+        "plan",
+        "wait",
+        "image_view",
+        "compacting",
+        "memory"
+      ]
     },
     "Step": {
       "description": "One thing the agent did while working on a turn: thinking, a web search, a command, an edit, a tool, a plan, a wait. Its title is plain words written by the server, safe to show as it is. Its other fields carry the specifics exactly as the agent used them (commands, paths, queries, URLs, output); show what you choose. Fields beyond the common ones belong to particular kinds, and a step carries those its kind has.",
@@ -418,6 +429,21 @@
         "detail": {
           "description": "What went wrong, in the tool's or command's own words, when the step failed.",
           "type": "string"
+        },
+        "action": {
+          "description": "`memory`: `used` for the pages Ari drew on in this turn (one step, growing as it reads), `updated` for a page it wrote, `journaled` for an addition to today's journal.",
+          "enum": ["used", "updated", "journaled"]
+        },
+        "pages": {
+          "description": "`memory`: the pages, by address and title, never their content. Past conversations show as one entry with the address `conversation:past`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MemoryPageRef"
+          }
+        },
+        "change": {
+          "$ref": "#/$defs/ChangeId",
+          "description": "`memory` with `updated`: the change to fetch from `GET /v0/memory/changes/{change}` when someone taps it."
         },
         "explanation": {
           "description": "`plan`: why the plan is what it is.",
@@ -1011,6 +1037,29 @@
           "description": "Present when the outcome is `failed`."
         }
       }
+    },
+    "MemoryPageRef": {
+      "description": "A page in memory, named but not shown.",
+      "type": "object",
+      "required": ["address", "title"],
+      "properties": {
+        "address": {
+          "$ref": "#/$defs/MemoryAddress"
+        },
+        "title": {
+          "type": "string"
+        }
+      }
+    },
+    "MemoryAddress": {
+      "description": "Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, or `conversation:past`.",
+      "type": "string",
+      "pattern": "^(memory:[a-z0-9-]+(/[a-z0-9-]+)?|conversation:past)$"
+    },
+    "ChangeId": {
+      "description": "An opaque id the server chooses for one change to memory.",
+      "type": "string",
+      "pattern": "^c_[0-9a-z_]+$"
     }
   }
 }

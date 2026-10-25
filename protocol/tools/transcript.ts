@@ -128,12 +128,13 @@ export type Transcript = {
   readonly showPairingCode: (code: string) => void;
   readonly pair: (code: string, deviceName: string, token: string) => void;
   readonly listMessages: (before: string, limit: number) => void;
+  readonly change: () => string;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c";
 
 type Counters = Readonly<Record<IdPrefix, number>>;
 
@@ -267,7 +268,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emsta]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstac]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -276,7 +277,7 @@ const toCounters = (log: readonly Event[]): Counters => {
   const ids = log.flatMap(idsIn);
   const highest = (prefix: IdPrefix): number =>
     ids.filter((id) => id.startsWith(`${prefix}_`)).reduce((max, id) => Math.max(max, Number(id.split("_", 2)[1])), 0);
-  return { e: highest("e"), m: highest("m"), t: highest("t"), s: highest("s"), a: highest("a") };
+  return { e: highest("e"), m: highest("m"), t: highest("t"), s: highest("s"), a: highest("a"), c: highest("c") };
 };
 
 // A small model of the server's event log. Scenarios drive it the way the server and an app would,
@@ -284,7 +285,7 @@ const toCounters = (log: readonly Event[]): Counters => {
 export const createTranscript = (header: Header): Transcript => {
   const lines = createCell<readonly Line[]>([]);
   const log = createCell<readonly Event[]>([]);
-  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0, a: 0 }, issued: new Set() });
+  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0 }, issued: new Set() });
   const users = createCell(0);
   const now = createCell(0);
   const start = createCell<Start | undefined>(undefined);
@@ -964,6 +965,7 @@ export const createTranscript = (header: Header): Transcript => {
     latestEventId,
     stepAtOffset,
     world,
+    change: () => newId("c"),
     request,
     response,
     connect,

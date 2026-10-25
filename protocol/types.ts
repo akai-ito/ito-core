@@ -382,10 +382,176 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/memory/in-mind": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * What's in Ari's mind
+     * @description The pages that go into every turn, in order (Portrait, Now, How to help you). A page Ari hasn't written yet is left out.
+     */
+    get: operations["getInMind"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/memory/shelves": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The shelves, with how much is on each */
+    get: operations["listShelves"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/memory/pages": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The pages on a shelf
+     * @description Pages by title; journal days newest first.
+     */
+    get: operations["listPages"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/memory/recent": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The pages changed most recently
+     * @description Up to 20 pages and journal days, the most recently changed first.
+     */
+    get: operations["listRecentPages"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/memory/page": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * One page, or one journal day
+     * @description The page's Markdown, without its front matter: the present first, then any *Earlier*
+     *     section, as Ari wrote it. Render it as Markdown.
+     */
+    get: operations["getPage"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/memory/changes/{change}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * What a change to memory changed
+     * @description The page's Markdown before and after one `updated` step. `before` is absent for a new page, and `after` for a page Ari deleted.
+     */
+    get: operations["getChange"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /**
+     * @description A shelf in memory; `journal` holds one page per day.
+     * @enum {unknown}
+     */
+    Shelf: "people" | "goals" | "projects" | "places" | "topics" | "journal";
+    MemoryPageSummary: {
+      address: components["schemas"]["MemoryAddress"];
+      title: string;
+      changed_at: components["schemas"]["Timestamp"];
+    };
+    MemoryPage: {
+      address: components["schemas"]["MemoryAddress"];
+      title: string;
+      /**
+       * @description Its shelf, or `portrait`, `now` or `helping-you` for the pages in mind.
+       * @enum {unknown}
+       */
+      shelf: "portrait" | "now" | "helping-you" | "people" | "goals" | "projects" | "places" | "topics" | "journal";
+      /** @description Other names Ari knows it by. */
+      aliases: string[];
+      /** @description Addresses of related pages. */
+      links: components["schemas"]["MemoryAddress"][];
+      changed_at: components["schemas"]["Timestamp"];
+      /** @description The page as Ari wrote it, without front matter. */
+      markdown: string;
+    };
+    MemoryPages: {
+      pages: components["schemas"]["MemoryPage"][];
+    };
+    PageList: {
+      pages: components["schemas"]["MemoryPageSummary"][];
+    };
+    ShelfList: {
+      shelves: {
+        shelf: components["schemas"]["Shelf"];
+        count: number;
+      }[];
+    };
+    MemoryChange: {
+      change: components["schemas"]["ChangeId"];
+      address: components["schemas"]["MemoryAddress"];
+      title: string;
+      at: components["schemas"]["Timestamp"];
+      /** @description The page's Markdown before the change. Absent for a new page. */
+      before?: string;
+      /** @description The page's Markdown after the change. Absent when Ari deleted it. */
+      after?: string;
+    };
     /** @description Lowercase letters, digits and dashes, such as `reports`. */
     CapabilityId: string;
     CapabilityList: {
@@ -862,6 +1028,15 @@ export interface components {
       arguments?: unknown;
       /** @description What went wrong, in the tool's or command's own words, when the step failed. */
       detail?: string;
+      /**
+       * @description `memory`: `used` for the pages Ari drew on in this turn (one step, growing as it reads), `updated` for a page it wrote, `journaled` for an addition to today's journal.
+       * @enum {unknown}
+       */
+      action?: "used" | "updated" | "journaled";
+      /** @description `memory`: the pages, by address and title, never their content. Past conversations show as one entry with the address `conversation:past`. */
+      pages?: components["schemas"]["MemoryPageRef"][];
+      /** @description `memory` with `updated`: the change to fetch from `GET /v0/memory/changes/{change}` when someone taps it. */
+      change?: components["schemas"]["ChangeId"];
       /** @description `plan`: why the plan is what it is. */
       explanation?: string;
       /** @description `plan`: its items, in order, each with its state. */
@@ -931,6 +1106,11 @@ export interface components {
       setup: {
         /** @description Whether the server can send push notifications (`ito push setup`). */
         notifications: boolean;
+        /**
+         * @description Whether memory is backed up: true once `ito memory remote` has set where to push it
+         *     and the last day's pushes went through.
+         */
+        memory_backup: boolean;
       };
       /** @description The capabilities that are on, with their versions, so the app knows which screens it can show. */
       capabilities: {
@@ -1088,7 +1268,25 @@ export interface components {
      * @enum {unknown}
      */
     StepKind:
-      "thinking" | "web_search" | "command" | "file_change" | "tool" | "plan" | "wait" | "image_view" | "compacting";
+      | "thinking"
+      | "web_search"
+      | "command"
+      | "file_change"
+      | "tool"
+      | "plan"
+      | "wait"
+      | "image_view"
+      | "compacting"
+      | "memory";
+    /** @description Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, or `conversation:past`. */
+    MemoryAddress: string;
+    /** @description A page in memory, named but not shown. */
+    MemoryPageRef: {
+      address: components["schemas"]["MemoryAddress"];
+      title: string;
+    };
+    /** @description An opaque id the server chooses for one change to memory. */
+    ChangeId: string;
     /**
      * @description `question` asks for information or a choice. `approval` asks before the agent does something consequential, and shows a `preview` of what would happen. Treat a kind you don't recognise as a question.
      * @enum {unknown}
@@ -1270,6 +1468,13 @@ export interface components {
   };
   pathItems: never;
 }
+export type Shelf = components["schemas"]["Shelf"];
+export type MemoryPageSummary = components["schemas"]["MemoryPageSummary"];
+export type MemoryPage = components["schemas"]["MemoryPage"];
+export type MemoryPages = components["schemas"]["MemoryPages"];
+export type PageList = components["schemas"]["PageList"];
+export type ShelfList = components["schemas"]["ShelfList"];
+export type MemoryChange = components["schemas"]["MemoryChange"];
 export type CapabilityId = components["schemas"]["CapabilityId"];
 export type CapabilityList = components["schemas"]["CapabilityList"];
 export type Capability = components["schemas"]["Capability"];
@@ -1329,6 +1534,9 @@ export type AttachmentKind = components["schemas"]["AttachmentKind"];
 export type Outcome = components["schemas"]["Outcome"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
+export type MemoryAddress = components["schemas"]["MemoryAddress"];
+export type MemoryPageRef = components["schemas"]["MemoryPageRef"];
+export type ChangeId = components["schemas"]["ChangeId"];
 export type AskKind = components["schemas"]["AskKind"];
 export type AskOption = components["schemas"]["AskOption"];
 export type AskOutcome = components["schemas"]["AskOutcome"];
@@ -1374,7 +1582,7 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.5"
+           *         "0.6"
            *       ]
            *     }
            */
@@ -1437,8 +1645,8 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.5.0",
-           *       "protocol": "0.5",
+           *       "version": "0.6.0",
+           *       "protocol": "0.6",
            *       "agent": {
            *         "name": "Ari",
            *         "model": "gpt-6.1-sol",
@@ -1449,7 +1657,8 @@ export interface operations {
            *         }
            *       },
            *       "setup": {
-           *         "notifications": true
+           *         "notifications": true,
+           *         "memory_backup": true
            *       },
            *       "capabilities": [
            *         {
@@ -2034,6 +2243,148 @@ export interface operations {
         };
       };
       400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  getInMind: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The pages, as they are now. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryPages"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  listShelves: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Every shelf, in order, the journal last. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ShelfList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  listPages: {
+    parameters: {
+      query: {
+        shelf: components["schemas"]["Shelf"];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The shelf's pages. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PageList"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  listRecentPages: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The pages. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PageList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getPage: {
+    parameters: {
+      query: {
+        address: components["schemas"]["MemoryAddress"];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The page. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryPage"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  getChange: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        change: components["schemas"]["ChangeId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The change. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryChange"];
+        };
+      };
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
     };

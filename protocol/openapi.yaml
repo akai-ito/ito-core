@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.5"
+  version: "0.6"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -23,6 +23,8 @@ info:
       on screen. [The push schema](push.schema.json) describes what it receives.
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
       and fill in its setup sheet.
+    - **Read memory:** what's in Ari's mind, the shelves and their pages, the journal, and what each
+      change Ari made changed. Ari writes memory itself; the API only reads it.
 
     **Versioning.** Routes carry the protocol's major version, and every response carries an
     `Ito-Protocol` header with the full version. Until 1.0, every protocol change may break, so
@@ -61,6 +63,8 @@ tags:
     description: Reach you through push notifications while you're not looking.
   - name: Capabilities
     description: Switch capabilities on and off, and set them up.
+  - name: Memory
+    description: Read what Ari remembers. Ari writes it; apps only read.
 paths:
   /.well-known/ito:
     get:
@@ -82,7 +86,7 @@ paths:
               schema: { $ref: "#/components/schemas/Discovery" }
               example:
                 product: ito
-                protocol: ["0.5"]
+                protocol: ["0.6"]
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/pair:
     post:
@@ -129,13 +133,13 @@ paths:
               schema: { $ref: "#/components/schemas/ServerInfo" }
               example:
                 name: studio
-                version: 0.5.0
-                protocol: "0.5"
+                version: 0.6.0
+                protocol: "0.6"
                 agent:
                   name: Ari
                   model: gpt-6.1-sol
                   account: { kind: chatgpt, plan: plus, email_domain: example.com }
-                setup: { notifications: true }
+                setup: { notifications: true, memory_backup: true }
                 capabilities: [{ id: reports, version: "0.1" }]
         "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
@@ -624,6 +628,116 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/memory/in-mind:
+    get:
+      tags: [Memory]
+      operationId: getInMind
+      summary: What's in Ari's mind
+      description: The pages that go into every turn, in order (Portrait, Now, How to help you). A page Ari hasn't written yet is left out.
+      responses:
+        "200":
+          description: The pages, as they are now.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemoryPages" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/memory/shelves:
+    get:
+      tags: [Memory]
+      operationId: listShelves
+      summary: The shelves, with how much is on each
+      responses:
+        "200":
+          description: Every shelf, in order, the journal last.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShelfList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/memory/pages:
+    get:
+      tags: [Memory]
+      operationId: listPages
+      summary: The pages on a shelf
+      description: Pages by title; journal days newest first.
+      parameters:
+        - name: shelf
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/Shelf" }
+      responses:
+        "200":
+          description: The shelf's pages.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PageList" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/memory/recent:
+    get:
+      tags: [Memory]
+      operationId: listRecentPages
+      summary: The pages changed most recently
+      description: Up to 20 pages and journal days, the most recently changed first.
+      responses:
+        "200":
+          description: The pages.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PageList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/memory/page:
+    get:
+      tags: [Memory]
+      operationId: getPage
+      summary: One page, or one journal day
+      description: |
+        The page's Markdown, without its front matter: the present first, then any *Earlier*
+        section, as Ari wrote it. Render it as Markdown.
+      parameters:
+        - name: address
+          in: query
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+      responses:
+        "200":
+          description: The page.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemoryPage" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/memory/changes/{change}:
+    get:
+      tags: [Memory]
+      operationId: getChange
+      summary: What a change to memory changed
+      description: The page's Markdown before and after one `updated` step. `before` is absent for a new page, and `after` for a page Ari deleted.
+      parameters:
+        - name: change
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/ChangeId" }
+      responses:
+        "200":
+          description: The change.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemoryChange" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     token:
@@ -639,7 +753,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.5"
+        example: "0.6"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -753,6 +867,77 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
   schemas:
+    Shelf:
+      description: A shelf in memory; `journal` holds one page per day.
+      enum: [people, goals, projects, places, topics, journal]
+    MemoryPageSummary:
+      type: object
+      required: [address, title, changed_at]
+      properties:
+        address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        title: { type: string }
+        changed_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    MemoryPage:
+      type: object
+      required: [address, title, shelf, aliases, links, changed_at, markdown]
+      properties:
+        address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        title: { type: string }
+        shelf:
+          description: Its shelf, or `portrait`, `now` or `helping-you` for the pages in mind.
+          enum: [portrait, now, helping-you, people, goals, projects, places, topics, journal]
+        aliases:
+          description: Other names Ari knows it by.
+          type: array
+          items: { type: string }
+        links:
+          description: Addresses of related pages.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        changed_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        markdown:
+          description: The page as Ari wrote it, without front matter.
+          type: string
+    MemoryPages:
+      type: object
+      required: [pages]
+      properties:
+        pages:
+          type: array
+          items: { $ref: "#/components/schemas/MemoryPage" }
+    PageList:
+      type: object
+      required: [pages]
+      properties:
+        pages:
+          type: array
+          items: { $ref: "#/components/schemas/MemoryPageSummary" }
+    ShelfList:
+      type: object
+      required: [shelves]
+      properties:
+        shelves:
+          type: array
+          items:
+            type: object
+            required: [shelf, count]
+            properties:
+              shelf: { $ref: "#/components/schemas/Shelf" }
+              count: { type: integer, minimum: 0 }
+    MemoryChange:
+      type: object
+      required: [change, address, title, at]
+      properties:
+        change: { $ref: "events.schema.json#/$defs/ChangeId" }
+        address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        title: { type: string }
+        at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        before:
+          description: The page's Markdown before the change. Absent for a new page.
+          type: string
+        after:
+          description: The page's Markdown after the change. Absent when Ari deleted it.
+          type: string
     CapabilityId:
       description: Lowercase letters, digits and dashes, such as `reports`.
       type: string
@@ -973,10 +1158,15 @@ components:
         setup:
           description: What's set up on the server, so the app can say so in Settings rather than mid-conversation.
           type: object
-          required: [notifications]
+          required: [notifications, memory_backup]
           properties:
             notifications:
               description: Whether the server can send push notifications (`ito push setup`).
+              type: boolean
+            memory_backup:
+              description: |
+                Whether memory is backed up: true once `ito memory remote` has set where to push it
+                and the last day's pushes went through.
               type: boolean
         capabilities:
           description: The capabilities that are on, with their versions, so the app knows which screens it can show.

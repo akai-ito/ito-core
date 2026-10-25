@@ -5,8 +5,8 @@ import { loadSpec } from "./spec.ts";
 import { transcriptDirectory } from "./transcript-files.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.5";
-const serverVersion = "0.5.0";
+const protocol = "0.6";
+const serverVersion = "0.6.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -139,6 +139,74 @@ const capabilityCall = (
   transcript.response(status, answer, { headers: { "Ito-Protocol": protocol } });
 };
 
+const alexBefore = {
+  address: "memory:people/alex",
+  title: "Alex",
+  aliases: ["Alex R"],
+  links: ["memory:places/dishoom-shoreditch"],
+  markdown:
+    "Taking things slow; you've been on two dates (as of 15 Oct).\n\n## Earlier\n\n" +
+    "- 12 Oct: first date, Dishoom Shoreditch.\n",
+};
+
+const alexNow = {
+  ...alexBefore,
+  markdown:
+    "Seeing each other a lot, and it's going really well (as of 26 Oct).\n\n## Earlier\n\n" +
+    "- 15 Oct: decided to take things slow.\n- 12 Oct: first date, Dishoom Shoreditch.\n",
+};
+
+const lisbonTrip = {
+  address: "memory:projects/lisbon-trip",
+  title: "Lisbon trip",
+  aliases: [],
+  links: ["memory:people/alex"],
+  markdown: "Four nights in Lisbon, 14 to 18 November. Flights booked; no hotel yet (as of 20 Oct).\n",
+};
+
+const nowPage = {
+  address: "memory:now",
+  title: "Now",
+  aliases: [],
+  links: [],
+  markdown: "A busy fortnight at work, and training for the Valencia half marathon (as of 22 Oct).\n",
+};
+
+type SeededPage = typeof alexBefore;
+
+const shelfOf = (address: string): string => address.replace(/^memory:/u, "").split("/", 1)[0] ?? "";
+
+const pageBody = (page: SeededPage, changedAt: string): Readonly<Record<string, unknown>> => ({
+  address: page.address,
+  title: page.title,
+  shelf: shelfOf(page.address),
+  aliases: page.aliases,
+  links: page.links,
+  changed_at: changedAt,
+  markdown: page.markdown,
+});
+
+const memoryCall = (transcript: Transcript, path: string, answer: unknown): void => {
+  transcript.request("GET", path);
+  transcript.wait(50);
+  transcript.response(200, answer, { headers: { "Ito-Protocol": protocol } });
+};
+
+const agentCalls = (transcript: Transcript, tool: string, input: Readonly<Record<string, unknown>>): void => {
+  transcript.world("agent_calls", { tool, input });
+};
+
+const memoryStep = (
+  transcript: Transcript,
+  action: string,
+  pages: readonly { readonly address: string; readonly title: string }[],
+  titles: { readonly title: string; readonly endedTitle: string },
+  change?: string,
+): void => {
+  transcript.step("memory", { ...titles, fields: { action, pages, ...(change !== undefined && { change }) } });
+  transcript.endStep();
+};
+
 const scenarios: readonly (() => Transcript)[] = [
   () => {
     const transcript = createTranscript({
@@ -180,7 +248,7 @@ const scenarios: readonly (() => Transcript)[] = [
         version: serverVersion,
         protocol,
         agent: { name: "Ari" },
-        setup: { notifications: false },
+        setup: { notifications: false, memory_backup: false },
         capabilities: [],
       },
       { headers: { "Ito-Protocol": protocol } },
@@ -1499,7 +1567,7 @@ const scenarios: readonly (() => Transcript)[] = [
         version: serverVersion,
         protocol,
         agent: { name: "Ari" },
-        setup: { notifications: false },
+        setup: { notifications: false, memory_backup: false },
         capabilities: [],
       },
       { headers: { "Ito-Protocol": protocol } },
@@ -1561,7 +1629,7 @@ const scenarios: readonly (() => Transcript)[] = [
         version: serverVersion,
         protocol,
         agent: { name: "Ari" },
-        setup: { notifications: false },
+        setup: { notifications: false, memory_backup: false },
         capabilities: [{ id: "reports", version: "0.1" }],
       },
       { headers: { "Ito-Protocol": protocol } },
@@ -1613,6 +1681,189 @@ const scenarios: readonly (() => Transcript)[] = [
         message: "The server doesn't know that.",
         detail: "No capability called calendar is installed.",
       },
+    });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "34-ari-uses-what-it-remembers",
+      scenario: 34,
+      title: "Ari uses what it remembers",
+      summary:
+        "Ari recalls the Lisbon trip and Alex before answering. The trail names the pages it used, never " +
+        "their content, and Ari checks once before acting on what it last heard. The app then opens Alex's " +
+        "page and what's in Ari's mind.",
+      guarantees: ["G14", "G22"],
+    });
+    const seededAt = "2026-10-26T19:00:00.000Z";
+    transcript.begin(seededAt);
+    transcript.world("memory_holds", { pages: [alexBefore, lisbonTrip, nowPage] });
+    transcript.wait(5 * 60 * 1000);
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Should I book the hotel in Lisbon for both of us?");
+    transcript.wait(700);
+    agentCalls(transcript, "recall", { query: "Lisbon trip hotel with Alex" });
+    memoryStep(
+      transcript,
+      "used",
+      [
+        { address: alexBefore.address, title: "Alex" },
+        { address: lisbonTrip.address, title: "Lisbon trip" },
+      ],
+      { title: "Using Alex · Lisbon trip", endedTitle: "Used Alex · Lisbon trip" },
+    );
+    transcript.wait(500);
+    writeWhole(
+      transcript,
+      "Last I heard, you and Alex were taking it slow (as of 15 Oct). Is that still the case? If it is, " +
+        "I'd look at places with two rooms for 14 to 18 November.",
+    );
+    transcript.endTurn("completed");
+    transcript.wait(6000);
+    memoryCall(transcript, "/v0/memory/page?address=memory:people/alex", pageBody(alexBefore, seededAt));
+    transcript.wait(4000);
+    memoryCall(transcript, "/v0/memory/in-mind", {
+      pages: [{ ...pageBody(nowPage, seededAt), shelf: "now" }],
+    });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "35-ari-updates-what-it-knows",
+      scenario: 35,
+      title: "Ari updates what it knows",
+      summary:
+        "You tell Ari things have moved on with Alex. Ari reads the page, rewrites the present and moves the " +
+        "old state to Earlier, adds to today's journal, and says so. Tapping the update shows the page " +
+        "before and after.",
+      guarantees: ["G14", "G22"],
+    });
+    const seededAt = "2026-10-26T19:00:00.000Z";
+    transcript.begin(seededAt);
+    transcript.world("memory_holds", { pages: [alexBefore] });
+    transcript.wait(70 * 60 * 1000);
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Alex and I are seeing each other a lot now. It's going really well!");
+    transcript.wait(600);
+    agentCalls(transcript, "read_page", { address: alexBefore.address });
+    memoryStep(transcript, "used", [{ address: alexBefore.address, title: "Alex" }], {
+      title: "Using Alex",
+      endedTitle: "Used Alex",
+    });
+    transcript.wait(900);
+    const change = transcript.change();
+    agentCalls(transcript, "remember", {
+      address: alexNow.address,
+      title: alexNow.title,
+      aliases: alexNow.aliases,
+      links: alexNow.links,
+      body: alexNow.markdown,
+    });
+    memoryStep(
+      transcript,
+      "updated",
+      [{ address: alexNow.address, title: "Alex" }],
+      { title: "Updating Alex", endedTitle: "Updated Alex" },
+      change,
+    );
+    transcript.wait(400);
+    agentCalls(transcript, "journal", {
+      text: "Things with Alex are going really well: they're seeing a lot of each other.",
+    });
+    memoryStep(transcript, "journaled", [{ address: "memory:journal/2026-10-26", title: "26 October 2026" }], {
+      title: "Adding to today's journal",
+      endedTitle: "Added to today's journal",
+    });
+    transcript.wait(300);
+    writeWhole(transcript, "That's lovely to hear. I've updated Alex's page, so taking it slow is now history.");
+    transcript.endTurn("completed");
+    transcript.wait(5000);
+    const updatedAt = new Date(Date.parse(seededAt) + 70 * 60 * 1000 + 2000 + 600 + 900).toISOString();
+    memoryCall(transcript, `/v0/memory/changes/${change}`, {
+      change,
+      address: alexNow.address,
+      title: "Alex",
+      at: updatedAt,
+      before: alexBefore.markdown,
+      after: alexNow.markdown,
+    });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "36-forget-that",
+      scenario: 36,
+      title: "Forget that",
+      summary:
+        "You ask Ari to forget part of a page. Ari rewrites the page without it, as an ordinary update, and " +
+        "the Memory screen shows the page among the most recently changed.",
+      guarantees: ["G14", "G22"],
+    });
+    const seededAt = "2026-10-26T20:00:00.000Z";
+    const alexForgotten = {
+      ...alexNow,
+      links: [],
+      markdown:
+        "Seeing each other a lot, and it's going really well (as of 26 Oct).\n\n## Earlier\n\n" +
+        "- 15 Oct: decided to take things slow.\n",
+    };
+    transcript.begin(seededAt);
+    transcript.world("memory_holds", { pages: [alexNow, nowPage] });
+    transcript.wait(30 * 60 * 1000);
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Please forget the bit about our first date.");
+    transcript.wait(800);
+    const change = transcript.change();
+    agentCalls(transcript, "remember", {
+      address: alexForgotten.address,
+      title: alexForgotten.title,
+      aliases: alexForgotten.aliases,
+      links: alexForgotten.links,
+      body: alexForgotten.markdown,
+    });
+    memoryStep(
+      transcript,
+      "updated",
+      [{ address: alexForgotten.address, title: "Alex" }],
+      { title: "Updating Alex", endedTitle: "Updated Alex" },
+      change,
+    );
+    transcript.wait(300);
+    writeWhole(transcript, "Done. It's gone from Alex's page.");
+    transcript.endTurn("completed");
+    transcript.wait(4000);
+    const updatedAt = new Date(Date.parse(seededAt) + 30 * 60 * 1000 + 2000 + 800).toISOString();
+    memoryCall(transcript, `/v0/memory/changes/${change}`, {
+      change,
+      address: alexForgotten.address,
+      title: "Alex",
+      at: updatedAt,
+      before: alexNow.markdown,
+      after: alexForgotten.markdown,
+    });
+    transcript.wait(3000);
+    memoryCall(transcript, "/v0/memory/recent", {
+      pages: [
+        { address: alexForgotten.address, title: "Alex", changed_at: updatedAt },
+        { address: nowPage.address, title: "Now", changed_at: seededAt },
+      ],
+    });
+    transcript.wait(2000);
+    memoryCall(transcript, "/v0/memory/shelves", {
+      shelves: [
+        { shelf: "people", count: 1 },
+        { shelf: "goals", count: 0 },
+        { shelf: "projects", count: 0 },
+        { shelf: "places", count: 0 },
+        { shelf: "topics", count: 0 },
+        { shelf: "journal", count: 0 },
+      ],
     });
     return transcript;
   },
