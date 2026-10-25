@@ -10,9 +10,10 @@ import type { Clock } from "#clock.ts";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
 import { accountSetting, modelSetting } from "#engine/engine.ts";
 import { readApnsCredentials } from "#notifications/apns.ts";
-import { reportsTokenSetting } from "#reports/reporter.ts";
+import type { Host } from "#capabilities/host.ts";
 import { toAskId, toDeviceId, toMessageId, toTurnId } from "#conversation/ids.ts";
 import { createToken, hashToken, type Gate } from "#http/auth.ts";
+import { registerCapabilities } from "#http/capabilities.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
@@ -32,6 +33,7 @@ export type AppOptions = {
   readonly gate: Gate;
   readonly presence: Presence;
   readonly attachments: Attachments;
+  readonly host: Host;
   readonly heartbeatMs: number;
   readonly logger: FastifyServerOptions["logger"];
 };
@@ -66,7 +68,7 @@ const isTooLong = (error: FastifyError): boolean =>
   error.validation?.some((issue) => issue.keyword === "maxLength" && issue.instancePath === "/text") ?? false;
 
 export const createApp = (options: AppOptions): FastifyInstance => {
-  const { store, turns, clock, schemas, info, gate, presence, attachments, heartbeatMs, logger } = options;
+  const { store, turns, clock, schemas, info, gate, presence, attachments, host, heartbeatMs, logger } = options;
   const protocol = protocolVersion(schemas.document);
   const routeSchemas = toRouteSchemas(schemas);
   const schemaFor = (operationId: string): RouteSchema => routeSchemas.get(operationId) ?? {};
@@ -126,12 +128,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         ...(model && { model }),
         ...(account && { account: JSON.parse(account) as unknown }),
       },
-      setup: {
-        notifications: readApnsCredentials(store) !== undefined,
-        reports: store.setting(reportsTokenSetting) !== undefined,
-      },
+      setup: { notifications: readApnsCredentials(store) !== undefined },
+      capabilities: host.offered().map(({ id, manifest }) => ({ id, version: manifest.version })),
     };
   });
+
+  registerCapabilities(app, host, schemaFor);
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);

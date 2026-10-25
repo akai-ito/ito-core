@@ -135,7 +135,7 @@
     "Values": {
       "description": "Setup values by field name: a string for `text`, `secret` and `choice`, a boolean for `toggle`.",
       "type": "object",
-      "additionalProperties": { "type": ["string", "boolean"] }
+      "additionalProperties": { "anyOf": [{ "type": "string" }, { "type": "boolean" }] }
     },
     "StartParams": {
       "description": "`start`, from the server, when the capability is on and set up: its values, its own secrets among them, and its private folder, which is also its working directory. An error answer shows the capability as needing you, with the error's message.",
@@ -174,7 +174,7 @@
       "description": "`cancel`, a notification from the server: stop working on the `call` with this request id, and answer it with an error.",
       "type": "object",
       "required": ["id"],
-      "properties": { "id": { "type": ["integer", "string"] } }
+      "properties": { "id": { "anyOf": [{ "type": "integer" }, { "type": "string" }] } }
     },
     "StatusParams": {
       "description": "`status`, a notification from the capability: whether it's working, or needs you, and why.",

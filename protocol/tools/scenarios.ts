@@ -5,6 +5,8 @@ import { loadSpec } from "./spec.ts";
 import { transcriptDirectory } from "./transcript-files.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
+const protocol = "0.5";
+const serverVersion = "0.5.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -104,6 +106,39 @@ const booking = (operation: string, fields: Readonly<Record<string, unknown>>) =
   fields: { capability: "booking", operation, arguments: fields },
 });
 
+const reportsTokenField = {
+  name: "token",
+  kind: "secret",
+  title: "GitHub token",
+  description: "A fine-grained token for akai-ito/ito-core, with Issues set to read and write.",
+};
+
+const reports = (state: string, isTokenSet: boolean, detail?: string): Readonly<Record<string, unknown>> => ({
+  id: "reports",
+  kind: "hand",
+  title: "Reports",
+  summary: "Files the gaps Ari hits as public issues on Ito's repositories.",
+  symbol: "exclamationmark.bubble",
+  version: "0.1",
+  state,
+  ...(detail !== undefined && { detail }),
+  fields: [{ ...reportsTokenField, set: isTokenSet }],
+  uses: { hosts: ["api.github.com"], folders: [] },
+});
+
+const capabilityCall = (
+  transcript: Transcript,
+  method: string,
+  path: string,
+  body: unknown,
+  status: number,
+  answer: unknown,
+): void => {
+  transcript.request(method, path, body === undefined ? {} : { body });
+  transcript.wait(60);
+  transcript.response(status, answer, { headers: { "Ito-Protocol": protocol } });
+};
+
 const scenarios: readonly (() => Transcript)[] = [
   () => {
     const transcript = createTranscript({
@@ -118,7 +153,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.begin(todayAt);
     transcript.request("GET", "/.well-known/ito");
     transcript.wait(40);
-    transcript.response(200, { product: "ito", protocol: ["0.4"] }, { headers: { "Ito-Protocol": "0.4" } });
+    transcript.response(200, { product: "ito", protocol: [protocol] }, { headers: { "Ito-Protocol": protocol } });
     transcript.wait(20);
     transcript.request("GET", "/v0/server", {
       headers: { Authorization: "Bearer ito_example_mistyped_token_0000000000000000000" },
@@ -133,7 +168,7 @@ const scenarios: readonly (() => Transcript)[] = [
           detail: "Use the token ito serve printed, or run ito token new.",
         },
       },
-      { headers: { "Ito-Protocol": "0.4" } },
+      { headers: { "Ito-Protocol": protocol } },
     );
     transcript.wait(9000);
     transcript.request("GET", "/v0/server", { headers: { Authorization: authorization } });
@@ -142,12 +177,13 @@ const scenarios: readonly (() => Transcript)[] = [
       200,
       {
         name: "studio",
-        version: "0.4.0",
-        protocol: "0.4",
+        version: serverVersion,
+        protocol,
         agent: { name: "Ari" },
-        setup: { notifications: false, reports: false },
+        setup: { notifications: false },
+        capabilities: [],
       },
-      { headers: { "Ito-Protocol": "0.4" } },
+      { headers: { "Ito-Protocol": protocol } },
     );
     transcript.wait(10);
     transcript.connect({ headers: { Authorization: authorization } });
@@ -1451,7 +1487,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.showPairingCode("7F3K-92QD");
     transcript.wait(9000);
     transcript.request("GET", "/.well-known/ito");
-    transcript.response(200, { product: "ito", protocol: ["0.4"] }, { headers: { "Ito-Protocol": "0.4" } });
+    transcript.response(200, { product: "ito", protocol: [protocol] }, { headers: { "Ito-Protocol": protocol } });
     transcript.wait(300);
     transcript.pair("7F3K-92QD", "iPhone", pairedToken);
     transcript.wait(200);
@@ -1460,15 +1496,124 @@ const scenarios: readonly (() => Transcript)[] = [
       200,
       {
         name: "studio",
-        version: "0.4.0",
-        protocol: "0.4",
+        version: serverVersion,
+        protocol,
         agent: { name: "Ari" },
-        setup: { notifications: false, reports: false },
+        setup: { notifications: false },
+        capabilities: [],
       },
-      { headers: { "Ito-Protocol": "0.4" } },
+      { headers: { "Ito-Protocol": protocol } },
     );
     transcript.wait(60_000);
     transcript.pair("7F3K-92QD", "iPad", "unused");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "32-set-up-a-capability",
+      scenario: 32,
+      title: "Set up a capability",
+      summary:
+        "Settings lists the capabilities installed with the server. You switch Reports on, its sheet asks for " +
+        "a GitHub token, Test connection catches a wrong one, and the right one turns it on. The token never " +
+        "comes back, only that one is set.",
+      guarantees: ["G21"],
+    });
+    transcript.begin(todayAt);
+    capabilityCall(transcript, "GET", "/v0/capabilities", undefined, 200, { capabilities: [reports("off", false)] });
+    transcript.wait(4000);
+    capabilityCall(transcript, "PUT", "/v0/capabilities/reports", { on: true }, 200, reports("setup", false));
+    transcript.wait(12_000);
+    capabilityCall(
+      transcript,
+      "POST",
+      "/v0/capabilities/reports/check",
+      { values: { token: "github_pat_wrong" } },
+      200,
+      { problem: "GitHub rejected that token." },
+    );
+    transcript.wait(9000);
+    capabilityCall(
+      transcript,
+      "POST",
+      "/v0/capabilities/reports/check",
+      { values: { token: "github_pat_example" } },
+      200,
+      {},
+    );
+    transcript.wait(900);
+    capabilityCall(
+      transcript,
+      "PUT",
+      "/v0/capabilities/reports/setup",
+      { values: { token: "github_pat_example" } },
+      200,
+      reports("on", true),
+    );
+    transcript.wait(300);
+    transcript.request("GET", "/v0/server");
+    transcript.wait(40);
+    transcript.response(
+      200,
+      {
+        name: "studio",
+        version: serverVersion,
+        protocol,
+        agent: { name: "Ari" },
+        setup: { notifications: false },
+        capabilities: [{ id: "reports", version: "0.1" }],
+      },
+      { headers: { "Ito-Protocol": protocol } },
+    );
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "33-a-capability-needs-you",
+      scenario: 33,
+      title: "A capability needs you",
+      summary:
+        "Reports is on, but GitHub rejects its token, so Settings shows it as needing you and says why. A setup " +
+        "it can't take is refused with the reason; a new token brings it back, and switching it off takes " +
+        "effect at once.",
+      guarantees: ["G21"],
+    });
+    transcript.begin(todayAt);
+    capabilityCall(transcript, "PUT", "/v0/capabilities/reports", { on: true }, 200, reports("setup", false));
+    transcript.wait(15_000);
+    capabilityCall(
+      transcript,
+      "PUT",
+      "/v0/capabilities/reports/setup",
+      { values: { token: "github_pat_revoked" } },
+      200,
+      reports("needs_you", true, "GitHub rejected the token."),
+    );
+    transcript.wait(20_000);
+    capabilityCall(transcript, "PUT", "/v0/capabilities/reports/setup", { values: { token: true } }, 400, {
+      error: { code: "invalid_request", message: "Ito can't save that setup.", detail: "token takes text." },
+    });
+    transcript.wait(8000);
+    capabilityCall(
+      transcript,
+      "PUT",
+      "/v0/capabilities/reports/setup",
+      { values: { token: "github_pat_example" } },
+      200,
+      reports("on", true),
+    );
+    transcript.wait(30_000);
+    capabilityCall(transcript, "PUT", "/v0/capabilities/reports", { on: false }, 200, reports("off", true));
+    transcript.wait(2000);
+    capabilityCall(transcript, "PUT", "/v0/capabilities/calendar", { on: true }, 404, {
+      error: {
+        code: "not_found",
+        message: "The server doesn't know that.",
+        detail: "No capability called calendar is installed.",
+      },
+    });
     return transcript;
   },
 ];

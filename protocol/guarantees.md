@@ -29,6 +29,7 @@ where the protocol has to make it possible, marked *App*.
 | G18 | **Notifications are private.** The text of every notification is encrypted on the server with a key the device made, so Apple's push service carries only ciphertext. | 18, 21, 24, 26 |
 | G19 | **Attachments stay as you sent them.** A photo or file is uploaded once, under an id the app chooses, so a retry never makes a second copy. Its bytes never change, every app can fetch them, and the agent works on its own copy, so nothing it does changes what you sent. | 27, 28, 29, 30 |
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
+| G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
 
 ## Scenario by scenario
 
@@ -266,6 +267,21 @@ where the protocol has to make it possible, marked *App*.
 - `ito pair` shows a QR code with the address and a code that works once, for five minutes. The app
   exchanges it for a token of its own, and connects with it. (G11, G20)
 - A used, wrong or expired code is refused as `pairing_code_rejected`. (G20)
+
+### 32 · [Set up a capability](transcripts/32-set-up-a-capability.jsonl)
+
+- The list shows every capability installed with the server, on or not, with its setup sheet's
+  fields. A secret field shows only whether one is set. (G21)
+- Switching on a capability whose setup isn't complete leaves it in `setup`. *Test connection*
+  tries values without saving them, and saving complete values turns it on. (G21)
+- `GET /v0/server` names the capabilities that are on, with their versions.
+
+### 33 · [A capability needs you](transcripts/33-a-capability-needs-you.jsonl)
+
+- A capability that can't work with its setup shows as `needs_you`, with the reason in its own
+  words. Saving a new setup restarts it. (G21)
+- Values its fields don't allow are refused as `invalid_request`, and an id the server doesn't know
+  as `not_found`.
 
 ## Not in this version
 
