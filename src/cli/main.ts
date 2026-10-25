@@ -1,3 +1,4 @@
+import { canRunCapability, runCapability } from "#cli/capability.ts";
 import type { Io } from "#cli/io.ts";
 import { login } from "#cli/login.ts";
 import { pair } from "#cli/pair.ts";
@@ -15,6 +16,7 @@ export const usage = [
   "  ito reports token",
   `  ${pushUsage}`,
   "  ito login [codex login options]",
+  "  ito <capability> <operation> [--flag value]…   (inside Ari's agent sessions)",
   "  ito --version",
 ].join("\n");
 
@@ -54,7 +56,7 @@ export const main = async (argv: readonly string[], io: Io): Promise<number> => 
       return 0;
     }
     default: {
-      return usageError(io);
+      return canRunCapability(io) && /^[a-z]/u.test(command) ? runCapability(command, rest, io) : usageError(io);
     }
   }
 };

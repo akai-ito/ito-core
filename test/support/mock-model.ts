@@ -8,6 +8,7 @@ export type MockModel = {
   readonly developerTexts: () => readonly string[];
   readonly userTexts: () => readonly string[];
   readonly images: () => number;
+  readonly toolOutputs: () => readonly string[];
   readonly close: () => Promise<void>;
 };
 
@@ -15,6 +16,7 @@ type InputItem = {
   readonly type?: string;
   readonly role?: string;
   readonly content?: readonly { readonly type?: string; readonly text?: string }[];
+  readonly output?: string | readonly { readonly type?: string; readonly text?: string }[];
 };
 
 type Send = (type: string, payload: Readonly<Record<string, unknown>>, delayMs?: number) => Promise<void>;
@@ -47,6 +49,13 @@ const imagesIn = (body: unknown): number =>
     .flatMap((item) => item.content ?? [])
     .filter((part) => part.type === "input_image").length;
 
+const toolOutputsOf = (body: unknown): readonly string[] =>
+  ((body as { readonly input?: readonly InputItem[] } | undefined)?.input ?? [])
+    .filter((item) => item.type === "custom_tool_call_output")
+    .map(({ output = "" }) => (typeof output === "string" ? output : output.map((part) => part.text ?? "").join("")));
+
+const codeMarker = "[[code]]";
+
 const hasToolOutput = (body: unknown): boolean => {
   const input = (body as { readonly input?: readonly InputItem[] } | undefined)?.input ?? [];
   const lastUser = input.findLastIndex((item) => item.type === "message" && item.role === "user");
@@ -73,6 +82,7 @@ export const startMockModel = async (): Promise<MockModel> => {
   const latestDeveloperTexts = createCell<readonly string[]>([]);
   const latestUserTexts = createCell<readonly string[]>([]);
   const latestImages = createCell(0);
+  const latestToolOutputs = createCell<readonly string[]>([]);
   const nextId = (prefix: string): string => `${prefix}_${String(counter.update((count) => count + 1))}`;
 
   const reason = async (send: Send, text: string): Promise<void> => {
@@ -131,11 +141,18 @@ export const startMockModel = async (): Promise<MockModel> => {
     await send("response.output_item.done", { item: { ...item, input } });
   };
 
+  const runCode = async (send: Send, input: string): Promise<void> => {
+    const item = { type: "custom_tool_call", id: nextId("ctc"), call_id: nextId("call"), name: "exec" };
+    await send("response.output_item.added", { item: { ...item, input: "" } });
+    await send("response.output_item.done", { item: { ...item, input } });
+  };
+
   const stream = async (
     response: ServerResponse,
     scenario: string,
     isSteered: boolean,
     hasToolOutput: boolean,
+    code: string,
   ): Promise<void> => {
     response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
     const send = createSend(response);
@@ -161,6 +178,10 @@ export const startMockModel = async (): Promise<MockModel> => {
       await say(send, "Most parkruns start at 9:00, and I've reported that.", "final_answer");
     } else if (scenario === "report") {
       await reportThroughExec(send);
+    } else if (scenario === "code" && hasToolOutput) {
+      await say(send, "Done.", "final_answer");
+    } else if (scenario === "code") {
+      await runCode(send, code);
     } else if (scenario === "search") {
       await search(send, "breakfast by the river");
       await say(send, "Found a place.", "final_answer");
@@ -187,6 +208,7 @@ export const startMockModel = async (): Promise<MockModel> => {
     const texts = textsOf(body, "user");
     latestUserTexts.set(texts);
     latestImages.set(imagesIn(body));
+    latestToolOutputs.set(toolOutputsOf(body));
     const scenario = markerPattern.exec(texts.findLast((text) => markerPattern.test(text)) ?? "")?.groups?.scenario;
     if (scenario === "signedout") {
       sendJson(response, 401, { error: { message: "Missing bearer or basic authentication in header" } });
@@ -198,7 +220,12 @@ export const startMockModel = async (): Promise<MockModel> => {
       });
       return;
     }
-    await stream(response, scenario ?? "reply", texts.at(-1)?.includes("STEER") ?? false, hasToolOutput(body));
+    const code =
+      texts
+        .findLast((text) => text.includes(codeMarker))
+        ?.split(codeMarker)[1]
+        ?.trim() ?? "";
+    await stream(response, scenario ?? "reply", texts.at(-1)?.includes("STEER") ?? false, hasToolOutput(body), code);
   };
 
   const server = createServer((request, response) => {
@@ -214,6 +241,7 @@ export const startMockModel = async (): Promise<MockModel> => {
     developerTexts: () => latestDeveloperTexts.get(),
     userTexts: () => latestUserTexts.get(),
     images: () => latestImages.get(),
+    toolOutputs: () => latestToolOutputs.get(),
     close: async () => {
       server.closeAllConnections();
       server.close();

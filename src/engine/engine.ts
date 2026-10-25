@@ -9,7 +9,7 @@ export type Input = {
   readonly attachments?: readonly InputAttachment[];
 };
 
-export type ToolServer = { readonly url: string; readonly token: string };
+export type ToolServer = { readonly url: string; readonly origin: string; readonly token: string };
 
 export const modelSetting = "agent_model";
 
@@ -61,5 +61,6 @@ export type Engine = {
   readonly steer: (turn: TurnId, input: Input) => Promise<SteerOutcome>;
   readonly interrupt: (turn: TurnId) => Promise<void>;
   readonly restart: () => Promise<void>;
+  readonly refresh: () => Promise<void>;
   readonly close: () => Promise<void>;
 };
