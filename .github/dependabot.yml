@@ -10,7 +10,10 @@ updates:
     groups:
       npm:
         patterns: ["*"]
-        exclude-patterns: ["@openai/codex", "typescript"]
+        exclude-patterns: ["@openai/codex"]
+    ignore:
+      - dependency-name: typescript
+        versions: [">=7.0.0"]
 
   - package-ecosystem: github-actions
     directory: /
