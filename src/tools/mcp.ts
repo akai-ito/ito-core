@@ -1,5 +1,9 @@
 export const toolServerName = "ito";
 
+export const toolsTokenVariable = "ITO_TOOLS_TOKEN";
+
+export const serverUrlVariable = "ITO_URL";
+
 export type ToolResult = {
   readonly text: string;
   readonly isError?: boolean;
@@ -27,7 +31,7 @@ const parameterOf = (parameters: unknown, name: string): unknown =>
 const textOf = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value));
 
 export const createMcpAnswerer =
-  (tools: readonly Tool[], version: string) =>
+  (tools: () => readonly Tool[], version: string) =>
   async ({ method, params: parameters }: McpMessage): Promise<McpAnswer> => {
     switch (method) {
       case "initialize": {
@@ -46,7 +50,7 @@ export const createMcpAnswerer =
       case "tools/list": {
         return {
           result: {
-            tools: tools.map(({ name, title, description, inputSchema }) => ({
+            tools: tools().map(({ name, title, description, inputSchema }) => ({
               name,
               title,
               description,
@@ -57,7 +61,7 @@ export const createMcpAnswerer =
       }
       case "tools/call": {
         const name = parameterOf(parameters, "name");
-        const tool = tools.find((candidate) => candidate.name === name);
+        const tool = tools().find((candidate) => candidate.name === name);
         if (!tool) return { error: { code: -32_602, message: `Ito has no tool ${textOf(name)}.` } };
         const { text, isError = false, structured } = await tool.call(parameterOf(parameters, "arguments"));
         return {

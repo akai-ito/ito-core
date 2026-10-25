@@ -28,6 +28,15 @@ const manifest = {
       tool: "echo_say",
     },
     {
+      name: "publish",
+      title: "Publish something",
+      running: "Publishing",
+      done: "Published",
+      description: "Publishes the text, so it never gets secrets.",
+      input: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+      publishes: true,
+    },
+    {
       name: "inspect",
       title: "Show what it was given",
       running: "Looking",
@@ -81,6 +90,7 @@ const refuse = (id: number | string, message: string): void => {
 
 const call = (id: number | string, operation: unknown, input: unknown): void => {
   switch (operation) {
+    case "publish":
     case "say": {
       const text = String((input as { readonly text?: unknown }).text);
       answer(id, { text: values.current.loud === true ? text.toUpperCase() : text });

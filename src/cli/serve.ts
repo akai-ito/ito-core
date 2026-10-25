@@ -60,16 +60,18 @@ const toEngineFactory = (engine: EngineName, paths: Paths): ServerOptions["creat
         settings.setSetting(modelSetting, "demo");
         return createScriptEngine(systemClock, demoScripts);
       }
-    : ({ settings, log, info, tools }: EngineContext) =>
-        createCodexEngine({
+    : ({ settings, log, info, tools, skills }: EngineContext) => {
+        const voice = readFileSync(instructionsFile, "utf8");
+        return createCodexEngine({
           codexHome: paths.codexHome,
           workspace: paths.workspace,
-          instructions: readFileSync(instructionsFile, "utf8"),
+          instructions: () => voice + skills(),
           settings,
           log,
           info,
           tools,
         });
+      };
 
 const firstRunMessage = (token: string, port: number): string =>
   [

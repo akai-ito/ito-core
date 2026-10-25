@@ -96,6 +96,7 @@ export const createScriptEngine = (clock: Clock, scriptFor: ScriptSource): Engin
       return Promise.resolve();
     },
 
+    refresh: () => Promise.resolve(),
     restart: () => {
       for (const turn of playing.get().keys()) finish(turn);
       return Promise.resolve();

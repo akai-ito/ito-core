@@ -77,7 +77,7 @@ const openEngine = (baseUrl: string, given = instructions): Engine =>
   createCodexEngine({
     codexHome,
     workspace,
-    instructions: given,
+    instructions: () => given,
     settings,
     log: collectLog,
     info: collectInfo,
@@ -377,7 +377,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
       const signedOutEngine = createCodexEngine({
         codexHome: signedOutHome,
         workspace,
-        instructions,
+        instructions: () => instructions,
         settings: createMemorySettings(),
         log: collectLog,
         info: collectInfo,

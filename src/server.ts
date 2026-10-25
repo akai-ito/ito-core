@@ -2,7 +2,11 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { createCell } from "#cell.ts";
+import { createDoors } from "#capabilities/doors.ts";
 import { createHost, type Host, type Installed } from "#capabilities/host.ts";
+import { writeLauncher } from "#capabilities/launcher.ts";
+import { writeSkills } from "#capabilities/skills.ts";
+import { createTrail } from "#capabilities/trail.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
 import type { Engine, ToolServer } from "#engine/engine.ts";
@@ -49,6 +53,7 @@ export type EngineContext = {
   readonly log: Log;
   readonly info: Info;
   readonly tools: () => ToolServer | undefined;
+  readonly skills: () => string;
 };
 
 export type Server = {
@@ -91,23 +96,10 @@ export const createServer = (options: ServerOptions): Server => {
   const toolsToken = createToken();
   const toolServer = (): ToolServer | undefined => {
     const address = app.server.address();
-    return address && typeof address === "object"
-      ? { url: `http://${address.address}:${String(address.port)}${toolsPath}`, token: toolsToken }
-      : undefined;
+    if (!address || typeof address !== "object") return undefined;
+    const origin = `http://${address.address}:${String(address.port)}`;
+    return { url: `${origin}${toolsPath}`, origin, token: toolsToken };
   };
-  const engine = options.createEngine({ settings: store, log, info, tools: toolServer });
-  const attachments = createAttachments(store, path.join(options.dataDirectory, "attachments"));
-  const secrets = createSecrets();
-  const turns = createTurns(store, engine, clock, identifiers, log, {
-    limits: options.limits ?? defaultLimits,
-    attachmentPath: attachments.pathOf,
-    secrets,
-  });
-  const agentName = options.agentName ?? "Ari";
-  const presence = createPresence();
-  const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
-  const apns = createApns(() => readApnsCredentials(store), push.hosts, clock);
-  const notifier = createNotifier({ store, apns, clock, presence, agentName, log, reminderMs: push.reminderMs });
   const host = createHost({
     installed: options.capabilities ?? [],
     settings: store,
@@ -115,6 +107,25 @@ export const createServer = (options: ServerOptions): Server => {
     clock,
     info,
   });
+  const launcher = writeLauncher(path.join(options.dataDirectory, "bin", "ito"));
+  const skills = (): string => writeSkills(path.join(options.dataDirectory, "skills"), host.offered(), launcher);
+  const engine = options.createEngine({ settings: store, log, info, tools: toolServer, skills });
+  host.subscribe(() => {
+    void engine.refresh();
+  });
+  const attachments = createAttachments(store, path.join(options.dataDirectory, "attachments"));
+  const secrets = createSecrets();
+  const turns = createTurns(store, engine, clock, identifiers, log, {
+    limits: options.limits ?? defaultLimits,
+    attachmentPath: attachments.pathOf,
+    secrets,
+    trail: createTrail(host, launcher),
+  });
+  const agentName = options.agentName ?? "Ari";
+  const presence = createPresence();
+  const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
+  const apns = createApns(() => readApnsCredentials(store), push.hosts, clock);
+  const notifier = createNotifier({ store, apns, clock, presence, agentName, log, reminderMs: push.reminderMs });
 
   const app = createApp({
     store,
@@ -149,9 +160,12 @@ export const createServer = (options: ServerOptions): Server => {
       }),
     dailyLimit: reports.dailyLimit,
   });
+  const doors = createDoors({ host, secrets, currentTurn: () => store.runningTurn()?.id, command: launcher });
+  const coreTools = [createReportTool(reporter, () => store.runningTurn()?.id, secrets), createAskTool(turns)];
   registerTools(app, {
     token: toolsToken,
-    tools: [createReportTool(reporter, () => store.runningTurn()?.id, secrets), createAskTool(turns)],
+    tools: () => [...coreTools, ...doors.tools()],
+    command: doors.command,
     version: packageVersion(),
   });
 

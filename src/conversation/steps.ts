@@ -6,7 +6,17 @@ import { toolServerName } from "#tools/mcp.ts";
 
 export type Tense = "present" | "past";
 
-type Title = { readonly present: string; readonly past: string };
+export type Title = { readonly present: string; readonly past: string };
+
+export type StepStart = { readonly kind: StepKind; readonly facts: StepFacts };
+
+export type StepEnd = { readonly outcome: "completed" | "failed"; readonly facts: StepFacts };
+
+export type Trail = {
+  readonly toStart: (start: StepStart) => StepStart;
+  readonly toEnd: (step: Step, end: StepEnd) => StepEnd;
+  readonly titleOf: (capability: string, operation: string) => Title | undefined;
+};
 
 const title = (present: string, past: string): Title => ({ present, past });
 
@@ -155,7 +165,7 @@ const toolTitle = ({ capability = "a tool", operation, url }: StepFacts): Title 
   return title("Reporting it to Ito", url?.includes("#issuecomment-") ? "Added to an Ito issue" : "Reported it to Ito");
 };
 
-const titleOf = (kind: StepKind, facts: StepFacts): Title => {
+const titleOf = (kind: StepKind, facts: StepFacts, trail: Trail | undefined): Title => {
   switch (kind) {
     case "thinking": {
       return title("Thinking it through", "Thought it through");
@@ -170,7 +180,8 @@ const titleOf = (kind: StepKind, facts: StepFacts): Title => {
       return fileChangeTitle(facts);
     }
     case "tool": {
-      return toolTitle(facts);
+      const { capability, operation } = facts;
+      return (capability && operation ? trail?.titleOf(capability, operation) : undefined) ?? toolTitle(facts);
     }
     case "plan": {
       const items = facts.items?.length ?? 0;
@@ -192,7 +203,8 @@ const titleOf = (kind: StepKind, facts: StepFacts): Title => {
   }
 };
 
-export const toStepTitle = (kind: StepKind, facts: StepFacts, tense: Tense): string => titleOf(kind, facts)[tense];
+export const toStepTitle = (kind: StepKind, facts: StepFacts, tense: Tense, trail?: Trail): string =>
+  titleOf(kind, facts, trail)[tense];
 
 const commonFields: ReadonlySet<string> = new Set([
   "id",
@@ -209,17 +221,17 @@ const commonFields: ReadonlySet<string> = new Set([
 export const factsOf = (step: Step): StepFacts =>
   Object.fromEntries(Object.entries(step).filter(([field]) => !commonFields.has(field)));
 
-export const toUpdatedStep = (step: Step, facts: StepFacts): Step => {
+export const toUpdatedStep = (step: Step, facts: StepFacts, trail?: Trail): Step => {
   const merged = { ...factsOf(step), ...facts };
-  return { ...step, ...facts, title: toStepTitle(step.kind, merged, "present") };
+  return { ...step, ...facts, title: toStepTitle(step.kind, merged, "present", trail) };
 };
 
-export const toEndedStep = (step: Step, outcome: Outcome, facts: StepFacts, endedAt: number): Step => {
+export const toEndedStep = (step: Step, outcome: Outcome, facts: StepFacts, endedAt: number, trail?: Trail): Step => {
   const merged = { ...factsOf(step), ...facts };
   return {
     ...step,
     ...facts,
-    title: toStepTitle(step.kind, merged, outcome === "completed" ? "past" : "present"),
+    title: toStepTitle(step.kind, merged, outcome === "completed" ? "past" : "present", trail),
     ended_at: toTimestamp(endedAt),
     outcome,
     duration_ms: Math.max(0, endedAt - Date.parse(step.at)),

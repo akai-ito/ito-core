@@ -23,13 +23,13 @@ import {
 } from "#engine/engine.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Settings } from "#store/store.ts";
-import { toolServerName } from "#tools/mcp.ts";
+import { serverUrlVariable, toolServerName, toolsTokenVariable } from "#tools/mcp.ts";
 import type { Info, Log } from "#turns/turns.ts";
 
 export type CodexEngineOptions = {
   readonly codexHome: string;
   readonly workspace: string;
-  readonly instructions: string;
+  readonly instructions: () => string;
   readonly settings: Settings;
   readonly log: Log;
   readonly info: Info;
@@ -57,8 +57,6 @@ type ActiveTurn = {
 type Scope = Readonly<Partial<Record<"threadId" | "turnId", unknown>>>;
 
 export const threadSetting = "codex_thread_id";
-
-const toolsTokenVariable = "ITO_TOOLS_TOKEN";
 
 const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "failed", "stopped"]);
 
@@ -168,6 +166,7 @@ const toolsConfig = (server: ToolServer | undefined): Readonly<Record<string, Js
           [toolServerName]: {
             url: server.url,
             bearer_token_env_var: toolsTokenVariable,
+            required: true,
             default_tools_approval_mode: "approve",
             omit_tools_from: ["deferred"],
           },
@@ -200,11 +199,12 @@ export const createCodexEngine = ({
   const session = createCell<Opening | undefined>(undefined);
   const generation = createCell(0);
   const openThreadId = createCell<string | undefined>(undefined);
+  const isRefreshing = createCell(false);
   const threadOptions = (server: ToolServer | undefined): ThreadStartParams => ({
     cwd: workspace,
     approvalPolicy: "never",
     sandbox: "workspace-write",
-    baseInstructions: instructions,
+    baseInstructions: instructions(),
     config: {
       sandbox_workspace_write: { network_access: true },
       web_search: "live",
@@ -266,7 +266,7 @@ export const createCodexEngine = ({
     const started = await startCodexProcess({
       codexHome,
       workspace,
-      environment: server ? { [toolsTokenVariable]: server.token } : {},
+      environment: server ? { [toolsTokenVariable]: server.token, [serverUrlVariable]: server.origin } : {},
       onNotification: (notification) => {
         if (isCurrent()) route(notification);
       },
@@ -317,8 +317,9 @@ export const createCodexEngine = ({
     turn: TurnId,
     inputs: readonly Input[],
     stale: Opening | undefined,
+    isBusy: boolean,
   ): Promise<string | undefined> => {
-    await shutDown(stale, (process) => process.kill());
+    await shutDown(stale, (process) => (isBusy ? process.kill() : process.stop()));
     const opened = await ensureSession();
     if (!opened.ok) {
       emit(turn, [{ type: "failed", ...opened.failure }]);
@@ -345,12 +346,13 @@ export const createCodexEngine = ({
     start: (turn, inputs) => {
       const queue = createAsyncQueue<EngineEvent>();
       const isCodexStillBusy = active.get() !== undefined;
-      const stale = isCodexStillBusy ? detachSession() : undefined;
+      const stale = isCodexStillBusy || isRefreshing.get() ? detachSession() : undefined;
+      isRefreshing.set(false);
       endActiveTurn();
       active.set({
         id: turn,
         queue,
-        codexTurn: beginTurn(turn, inputs, stale),
+        codexTurn: beginTurn(turn, inputs, stale, isCodexStillBusy),
         hasStarted: false,
         state: initialTurnState,
       });
@@ -396,6 +398,11 @@ export const createCodexEngine = ({
         await attempt(rest);
       };
       await attempt(hasStarted ? [codexTurn, ""] : ["", codexTurn]);
+    },
+
+    refresh: () => {
+      isRefreshing.set(true);
+      return Promise.resolve();
     },
 
     restart: async () => {

@@ -3,8 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
+import { splitCommand } from "#capabilities/commands.ts";
+import { createDoors } from "#capabilities/doors.ts";
 import { createHost, onSetting, valuesSetting, type Host } from "#capabilities/host.ts";
 import { findInstalled } from "#capabilities/installed.ts";
+import { createSecrets } from "#conversation/secrets.ts";
 import type { Settings } from "#store/store.ts";
 import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
@@ -199,5 +202,49 @@ describe("capability host", () => {
 
     expect(host.offered()).toEqual([]);
     expect(changes.get()).toBe(1);
+  });
+});
+
+describe("the agent's doors to a capability", () => {
+  it.each([
+    ["ito echo say --text hi", ["ito", "echo", "say", "--text", "hi"]],
+    [`ito echo say --text "hi there" --loud`, ["ito", "echo", "say", "--text", "hi there", "--loud"]],
+    [`ito echo say --text='it'"'"'s'`, ["ito", "echo", "say", "--text=it's"]],
+    ["ito echo say --text hi | head -1", undefined],
+    ["ito echo say --text $(whoami)", undefined],
+  ])("reads %s as words, unless the shell would do more", (command, words) => {
+    expect(splitCommand(command)).toEqual(words);
+  });
+
+  it("runs a command from its words, and explains it on --help or a mistake", async () => {
+    const { host } = await startHost(createMemorySettings(switchedOn({ token: "secret-1" })));
+    const doors = createDoors({ host, secrets: createSecrets(), currentTurn: () => "t_test", command: "ito" });
+
+    expect(await doors.command("echo", ["say", "--text", "hi"])).toEqual({ ok: true, value: "hi" });
+    expect(await doors.command("echo", ["say", "--help"])).toEqual({
+      ok: true,
+      value: "ito echo say: Says the text back.\n  --text <string> (required)",
+    });
+    expect(await doors.command("echo", ["say", "--txet", "hi"])).toEqual({
+      ok: false,
+      failure: "There's no --txet here.\n\nito echo say: Says the text back.\n  --text <string> (required)",
+    });
+    expect(doors.tools().map(({ name }) => name)).toEqual(["echo_say"]);
+  });
+
+  it("keeps secret answers out of what a publishing operation receives", async () => {
+    const { host } = await startHost(createMemorySettings(switchedOn({ token: "secret-1" })));
+    const secrets = createSecrets();
+    secrets.add("hunter22");
+    const doors = createDoors({ host, secrets, currentTurn: () => "t_test", command: "ito" });
+
+    expect(await doors.command("echo", ["publish", "--text", "my code is hunter22"])).toEqual({
+      ok: true,
+      value: "my code is ••••••",
+    });
+    expect(await doors.command("echo", ["say", "--text", "my code is hunter22"])).toEqual({
+      ok: true,
+      value: "my code is hunter22",
+    });
   });
 });

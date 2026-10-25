@@ -5,7 +5,7 @@ import type { AskId, MessageId, TurnId } from "#conversation/ids.ts";
 import { isAdjustingAfterRead, route, type Conversation } from "#conversation/routing.ts";
 import { createSecrets, type Secrets } from "#conversation/secrets.ts";
 import { adjustingStatus, stoppingStatus, toStepStatus, writingStatus } from "#conversation/status.ts";
-import { toEndedStep, toStepTitle, toUpdatedStep } from "#conversation/steps.ts";
+import { toEndedStep, toStepTitle, toUpdatedStep, type Trail } from "#conversation/steps.ts";
 import type { AskFields, Engine, EngineEvent, Input } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type { Ask, Error as ErrorBody, Outcome, Status, Step } from "#protocol/types.ts";
@@ -30,6 +30,7 @@ export type TurnsOptions = {
   readonly limits?: Limits;
   readonly attachmentPath?: (id: string) => string;
   readonly secrets?: Secrets;
+  readonly trail?: Trail;
 };
 
 export type Info = (message: string, details: Readonly<Record<string, unknown>>) => void;
@@ -90,7 +91,7 @@ export const createTurns = (
   clock: Clock,
   identifiers: Identifiers,
   log: Log,
-  { limits = defaultLimits, attachmentPath = (id: string) => id, secrets = createSecrets() }: TurnsOptions = {},
+  { limits = defaultLimits, attachmentPath = (id: string) => id, secrets = createSecrets(), trail }: TurnsOptions = {},
 ): Turns => {
   const running = createCell<Running | undefined>(undefined);
   const actor = createCell<Promise<void>>(Promise.resolve());
@@ -197,7 +198,7 @@ export const createTurns = (
   };
 
   const endOpenSteps = (state: Running, outcome: Outcome): void => {
-    for (const step of state.steps.values()) store.endStep(toEndedStep(step, outcome, {}, clock.now()));
+    for (const step of state.steps.values()) store.endStep(toEndedStep(step, outcome, {}, clock.now(), trail));
   };
 
   const changeSteps = (turn: TurnId, update: (steps: ReadonlyMap<string, Step>) => ReadonlyMap<string, Step>): void => {
@@ -205,9 +206,10 @@ export const createTurns = (
   };
 
   const startStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.started" }>): void => {
-    const facts = secrets.redactValue(event.facts);
-    const title = toStepTitle(event.kind, facts, "present");
-    const step = store.startStep(turn, event.kind, title, facts);
+    const started = { kind: event.kind, facts: secrets.redactValue(event.facts) };
+    const { kind, facts } = trail?.toStart(started) ?? started;
+    const title = toStepTitle(kind, facts, "present", trail);
+    const step = store.startStep(turn, kind, title, facts);
     changeSteps(turn, (steps) => new Map(steps).set(event.key, step));
     store.setStatus(turn, statusOf(step));
   };
@@ -215,7 +217,7 @@ export const createTurns = (
   const updateStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.updated" }>): void => {
     const step = current(turn)?.steps.get(event.key);
     if (!step) return;
-    const updated = toUpdatedStep(step, secrets.redactValue(event.facts));
+    const updated = toUpdatedStep(step, secrets.redactValue(event.facts), trail);
     store.updateStep(updated);
     changeSteps(turn, (steps) => new Map(steps).set(event.key, updated));
     if (!isSameStatus(statusOf(step), statusOf(updated))) store.setStatus(turn, statusOf(updated));
@@ -224,7 +226,9 @@ export const createTurns = (
   const endStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.ended" }>): void => {
     const step = current(turn)?.steps.get(event.key);
     if (!step) return;
-    store.endStep(toEndedStep(step, event.outcome, secrets.redactValue(event.facts), clock.now()));
+    const ended = { outcome: event.outcome, facts: secrets.redactValue(event.facts) };
+    const { outcome, facts } = trail?.toEnd(step, ended) ?? ended;
+    store.endStep(toEndedStep(step, outcome, facts, clock.now(), trail));
     changeSteps(turn, (steps) => new Map([...steps].filter(([key]) => key !== event.key)));
   };
 
