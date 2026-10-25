@@ -40,6 +40,8 @@ export default defineConfig(
       "unicorn/no-array-callback-reference": "off",
       "unicorn/no-nested-ternary": "off",
       "unicorn/no-null": "off",
+      "unicorn/consistent-boolean-name": "off",
+      "unicorn/prefer-smaller-scope": "off",
     },
   },
   { files: ["src/cell.ts"], rules: { "functional/immutable-data": "off" } },

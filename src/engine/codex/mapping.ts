@@ -101,10 +101,10 @@ const resultUrl = (result: McpToolCallResult | null): unknown => {
   return typeof url === "string" ? url : undefined;
 };
 
+const emptyValues: ReadonlySet<unknown> = new Set([undefined, null, ""]);
+
 const withoutEmpty = (facts: Readonly<Record<string, unknown>>): StepFacts =>
-  Object.fromEntries(
-    Object.entries(facts).filter(([, value]) => value !== undefined && value !== null && value !== ""),
-  );
+  Object.fromEntries(Object.entries(facts).filter(([, value]) => !emptyValues.has(value)));
 
 const tailOf = (text: string): string => {
   const tail = text.length > outputLimit ? text.slice(-outputLimit) : text;
