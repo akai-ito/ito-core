@@ -12,7 +12,9 @@ import type { Settings } from "#store/store.ts";
 import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-capabilities-"));
-const installed = findInstalled(path.join(import.meta.dirname, "support", "capabilities"));
+const installed = findInstalled(path.join(import.meta.dirname, "support", "capabilities")).filter(
+  ({ id }) => id === "echo",
+);
 const hosts = createCell<readonly Host[]>([]);
 const logged = createCell<readonly string[]>([]);
 

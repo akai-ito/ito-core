@@ -3,7 +3,8 @@
   "type": "module",
   "ito": {
     "capabilities": {
-      "echo": "echo.ts"
+      "echo": "echo.ts",
+      "reports": "reports.ts"
     }
   }
 }

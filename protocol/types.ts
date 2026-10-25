@@ -296,10 +296,195 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/capabilities": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the capabilities
+     * @description Every capability installed with the server, whether it's on or not, with what Settings needs
+     *     to show it and its setup sheet. Fetch it when Settings opens and after a change; nothing on
+     *     the event stream says a capability changed.
+     */
+    get: operations["listCapabilities"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/capabilities/{capability}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Switch a capability on or off
+     * @description Switching off takes effect at once: the agent can no longer use it. Its setup values stay until
+     *     it's set up again. Switching on a capability whose setup isn't complete leaves it in `setup`.
+     */
+    put: operations["switchCapability"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/capabilities/{capability}/setup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Save a capability's setup
+     * @description The values merge into what's saved: leave out a secret to keep it, or send `""` to clear a
+     *     field. A secret is never sent back to any app. A capability that's on restarts with the new
+     *     values, and the answer says whether it took them.
+     */
+    put: operations["setUpCapability"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/capabilities/{capability}/check": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Test setup values
+     * @description *Test connection*: the capability tries the values, merged into what's saved, without saving
+     *     them. The answer is empty when they work, or says what's wrong.
+     */
+    post: operations["checkCapability"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** @description Lowercase letters, digits and dashes, such as `reports`. */
+    CapabilityId: string;
+    CapabilityList: {
+      capabilities: components["schemas"]["Capability"][];
+    };
+    /**
+     * @description A capability, as Settings shows it.
+     * @example {
+     *       "id": "reports",
+     *       "kind": "hand",
+     *       "title": "Reports",
+     *       "summary": "Files the gaps Ari hits as public issues on Ito's repositories.",
+     *       "symbol": "exclamationmark.bubble",
+     *       "version": "0.1",
+     *       "state": "needs_you",
+     *       "detail": "GitHub rejected the token.",
+     *       "fields": [
+     *         {
+     *           "name": "token",
+     *           "kind": "secret",
+     *           "title": "GitHub token",
+     *           "description": "A fine-grained token for akai-ito/ito-core, with Issues set to read and write.",
+     *           "set": true
+     *         }
+     *       ],
+     *       "uses": {
+     *         "hosts": [
+     *           "api.github.com"
+     *         ],
+     *         "folders": []
+     *       }
+     *     }
+     */
+    Capability: {
+      id: components["schemas"]["CapabilityId"];
+      /**
+       * @description `domain` for a topic of your life (Your life), `hand` for a way Ari acts (Ari's hands).
+       * @enum {unknown}
+       */
+      kind: "domain" | "hand";
+      /** @description Its name, such as Reports. */
+      title: string;
+      /** @description One sentence on what it does. */
+      summary: string;
+      /** @description An SF Symbol name to show beside it. Absent when it names none; show a default. */
+      symbol?: string;
+      /** @description The capability's own version, as `MAJOR.MINOR`. */
+      version: string;
+      /**
+       * @description `off` until you switch it on; `setup` while it's on but its setup isn't complete; `on` when
+       *     it's working; `needs_you` when it's on but isn't working, with `detail` saying why.
+       * @enum {unknown}
+       */
+      state: "off" | "setup" | "on" | "needs_you";
+      /** @description `needs_you` only: what's wrong, in plain words, such as GitHub rejected the token. */
+      detail?: string;
+      /** @description Its setup sheet's fields, in order. */
+      fields: components["schemas"]["CapabilityField"][];
+      /** @description What it reaches beyond its own folder, to show before you switch it on. */
+      uses: {
+        hosts: string[];
+        folders: string[];
+      };
+    };
+    /**
+     * @description One field of a setup sheet. A `secret` never comes back: `set` says whether one is saved.
+     *     Every other field carries its saved `value`, if any.
+     */
+    CapabilityField: {
+      name: string;
+      /** @enum {unknown} */
+      kind: "text" | "secret" | "toggle" | "choice";
+      title: string;
+      description?: string;
+      /** @description True when the capability can run without it. */
+      optional?: boolean;
+      /** @description `choice` only: what can be picked. */
+      options?: {
+        value: string;
+        label: string;
+      }[];
+      /** @description The saved value: a string, or a boolean for `toggle`. Never present for a `secret`. */
+      value?: string | boolean;
+      /** @description `secret` only: whether one is saved. */
+      set?: boolean;
+    };
+    SwitchCapability: {
+      on: boolean;
+    };
+    CapabilitySetup: {
+      /** @description Values by field name; a string, or a boolean for `toggle`. */
+      values: {
+        [key: string]: string | boolean;
+      };
+    };
+    CheckResult: {
+      /** @description What's wrong with the values, in plain words. Absent when they work. */
+      problem?: string;
+    };
     /** @description One event on the stream; its `type` says which. */
     Event:
       | components["schemas"]["Snapshot"]
@@ -746,9 +931,13 @@ export interface components {
       setup: {
         /** @description Whether the server can send push notifications (`ito push setup`). */
         notifications: boolean;
-        /** @description Whether gap reports go out (`ito reports token`). */
-        reports: boolean;
       };
+      /** @description The capabilities that are on, with their versions, so the app knows which screens it can show. */
+      capabilities: {
+        id: components["schemas"]["CapabilityId"];
+        /** @description The capability's own version, as `MAJOR.MINOR`. */
+        version: string;
+      }[];
     };
     SendMessage:
       | {
@@ -1069,6 +1258,8 @@ export interface components {
     Ask: components["schemas"]["AskId"];
     /** @description A random UUID the app makes once per install, and keeps. */
     Device: string;
+    /** @description The capability's id, such as `reports`. */
+    Capability: components["schemas"]["CapabilityId"];
   };
   requestBodies: never;
   headers: {
@@ -1079,6 +1270,13 @@ export interface components {
   };
   pathItems: never;
 }
+export type CapabilityId = components["schemas"]["CapabilityId"];
+export type CapabilityList = components["schemas"]["CapabilityList"];
+export type Capability = components["schemas"]["Capability"];
+export type CapabilityField = components["schemas"]["CapabilityField"];
+export type SwitchCapability = components["schemas"]["SwitchCapability"];
+export type CapabilitySetup = components["schemas"]["CapabilitySetup"];
+export type CheckResult = components["schemas"]["CheckResult"];
 export type Event = components["schemas"]["Event"];
 export type Snapshot = components["schemas"]["Snapshot"];
 export type MessageAccepted = components["schemas"]["MessageAccepted"];
@@ -1151,6 +1349,7 @@ export type ParameterTurn = components["parameters"]["Turn"];
 export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
 export type ParameterDevice = components["parameters"]["Device"];
+export type ParameterCapability = components["parameters"]["Capability"];
 export type HeaderItoProtocol = components["headers"]["ItoProtocol"];
 export type HeaderRetryAfter = components["headers"]["RetryAfter"];
 export type $defs = Record<string, never>;
@@ -1175,7 +1374,7 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.4"
+           *         "0.5"
            *       ]
            *     }
            */
@@ -1238,8 +1437,8 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.4.0",
-           *       "protocol": "0.4",
+           *       "version": "0.5.0",
+           *       "protocol": "0.5",
            *       "agent": {
            *         "name": "Ari",
            *         "model": "gpt-6.1-sol",
@@ -1250,9 +1449,14 @@ export interface operations {
            *         }
            *       },
            *       "setup": {
-           *         "notifications": true,
-           *         "reports": false
-           *       }
+           *         "notifications": true
+           *       },
+           *       "capabilities": [
+           *         {
+           *           "id": "reports",
+           *           "version": "0.1"
+           *         }
+           *       ]
            *     }
            */
           "application/json": components["schemas"]["ServerInfo"];
@@ -1694,6 +1898,140 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  listCapabilities: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The capabilities, in the order to show them. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CapabilityList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  switchCapability: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The capability's id, such as `reports`. */
+        capability: components["parameters"]["Capability"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "on": true
+         *     }
+         */
+        "application/json": components["schemas"]["SwitchCapability"];
+      };
+    };
+    responses: {
+      /** @description The capability, as the list now shows it. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Capability"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  setUpCapability: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The capability's id, such as `reports`. */
+        capability: components["parameters"]["Capability"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "values": {
+         *         "token": "github_pat_example"
+         *       }
+         *     }
+         */
+        "application/json": components["schemas"]["CapabilitySetup"];
+      };
+    };
+    responses: {
+      /** @description The capability, as the list now shows it. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Capability"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  checkCapability: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The capability's id, such as `reports`. */
+        capability: components["parameters"]["Capability"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "values": {
+         *         "token": "github_pat_example"
+         *       }
+         *     }
+         */
+        "application/json": components["schemas"]["CapabilitySetup"];
+      };
+    };
+    responses: {
+      /** @description Whether the values work. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CheckResult"];
+        };
       };
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];

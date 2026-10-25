@@ -91,7 +91,9 @@ describe("capabilities, through the pinned Codex", () => {
     const created = createServer({
       dataDirectory: home,
       name: "test",
-      capabilities: findInstalled(path.join(import.meta.dirname, "support", "capabilities")),
+      capabilities: findInstalled(path.join(import.meta.dirname, "support", "capabilities")).filter(
+        ({ id }) => id === "echo",
+      ),
       createEngine: ({ settings, log, info, tools, skills }) =>
         createCodexEngine({
           codexHome,

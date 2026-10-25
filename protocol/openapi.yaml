@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.4"
+  version: "0.5"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -21,6 +21,8 @@ info:
     - **Answer** what the agent asks by sending a message, or cancel the ask.
     - **Notify** a device while you're not looking: register it, then say when the conversation is
       on screen. [The push schema](push.schema.json) describes what it receives.
+    - **Set up capabilities:** list what's installed with the server, switch each one on or off,
+      and fill in its setup sheet.
 
     **Versioning.** Routes carry the protocol's major version, and every response carries an
     `Ito-Protocol` header with the full version. Until 1.0, every protocol change may break, so
@@ -57,6 +59,8 @@ tags:
     description: Settle what the agent asked you.
   - name: Notifications
     description: Reach you through push notifications while you're not looking.
+  - name: Capabilities
+    description: Switch capabilities on and off, and set them up.
 paths:
   /.well-known/ito:
     get:
@@ -78,7 +82,7 @@ paths:
               schema: { $ref: "#/components/schemas/Discovery" }
               example:
                 product: ito
-                protocol: ["0.4"]
+                protocol: ["0.5"]
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/pair:
     post:
@@ -125,13 +129,14 @@ paths:
               schema: { $ref: "#/components/schemas/ServerInfo" }
               example:
                 name: studio
-                version: 0.4.0
-                protocol: "0.4"
+                version: 0.5.0
+                protocol: "0.5"
                 agent:
                   name: Ari
                   model: gpt-6.1-sol
                   account: { kind: chatgpt, plan: plus, email_domain: example.com }
-                setup: { notifications: true, reports: false }
+                setup: { notifications: true }
+                capabilities: [{ id: reports, version: "0.1" }]
         "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/events:
@@ -519,6 +524,106 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/capabilities:
+    get:
+      tags: [Capabilities]
+      operationId: listCapabilities
+      summary: List the capabilities
+      description: |
+        Every capability installed with the server, whether it's on or not, with what Settings needs
+        to show it and its setup sheet. Fetch it when Settings opens and after a change; nothing on
+        the event stream says a capability changed.
+      responses:
+        "200":
+          description: The capabilities, in the order to show them.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapabilityList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/capabilities/{capability}:
+    put:
+      tags: [Capabilities]
+      operationId: switchCapability
+      summary: Switch a capability on or off
+      description: |
+        Switching off takes effect at once: the agent can no longer use it. Its setup values stay until
+        it's set up again. Switching on a capability whose setup isn't complete leaves it in `setup`.
+      parameters:
+        - $ref: "#/components/parameters/Capability"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SwitchCapability" }
+            example: { on: true }
+      responses:
+        "200":
+          description: The capability, as the list now shows it.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Capability" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/capabilities/{capability}/setup:
+    put:
+      tags: [Capabilities]
+      operationId: setUpCapability
+      summary: Save a capability's setup
+      description: |
+        The values merge into what's saved: leave out a secret to keep it, or send `""` to clear a
+        field. A secret is never sent back to any app. A capability that's on restarts with the new
+        values, and the answer says whether it took them.
+      parameters:
+        - $ref: "#/components/parameters/Capability"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CapabilitySetup" }
+            example: { values: { token: github_pat_example } }
+      responses:
+        "200":
+          description: The capability, as the list now shows it.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Capability" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/capabilities/{capability}/check:
+    post:
+      tags: [Capabilities]
+      operationId: checkCapability
+      summary: Test setup values
+      description: |
+        *Test connection*: the capability tries the values, merged into what's saved, without saving
+        them. The answer is empty when they work, or says what's wrong.
+      parameters:
+        - $ref: "#/components/parameters/Capability"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CapabilitySetup" }
+            example: { values: { token: github_pat_example } }
+      responses:
+        "200":
+          description: Whether the values work.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     token:
@@ -534,7 +639,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.4"
+        example: "0.5"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -567,6 +672,12 @@ components:
       schema:
         type: string
         format: uuid
+    Capability:
+      name: capability
+      in: path
+      required: true
+      description: The capability's id, such as `reports`.
+      schema: { $ref: "#/components/schemas/CapabilityId" }
   responses:
     InvalidRequest:
       description: The request is malformed, or not possible in the current state (`invalid_request`).
@@ -642,6 +753,125 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
   schemas:
+    CapabilityId:
+      description: Lowercase letters, digits and dashes, such as `reports`.
+      type: string
+      pattern: ^[a-z][a-z0-9-]{0,31}$
+    CapabilityList:
+      type: object
+      required: [capabilities]
+      properties:
+        capabilities:
+          type: array
+          items: { $ref: "#/components/schemas/Capability" }
+    Capability:
+      description: A capability, as Settings shows it.
+      type: object
+      required: [id, kind, title, summary, version, state, fields, uses]
+      properties:
+        id: { $ref: "#/components/schemas/CapabilityId" }
+        kind:
+          description: "`domain` for a topic of your life (Your life), `hand` for a way Ari acts (Ari's hands)."
+          enum: [domain, hand]
+        title:
+          description: Its name, such as Reports.
+          type: string
+        summary:
+          description: One sentence on what it does.
+          type: string
+        symbol:
+          description: An SF Symbol name to show beside it. Absent when it names none; show a default.
+          type: string
+        version:
+          description: The capability's own version, as `MAJOR.MINOR`.
+          type: string
+          pattern: ^\d+\.\d+$
+        state:
+          description: |
+            `off` until you switch it on; `setup` while it's on but its setup isn't complete; `on` when
+            it's working; `needs_you` when it's on but isn't working, with `detail` saying why.
+          enum: [off, setup, on, needs_you]
+        detail:
+          description: "`needs_you` only: what's wrong, in plain words, such as GitHub rejected the token."
+          type: string
+        fields:
+          description: Its setup sheet's fields, in order.
+          type: array
+          items: { $ref: "#/components/schemas/CapabilityField" }
+        uses:
+          description: What it reaches beyond its own folder, to show before you switch it on.
+          type: object
+          required: [hosts, folders]
+          properties:
+            hosts: { type: array, items: { type: string } }
+            folders: { type: array, items: { type: string } }
+      example:
+        id: reports
+        kind: hand
+        title: Reports
+        summary: Files the gaps Ari hits as public issues on Ito's repositories.
+        symbol: exclamationmark.bubble
+        version: "0.1"
+        state: needs_you
+        detail: GitHub rejected the token.
+        fields:
+          - name: token
+            kind: secret
+            title: GitHub token
+            description: A fine-grained token for akai-ito/ito-core, with Issues set to read and write.
+            set: true
+        uses: { hosts: [api.github.com], folders: [] }
+    CapabilityField:
+      description: |
+        One field of a setup sheet. A `secret` never comes back: `set` says whether one is saved.
+        Every other field carries its saved `value`, if any.
+      type: object
+      required: [name, kind, title]
+      properties:
+        name:
+          type: string
+          pattern: ^[a-z][a-z0-9_]*$
+        kind: { enum: [text, secret, toggle, choice] }
+        title: { type: string }
+        description: { type: string }
+        optional:
+          description: True when the capability can run without it.
+          type: boolean
+        options:
+          description: "`choice` only: what can be picked."
+          type: array
+          items:
+            type: object
+            required: [value, label]
+            properties:
+              value: { type: string }
+              label: { type: string }
+        value:
+          description: "The saved value: a string, or a boolean for `toggle`. Never present for a `secret`."
+          anyOf: [{ type: string }, { type: boolean }]
+        set:
+          description: "`secret` only: whether one is saved."
+          type: boolean
+    SwitchCapability:
+      type: object
+      required: [on]
+      properties:
+        on: { type: boolean }
+    CapabilitySetup:
+      type: object
+      required: [values]
+      properties:
+        values:
+          description: Values by field name; a string, or a boolean for `toggle`.
+          type: object
+          additionalProperties:
+            anyOf: [{ type: string }, { type: boolean }]
+    CheckResult:
+      type: object
+      properties:
+        problem:
+          description: What's wrong with the values, in plain words. Absent when they work.
+          type: string
     Event:
       description: One event on the stream; the `type` field says which.
       $ref: "events.schema.json#/$defs/Event"
@@ -704,7 +934,7 @@ components:
             pattern: ^\d+\.\d+$
     ServerInfo:
       type: object
-      required: [name, version, protocol, agent, setup]
+      required: [name, version, protocol, agent, setup, capabilities]
       properties:
         name:
           description: The server's name, usually its host name.
@@ -743,14 +973,23 @@ components:
         setup:
           description: What's set up on the server, so the app can say so in Settings rather than mid-conversation.
           type: object
-          required: [notifications, reports]
+          required: [notifications]
           properties:
             notifications:
               description: Whether the server can send push notifications (`ito push setup`).
               type: boolean
-            reports:
-              description: Whether gap reports go out (`ito reports token`).
-              type: boolean
+        capabilities:
+          description: The capabilities that are on, with their versions, so the app knows which screens it can show.
+          type: array
+          items:
+            type: object
+            required: [id, version]
+            properties:
+              id: { $ref: "#/components/schemas/CapabilityId" }
+              version:
+                description: The capability's own version, as `MAJOR.MINOR`.
+                type: string
+                pattern: ^\d+\.\d+$
     SendMessage:
       type: object
       required: [id]
