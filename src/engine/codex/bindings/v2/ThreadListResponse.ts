@@ -4,13 +4,11 @@
 import type { Thread } from "./Thread.ts";
 
 export type ThreadListResponse = {
-  data: Array<Thread>;
-  /**
+  data: Array<Thread>; /**
    * Opaque cursor to pass to the next call to continue after the last item.
    * if None, there are no more items to return.
    */
-  nextCursor: string | null;
-  /**
+  nextCursor: string | null; /**
    * Opaque cursor to pass as `cursor` when reversing `sortDirection`.
    * This is only populated when the page contains at least one thread.
    * Use it with the opposite `sortDirection`; for timestamp sorts it anchors
