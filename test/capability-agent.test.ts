@@ -15,6 +15,7 @@ import { createServer, databaseFile, type Server } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore } from "#store/store.ts";
 import { startMockModel, type MockModel } from "./support/mock-model.ts";
+import { wordEmbedder } from "#memory/embedder.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-capability-agent-"));
 const codexHome = path.join(home, "codex");
@@ -89,6 +90,7 @@ describe("capabilities, through the pinned Codex", () => {
     model.set(started);
     writeCodexConfig(started.baseUrl);
     const created = createServer({
+      embedder: wordEmbedder,
       dataDirectory: home,
       name: "test",
       capabilities: findInstalled(path.join(import.meta.dirname, "support", "capabilities")).filter(

@@ -8,12 +8,14 @@ import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { createServer } from "#server.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
+import { wordEmbedder } from "#memory/embedder.ts";
 
 const token = "ito_attachments_test_not_a_real_token_000000000000000000";
 const authorization = `Bearer ${token}`;
 const directory = mkdtempSync(path.join(os.tmpdir(), "ito-attachments-"));
 const clock = createVirtualClock(Date.parse("2026-10-15T18:30:00.000Z"));
 const server = createServer({
+  embedder: wordEmbedder,
   dataDirectory: directory,
   createEngine: () =>
     createScriptEngine(clock, () => ({ events: [], steer: () => ({ outcome: "refused" }), stoppedAt: (at) => at })),

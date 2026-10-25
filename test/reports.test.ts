@@ -15,6 +15,7 @@ import { createServer, type Server } from "#server.ts";
 import type { Settings } from "#store/store.ts";
 import { startFakeGitHub, type FakeGitHub } from "./support/fake-github.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
+import { wordEmbedder } from "#memory/embedder.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-reports-"));
 const github = createCell<FakeGitHub | undefined>(undefined);
@@ -176,6 +177,7 @@ describe("Ito's tools over MCP", () => {
     const fake = await startFakeGitHub();
     github.set(fake);
     const started = createServer({
+      embedder: wordEmbedder,
       dataDirectory: path.join(home, "server"),
       name: "test",
       createEngine: (context) => {
@@ -200,7 +202,18 @@ describe("Ito's tools over MCP", () => {
       result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "ito" } },
     });
     expect(await statusOf(post({ jsonrpc: "2.0", method: "notifications/initialized" }))).toBe(202);
-    expect(await rpc("tools/list")).toMatchObject({ result: { tools: [{ name: "report_gap" }, { name: "ask" }] } });
+    expect(await rpc("tools/list")).toMatchObject({
+      result: {
+        tools: [
+          { name: "report_gap" },
+          { name: "ask" },
+          { name: "recall" },
+          { name: "read_page" },
+          { name: "remember" },
+          { name: "journal" },
+        ],
+      },
+    });
     const { url } = toolServer();
     expect(await statusOf(fetch(url))).toBe(405);
     expect(await rpc("resources/list")).toMatchObject({ error: { code: -32_601 } });

@@ -8,6 +8,8 @@ import type { InitializeResponse } from "#engine/codex/bindings/InitializeRespon
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
 import type { GetAccountParams } from "#engine/codex/bindings/v2/GetAccountParams.ts";
 import type { GetAccountResponse } from "#engine/codex/bindings/v2/GetAccountResponse.ts";
+import type { ThreadInjectItemsParams } from "#engine/codex/bindings/v2/ThreadInjectItemsParams.ts";
+import type { ThreadInjectItemsResponse } from "#engine/codex/bindings/v2/ThreadInjectItemsResponse.ts";
 import type { ThreadReadParams } from "#engine/codex/bindings/v2/ThreadReadParams.ts";
 import type { ThreadReadResponse } from "#engine/codex/bindings/v2/ThreadReadResponse.ts";
 import type { ThreadResumeParams } from "#engine/codex/bindings/v2/ThreadResumeParams.ts";
@@ -31,6 +33,7 @@ type Calls = {
   readonly "thread/start": Call<ThreadStartParams, ThreadStartResponse>;
   readonly "thread/resume": Call<ThreadResumeParams, ThreadResumeResponse>;
   readonly "thread/read": Call<ThreadReadParams, ThreadReadResponse>;
+  readonly "thread/inject_items": Call<ThreadInjectItemsParams, ThreadInjectItemsResponse>;
   readonly "turn/start": Call<TurnStartParams, TurnStartResponse>;
   readonly "turn/steer": Call<TurnSteerParams, TurnSteerResponse>;
   readonly "turn/interrupt": Call<TurnInterruptParams, TurnInterruptResponse>;

@@ -1,0 +1,108 @@
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { promisify } from "node:util";
+import { fail, ok, type Result } from "#result.ts";
+
+const run = promisify(execFile);
+
+export type Thread = {
+  readonly directory: string;
+  readonly read: (file: string) => string | undefined;
+  readonly write: (file: string, text: string | undefined, message: string) => Promise<Result<string, string>>;
+  readonly readAt: (commit: string, file: string) => Promise<string | undefined>;
+  readonly files: () => readonly string[];
+  readonly hasRemote: () => Promise<boolean>;
+  readonly setRemote: (url: string) => Promise<Result<undefined, string>>;
+  readonly push: () => Promise<Result<undefined, string>>;
+};
+
+const describe = (error: unknown): string => {
+  const stderr = (error as { readonly stderr?: unknown }).stderr;
+  return typeof stderr === "string" && stderr.trim() !== ""
+    ? stderr.trim()
+    : error instanceof Error
+      ? error.message
+      : String(error);
+};
+
+const listFiles = (directory: string, relative = ""): readonly string[] => {
+  const entries = readdirSync(path.join(directory, relative), { withFileTypes: true }).filter(
+    (entry) => !entry.name.startsWith("."),
+  );
+  const named = (name: string): string => (relative ? `${relative}/${name}` : name);
+  return [
+    ...entries.filter((entry) => entry.isFile() && entry.name.endsWith(".md")).map((entry) => named(entry.name)),
+    ...entries.filter((entry) => entry.isDirectory()).flatMap((entry) => listFiles(directory, named(entry.name))),
+  ];
+};
+
+export const openThread = async (directory: string): Promise<Thread> => {
+  const git = async (...arguments_: readonly string[]): Promise<string> => {
+    const { stdout } = await run("git", ["-C", directory, ...arguments_], { maxBuffer: 64 * 1024 * 1024 });
+    return stdout;
+  };
+  mkdirSync(directory, { recursive: true });
+  if (!existsSync(path.join(directory, ".git"))) {
+    await git("init", "--quiet", "--initial-branch=main");
+    await git("config", "user.name", "Ari");
+    await git("config", "user.email", "ari@ito.invalid");
+    await git("commit", "--quiet", "--allow-empty", "--message", "Start the Thread");
+  }
+
+  return {
+    directory,
+    read: (file) => {
+      const full = path.join(directory, file);
+      return existsSync(full) ? readFileSync(full, "utf8") : undefined;
+    },
+    write: async (file, text, message) => {
+      const full = path.join(directory, file);
+      try {
+        if (text === undefined) {
+          rmSync(full, { force: true });
+        } else {
+          mkdirSync(path.dirname(full), { recursive: true });
+          writeFileSync(full, text);
+        }
+        await git("add", "--all", "--", file);
+        await git("commit", "--quiet", "--allow-empty", "--message", message);
+        const head = await git("rev-parse", "HEAD");
+        return ok(head.trim());
+      } catch (error) {
+        return fail(describe(error));
+      }
+    },
+    readAt: async (commit, file) => {
+      try {
+        return await git("show", `${commit}:${file}`);
+      } catch {
+        return;
+      }
+    },
+    files: () => listFiles(directory),
+    hasRemote: async () => {
+      const remotes = await git("remote");
+      return remotes.split("\n").includes("origin");
+    },
+    setRemote: async (url) => {
+      try {
+        const remotes = await git("remote");
+        await (remotes.split("\n").includes("origin")
+          ? git("remote", "set-url", "origin", url)
+          : git("remote", "add", "origin", url));
+        return ok(undefined);
+      } catch (error) {
+        return fail(describe(error));
+      }
+    },
+    push: async () => {
+      try {
+        await git("push", "--quiet", "origin", "HEAD:main");
+        return ok(undefined);
+      } catch (error) {
+        return fail(describe(error));
+      }
+    },
+  };
+};

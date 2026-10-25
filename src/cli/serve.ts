@@ -1,6 +1,7 @@
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { parseArgs } from "node:util";
 import { bundledDirectory, findInstalled } from "#capabilities/installed.ts";
 import type { Io } from "#cli/io.ts";
@@ -14,6 +15,7 @@ import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { createToken, hashToken, tokenSetting } from "#http/auth.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { createServer, type EngineContext, type ServerOptions } from "#server.ts";
+import { createLocalEmbedder, wordEmbedder } from "#memory/embedder.ts";
 
 export const defaultPort = 8787;
 
@@ -60,12 +62,13 @@ const toEngineFactory = (engine: EngineName, paths: Paths): ServerOptions["creat
         settings.setSetting(modelSetting, "demo");
         return createScriptEngine(systemClock, demoScripts);
       }
-    : ({ settings, log, info, tools, skills }: EngineContext) => {
+    : ({ settings, log, info, tools, skills, inMind }: EngineContext) => {
         const voice = readFileSync(instructionsFile, "utf8");
         return createCodexEngine({
           codexHome: paths.codexHome,
           workspace: paths.workspace,
           instructions: () => voice + skills(),
+          context: inMind,
           settings,
           log,
           info,
@@ -92,6 +95,7 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
   const { engine, port, name } = parsed.value;
   const paths = toPaths(io.environment);
   const server = createServer({
+    embedder: engine === "demo" ? wordEmbedder : createLocalEmbedder(path.join(paths.home, "models")),
     dataDirectory: paths.home,
     createEngine: toEngineFactory(engine, paths),
     name,

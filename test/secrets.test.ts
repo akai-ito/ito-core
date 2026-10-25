@@ -11,6 +11,7 @@ import { createScriptEngine, type TimedEvent } from "#engine/scripted/script-eng
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { createServer } from "#server.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
+import { wordEmbedder } from "#memory/embedder.ts";
 
 const token = "ito_secrets_test_not_a_real_token_0000000000000000000";
 const directory = mkdtempSync(path.join(os.tmpdir(), "ito-secrets-"));
@@ -31,6 +32,7 @@ const echo = (now: number, text: string): readonly TimedEvent[] => {
 };
 
 const server = createServer({
+  embedder: wordEmbedder,
   dataDirectory: directory,
   createEngine: () =>
     createScriptEngine(clock, (_turn, inputs, now) => ({
