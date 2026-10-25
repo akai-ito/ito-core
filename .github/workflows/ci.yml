@@ -65,6 +65,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/node
+      - name: Let Codex's sandbox run the agent's commands
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Replay the transcripts, crash the server, drive the pinned Codex, run the commands
         run: npm test
 
