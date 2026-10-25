@@ -1,8 +1,6 @@
 import { toTimestamp } from "#clock.ts";
 import type { StepFacts } from "#engine/engine.ts";
 import type { Outcome, Step, StepKind } from "#protocol/types.ts";
-import { reportToolName } from "#reports/tool.ts";
-import { toolServerName } from "#tools/mcp.ts";
 
 export type Tense = "present" | "past";
 
@@ -159,11 +157,7 @@ const webSearchTitle = ({ query, queries, url, pattern }: StepFacts): Title => {
   return url ? title(`Opening ${hostOf(url)}`, `Opened ${hostOf(url)}`) : searchTitle(queries?.[0] ?? query ?? "");
 };
 
-const toolTitle = ({ capability = "a tool", operation, url }: StepFacts): Title => {
-  if (capability !== toolServerName || operation !== reportToolName)
-    return title(`Using ${capability}`, `Used ${capability}`);
-  return title("Reporting it to Ito", url?.includes("#issuecomment-") ? "Added to an Ito issue" : "Reported it to Ito");
-};
+const toolTitle = ({ capability = "a tool" }: StepFacts): Title => title(`Using ${capability}`, `Used ${capability}`);
 
 const memoryTitle = ({ action, pages = [] }: StepFacts): Title => {
   const names = pages.map((page) => page.title).join(" · ");

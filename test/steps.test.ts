@@ -107,16 +107,4 @@ describe("step titles", () => {
       "Searched nationaltrail.co.uk",
     ]);
   });
-
-  it("name Ito's own report tool plainly, by what it did", () => {
-    const report = { capability: "ito", operation: "report_gap" };
-    expect(toStepTitle("tool", report, "present")).toBe("Reporting it to Ito");
-    expect(toStepTitle("tool", { ...report, url: "https://github.com/akai-ito/ito-core/issues/7" }, "past")).toBe(
-      "Reported it to Ito",
-    );
-    expect(
-      toStepTitle("tool", { ...report, url: "https://github.com/akai-ito/ito-core/issues/7#issuecomment-1" }, "past"),
-    ).toBe("Added to an Ito issue");
-    expect(both("tool", { capability: "weather", operation: "forecast" })).toEqual(["Using weather", "Used weather"]);
-  });
 });

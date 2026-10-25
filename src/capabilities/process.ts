@@ -15,7 +15,10 @@ import { fail, ok, type Result } from "#result.ts";
 
 export type CapabilityProcess = {
   readonly manifest: Manifest;
-  readonly start: (values: Values) => Promise<Result<undefined, string>>;
+  readonly start: (
+    values: Values,
+    server: { readonly version: string; readonly engine: string },
+  ) => Promise<Result<undefined, string>>;
   readonly check: (values: Values) => Promise<Result<string | undefined, string>>;
   readonly call: (
     operation: string,
@@ -161,8 +164,8 @@ export const startCapabilityProcess = async ({
     manifest: manifest.value,
     exited,
     stop,
-    start: async (values) => {
-      const started = await withinTime(connection.request("start", { values, folder }), notAnswered);
+    start: async (values, server) => {
+      const started = await withinTime(connection.request("start", { values, folder, server }), notAnswered);
       return started.ok ? ok(undefined) : fail(failureText(started.failure));
     },
     check: async (values) => {
