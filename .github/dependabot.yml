@@ -8,11 +8,9 @@ updates:
       prefix: build
       include: scope
     groups:
-      codex:
-        patterns: ["@openai/codex"]
       npm:
         patterns: ["*"]
-        exclude-patterns: ["@openai/codex"]
+        exclude-patterns: ["@openai/codex", "typescript"]
 
   - package-ecosystem: github-actions
     directory: /
