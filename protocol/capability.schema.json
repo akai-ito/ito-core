@@ -45,6 +45,10 @@
           "enum": ["domain", "hand"]
         },
         "title": { "description": "Its name in Settings, such as Reports.", "type": "string", "minLength": 1 },
+        "symbol": {
+          "description": "An SF Symbol name for apps to show beside it, such as `exclamationmark.bubble`.",
+          "type": "string"
+        },
         "summary": {
           "description": "One sentence on what it does, for Settings and for the agent.",
           "type": "string",
@@ -77,17 +81,17 @@
       }
     },
     "Field": {
-      "description": "One field of a setup sheet. A `password` goes to the server once and never comes back to any app.",
+      "description": "One field of a setup sheet. A `secret` goes to the server once and never comes back to any app.",
       "type": "object",
       "required": ["name", "kind", "title"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
-        "kind": { "enum": ["text", "password", "toggle", "choice"] },
+        "kind": { "enum": ["text", "secret", "toggle", "choice"] },
         "title": { "type": "string", "minLength": 1 },
         "description": { "type": "string" },
         "optional": { "description": "True when the capability can run without it.", "type": "boolean" },
-        "choices": {
+        "options": {
           "description": "`choice` only: what can be picked.",
           "type": "array",
           "minItems": 1,
@@ -129,7 +133,7 @@
       }
     },
     "Values": {
-      "description": "Setup values by field name: a string for `text`, `password` and `choice`, a boolean for `toggle`.",
+      "description": "Setup values by field name: a string for `text`, `secret` and `choice`, a boolean for `toggle`.",
       "type": "object",
       "additionalProperties": { "type": ["string", "boolean"] }
     },

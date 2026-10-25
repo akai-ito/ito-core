@@ -6,7 +6,7 @@ import { fail, ok, type Result } from "#result.ts";
 
 export const capabilityProtocol = "0.1";
 
-export type FieldKind = "text" | "password" | "toggle" | "choice";
+export type FieldKind = "text" | "secret" | "toggle" | "choice";
 
 export type Field = {
   readonly name: string;
@@ -14,7 +14,7 @@ export type Field = {
   readonly title: string;
   readonly description?: string;
   readonly optional?: boolean;
-  readonly choices?: readonly { readonly value: string; readonly label: string }[];
+  readonly options?: readonly { readonly value: string; readonly label: string }[];
 };
 
 export type Operation = {
@@ -33,6 +33,7 @@ export type Manifest = {
   readonly version: string;
   readonly kind: "domain" | "hand";
   readonly title: string;
+  readonly symbol?: string;
   readonly summary: string;
   readonly setup: readonly Field[];
   readonly operations: readonly Operation[];
@@ -83,7 +84,7 @@ const toValue = (field: Field, value: string | boolean): Result<string | boolean
   if (field.kind === "toggle")
     return typeof value === "boolean" ? ok(value) : fail(`${field.name} takes true or false.`);
   if (typeof value !== "string") return fail(`${field.name} takes text.`);
-  const isChoice = field.kind !== "choice" || value === "" || field.choices?.some((choice) => choice.value === value);
+  const isChoice = field.kind !== "choice" || value === "" || field.options?.some((option) => option.value === value);
   return isChoice ? ok(value) : fail(`${value} isn't one of the choices for ${field.name}.`);
 };
 

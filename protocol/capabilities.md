@@ -38,7 +38,7 @@ A capability exits when its standard input closes, so nothing outlives the serve
 
 ```jsonl
 {"id":1,"method":"initialize","params":{"protocol":"0.1"}}
-{"id":1,"result":{"protocol":"0.1","manifest":{"id":"echo","version":"0.1","kind":"hand","title":"Echo","summary":"Says back what it's given.","setup":[{"name":"token","kind":"password","title":"Token"}],"operations":[{"name":"say","title":"Say something back","running":"Echoing","done":"Echoed","description":"Says the text back.","input":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"tool":"echo_say"}],"skill":"Use echo to hear yourself.","uses":{"hosts":[],"folders":[]}}}}
+{"id":1,"result":{"protocol":"0.1","manifest":{"id":"echo","version":"0.1","kind":"hand","title":"Echo","summary":"Says back what it's given.","setup":[{"name":"token","kind":"secret","title":"Token"}],"operations":[{"name":"say","title":"Say something back","running":"Echoing","done":"Echoed","description":"Says the text back.","input":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"tool":"echo_say"}],"skill":"Use echo to hear yourself.","uses":{"hosts":[],"folders":[]}}}}
 {"id":2,"method":"start","params":{"values":{"token":"a-secret"},"folder":"/home/you/.ito/capabilities/echo"}}
 {"id":2,"result":{}}
 {"id":3,"method":"call","params":{"operation":"say","input":{"text":"hello"},"turn":"turn_01"}}

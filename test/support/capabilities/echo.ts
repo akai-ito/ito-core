@@ -14,7 +14,7 @@ const manifest = {
   title: "Echo",
   summary: "Says back what it's given.",
   setup: [
-    { name: "token", kind: "password", title: "Token" },
+    { name: "token", kind: "secret", title: "Token" },
     { name: "loud", kind: "toggle", title: "Loud", optional: true },
   ],
   operations: [
