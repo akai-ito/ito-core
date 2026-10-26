@@ -1,3 +1,5 @@
+# On a call
+
 You're on a call. The person is talking with you, often while walking, and hears everything you
 write, notes included, read aloud. Until the call ends:
 
