@@ -452,7 +452,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           has_more: rows.length > snapshotSize,
           steps: window[0] ? [...stepsFrom(window[0].position)] : [],
           asks: window[0] ? [...asksFrom(window[0].position)] : [],
-          calls: window[0] ? [...callsFrom(window[0].position)] : [],
+          calls: [...callsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
           turn: turn ? toLiveTurn(turn) : null,
           next: next.map((row) => row.message),
         },
@@ -563,7 +563,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         messages: page.map((row) => toMessage(row)),
         steps: page[0] ? stepsFrom(page[0].position, anchor.position) : [],
         asks: page[0] ? asksFrom(page[0].position, anchor.position) : [],
-        calls: page[0] ? callsFrom(page[0].position, anchor.position) : [],
+        calls: callsFrom((rows[limit]?.position ?? 0) + 1, anchor.position),
         hasMore: rows.length > limit,
       });
     },
