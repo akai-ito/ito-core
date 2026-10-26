@@ -1975,8 +1975,7 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "A walk with Ari",
       summary:
         "You start a call for a walk. What you say arrives as a spoken message with its recording and the names " +
-        "the phone corrected; Ari answers the way a person would on a call, and the call closes with its length. " +
-        "Opening Ari afresh later, the call is in the snapshot, before its first message.",
+        "the phone corrected; Ari answers the way a person would on a call, and the call closes with its length.",
       guarantees: ["G23"],
     });
     transcript.begin("2026-10-26T07:30:00.000Z");
@@ -2006,11 +2005,6 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.endTurn("completed");
     transcript.wait(24 * 60 * 1000);
     transcript.endCall(call);
-    transcript.wait(2000);
-    transcript.disconnect("app_closed");
-    transcript.wait(10 * 60 * 1000);
-    transcript.world("app_opened");
-    transcript.connect({ isFresh: true });
     return transcript;
   },
 
@@ -2096,7 +2090,31 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.disconnect("app_closed");
     transcript.wait(60_000);
     transcript.world("app_opened");
-    transcript.connect({ isFresh: true });
+    transcript.connect();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "41-another-device-sees-the-call",
+      scenario: 41,
+      title: "Another device sees the call",
+      summary:
+        "A walk earlier this morning was a call with one spoken message. Ari on the Mac connects for the first " +
+        "time, and its snapshot carries the call before the message it opened, with the recording and the " +
+        "corrections.",
+      guarantees: ["G13", "G23"],
+    });
+    transcript.time("2026-10-26T07:30:00.000Z");
+    const question = "What did Bora say about the QRT panel?";
+    transcript.callExchange(
+      question,
+      "She wants one more round on your design before the panel sits in November.",
+      [correctionOf(question, "Bora", "Bara"), correctionOf(question, "QRT", "cutie")],
+      "walk-turn.m4a",
+    );
+    transcript.begin("2026-10-26T09:00:00.000Z");
+    transcript.connect();
     return transcript;
   },
 ];

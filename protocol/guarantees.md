@@ -21,7 +21,7 @@ where the protocol has to make it possible, marked *App*.
 | G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17, 37 |
 | G11 | **The token stays secret.** It travels only over HTTPS (loopback excepted, for development), is never logged and is never sent back. | 1, 31 |
 | G12 | **Versioned and tolerant.** The server states its protocol version before asking for the token. Both sides ignore what they don't recognise. A major mismatch says which side to update. | 1 |
-| G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2, 30 |
+| G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2, 30, 41 |
 | G14 | **The agent's steps are kept.** Every step the agent takes (thinking, a search, a command, an edit, a tool, a plan) streams as it happens and is stored in the conversation, in order with the messages, so it comes back in snapshots, in history and on every app. Every step ends with an outcome; a step still running when its turn ends, ends with the turn. | 4, 7, 9, 15, 16, 17, 34, 35, 36 |
 | G15 | **Notified only while you're away.** The server pushes when a reply finishes, when a turn fails, when the agent asks you something, and once more for an ask still waiting after three hours, and never for progress or notes. Nothing is pushed while any of your devices is looking at the conversation with a live stream. | 18, 21, 24, 26 |
 | G16 | **Asks wait for you.** Asking ends the agent's turn, and the ask waits as long as it takes, through the app closing, the phone going offline and the server restarting. Your next message answers it, whichever way you write it, and only you can cancel it. Nothing happens on the agent's side until you answer. | 19, 20, 21, 22, 23, 24 |
@@ -31,7 +31,7 @@ where the protocol has to make it possible, marked *App*.
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
 | G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
 | G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36 |
-| G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. What you teach the vocabulary corrects how names are heard, never what they're called. | 38, 39, 40 |
+| G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. What you teach the vocabulary corrects how names are heard, never what they're called. | 38, 39, 40, 41 |
 
 ## Scenario by scenario
 
@@ -314,9 +314,7 @@ where the protocol has to make it possible, marked *App*.
 ### 38 · [A walk with Ari](transcripts/38-a-walk-with-ari.jsonl)
 
 - A call has an id the app chose; starting and ending it are events with a place in the
-  conversation, so the call shows as a block with its length. A snapshot or history page carries
-  every call after the message before its first one, so a call that opens the window is never lost.
-  (G23)
+  conversation, so the call shows as a block with its length. (G23)
 - A spoken message names its call, its recording and the words the phone corrected, by offset into
   the corrected text. The agent gets the words, never the recording. (G23)
 
@@ -329,7 +327,12 @@ where the protocol has to make it possible, marked *App*.
 ### 40 · [Delete a call's audio](transcripts/40-delete-a-call-s-audio.jsonl)
 
 - Deleting a call's audio removes the recordings, keeps the words, and is an event every app
-  receives, so a snapshot afterwards shows the message without its audio. (G23)
+  receives. (G23)
+
+### 41 · [Another device sees the call](transcripts/41-another-device-sees-the-call.jsonl)
+
+- A snapshot or history page carries every call after the message before its first one, so a call
+  that opens the window comes with it, before the spoken message it opened. (G13, G23)
 
 ## Not in this version
 
