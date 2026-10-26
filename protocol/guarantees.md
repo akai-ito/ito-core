@@ -31,6 +31,7 @@ where the protocol has to make it possible, marked *App*.
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
 | G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
 | G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36 |
+| G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. What you teach the vocabulary corrects how names are heard, never what they're called. | 38, 39, 40 |
 
 ## Scenario by scenario
 
@@ -309,6 +310,24 @@ where the protocol has to make it possible, marked *App*.
 - A model or effort the engine doesn't offer is refused as `invalid_request`, with the efforts it
   does have. (G10)
 - The choice applies from the next message, and `GET /v0/server` names it.
+
+### 38 · [A walk with Ari](transcripts/38-a-walk-with-ari.jsonl)
+
+- A call has an id the app chose; starting and ending it are events with a place in the
+  conversation, so the call shows as a block with its length. (G23)
+- A spoken message names its call, its recording and the words the phone corrected, by offset into
+  the corrected text. The agent gets the words, never the recording. (G23)
+
+### 39 · [Ari learns a name](transcripts/39-ari-learns-a-name.jsonl)
+
+- The vocabulary lists memory's titles and aliases with their kind, weight and phrases from real use.
+- A mishearing you undo joins the matching page's `heard` list, never its names; a word no page names
+  becomes a term of its own. (G23)
+
+### 40 · [Delete a call's audio](transcripts/40-delete-a-call-s-audio.jsonl)
+
+- Deleting a call's audio removes the recordings, keeps the words, and is an event every app
+  receives, so a snapshot afterwards shows the message without its audio. (G23)
 
 ## Not in this version
 

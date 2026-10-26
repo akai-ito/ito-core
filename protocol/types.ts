@@ -543,10 +543,146 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/calls/{call}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Start a call
+     * @description Starts a call under the id the app chose, so starting it again is safe. While it's on, the
+     *     agent speaks: short replies, no lists, the details in the chat, and notes as spoken lines.
+     *     Starting a call while another is on ends the earlier one first.
+     */
+    put: operations["startCall"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/calls/{call}/end": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * End a call
+     * @description Ends the call, with its length. Ending one that has already ended changes nothing.
+     */
+    post: operations["endCall"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/calls/{call}/audio": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete a call's audio
+     * @description Deletes the recordings of the call's spoken messages; their text stays. Deleting it again changes nothing.
+     */
+    delete: operations["deleteCallAudio"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/vocabulary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Words to steer speech recognition
+     * @description Up to 300 terms from memory (page titles and aliases, with the kind from the shelf), from
+     *     words you keep using in conversation, and from fixes you've taught it. Each has a weight,
+     *     a few example phrases from real use, and the mishearings learnt for it.
+     */
+    get: operations["getVocabulary"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/vocabulary/corrections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Teach it what you meant
+     * @description Each pair is a word the recogniser heard and what you meant. When `meant` is a page's title
+     *     or alias, `heard` joins that page's mishearings; otherwise the pair is kept as a term of its
+     *     own. Teaching the same pair again changes nothing.
+     */
+    post: operations["teachVocabulary"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    CallResult: {
+      call: components["schemas"]["Call"];
+    };
+    Vocabulary: {
+      terms: components["schemas"]["Term"][];
+    };
+    Term: {
+      /** @description The word or name as it should be written. */
+      text: string;
+      /**
+       * @description Where it comes from: a memory shelf, or `term` for a word from conversation or a fix.
+       * @enum {unknown}
+       */
+      kind: "person" | "place" | "project" | "goal" | "topic" | "term";
+      /** @description How much it's used, from 0 to 1. */
+      weight: number;
+      /** @description Up to 3 short phrases that use it, from your own messages or its page. */
+      phrases: string[];
+      /** @description Mishearings learnt for it, to correct on the phone. */
+      heard: string[];
+      address?: components["schemas"]["MemoryAddress"];
+    };
+    Corrections: {
+      corrections: {
+        heard: string;
+        meant: string;
+        /** @description In an answer, the page the mishearing joined, when there was one. */
+        address?: components["schemas"]["MemoryAddress"];
+      }[];
+    };
     ModelChoice: {
       /** @description The model's id. */
       model: string;
@@ -741,7 +877,10 @@ export interface components {
       | components["schemas"]["MessageEnded"]
       | components["schemas"]["AskStarted"]
       | components["schemas"]["AskEnded"]
-      | components["schemas"]["TurnEnded"];
+      | components["schemas"]["TurnEnded"]
+      | components["schemas"]["CallStarted"]
+      | components["schemas"]["CallEnded"]
+      | components["schemas"]["CallAudioDeleted"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -768,6 +907,8 @@ export interface components {
       turn: components["schemas"]["LiveTurn"] | null;
       /** @description Messages waiting as Next, in the order they will be answered. */
       next: components["schemas"]["MessageId"][];
+      /** @description The calls that started within these messages, and one still on. */
+      calls: components["schemas"]["Call"][];
     };
     /**
      * message.accepted
@@ -1028,6 +1169,8 @@ export interface components {
       secret?: true;
       /** @description User messages only: the photos and files you attached, in order. */
       attachments?: components["schemas"]["Attachment"][];
+      /** @description Only on a message you spoke on a call. */
+      spoken?: components["schemas"]["Spoken"];
       /** @description Agent messages only: when it ended. */
       ended_at?: components["schemas"]["Timestamp"];
       /** @description Agent messages only. Absent while the message is still being written. */
@@ -1201,6 +1344,16 @@ export interface components {
     SendMessage:
       | {
           /**
+           * @description For a message you spoke on a call: the call, the recording's attachment (uploaded first,
+           *     with an `audio/*` type) and the words the phone corrected in `text`. The agent gets the
+           *     text; it never gets the audio. A call that isn't on is an `invalid_request`.
+           */
+          spoken?: {
+            call: components["schemas"]["CallId"];
+            audio?: components["schemas"]["AttachmentId"];
+            corrections?: components["schemas"]["Correction"][];
+          };
+          /**
            * Format: uuid
            * @description A random UUID the app makes when you tap Send. It is the message's id and its retry key.
            */
@@ -1228,6 +1381,8 @@ export interface components {
       steps: components["schemas"]["Step"][];
       /** @description Every ask in the same span, in position order. */
       asks: components["schemas"]["Ask"][];
+      /** @description Every call that started in the same span, in position order. */
+      calls: components["schemas"]["Call"][];
       /** @description Whether even older messages exist. */
       has_more: boolean;
     };
@@ -1331,10 +1486,28 @@ export interface components {
      */
     AttachmentId: string;
     /**
-     * @description `image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.
+     * @description `image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.
      * @enum {unknown}
      */
-    AttachmentKind: "image" | "file";
+    AttachmentKind: "image" | "audio" | "file";
+    /**
+     * Format: uuid
+     * @description A random UUID the app makes when you start a call.
+     */
+    CallId: string;
+    /** @description A word the phone corrected in a spoken message: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard. */
+    Correction: {
+      offset: number;
+      length: number;
+      heard: string;
+    };
+    /** @description How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the phone corrected. */
+    Spoken: {
+      call: components["schemas"]["CallId"];
+      /** @description The recording of what you said. Absent once you've deleted the call's audio. */
+      audio?: components["schemas"]["Attachment"];
+      corrections?: components["schemas"]["Correction"][];
+    };
     /**
      * @description How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.
      * @enum {unknown}
@@ -1388,6 +1561,19 @@ export interface components {
      * @enum {unknown}
      */
     AskOutcome: "answered" | "cancelled";
+    /** @description A call with Ari, shown in the conversation as a block that opens and closes the stretch it covered. */
+    Call: {
+      id: components["schemas"]["CallId"];
+      started_at: components["schemas"]["Timestamp"];
+      /** @description Where the call started in the conversation. */
+      position: components["schemas"]["Position"];
+      /** @description When it ended. Absent while it's on. */
+      ended_at?: components["schemas"]["Timestamp"];
+      /** @description How long it lasted, once it has ended. */
+      duration_ms?: number;
+      /** @description True once you've deleted the audio of its spoken messages. */
+      audio_deleted?: boolean;
+    };
     /**
      * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
      * @enum {unknown}
@@ -1408,6 +1594,39 @@ export interface components {
       retry_of?: components["schemas"]["TurnId"];
       /** @description The current live status, if there is one yet. */
       status: components["schemas"]["Status"] | null;
+    };
+    /**
+     * call.started
+     * @description You started a call with Ari. While it's on, Ari speaks.
+     */
+    CallStarted: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "call.started";
+      at: components["schemas"]["Timestamp"];
+      call: components["schemas"]["Call"];
+    };
+    /**
+     * call.ended
+     * @description The call ended, with how long it lasted.
+     */
+    CallEnded: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "call.ended";
+      at: components["schemas"]["Timestamp"];
+      call: components["schemas"]["Call"];
+    };
+    /**
+     * call.audio_deleted
+     * @description The audio of a call's spoken messages is deleted; their text stays.
+     */
+    CallAudioDeleted: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "call.audio_deleted";
+      at: components["schemas"]["Timestamp"];
+      call: components["schemas"]["Call"];
     };
     /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once.
@@ -1535,6 +1754,8 @@ export interface components {
     Ask: components["schemas"]["AskId"];
     /** @description A random UUID the app makes once per install, and keeps. */
     Device: string;
+    /** @description The id the app chose when it started the call. */
+    Call: components["schemas"]["CallId"];
     /** @description The capability's id, such as `reports`. */
     Capability: components["schemas"]["CapabilityId"];
   };
@@ -1547,6 +1768,10 @@ export interface components {
   };
   pathItems: never;
 }
+export type CallResult = components["schemas"]["CallResult"];
+export type Vocabulary = components["schemas"]["Vocabulary"];
+export type Term = components["schemas"]["Term"];
+export type Corrections = components["schemas"]["Corrections"];
 export type ModelChoice = components["schemas"]["ModelChoice"];
 export type ModelList = components["schemas"]["ModelList"];
 export type ModelOption = components["schemas"]["ModelOption"];
@@ -1613,6 +1838,9 @@ export type Position = components["schemas"]["Position"];
 export type AskId = components["schemas"]["AskId"];
 export type AttachmentId = components["schemas"]["AttachmentId"];
 export type AttachmentKind = components["schemas"]["AttachmentKind"];
+export type CallId = components["schemas"]["CallId"];
+export type Correction = components["schemas"]["Correction"];
+export type Spoken = components["schemas"]["Spoken"];
 export type Outcome = components["schemas"]["Outcome"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
@@ -1622,10 +1850,14 @@ export type ChangeId = components["schemas"]["ChangeId"];
 export type AskKind = components["schemas"]["AskKind"];
 export type AskOption = components["schemas"]["AskOption"];
 export type AskOutcome = components["schemas"]["AskOutcome"];
+export type Call = components["schemas"]["Call"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
 export type StatusDetail = components["schemas"]["StatusDetail"];
 export type LiveTurn = components["schemas"]["LiveTurn"];
+export type CallStarted = components["schemas"]["CallStarted"];
+export type CallEnded = components["schemas"]["CallEnded"];
+export type CallAudioDeleted = components["schemas"]["CallAudioDeleted"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -1639,6 +1871,7 @@ export type ParameterTurn = components["parameters"]["Turn"];
 export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
 export type ParameterDevice = components["parameters"]["Device"];
+export type ParameterCall = components["parameters"]["Call"];
 export type ParameterCapability = components["parameters"]["Capability"];
 export type HeaderItoProtocol = components["headers"]["ItoProtocol"];
 export type HeaderRetryAfter = components["headers"]["RetryAfter"];
@@ -1664,7 +1897,7 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.7"
+           *         "0.8"
            *       ]
            *     }
            */
@@ -1727,8 +1960,8 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.7.0",
-           *       "protocol": "0.7",
+           *       "version": "0.8.0",
+           *       "protocol": "0.8",
            *       "agent": {
            *         "name": "Ari",
            *         "model": "gpt-6.1-sol",
@@ -2527,6 +2760,153 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       503: components["responses"]["Unavailable"];
+    };
+  };
+  startCall: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The id the app chose when it started the call. */
+        call: components["parameters"]["Call"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description It had already started; nothing changed. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CallResult"];
+        };
+      };
+      /** @description The call started. */
+      201: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CallResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  endCall: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The id the app chose when it started the call. */
+        call: components["parameters"]["Call"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The call, as it ended. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CallResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  deleteCallAudio: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The id the app chose when it started the call. */
+        call: components["parameters"]["Call"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The call, with its audio deleted. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CallResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  getVocabulary: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The vocabulary, heaviest first. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Vocabulary"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  teachVocabulary: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "corrections": [
+         *         {
+         *           "heard": "Bara",
+         *           "meant": "Bora"
+         *         }
+         *       ]
+         *     }
+         */
+        "application/json": components["schemas"]["Corrections"];
+      };
+    };
+    responses: {
+      /** @description Where each one went. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Corrections"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
     };
   };
 }

@@ -1,13 +1,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Error as ErrorBody } from "#protocol/types.ts";
+import type { Correction, Error as ErrorBody } from "#protocol/types.ts";
 import { loadSpec } from "./spec.ts";
 import { transcriptDirectory } from "./transcript-files.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.7";
-const serverVersion = "0.7.0";
+const protocol = "0.8";
+const serverVersion = "0.8.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -207,6 +207,48 @@ const memoryStep = (
   transcript.step("memory", { ...titles, fields: { action, pages, ...(change !== undefined && { change }) } });
   transcript.endStep();
 };
+
+const boraPage = {
+  address: "memory:people/bora",
+  title: "Bora",
+  aliases: ["Bora K"],
+  links: ["memory:projects/qrt-panel"],
+  markdown: "Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct).\n",
+};
+
+const qrtPage = {
+  address: "memory:projects/qrt-panel",
+  title: "QRT panel",
+  aliases: [],
+  links: ["memory:people/bora"],
+  markdown: "The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct).\n",
+};
+
+const term = (
+  text: string,
+  kind: string,
+  phrases: readonly string[],
+  { address, heard = [] }: { readonly address?: string; readonly heard?: readonly string[] } = {},
+): Readonly<Record<string, unknown>> => ({
+  text,
+  kind,
+  weight: address ? 1 : 0.5,
+  phrases,
+  heard,
+  ...(address && { address }),
+});
+
+const spokenTurn = (transcript: Transcript, call: string, text: string, corrections: readonly Correction[]): string => {
+  const audio = transcript.upload("walk-turn.m4a");
+  transcript.wait(200);
+  return transcript.send(text, { spoken: { call, audio, ...(corrections.length > 0 && { corrections }) } });
+};
+
+const correctionOf = (text: string, meant: string, heard: string): Correction => ({
+  offset: text.indexOf(meant),
+  length: meant.length,
+  heard,
+});
 
 const scenarios: readonly (() => Transcript)[] = [
   () => {
@@ -1923,6 +1965,132 @@ const scenarios: readonly (() => Transcript)[] = [
       },
       { headers: { "Ito-Protocol": protocol } },
     );
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "38-a-walk-with-ari",
+      scenario: 38,
+      title: "A walk with Ari",
+      summary:
+        "You start a call for a walk. What you say arrives as a spoken message with its recording and the names " +
+        "the phone corrected; Ari answers the way a person would on a call, and the call closes with its length.",
+      guarantees: ["G23"],
+    });
+    transcript.begin("2026-10-26T07:30:00.000Z");
+    transcript.connect();
+    transcript.wait(1500);
+    const call = transcript.startCall();
+    transcript.wait(6000);
+    const question = "What did Bora say about the QRT panel?";
+    const user = spokenTurn(transcript, call, question, [
+      correctionOf(question, "Bora", "Bara"),
+      correctionOf(question, "QRT", "cutie"),
+    ]);
+    transcript.startTurn([user]);
+    transcript.wait(400);
+    transcript.step("thinking", thinking);
+    transcript.wait(900);
+    transcript.endStep();
+    transcript.reply("note");
+    transcript.write("Let me check what I have on Bora.", { pieces: 1 });
+    transcript.endMessage("completed");
+    transcript.wait(1200);
+    writeWhole(
+      transcript,
+      "She wants one more round on your design before the panel sits in November. I've put what she " +
+        "asked for in the chat.",
+    );
+    transcript.endTurn("completed");
+    transcript.wait(24 * 60 * 1000);
+    transcript.endCall(call);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "39-ari-learns-a-name",
+      scenario: 39,
+      title: "Ari learns a name",
+      summary:
+        "The vocabulary comes from memory, with phrases from real use. You undo two corrections the phone made; " +
+        "the mishearing of a name joins that person's page, and a word no page names becomes a term of its own.",
+      guarantees: ["G23"],
+    });
+    transcript.begin("2026-10-26T08:10:00.000Z");
+    transcript.world("memory_holds", { pages: [boraPage, qrtPage] });
+    transcript.wait(2000);
+    const bora = boraPage.markdown.trim();
+    const qrt = qrtPage.markdown.trim();
+    memoryCall(transcript, "/v0/vocabulary", {
+      terms: [
+        term("Bora", "person", [bora, qrt], { address: boraPage.address }),
+        term("Bora K", "person", [], { address: boraPage.address }),
+        term("QRT panel", "project", [qrt, bora], { address: qrtPage.address }),
+      ],
+    });
+    transcript.wait(30_000);
+    transcript.request("POST", "/v0/vocabulary/corrections", {
+      body: {
+        corrections: [
+          { heard: "Bara", meant: "Bora" },
+          { heard: "cutie", meant: "QRT" },
+        ],
+      },
+    });
+    transcript.wait(80);
+    transcript.response(
+      200,
+      {
+        corrections: [
+          { heard: "Bara", meant: "Bora", address: boraPage.address },
+          { heard: "cutie", meant: "QRT" },
+        ],
+      },
+      { headers: { "Ito-Protocol": protocol } },
+    );
+    transcript.wait(5000);
+    memoryCall(transcript, "/v0/vocabulary", {
+      terms: [
+        term("Bora", "person", [bora, qrt], { address: boraPage.address, heard: ["Bara"] }),
+        term("Bora K", "person", [], { address: boraPage.address, heard: ["Bara"] }),
+        term("QRT panel", "project", [qrt, bora], { address: qrtPage.address }),
+        term("QRT", "term", [bora, qrt], { heard: ["cutie"] }),
+      ],
+    });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "40-delete-a-call-s-audio",
+      scenario: 40,
+      title: "Delete a call's audio",
+      summary:
+        "After a journalling walk you delete the call's recordings from its block. The words stay in the " +
+        "conversation, and every app learns the audio is gone.",
+      guarantees: ["G23"],
+    });
+    transcript.begin("2026-10-26T19:00:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(5000);
+    const user = spokenTurn(transcript, call, "Today was a good day. The long run felt easy.", []);
+    transcript.startTurn([user]);
+    transcript.wait(900);
+    writeWhole(transcript, "That's a lovely one to end on. I've added it to today's journal.");
+    transcript.endTurn("completed");
+    transcript.wait(3 * 60 * 1000);
+    transcript.endCall(call);
+    transcript.wait(20 * 60 * 1000);
+    transcript.deleteCallAudio(call);
+    transcript.wait(500);
+    transcript.disconnect("app_closed");
+    transcript.wait(60_000);
+    transcript.world("app_opened");
+    transcript.connect();
     return transcript;
   },
 ];

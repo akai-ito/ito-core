@@ -1,0 +1,30 @@
+{"transcript":"40-delete-a-call-s-audio","start":"2026-10-26T19:00:00.000Z","scenario":40,"title":"Delete a call's audio","summary":"After a journalling walk you delete the call's recordings from its block. The words stay in the conversation, and every app learns the audio is gone.","guarantees":["G23"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-26T19:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":1000,"app":{"method":"PUT","path":"/v0/calls/77429675-c07e-4b87-aa08-044fa314791d"}}
+{"at":1000,"event":{"id":"e_0001_71071","type":"call.started","at":"2026-10-26T19:00:01.000Z","call":{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1}}}
+{"at":1000,"server":{"status":201,"body":{"call":{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1}}}}
+{"at":6000,"app":{"method":"PUT","path":"/v0/attachments/eff5dcff-119d-405a-b6a7-7d470a70f856?name=walk-turn.m4a","headers":{"Content-Type":"audio/mp4"},"body_file":"walk-turn.m4a"}}
+{"at":6000,"server":{"status":201,"body":{"attachment":{"id":"eff5dcff-119d-405a-b6a7-7d470a70f856","kind":"audio","name":"walk-turn.m4a","media_type":"audio/mp4","size":2048}}}}
+{"at":6200,"app":{"method":"POST","path":"/v0/messages","body":{"id":"4ebb2673-f9f9-4c6e-9719-11403eec63de","text":"Today was a good day. The long run felt easy.","spoken":{"call":"77429675-c07e-4b87-aa08-044fa314791d","audio":"eff5dcff-119d-405a-b6a7-7d470a70f856"}}}}
+{"at":6200,"event":{"id":"e_0002_67055","type":"message.accepted","at":"2026-10-26T19:00:06.200Z","message":{"id":"4ebb2673-f9f9-4c6e-9719-11403eec63de","role":"user","text":"Today was a good day. The long run felt easy.","at":"2026-10-26T19:00:06.200Z","position":2,"spoken":{"call":"77429675-c07e-4b87-aa08-044fa314791d","audio":{"id":"eff5dcff-119d-405a-b6a7-7d470a70f856","kind":"audio","name":"walk-turn.m4a","media_type":"audio/mp4","size":2048}}}}}
+{"at":6200,"server":{"status":201,"body":{"message":{"id":"4ebb2673-f9f9-4c6e-9719-11403eec63de","role":"user","text":"Today was a good day. The long run felt easy.","at":"2026-10-26T19:00:06.200Z","position":2,"spoken":{"call":"77429675-c07e-4b87-aa08-044fa314791d","audio":{"id":"eff5dcff-119d-405a-b6a7-7d470a70f856","kind":"audio","name":"walk-turn.m4a","media_type":"audio/mp4","size":2048}}}}}}
+{"at":6200,"event":{"id":"e_0003_51098","type":"turn.started","at":"2026-10-26T19:00:06.200Z","turn":"t_0001_56656","inputs":["4ebb2673-f9f9-4c6e-9719-11403eec63de"]}}
+{"at":7100,"event":{"id":"e_0004_84276","type":"turn.status","at":"2026-10-26T19:00:07.100Z","turn":"t_0001_56656","kind":"writing","label":"Writing"}}
+{"at":7100,"event":{"id":"e_0005_25493","type":"message.started","at":"2026-10-26T19:00:07.100Z","message":{"id":"m_0001_90849","role":"agent","kind":"reply","turn":"t_0001_56656","text":"","at":"2026-10-26T19:00:07.100Z","position":5}}}
+{"at":7100,"event":{"id":"e_0006_14612","type":"message.delta","at":"2026-10-26T19:00:07.100Z","message":"m_0001_90849","offset":0,"text":"That's a lovely one to end "}}
+{"at":7220,"event":{"id":"e_0007_57854","type":"message.delta","at":"2026-10-26T19:00:07.220Z","message":"m_0001_90849","offset":27,"text":"on. I've added it to today's "}}
+{"at":7340,"event":{"id":"e_0008_02468","type":"message.delta","at":"2026-10-26T19:00:07.340Z","message":"m_0001_90849","offset":56,"text":"journal."}}
+{"at":7340,"event":{"id":"e_0009_54098","type":"message.ended","at":"2026-10-26T19:00:07.340Z","message":"m_0001_90849","outcome":"completed","length":64}}
+{"at":7340,"event":{"id":"e_0010_64795","type":"turn.ended","at":"2026-10-26T19:00:07.340Z","turn":"t_0001_56656","outcome":"completed"}}
+{"at":187340,"app":{"method":"POST","path":"/v0/calls/77429675-c07e-4b87-aa08-044fa314791d/end"}}
+{"at":187340,"event":{"id":"e_0011_64773","type":"call.ended","at":"2026-10-26T19:03:07.340Z","call":{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1,"ended_at":"2026-10-26T19:03:07.340Z","duration_ms":186340}}}
+{"at":187340,"server":{"status":200,"body":{"call":{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1,"ended_at":"2026-10-26T19:03:07.340Z","duration_ms":186340}}}}
+{"at":1387340,"app":{"method":"DELETE","path":"/v0/calls/77429675-c07e-4b87-aa08-044fa314791d/audio"}}
+{"at":1387340,"event":{"id":"e_0012_76782","type":"call.audio_deleted","at":"2026-10-26T19:23:07.340Z","call":{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1,"ended_at":"2026-10-26T19:03:07.340Z","duration_ms":186340,"audio_deleted":true}}}
+{"at":1387340,"server":{"status":200,"body":{"call":{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1,"ended_at":"2026-10-26T19:03:07.340Z","duration_ms":186340,"audio_deleted":true}}}}
+{"at":1387840,"world":"app_closed"}
+{"at":1447840,"world":"app_opened"}
+{"at":1447840,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0012_76782"}}}
+{"at":1447840,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}

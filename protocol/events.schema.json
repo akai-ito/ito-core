@@ -52,6 +52,15 @@
         },
         {
           "$ref": "#/$defs/TurnEnded"
+        },
+        {
+          "$ref": "#/$defs/CallStarted"
+        },
+        {
+          "$ref": "#/$defs/CallEnded"
+        },
+        {
+          "$ref": "#/$defs/CallAudioDeleted"
         }
       ]
     },
@@ -90,6 +99,11 @@
       "type": "string",
       "format": "uuid",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "CallId": {
+      "description": "A random UUID the app makes when you start a call.",
+      "type": "string",
+      "format": "uuid"
     },
     "Timestamp": {
       "description": "Server time, RFC 3339 in UTC with milliseconds.",
@@ -179,6 +193,10 @@
             "$ref": "#/$defs/Attachment"
           }
         },
+        "spoken": {
+          "$ref": "#/$defs/Spoken",
+          "description": "Only on a message you spoke on a call."
+        },
         "ended_at": {
           "$ref": "#/$defs/Timestamp",
           "description": "Agent messages only: when it ended."
@@ -212,8 +230,8 @@
       }
     },
     "AttachmentKind": {
-      "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",
-      "enum": ["image", "file"]
+      "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",
+      "enum": ["image", "audio", "file"]
     },
     "Attachment": {
       "description": "A photo or file you attached to a message. Its bytes never change: fetch them once with `GET /v0/attachments/{attachment}` and keep them.",
@@ -641,7 +659,7 @@
       "title": "snapshot",
       "description": "The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.",
       "type": "object",
-      "required": ["type", "at", "reason", "messages", "has_more", "turn", "next", "steps", "asks"],
+      "required": ["type", "at", "reason", "messages", "has_more", "turn", "next", "steps", "asks", "calls"],
       "properties": {
         "id": {
           "$ref": "#/$defs/EventId"
@@ -698,6 +716,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/MessageId"
+          }
+        },
+        "calls": {
+          "description": "The calls that started within these messages, and one still on.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Call"
           }
         }
       }
@@ -1060,6 +1085,135 @@
       "description": "An opaque id the server chooses for one change to memory.",
       "type": "string",
       "pattern": "^c_[0-9a-z_]+$"
+    },
+    "Call": {
+      "description": "A call with Ari, shown in the conversation as a block that opens and closes the stretch it covered.",
+      "type": "object",
+      "required": ["id", "started_at", "position"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/CallId"
+        },
+        "started_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "Where the call started in the conversation."
+        },
+        "ended_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it ended. Absent while it's on."
+        },
+        "duration_ms": {
+          "description": "How long it lasted, once it has ended.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "audio_deleted": {
+          "description": "True once you've deleted the audio of its spoken messages.",
+          "type": "boolean"
+        }
+      }
+    },
+    "Correction": {
+      "description": "A word the phone corrected in a spoken message: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard.",
+      "type": "object",
+      "required": ["offset", "length", "heard"],
+      "properties": {
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "heard": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Spoken": {
+      "description": "How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the phone corrected.",
+      "type": "object",
+      "required": ["call"],
+      "properties": {
+        "call": {
+          "$ref": "#/$defs/CallId"
+        },
+        "audio": {
+          "$ref": "#/$defs/Attachment",
+          "description": "The recording of what you said. Absent once you've deleted the call's audio."
+        },
+        "corrections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Correction"
+          }
+        }
+      }
+    },
+    "CallStarted": {
+      "title": "call.started",
+      "description": "You started a call with Ari. While it's on, Ari speaks.",
+      "type": "object",
+      "required": ["id", "type", "at", "call"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "call.started"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "call": {
+          "$ref": "#/$defs/Call"
+        }
+      }
+    },
+    "CallEnded": {
+      "title": "call.ended",
+      "description": "The call ended, with how long it lasted.",
+      "type": "object",
+      "required": ["id", "type", "at", "call"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "call.ended"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "call": {
+          "$ref": "#/$defs/Call"
+        }
+      }
+    },
+    "CallAudioDeleted": {
+      "title": "call.audio_deleted",
+      "description": "The audio of a call's spoken messages is deleted; their text stays.",
+      "type": "object",
+      "required": ["id", "type", "at", "call"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "call.audio_deleted"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "call": {
+          "$ref": "#/$defs/Call"
+        }
+      }
     }
   }
 }
