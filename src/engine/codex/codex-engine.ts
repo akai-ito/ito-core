@@ -6,6 +6,7 @@ import type { TurnId } from "#conversation/ids.ts";
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
 import type { JsonValue } from "#engine/codex/bindings/serde_json/JsonValue.ts";
 import type { Account } from "#engine/codex/bindings/v2/Account.ts";
+import type { Model } from "#engine/codex/bindings/v2/Model.ts";
 import type { ThreadStartParams } from "#engine/codex/bindings/v2/ThreadStartParams.ts";
 import type { ThreadStartResponse } from "#engine/codex/bindings/v2/ThreadStartResponse.ts";
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
@@ -13,7 +14,9 @@ import { startCodexProcess, type CodexProcess } from "#engine/codex/codex-proces
 import { initialTurnState, toEngineEvents, type TurnState } from "#engine/codex/mapping.ts";
 import {
   accountSetting,
+  effortSetting,
   modelSetting,
+  readChoice,
   type Engine,
   type EngineEvent,
   type EngineFailureCode,
@@ -21,6 +24,7 @@ import {
   type InputAttachment,
   type ToolServer,
 } from "#engine/engine.ts";
+import type { ModelOption } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Settings } from "#store/store.ts";
 import { serverUrlVariable, toolServerName, toolsTokenVariable } from "#tools/mcp.ts";
@@ -185,6 +189,20 @@ const shutDown = async (opening: Opening | undefined, how: (process: CodexProces
   if (opened?.ok) await how(opened.value.process);
 };
 
+const delegatingEffort = "ultra";
+
+const toModelOption = (model: Model): ModelOption => ({
+  id: model.model,
+  title: model.displayName,
+  summary: model.description,
+  efforts: model.supportedReasoningEfforts
+    .filter(({ reasoningEffort }) => reasoningEffort !== delegatingEffort)
+    .map(({ reasoningEffort, description }) => ({ id: reasoningEffort, summary: description })),
+  default_effort: model.defaultReasoningEffort,
+  is_default: model.isDefault,
+  images: model.inputModalities.includes("image"),
+});
+
 export const createCodexEngine = ({
   codexHome,
   workspace,
@@ -244,6 +262,7 @@ export const createCodexEngine = ({
 
   const announce = (message: string, { model, reasoningEffort }: SessionModel): void => {
     settings.setSetting(modelSetting, model);
+    if (reasoningEffort) settings.setSetting(effortSetting, reasoningEffort);
     info(message, { model, reasoningEffort });
   };
 
@@ -346,6 +365,7 @@ export const createCodexEngine = ({
       clientUserMessageId: inputs[0]?.messageId ?? null,
       input: inputs.flatMap((input) => toUserInputs(workspace, input, log)),
       summary: "auto",
+      ...readChoice(settings.setting),
     });
     if (started.ok) return started.value.turn.id;
     emit(turn, [{ type: "failed", code: "engine_failed", detail: started.failure.message }]);
@@ -419,6 +439,24 @@ export const createCodexEngine = ({
     refresh: () => {
       isRefreshing.set(true);
       return Promise.resolve();
+    },
+
+    models: async () => {
+      const opened = await ensureSession();
+      if (!opened.ok) return fail(opened.failure.detail);
+      const listPage = async (
+        cursor: string | null,
+        listed: readonly ModelOption[],
+      ): Promise<Result<readonly ModelOption[], string>> => {
+        const page = await opened.value.process.call("model/list", { cursor, includeHidden: false });
+        if (!page.ok) return fail(`Codex couldn't list its models: ${page.failure.message}`);
+        const all = [
+          ...listed,
+          ...page.value.data.filter(({ hidden }) => !hidden).map((model) => toModelOption(model)),
+        ];
+        return page.value.nextCursor ? listPage(page.value.nextCursor, all) : ok(all);
+      };
+      return listPage(null, []);
     },
 
     restart: async () => {

@@ -9,6 +9,7 @@ export type MockModel = {
   readonly userTexts: () => readonly string[];
   readonly images: () => number;
   readonly toolOutputs: () => readonly string[];
+  readonly lastRun: () => { readonly model?: string; readonly effort?: string };
   readonly close: () => Promise<void>;
 };
 
@@ -83,6 +84,7 @@ export const startMockModel = async (): Promise<MockModel> => {
   const latestUserTexts = createCell<readonly string[]>([]);
   const latestImages = createCell(0);
   const latestToolOutputs = createCell<readonly string[]>([]);
+  const latestRun = createCell<{ readonly model?: string; readonly effort?: string }>({});
   const nextId = (prefix: string): string => `${prefix}_${String(counter.update((count) => count + 1))}`;
 
   const reason = async (send: Send, text: string): Promise<void> => {
@@ -209,6 +211,11 @@ export const startMockModel = async (): Promise<MockModel> => {
     latestUserTexts.set(texts);
     latestImages.set(imagesIn(body));
     latestToolOutputs.set(toolOutputsOf(body));
+    const run = body as { readonly model?: string; readonly reasoning?: { readonly effort?: string } } | undefined;
+    latestRun.set({
+      ...(run?.model !== undefined && { model: run.model }),
+      ...(run?.reasoning?.effort !== undefined && { effort: run.reasoning.effort }),
+    });
     const scenario = markerPattern.exec(texts.findLast((text) => markerPattern.test(text)) ?? "")?.groups?.scenario;
     if (scenario === "signedout") {
       sendJson(response, 401, { error: { message: "Missing bearer or basic authentication in header" } });
@@ -242,6 +249,7 @@ export const startMockModel = async (): Promise<MockModel> => {
     userTexts: () => latestUserTexts.get(),
     images: () => latestImages.get(),
     toolOutputs: () => latestToolOutputs.get(),
+    lastRun: () => latestRun.get(),
     close: async () => {
       server.closeAllConnections();
       server.close();

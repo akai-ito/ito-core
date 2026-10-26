@@ -8,13 +8,14 @@ import Fastify, {
 import { maxAttachmentBytes, toMediaType, type Attachments } from "#attachments/attachments.ts";
 import type { Clock } from "#clock.ts";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
-import { accountSetting, modelSetting } from "#engine/engine.ts";
+import { accountSetting, effortSetting, modelSetting, readChoice } from "#engine/engine.ts";
 import { readApnsCredentials } from "#notifications/apns.ts";
 import type { Host } from "#capabilities/host.ts";
 import { toAskId, toDeviceId, toMessageId, toTurnId } from "#conversation/ids.ts";
 import { createToken, hashToken, type Gate } from "#http/auth.ts";
 import { registerCapabilities } from "#http/capabilities.ts";
 import { registerMemory } from "#http/memory.ts";
+import { registerModel, type ListModels } from "#http/model.ts";
 import type { Memory } from "#memory/memory.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
@@ -37,6 +38,7 @@ export type AppOptions = {
   readonly attachments: Attachments;
   readonly host: Host;
   readonly memory: Memory;
+  readonly models: ListModels;
   readonly heartbeatMs: number;
   readonly logger: FastifyServerOptions["logger"];
 };
@@ -71,7 +73,7 @@ const isTooLong = (error: FastifyError): boolean =>
   error.validation?.some((issue) => issue.keyword === "maxLength" && issue.instancePath === "/text") ?? false;
 
 export const createApp = (options: AppOptions): FastifyInstance => {
-  const { store, turns, clock, schemas, info, gate, presence, attachments, host, memory, heartbeatMs, logger } =
+  const { store, turns, clock, schemas, info, gate, presence, attachments, host, memory, models, heartbeatMs, logger } =
     options;
   const protocol = protocolVersion(schemas.document);
   const routeSchemas = toRouteSchemas(schemas);
@@ -121,7 +123,9 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   app.get("/.well-known/ito", () => ({ product: "ito", protocol: [protocol] }));
 
   app.get("/v0/server", () => {
-    const model = store.setting(modelSetting);
+    const choice = readChoice(store.setting);
+    const model = choice?.model ?? store.setting(modelSetting);
+    const effort = choice?.effort ?? store.setting(effortSetting);
     const account = store.setting(accountSetting);
     return {
       name: info.name,
@@ -130,6 +134,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       agent: {
         name: info.agentName,
         ...(model && { model }),
+        ...(effort && { effort }),
         ...(account && { account: JSON.parse(account) as unknown }),
       },
       setup: { notifications: readApnsCredentials(store) !== undefined, memory_backup: memory.isBackedUp() },
@@ -139,6 +144,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   registerCapabilities(app, host, schemaFor);
   registerMemory(app, memory, schemaFor);
+  registerModel(app, { settings: store, models, schemaFor });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);

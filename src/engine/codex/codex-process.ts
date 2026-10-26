@@ -8,6 +8,8 @@ import type { InitializeResponse } from "#engine/codex/bindings/InitializeRespon
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
 import type { GetAccountParams } from "#engine/codex/bindings/v2/GetAccountParams.ts";
 import type { GetAccountResponse } from "#engine/codex/bindings/v2/GetAccountResponse.ts";
+import type { ModelListParams } from "#engine/codex/bindings/v2/ModelListParams.ts";
+import type { ModelListResponse } from "#engine/codex/bindings/v2/ModelListResponse.ts";
 import type { ThreadInjectItemsParams } from "#engine/codex/bindings/v2/ThreadInjectItemsParams.ts";
 import type { ThreadInjectItemsResponse } from "#engine/codex/bindings/v2/ThreadInjectItemsResponse.ts";
 import type { ThreadReadParams } from "#engine/codex/bindings/v2/ThreadReadParams.ts";
@@ -30,6 +32,7 @@ type Call<Parameters, Response> = { readonly parameters: Parameters; readonly re
 
 type Calls = {
   readonly "account/read": Call<GetAccountParams, GetAccountResponse>;
+  readonly "model/list": Call<ModelListParams, ModelListResponse>;
   readonly "thread/start": Call<ThreadStartParams, ThreadStartResponse>;
   readonly "thread/resume": Call<ThreadResumeParams, ThreadResumeResponse>;
   readonly "thread/read": Call<ThreadReadParams, ThreadReadResponse>;

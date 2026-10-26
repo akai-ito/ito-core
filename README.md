@@ -81,6 +81,9 @@ To update, pull and restart; a reply being written at that moment ends as interr
 cd ~/ito-core && git pull && npm ci --omit=dev && systemctl --user restart ito
 ```
 
+Ari runs on Codex's default model until you choose another, and how hard it thinks, in Ari's
+Settings › Model; the choice applies from your next message.
+
 The agent's instructions, Ari's voice and how it works, are in
 [agent/instructions.md](agent/instructions.md). Change them and restart: the next message picks
 them up, in the same conversation.
