@@ -19,6 +19,7 @@ export type Page = {
   readonly title: string;
   readonly aliases: readonly string[];
   readonly links: readonly string[];
+  readonly heard?: readonly string[];
   readonly markdown: string;
 };
 
@@ -68,16 +69,23 @@ export const parsePage = (text: string, fallbackTitle: string): Page => {
   const yaml = frontMatter.exec(text)?.groups?.yaml;
   const fields = (yaml === undefined ? {} : parseYaml(yaml)) as Readonly<Record<string, unknown>> | null;
   const title = fields?.title;
+  const heard = strings(fields?.heard);
   return {
     title: typeof title === "string" ? title : fallbackTitle,
     aliases: strings(fields?.aliases),
     links: strings(fields?.links),
+    ...(heard.length > 0 && { heard }),
     markdown: text.replace(frontMatter, "").replace(/^\n+/u, ""),
   };
 };
 
-export const formatPage = ({ title, aliases, links, markdown }: Page): string => {
-  const fields = { title, ...(aliases.length > 0 && { aliases }), ...(links.length > 0 && { links }) };
+export const formatPage = ({ title, aliases, links, heard = [], markdown }: Page): string => {
+  const fields = {
+    title,
+    ...(aliases.length > 0 && { aliases }),
+    ...(links.length > 0 && { links }),
+    ...(heard.length > 0 && { heard }),
+  };
   return `---\n${toYaml(fields, { flowCollectionPadding: false, collectionStyle: "flow" }).trimEnd()}\n---\n\n${markdown.trim()}\n`;
 };
 

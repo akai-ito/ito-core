@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { createCell } from "#cell.ts";
@@ -69,6 +69,8 @@ export type Server = {
   readonly close: () => Promise<void>;
 };
 
+const talkRules = readFileSync(new URL("../agent/talk.md", import.meta.url), "utf8").trim();
+
 const dayMs = 24 * 60 * 60 * 1000;
 const textRetentionMs = 30 * dayMs;
 const defaultHeartbeatMs = 15_000;
@@ -121,13 +123,20 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     timeZone: options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
+  const callContext = (): string => {
+    const latest = store.latestCall();
+    if (!latest) return "";
+    return latest.ended_at === undefined
+      ? `<call>\n${talkRules}\n</call>`
+      : "<call>\nThe call has ended. Write as usual in the chat.\n</call>";
+  };
   const engine = options.createEngine({
     settings: store,
     log,
     info,
     tools: toolServer,
     skills,
-    inMind: memory.inMindText,
+    inMind: () => [memory.inMindText(), callContext()].filter(Boolean).join("\n\n"),
     callTool: (name, input) => callTool(name, input),
   });
   host.subscribe(() => {

@@ -13,8 +13,8 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       const { message } = event;
       database
         .prepare(
-          `INSERT INTO messages (id, position, role, text, at, answers, secret, attachments)
-            VALUES (?, ?, 'user', ?, ?, ?, ?, ?)`,
+          `INSERT INTO messages (id, position, role, text, at, answers, secret, attachments, spoken)
+            VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           message.id,
@@ -24,8 +24,9 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
           message.answers ?? null,
           message.secret ? 1 : 0,
           message.attachments?.length ? toJson(message.attachments) : null,
+          message.spoken ? toJson(message.spoken) : null,
         );
-      const attached = message.attachments ?? [];
+      const attached = [...(message.attachments ?? []), ...(message.spoken?.audio ? [message.spoken.audio] : [])];
       for (const attachment of attached) {
         database.prepare("UPDATE attachments SET message = ? WHERE id = ?").run(message.id, attachment.id);
       }
@@ -110,6 +111,31 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       database
         .prepare("UPDATE asks SET body = ?, outcome = ? WHERE id = ?")
         .run(toJson(ask), ask.outcome ?? null, ask.id);
+      return;
+    }
+    case "call.started": {
+      const { call } = event;
+      database
+        .prepare("INSERT INTO calls (id, position, body, ended) VALUES (?, ?, ?, 0)")
+        .run(call.id, call.position, toJson(call));
+      return;
+    }
+    case "call.ended": {
+      const { call } = event;
+      database.prepare("UPDATE calls SET body = ?, ended = 1 WHERE id = ?").run(toJson(call), call.id);
+      return;
+    }
+    case "call.audio_deleted": {
+      const { call } = event;
+      database.prepare("UPDATE calls SET body = ? WHERE id = ?").run(toJson(call), call.id);
+      const spokenRows = database
+        .prepare("SELECT id, spoken FROM messages WHERE json_extract(spoken, '$.call') = ?")
+        .all(call.id) as unknown as readonly { readonly id: string; readonly spoken: string }[];
+      for (const row of spokenRows) {
+        const spoken = JSON.parse(row.spoken) as Readonly<Record<string, unknown>>;
+        const silenced = Object.fromEntries(Object.entries(spoken).filter(([key]) => key !== "audio"));
+        database.prepare("UPDATE messages SET spoken = ? WHERE id = ?").run(toJson(silenced), row.id);
+      }
       return;
     }
     case "turn.ended": {

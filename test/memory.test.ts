@@ -189,4 +189,29 @@ describe("memory", () => {
       failure: expect.stringContaining("changed both here and on the remote") as unknown,
     });
   });
+
+  it("learns how a name is misheard, and keeps it when Ari rewrites the page", async () => {
+    const { memory } = await openMemory();
+    await call(memory, "remember", { address: "memory:people/bora", title: "Bora", body: "You run with Bora." });
+
+    const learnt = await memory.learn([
+      { heard: "Bara", meant: "bora" },
+      { heard: "cutie", meant: "QRT" },
+    ]);
+    await call(memory, "remember", {
+      address: "memory:people/bora",
+      title: "Bora",
+      body: "You run with Bora on Saturdays.",
+    });
+    const terms = await memory.vocabulary();
+
+    expect(learnt).toEqual([
+      { heard: "Bara", meant: "bora", address: "memory:people/bora" },
+      { heard: "cutie", meant: "QRT" },
+    ]);
+    expect(terms).toMatchObject([
+      { text: "Bora", kind: "person", heard: ["Bara"], phrases: ["You run with Bora on Saturdays."] },
+      { text: "QRT", kind: "term", heard: ["cutie"] },
+    ]);
+  });
 });

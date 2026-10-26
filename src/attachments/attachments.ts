@@ -11,6 +11,7 @@ export type Attachments = {
   readonly find: (id: string) => Attachment | undefined;
   readonly pathOf: (id: string) => string;
   readonly sweep: (before: string) => void;
+  readonly remove: (id: string) => void;
 };
 
 export const maxAttachmentBytes = 20 * 1024 * 1024;
@@ -35,7 +36,7 @@ export const createAttachments = (store: Store, directory: string): Attachments 
           ? { ok: true, value: { attachment: existing.attachment, isNew: false } }
           : fail("id_conflict");
       }
-      const kind = isImage(mediaType) ? "image" : "file";
+      const kind = isImage(mediaType) ? "image" : mediaType.startsWith("audio/") ? "audio" : "file";
       const dimensions = kind === "image" ? readDimensions(bytes, mediaType) : undefined;
       const attachment: Attachment = {
         id,
@@ -60,6 +61,10 @@ export const createAttachments = (store: Store, directory: string): Attachments 
         rmSync(pathOf(id), { force: true });
         store.deleteAttachment(id);
       }
+    },
+    remove: (id) => {
+      rmSync(pathOf(id), { force: true });
+      store.deleteAttachment(id);
     },
   };
 };

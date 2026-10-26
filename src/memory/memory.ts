@@ -22,13 +22,16 @@ import {
   toTimeOfDay,
   type InMindPage,
   type Location,
+  type Page,
   type Shelf,
 } from "#memory/pages.ts";
+import { toVocabulary, type Learned } from "#memory/vocabulary.ts";
 import { rank, toMessageChunk, toPageChunks, type Passage } from "#memory/recall.ts";
 import { openThread, type Thread } from "#memory/thread.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { MemoryStore } from "#store/memory.ts";
 import type { Settings } from "#store/store.ts";
+import type { Term } from "#protocol/types.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 
@@ -77,8 +80,14 @@ export type Memory = {
   readonly isBackedUp: () => boolean;
   readonly indexConversation: () => void;
   readonly sync: () => Promise<void>;
+  readonly vocabulary: () => Promise<readonly Term[]>;
+  readonly learn: (corrections: readonly Correction[]) => Promise<readonly Learnt[]>;
   readonly close: () => Promise<void>;
 };
+
+export type Correction = { readonly heard: string; readonly meant: string };
+
+export type Learnt = Correction & { readonly address?: string };
 
 export type MemoryOptions = {
   readonly directory: string;
@@ -95,6 +104,7 @@ export type MemoryOptions = {
 
 const indexModelSetting = "memory_index_model";
 const indexedSetting = "memory_indexed_commit";
+const learnedSetting = "vocabulary_learned";
 const pushedAtSetting = "memory_pushed_at";
 const failingSinceSetting = "memory_push_failing_since";
 const dayMs = 24 * 60 * 60 * 1000;
@@ -189,11 +199,24 @@ export const createMemory = ({
     return toTimestamp(mtimeMs);
   };
 
-  const readPage = (location: Location): PageBody | undefined => {
+  const readParsed = (location: Location): Page | undefined => {
     const text = opened().read(location.path);
-    if (text === undefined) return undefined;
-    const page = parsePage(text, fallbackTitle(location));
-    return { address: location.address, shelf: location.shelf, ...page, changed_at: fileChangedAt(location) };
+    return text === undefined ? undefined : parsePage(text, fallbackTitle(location));
+  };
+
+  const readPage = (location: Location): PageBody | undefined => {
+    const page = readParsed(location);
+    if (!page) return undefined;
+    const { title, aliases, links, markdown } = page;
+    return {
+      address: location.address,
+      shelf: location.shelf,
+      title,
+      aliases,
+      links,
+      markdown,
+      changed_at: fileChangedAt(location),
+    };
   };
 
   const indexPage = async (location: Location, title: string, markdown: string | undefined): Promise<void> => {
@@ -282,6 +305,7 @@ export const createMemory = ({
               title,
               aliases: stringsOf(input, "aliases"),
               links: stringsOf(input, "links"),
+              heard: readParsed(location.value)?.heard ?? [],
               markdown,
             });
       if (text === opened().read(location.value.path)) return fail(`${title} already says exactly that.`);
@@ -519,6 +543,50 @@ export const createMemory = ({
     },
   ];
 
+  const shelvedPages = (): readonly (Page & {
+    readonly address: string;
+    readonly shelf: string;
+    readonly location: Location;
+  })[] =>
+    opened()
+      .files()
+      .map((file) => toLocation(toAddress(file)))
+      .filter((location) => location.ok)
+      .map(({ value: location }) => ({ location, page: readParsed(location) }))
+      .filter(
+        (entry): entry is { readonly location: Location; readonly page: Page } =>
+          entry.page !== undefined && !isInMindPage(entry.location.shelf) && entry.location.shelf !== "journal",
+      )
+      .map(({ location, page }) => ({ ...page, address: location.address, shelf: location.shelf, location }));
+
+  const learnedTerms = (): readonly Learned[] => {
+    const saved = settings.setting(learnedSetting);
+    return saved === undefined ? [] : (JSON.parse(saved) as readonly Learned[]);
+  };
+
+  const learnOne = async ({ heard, meant }: Correction): Promise<Learnt> => {
+    const wanted = meant.trim().toLowerCase();
+    const page = shelvedPages().find(({ title, aliases }) =>
+      [title, ...aliases].some((name) => name.toLowerCase() === wanted),
+    );
+    if (!page) {
+      const learned = learnedTerms();
+      const known = learned.find((entry) => entry.meant.toLowerCase() === wanted);
+      const updated = known
+        ? learned.map((entry) => (entry === known ? { ...entry, heard: [...new Set([...entry.heard, heard])] } : entry))
+        : [...learned, { meant, heard: [heard] }];
+      settings.setSetting(learnedSetting, JSON.stringify(updated));
+      return { heard, meant };
+    }
+    const heardBefore = page.heard ?? [];
+    if (!heardBefore.includes(heard)) {
+      const { title, aliases, links, markdown } = page;
+      const text = formatPage({ title, aliases, links, heard: [...heardBefore, heard], markdown });
+      await commit(page.location, title, text, `Learn that ${title} can sound like ${heard}`);
+    }
+    return { heard, meant, address: page.address };
+  };
+
   const inMind = (): readonly PageBody[] =>
     thread.get()
       ? inMindPages
@@ -603,6 +671,28 @@ export const createMemory = ({
     isBackedUp,
     indexConversation,
     sync,
+    vocabulary: async () => {
+      await sync();
+      const pages = shelvedPages().map(({ address, shelf, title, aliases, heard = [], markdown }) => ({
+        address,
+        shelf,
+        title,
+        aliases,
+        heard,
+        markdown,
+      }));
+      return toVocabulary(pages, store.yourMessages(), learnedTerms());
+    },
+    learn: async (corrections) => {
+      await sync();
+      return serially(async () => {
+        const learnt: readonly Learnt[] = [];
+        return corrections.reduce<Promise<readonly Learnt[]>>(
+          async (earlier, correction) => [...(await earlier), await learnOne(correction)],
+          Promise.resolve(learnt),
+        );
+      });
+    },
     close: async () => {
       isClosed.set(true);
       pushTimer.get()?.();

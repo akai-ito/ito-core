@@ -437,7 +437,7 @@ export const createTurns = (
 
   const inputOf = (message: MessageId): Input => {
     const attached = store.messageAttachments(message).map((attachment) => ({
-      kind: attachment.kind,
+      kind: attachment.kind === "image" ? ("image" as const) : ("file" as const),
       name: attachment.name,
       source: attachmentPath(attachment.id),
     }));
