@@ -6,6 +6,7 @@ export type ChangeRow = {
   readonly title: string;
   readonly file: string;
   readonly commit: string;
+  readonly before?: string;
   readonly at: string;
 };
 
@@ -95,15 +96,23 @@ export const createMemoryStore = (database: DatabaseSync): MemoryStore => {
   };
 
   return {
-    recordChange: ({ id, address, title, file, commit, at }) => {
+    recordChange: ({ id, address, title, file, commit, before, at }) => {
       database
-        .prepare("INSERT INTO memory_changes (id, address, title, file, commit_sha, at) VALUES (?, ?, ?, ?, ?, ?)")
-        .run(id, address, title, file, commit, at);
+        .prepare(
+          "INSERT INTO memory_changes (id, address, title, file, commit_sha, before_sha, at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(id, address, title, file, commit, before ?? null, at);
     },
-    findChange: (id) =>
-      database
-        .prepare("SELECT id, address, title, file, commit_sha AS 'commit', at FROM memory_changes WHERE id = ?")
-        .get(id) as ChangeRow | undefined,
+    findChange: (id) => {
+      const row = database
+        .prepare(
+          "SELECT id, address, title, file, commit_sha AS 'commit', before_sha AS before, at FROM memory_changes WHERE id = ?",
+        )
+        .get(id) as (Omit<ChangeRow, "before"> & { readonly before: string | null }) | undefined;
+      if (!row) return;
+      const { before, ...rest } = row;
+      return before === null ? rest : { ...rest, before };
+    },
     latestChanges: () =>
       database
         .prepare(

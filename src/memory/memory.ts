@@ -76,6 +76,7 @@ export type Memory = {
   readonly seed: (page: SeededPage) => Promise<Result<string, string>>;
   readonly isBackedUp: () => boolean;
   readonly indexConversation: () => void;
+  readonly sync: () => Promise<void>;
   readonly close: () => Promise<void>;
 };
 
@@ -93,6 +94,7 @@ export type MemoryOptions = {
 };
 
 const indexModelSetting = "memory_index_model";
+const indexedSetting = "memory_indexed_commit";
 const pushedAtSetting = "memory_pushed_at";
 const failingSinceSetting = "memory_push_failing_since";
 const dayMs = 24 * 60 * 60 * 1000;
@@ -250,6 +252,7 @@ export const createMemory = ({
     const id = identifiers.change();
     const at = toTimestamp(clock.now());
     store.recordChange({ id, address: location.address, title, file: location.path, commit: committed.value, at });
+    settings.setSetting(indexedSetting, committed.value);
     changedAt.update((current) => new Map([...current, [location.address, at]]));
     await indexPage(location, title, text === undefined ? undefined : parsePage(text, title).markdown);
     schedulePush();
@@ -342,19 +345,61 @@ export const createMemory = ({
       if (page) await indexPage(location.value, page.title, page.markdown);
     }
     settings.setSetting(indexModelSetting, embedder.model);
+    indexConversation();
+  };
+
+  const catchUpWith = async (head: string, indexed: string): Promise<void> => {
+    const changes = await opened().changedFiles(indexed, head);
+    for (const { file, isDeleted } of changes) {
+      const location = toLocation(toAddress(file));
+      if (!location.ok) continue;
+      const page = isDeleted ? undefined : readPage(location.value);
+      await indexPage(location.value, page?.title ?? "", page?.markdown);
+      if (!page) continue;
+      const at = toTimestamp(clock.now());
+      store.recordChange({
+        id: identifiers.change(),
+        address: page.address,
+        title: page.title,
+        file,
+        commit: head,
+        before: indexed,
+        at,
+      });
+      changedAt.update((current) => new Map([...current, [page.address, at]]));
+    }
+  };
+
+  const catchUp = async (): Promise<void> => {
+    const head = await opened().head();
+    const indexed = settings.setting(indexedSetting);
+    if (head === indexed && settings.setting(indexModelSetting) === embedder.model) return;
+    try {
+      if (indexed === undefined || settings.setting(indexModelSetting) !== embedder.model) await reindex();
+      else await catchUpWith(head, indexed);
+    } catch (error) {
+      info("Memory's search couldn't catch up with the Thread, so it starts again", { error: String(error) });
+      await reindex();
+    }
+    settings.setSetting(indexedSetting, head);
   };
 
   const ready = (async (): Promise<void> => {
     thread.set(await openThread(directory));
     hasRemote.set(await opened().hasRemote());
     refreshChangedAt();
-    if (settings.setting(indexModelSetting) !== embedder.model) await serially(reindex);
+    await serially(catchUp);
     indexConversation();
     schedulePush();
   })();
 
-  const whenReady = async <Value>(work: () => Promise<Value>): Promise<Value> => {
+  const sync = async (): Promise<void> => {
     await ready;
+    await serially(catchUp);
+  };
+
+  const whenReady = async <Value>(work: () => Promise<Value>): Promise<Value> => {
+    await sync();
     return work();
   };
 
@@ -537,7 +582,7 @@ export const createMemory = ({
       const found = store.findChange(id);
       if (!found) return;
       const [before, after] = await Promise.all([
-        opened().readAt(`${found.commit}^`, found.file),
+        opened().readAt(found.before ?? `${found.commit}^`, found.file),
         opened().readAt(found.commit, found.file),
       ]);
       const fallback = found.title;
@@ -557,6 +602,7 @@ export const createMemory = ({
       }),
     isBackedUp,
     indexConversation,
+    sync,
     close: async () => {
       isClosed.set(true);
       pushTimer.get()?.();

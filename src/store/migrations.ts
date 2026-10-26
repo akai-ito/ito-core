@@ -111,4 +111,5 @@ export const migrations: readonly string[] = [
   INSERT INTO settings (key, value)
     SELECT 'capability:reports:on', 'true' FROM settings WHERE key = 'reports_github_token' AND value != '';
   DELETE FROM settings WHERE key = 'reports_github_token';`,
+  `ALTER TABLE memory_changes ADD COLUMN before_sha TEXT;`,
 ];

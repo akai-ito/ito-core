@@ -1,7 +1,7 @@
 import { canRunCapability, runCapability } from "#cli/capability.ts";
 import type { Io } from "#cli/io.ts";
 import { login } from "#cli/login.ts";
-import { memoryUsage, setMemoryRemote } from "#cli/memory.ts";
+import { memoryUsage, pullMemory, setMemoryRemote } from "#cli/memory.ts";
 import { pair } from "#cli/pair.ts";
 import { pushUsage, setUpPush } from "#cli/push.ts";
 import { serve } from "#cli/serve.ts";
@@ -38,6 +38,7 @@ export const main = async (argv: readonly string[], io: Io): Promise<number> => 
     }
     case "memory": {
       const [subcommand, ...flags] = rest;
+      if (subcommand === "pull" && flags.length === 0) return pullMemory(io);
       return subcommand === "remote" ? setMemoryRemote(flags, io) : usageError(io);
     }
     case "push": {

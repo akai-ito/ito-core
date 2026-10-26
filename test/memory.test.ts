@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -139,5 +139,54 @@ describe("memory", () => {
     clock.moveTo(clock.now() + 25 * 60 * 60 * 1000);
 
     expect(memory.isBackedUp()).toBe(false);
+  });
+
+  it("catches up with pages that arrive in the Thread from outside, and drops deleted ones", async () => {
+    const { memory, directory } = await openMemory();
+    const thread = path.join(directory, "thread");
+    await call(memory, "remember", { address: "memory:places/dishoom", title: "Dishoom", body: "Our first date." });
+
+    mkdirSync(path.join(thread, "people"), { recursive: true });
+    writeFileSync(path.join(thread, "people", "sam.md"), "---\ntitle: Sam\n---\n\nYou run with Sam on Sundays.\n");
+    git(thread, "rm", "--quiet", "places/dishoom.md");
+    git(thread, "add", "people/sam.md");
+    git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
+
+    const sam = await call(memory, "recall", { query: "Sunday runs with Sam" });
+    const dishoom = await call(memory, "recall", { query: "Dishoom" });
+
+    expect(sam.text).toContain("Sam (memory:people/sam");
+    expect(dishoom.text).not.toContain("Dishoom");
+    expect(memory.recent().map(({ address }) => address)).toEqual(["memory:people/sam"]);
+  });
+
+  it("pulls only when it can fast-forward, and refuses when both sides changed", async () => {
+    const { directory } = await openMemory();
+    const remote = path.join(directory, "remote.git");
+    const elsewhere = path.join(directory, "elsewhere");
+    const thread = await openThread(path.join(directory, "thread"));
+    git(directory, "init", "--quiet", "--bare", "--initial-branch=main", remote);
+    await thread.setRemote(remote);
+    expect(await thread.push()).toEqual({ ok: true, value: undefined });
+    git(directory, "clone", "--quiet", remote, elsewhere);
+    const commitElsewhere = (file: string): void => {
+      writeFileSync(path.join(elsewhere, file), "From elsewhere.\n");
+      git(elsewhere, "add", file);
+      git(elsewhere, "-c", "user.name=Divy", "-c", "user.email=divy@example.com", "commit", "--quiet", "-m", file);
+      git(elsewhere, "push", "--quiet", "origin", "HEAD:main");
+    };
+
+    commitElsewhere("now.md");
+    const pulled = await thread.pull();
+    commitElsewhere("portrait.md");
+    await thread.write("helping-you.md", "From the box.\n", "Add How to help you");
+    const refused = await thread.pull();
+
+    expect(pulled).toEqual({ ok: true, value: "pulled" });
+    expect(thread.read("now.md")).toBe("From elsewhere.\n");
+    expect(refused).toMatchObject({
+      ok: false,
+      failure: expect.stringContaining("changed both here and on the remote") as unknown,
+    });
   });
 });
