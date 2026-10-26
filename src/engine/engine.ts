@@ -1,5 +1,6 @@
 import type { MessageId, TurnId } from "#conversation/ids.ts";
-import type { Ask, Step, StepKind } from "#protocol/types.ts";
+import type { Ask, ModelChoice, ModelOption, Step, StepKind } from "#protocol/types.ts";
+import type { Result } from "#result.ts";
 
 export type InputAttachment = { readonly kind: "image" | "file"; readonly name: string; readonly source: string };
 
@@ -14,6 +15,15 @@ export type ToolServer = { readonly url: string; readonly origin: string; readon
 export const modelSetting = "agent_model";
 
 export const accountSetting = "agent_account";
+
+export const effortSetting = "agent_effort";
+
+export const choiceSetting = "agent_choice";
+
+export const readChoice = (read: (key: string) => string | undefined): ModelChoice | undefined => {
+  const saved = read(choiceSetting);
+  return saved === undefined ? undefined : (JSON.parse(saved) as ModelChoice);
+};
 
 export type AskFields = Pick<Ask, "kind" | "question" | "options" | "allows_text" | "secret"> & {
   readonly preview?: string;
@@ -62,5 +72,6 @@ export type Engine = {
   readonly interrupt: (turn: TurnId) => Promise<void>;
   readonly restart: () => Promise<void>;
   readonly refresh: () => Promise<void>;
+  readonly models: () => Promise<Result<readonly ModelOption[], string>>;
   readonly close: () => Promise<void>;
 };

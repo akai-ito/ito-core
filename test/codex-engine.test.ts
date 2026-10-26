@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createCell } from "#cell.ts";
 import { toMessageId, toTurnId, type TurnId } from "#conversation/ids.ts";
 import { createCodexEngine, threadSetting } from "#engine/codex/codex-engine.ts";
+import { choiceSetting } from "#engine/engine.ts";
 import type { Engine, EngineEvent, Input } from "#engine/engine.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { ok } from "#result.ts";
@@ -428,5 +429,19 @@ describe("the Codex engine against the pinned codex app-server", () => {
 
     expect([countOf(first), countOf(second)]).toEqual([1, 1]);
     expect(logged.get()).toEqual([]);
+  });
+
+  it("lists the models Codex offers, and runs the next turn on the one chosen", async () => {
+    const models = await currentEngine().models();
+    const ids = models.ok ? models.value.map(({ id }) => id) : [];
+    const efforts = models.ok ? models.value.flatMap((model) => model.efforts.map(({ id }) => id)) : [];
+
+    settings.setSetting(choiceSetting, JSON.stringify({ model: "gpt-6-luna", effort: "medium" }));
+    await runTurn("[[reply]] Lighter now?");
+
+    expect(ids).toEqual(expect.arrayContaining(["gpt-6.1-sol", "gpt-6-luna"]) as unknown);
+    expect(ids).not.toContain("codex-auto-review");
+    expect(efforts).not.toContain("ultra");
+    expect(currentModel().lastRun()).toEqual({ model: "gpt-6-luna", effort: "medium" });
   });
 });

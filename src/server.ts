@@ -158,6 +158,7 @@ export const createServer = (options: ServerOptions): Server => {
     attachments,
     host,
     memory,
+    models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
   });

@@ -3,6 +3,9 @@ import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import type { TurnId } from "#conversation/ids.ts";
 import type { Engine, EngineEvent, Input, SteerOutcome } from "#engine/engine.ts";
+import { demoModels } from "#engine/scripted/models.ts";
+import type { ModelOption } from "#protocol/types.ts";
+import { ok } from "#result.ts";
 import type { ToolResult } from "#tools/mcp.ts";
 
 export type CallTool = (name: string, input: unknown) => Promise<ToolResult>;
@@ -37,7 +40,12 @@ const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "faile
 
 const isTerminal = (event: EngineEvent): boolean => terminalTypes.has(event.type);
 
-export const createScriptEngine = (clock: Clock, scriptFor: ScriptSource, callTool = noTools): Engine => {
+export const createScriptEngine = (
+  clock: Clock,
+  scriptFor: ScriptSource,
+  callTool = noTools,
+  models: readonly ModelOption[] = demoModels,
+): Engine => {
   const playing = createCell<ReadonlyMap<TurnId, Playing>>(new Map());
 
   const finish = (turn: TurnId): void => {
@@ -112,6 +120,7 @@ export const createScriptEngine = (clock: Clock, scriptFor: ScriptSource, callTo
     },
 
     refresh: () => Promise.resolve(),
+    models: () => Promise.resolve(ok(models)),
     restart: () => {
       for (const turn of playing.get().keys()) finish(turn);
       return Promise.resolve();
