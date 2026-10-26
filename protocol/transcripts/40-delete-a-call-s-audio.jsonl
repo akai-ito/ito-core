@@ -26,6 +26,5 @@
 {"at":1387340,"server":{"status":200,"body":{"call":{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1,"ended_at":"2026-10-26T19:03:07.340Z","duration_ms":186340,"audio_deleted":true}}}}
 {"at":1387840,"world":"app_closed"}
 {"at":1447840,"world":"app_opened"}
-{"at":1447840,"app":{"method":"GET","path":"/v0/events"}}
+{"at":1447840,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0012_76782"}}}
 {"at":1447840,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":1447840,"event":{"id":"e_0012_76782","type":"snapshot","at":"2026-10-26T19:24:07.840Z","reason":"no_cursor","messages":[{"id":"4ebb2673-f9f9-4c6e-9719-11403eec63de","role":"user","text":"Today was a good day. The long run felt easy.","at":"2026-10-26T19:00:06.200Z","position":2,"spoken":{"call":"77429675-c07e-4b87-aa08-044fa314791d"}},{"id":"m_0001_90849","role":"agent","kind":"reply","turn":"t_0001_56656","text":"That's a lovely one to end on. I've added it to today's journal.","at":"2026-10-26T19:00:07.100Z","position":5,"outcome":"completed","ended_at":"2026-10-26T19:00:07.340Z"}],"has_more":false,"steps":[],"asks":[],"calls":[{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1,"ended_at":"2026-10-26T19:03:07.340Z","duration_ms":186340,"audio_deleted":true}],"turn":null,"next":[]}}

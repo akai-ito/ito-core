@@ -48,8 +48,6 @@ type RequestOptions = {
 
 type ResponseOptions = { readonly headers?: HttpHeaders; readonly isLost?: boolean };
 
-type ConnectOptions = { readonly headers?: HttpHeaders; readonly isFresh?: boolean };
-
 type SpokenOptions = { readonly call: string; readonly audio?: string; readonly corrections?: readonly Correction[] };
 
 type SendOptions = {
@@ -105,10 +103,11 @@ export type Transcript = {
   readonly world: (marker: string, fields?: Fields) => void;
   readonly request: (method: string, path: string, options?: RequestOptions) => void;
   readonly response: (status: number, body: unknown, options?: ResponseOptions) => void;
-  readonly connect: (options?: ConnectOptions) => void;
+  readonly connect: (options?: { readonly headers?: HttpHeaders }) => void;
   readonly disconnect: (marker: string, fields?: Fields) => void;
   readonly stall: (durationMs: number) => void;
   readonly exchange: (user: string, agent: string, files?: readonly string[]) => Exchange;
+  readonly callExchange: (user: string, agent: string, corrections: readonly Correction[], recording: string) => string;
   readonly send: (text: string, options?: SendOptions) => string;
   readonly startTurn: (inputs: readonly string[], options?: { readonly retryOf?: string }) => string;
   readonly status: (kind: StatusKind, label: string, detail?: string) => void;
@@ -476,8 +475,8 @@ export const createTranscript = (header: Header): Transcript => {
     cursor.set(latest);
   };
 
-  const connect = (options: ConnectOptions = {}): void => {
-    const appCursor = options.isFresh === true ? undefined : cursor.get();
+  const connect = (options: { readonly headers?: HttpHeaders } = {}): void => {
+    const appCursor = cursor.get();
     const headers = { ...options.headers, ...(appCursor && { "Last-Event-ID": appCursor }) };
     request("GET", "/v0/events", Object.keys(headers).length > 0 ? { headers } : {});
     response(200, undefined, { headers: { "Content-Type": "text/event-stream" } });
@@ -763,6 +762,39 @@ export const createTranscript = (header: Header): Transcript => {
     const deleted: Call = { ...call, audio_deleted: true };
     emit("call.audio_deleted", { call: deleted });
     response(200, { call: deleted });
+  };
+
+  const callExchange = (user: string, agent: string, corrections: readonly Correction[], recording: string): string => {
+    const call: Call = { id: newUserId(), started_at: timestamp(), position: nextPosition() };
+    emit("call.started", { call });
+    wait(6000);
+    const userMessageId = newUserId();
+    emit("message.accepted", {
+      message: {
+        id: userMessageId,
+        role: "user",
+        text: user,
+        at: timestamp(),
+        position: nextPosition(),
+        spoken: {
+          call: call.id,
+          audio: describeAttachment(recording, newUserId()),
+          ...(corrections.length > 0 && { corrections }),
+        },
+      },
+    });
+    wait(1);
+    startTurn([userMessageId]);
+    wait(900);
+    reply();
+    write(agent, { pieces: 1 });
+    wait(600);
+    endMessage("completed");
+    wait(1);
+    endTurn("completed");
+    wait(5 * 60 * 1000);
+    endCallNow(call.id);
+    return call.id;
   };
 
   const send = (text: string, options: SendOptions = {}): string => {
@@ -1076,6 +1108,7 @@ export const createTranscript = (header: Header): Transcript => {
     latestEventId,
     stepAtOffset,
     world,
+    callExchange,
     change: () => newId("c"),
     startCall,
     endCall,

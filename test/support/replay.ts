@@ -93,7 +93,11 @@ const send = async (origin: string, request: AppRequest): Promise<Received> => {
 };
 
 const givenAttachments = (transcript: Transcript): readonly Attachment[] =>
-  transcript.given.flatMap((event) => (event.type === "message.accepted" ? (event.message.attachments ?? []) : []));
+  transcript.given.flatMap((event) =>
+    event.type === "message.accepted"
+      ? [...(event.message.attachments ?? []), ...(event.message.spoken?.audio ? [event.message.spoken.audio] : [])]
+      : [],
+  );
 
 const withTimeout = async <Value>(promise: Promise<Value>, what: string): Promise<Value> => {
   const timedOut = Symbol("timed out");
