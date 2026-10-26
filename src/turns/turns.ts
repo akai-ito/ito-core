@@ -8,7 +8,7 @@ import { adjustingStatus, stoppingStatus, toStepStatus, writingStatus } from "#c
 import { toEndedStep, toStepTitle, toUpdatedStep, type Trail } from "#conversation/steps.ts";
 import type { AskFields, Engine, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Ask, Error as ErrorBody, Outcome, Status, Step, StepKind } from "#protocol/types.ts";
+import type { Ask, Correction, Error as ErrorBody, Outcome, Status, Step, StepKind } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { PendingWork, Store } from "#store/store.ts";
 
@@ -64,6 +64,13 @@ type Running = {
   readonly cancelForcedStop: Cancel | undefined;
   readonly steps: ReadonlyMap<string, Step>;
 };
+
+export const toCorrectionNote = (text: string, corrections: readonly Correction[]): string =>
+  corrections.length === 0
+    ? ""
+    : `(Spoken. The phone corrected what it heard: ${corrections
+        .map(({ offset, length, heard }) => `heard “${heard}”, wrote ${text.slice(offset, offset + length)}`)
+        .join("; ")}. Either could be right.)`;
 
 export const defaultLimits: Limits = { watchdogMs: 60_000, forcedStopMs: 5000, coalesceMs: 100 };
 
@@ -442,9 +449,10 @@ export const createTurns = (
       source: attachmentPath(attachment.id),
     }));
     const text = received.get().get(message) ?? store.messageText(message) ?? "";
+    const corrected = toCorrectionNote(text, store.messageSpoken(message)?.corrections ?? []);
     return {
       messageId: message,
-      text: text === "" && attached.length === 0 ? lostSecret : text,
+      text: text === "" && attached.length === 0 ? lostSecret : [text, corrected].filter(Boolean).join("\n\n"),
       ...(attached.length > 0 && { attachments: attached }),
     };
   };

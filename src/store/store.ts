@@ -127,6 +127,7 @@ export type Store = Settings & {
   readonly listMessages: (before: MessageId, limit: number) => Result<Page, "not_found">;
   readonly messageText: (message: MessageId) => string | undefined;
   readonly messageAttachments: (message: MessageId) => readonly Attachment[];
+  readonly messageSpoken: (message: MessageId) => Spoken | undefined;
   readonly pendingWork: () => readonly PendingWork[];
   readonly runningTurn: () => StoredTurn | undefined;
   readonly findTurn: (turn: TurnId) => StoredTurn | undefined;
@@ -568,6 +569,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     },
 
     messageText: (message) => messageRow(message)?.text,
+
+    messageSpoken: (message) => {
+      const row = messageRow(message);
+      return row?.spoken ? (JSON.parse(row.spoken) as Spoken) : undefined;
+    },
 
     messageAttachments: (message) => {
       const row = messageRow(message);
