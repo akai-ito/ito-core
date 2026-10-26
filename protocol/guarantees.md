@@ -18,7 +18,7 @@ where the protocol has to make it possible, marked *App*.
 | G7 | **Text only grows.** Reply text streams as appended pieces and is never revised. A finished message's text is exactly what was streamed, or exactly what was on screen when you tapped Stop. Stop cuts only a message still being written; one that already finished keeps all its text. | 5, 7, 8, 11 |
 | G8 | **Every turn ends, with a reason.** Completed, stopped, interrupted by a restart, or failed with a typed error. Nothing is left "still writing", and live status never outlives its turn. A turn that fails or is cut off before writing a reply still leaves one, empty and carrying the reason, so the conversation itself shows what happened. | 4, 6, 14, 15 |
 | G9 | **Stop jumps every queue.** Stop is a command of its own, addressed to one turn, safe to repeat, and handled ahead of everything else on both sides: never behind a send, a steer or a reconnect. It is confirmed only once the agent has really stopped. | 7 |
-| G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17, 37 |
+| G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17, 37, 42, 43 |
 | G11 | **The token stays secret.** It travels only over HTTPS (loopback excepted, for development), is never logged and is never sent back. | 1, 31 |
 | G12 | **Versioned and tolerant.** The server states its protocol version before asking for the token. Both sides ignore what they don't recognise. A major mismatch says which side to update. | 1 |
 | G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2, 30, 41 |
@@ -333,6 +333,16 @@ where the protocol has to make it possible, marked *App*.
 
 - A snapshot or history page carries every call after the message before its first one, so a call
   that opens the window comes with it, before the spoken message it opened. (G13, G23)
+
+### 42 · [Ari speaks](transcripts/42-ari-speaks.jsonl)
+
+- The server lists Ari's voices and the default, and says a sentence as a 24 kHz, mono, 16-bit WAV
+  in the voice asked for. A voice it doesn't have is an `invalid_request`. (G10)
+
+### 43 · [Before the voice is ready](transcripts/43-before-the-voice-is-ready.jsonl)
+
+- While the voice is loading, the server answers `unavailable` with `Retry-After`, and speaks once
+  it's ready. (G10)
 
 ## Not in this version
 

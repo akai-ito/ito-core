@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.8"
+  version: "0.9"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -29,6 +29,8 @@ info:
     - **Talk:** start and end a call with the agent, send what you say as spoken messages with their
       audio and the words the phone corrected, and fetch a vocabulary from memory that steers
       speech recognition toward your names.
+    - **Hear Ari:** turn its words into speech with the server's own voice, a sentence at a time,
+      and list the voices to choose from.
 
     **Versioning.** Routes carry the protocol's major version, and every response carries an
     `Ito-Protocol` header with the full version. Until 1.0, every protocol change may break, so
@@ -94,7 +96,7 @@ paths:
               schema: { $ref: "#/components/schemas/Discovery" }
               example:
                 product: ito
-                protocol: ["0.8"]
+                protocol: ["0.9"]
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/pair:
     post:
@@ -141,8 +143,8 @@ paths:
               schema: { $ref: "#/components/schemas/ServerInfo" }
               example:
                 name: studio
-                version: 0.8.0
-                protocol: "0.8"
+                version: 0.9.0
+                protocol: "0.9"
                 agent:
                   name: Ari
                   model: gpt-6.1-sol
@@ -898,6 +900,47 @@ paths:
               schema: { $ref: "#/components/schemas/Corrections" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/speech:
+    post:
+      tags: [Talk]
+      operationId: speak
+      summary: Say something in Ari's voice
+      description: |
+        Renders the text with the server's speech model and answers with a WAV: 24 kHz, mono,
+        16-bit PCM. Send one sentence at a time, and ask for the next while the current one plays.
+        The text is spoken as given, so strip Markdown first. While the model is still loading, the
+        answer is `unavailable` with `Retry-After`; use the phone's own voice meanwhile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SpeechRequest" }
+            example: { text: "She wants one more round on your design.", voice: af_heart }
+      responses:
+        "200":
+          description: The speech.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            audio/wav:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/voices:
+    get:
+      tags: [Talk]
+      operationId: listVoices
+      summary: The voices Ari can speak in
+      responses:
+        "200":
+          description: Every voice, and the one used when none is named.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
 components:
   securitySchemes:
     token:
@@ -913,7 +956,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.8"
+        example: "0.9"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -1033,6 +1076,35 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
   schemas:
+    SpeechRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          description: One sentence or so, as it should be spoken.
+          type: string
+          minLength: 1
+          maxLength: 500
+        voice:
+          description: "A voice's id from `GET /v0/voices`. Left out, the default voice speaks."
+          type: string
+    VoiceList:
+      type: object
+      required: [voices, default]
+      properties:
+        voices:
+          type: array
+          items: { $ref: "#/components/schemas/Voice" }
+        default:
+          description: The id of the voice used when a request names none.
+          type: string
+    Voice:
+      type: object
+      required: [id, name, accent]
+      properties:
+        id: { description: "Such as `af_heart`.", type: string }
+        name: { description: "Such as Heart.", type: string }
+        accent: { enum: [american, british] }
     CallResult:
       type: object
       required: [call]

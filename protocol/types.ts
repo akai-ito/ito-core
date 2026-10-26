@@ -649,10 +649,69 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/speech": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Say something in Ari's voice
+     * @description Renders the text with the server's speech model and answers with a WAV: 24 kHz, mono,
+     *     16-bit PCM. Send one sentence at a time, and ask for the next while the current one plays.
+     *     The text is spoken as given, so strip Markdown first. While the model is still loading, the
+     *     answer is `unavailable` with `Retry-After`; use the phone's own voice meanwhile.
+     */
+    post: operations["speak"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/voices": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The voices Ari can speak in */
+    get: operations["listVoices"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    SpeechRequest: {
+      /** @description One sentence or so, as it should be spoken. */
+      text: string;
+      /** @description A voice's id from `GET /v0/voices`. Left out, the default voice speaks. */
+      voice?: string;
+    };
+    VoiceList: {
+      voices: components["schemas"]["Voice"][];
+      /** @description The id of the voice used when a request names none. */
+      default: string;
+    };
+    Voice: {
+      /** @description Such as `af_heart`. */
+      id: string;
+      /** @description Such as Heart. */
+      name: string;
+      /** @enum {unknown} */
+      accent: "american" | "british";
+    };
     CallResult: {
       call: components["schemas"]["Call"];
     };
@@ -1768,6 +1827,9 @@ export interface components {
   };
   pathItems: never;
 }
+export type SpeechRequest = components["schemas"]["SpeechRequest"];
+export type VoiceList = components["schemas"]["VoiceList"];
+export type Voice = components["schemas"]["Voice"];
 export type CallResult = components["schemas"]["CallResult"];
 export type Vocabulary = components["schemas"]["Vocabulary"];
 export type Term = components["schemas"]["Term"];
@@ -1897,7 +1959,7 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.8"
+           *         "0.9"
            *       ]
            *     }
            */
@@ -1960,8 +2022,8 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.8.0",
-           *       "protocol": "0.8",
+           *       "version": "0.9.0",
+           *       "protocol": "0.9",
            *       "agent": {
            *         "name": "Ari",
            *         "model": "gpt-6.1-sol",
@@ -2906,6 +2968,62 @@ export interface operations {
         };
       };
       400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  speak: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "text": "She wants one more round on your design.",
+         *       "voice": "af_heart"
+         *     }
+         */
+        "application/json": components["schemas"]["SpeechRequest"];
+      };
+    };
+    responses: {
+      /** @description The speech. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "audio/wav": string;
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  listVoices: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Every voice, and the one used when none is named. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VoiceList"];
+        };
+      };
       401: components["responses"]["TokenRejected"];
     };
   };

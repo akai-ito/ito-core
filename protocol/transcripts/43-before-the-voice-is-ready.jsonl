@@ -1,0 +1,7 @@
+{"transcript":"43-before-the-voice-is-ready","start":"2026-10-26T18:30:00.000Z","scenario":43,"title":"Before the voice is ready","summary":"The first time Ari speaks, the server is still loading its voice, so it says when to try again and the phone uses its own voice meanwhile. Once the voice is ready, the server speaks.","guarantees":["G10"],"app":{}}
+{"at":0,"world":"speech_loading"}
+{"at":0,"app":{"method":"POST","path":"/v0/speech","body":{"text":"Morning! Where are we walking today?"}}}
+{"at":20,"server":{"status":503,"headers":{"Ito-Protocol":"0.9","Retry-After":"10"},"body":{"error":{"code":"unavailable","message":"Ari's voice is still loading.","detail":"Ari's voice is still loading."}}}}
+{"at":10020,"world":"speech_ready"}
+{"at":10020,"app":{"method":"POST","path":"/v0/speech","body":{"text":"Morning! Where are we walking today?"}}}
+{"at":10260,"server":{"status":200,"headers":{"Content-Type":"audio/wav","Content-Length":"12044","Ito-Protocol":"0.9"}}}
