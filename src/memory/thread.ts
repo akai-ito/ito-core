@@ -6,12 +6,17 @@ import { fail, ok, type Result } from "#result.ts";
 
 const run = promisify(execFile);
 
+export type FileChange = { readonly file: string; readonly isDeleted: boolean };
+
 export type Thread = {
   readonly directory: string;
   readonly read: (file: string) => string | undefined;
   readonly write: (file: string, text: string | undefined, message: string) => Promise<Result<string, string>>;
   readonly readAt: (commit: string, file: string) => Promise<string | undefined>;
   readonly files: () => readonly string[];
+  readonly head: () => Promise<string>;
+  readonly changedFiles: (from: string, to: string) => Promise<readonly FileChange[]>;
+  readonly pull: () => Promise<Result<"pulled" | "current", string>>;
   readonly hasRemote: () => Promise<boolean>;
   readonly setRemote: (url: string) => Promise<Result<undefined, string>>;
   readonly push: () => Promise<Result<undefined, string>>;
@@ -81,6 +86,45 @@ export const openThread = async (directory: string): Promise<Thread> => {
       }
     },
     files: () => listFiles(directory),
+    head: async () => {
+      const head = await git("rev-parse", "HEAD");
+      return head.trim();
+    },
+    changedFiles: async (from, to) => {
+      const listed = await git("diff", "--name-status", "--no-renames", from, to, "--", "*.md");
+      return listed
+        .split("\n")
+        .filter((line) => line.trim() !== "")
+        .map((line) => {
+          const [status = "", file = ""] = line.split("\t", 2);
+          return { file, isDeleted: status === "D" };
+        });
+    },
+    pull: async () => {
+      try {
+        await git("fetch", "--quiet", "origin");
+        const isBehind = async (): Promise<boolean> => {
+          try {
+            await git("merge-base", "--is-ancestor", "origin/main", "HEAD");
+            return false;
+          } catch {
+            return true;
+          }
+        };
+        if (!(await isBehind())) return ok("current");
+        try {
+          await git("merge", "--ff-only", "--quiet", "origin/main");
+        } catch {
+          return fail(
+            "Memory has changed both here and on the remote since they last matched, so nothing was pulled. " +
+              `Merge them by hand with git -C ${directory} pull.`,
+          );
+        }
+        return ok("pulled");
+      } catch (error) {
+        return fail(describe(error));
+      }
+    },
     hasRemote: async () => {
       const remotes = await git("remote");
       return remotes.split("\n").includes("origin");

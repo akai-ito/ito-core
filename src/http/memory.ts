@@ -9,22 +9,35 @@ export const registerMemory = (
   memory: Memory,
   schemaFor: (operationId: string) => RouteSchema,
 ): void => {
-  app.get("/v0/memory/in-mind", () => ({ pages: memory.inMind() }));
+  app.get("/v0/memory/in-mind", async () => {
+    await memory.sync();
+    return { pages: memory.inMind() };
+  });
 
-  app.get("/v0/memory/shelves", () => ({ shelves: memory.shelves() }));
+  app.get("/v0/memory/shelves", async () => {
+    await memory.sync();
+    return { shelves: memory.shelves() };
+  });
 
   app.get<{ Querystring: { readonly shelf: Shelf } }>(
     "/v0/memory/pages",
     { schema: schemaFor("listPages") },
-    (request) => ({ pages: memory.pages(request.query.shelf) }),
+    async (request) => {
+      await memory.sync();
+      return { pages: memory.pages(request.query.shelf) };
+    },
   );
 
-  app.get("/v0/memory/recent", () => ({ pages: memory.recent() }));
+  app.get("/v0/memory/recent", async () => {
+    await memory.sync();
+    return { pages: memory.recent() };
+  });
 
   app.get<{ Querystring: { readonly address: string } }>(
     "/v0/memory/page",
     { schema: schemaFor("getPage") },
-    (request, reply) => {
+    async (request, reply) => {
+      await memory.sync();
       const page = memory.page(request.query.address);
       if (page.ok) return page.value;
       return page.failure.code === "not_found"

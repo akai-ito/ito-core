@@ -42,7 +42,10 @@ describe("upgrading a 0.1 database", () => {
   it("moves a saved gap-report token into the Reports capability, and switches it on", () => {
     const tokenFile = path.join(directory, "reports.db");
     const old = new DatabaseSync(tokenFile);
-    const earlier = migrations.slice(0, -1);
+    const earlier = migrations.slice(
+      0,
+      migrations.findIndex((sql) => sql.includes("reports_github_token")),
+    );
     for (const sql of earlier) old.exec(sql);
     old.exec(["PRAGMA user_version =", String(earlier.length)].join(" "));
     old.prepare("INSERT INTO settings (key, value) VALUES ('reports_github_token', 'github_pat_saved')").run();

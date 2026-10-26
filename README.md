@@ -111,6 +111,10 @@ with this machine's own git credentials:
 node bin/ito.ts memory remote git@github.com:<you>/ito-thread.git
 ```
 
+If pages change on the remote, say by merging a pull request there, `node bin/ito.ts memory pull`
+fast-forwards the Thread, and Ari takes the new pages into its search the next time it uses memory.
+It refuses, rather than merge, when pages changed on both sides.
+
 Ari notifies you while you're away: when a reply finishes, when something fails, and when it asks
 you something. To switch notifications on, create an APNs key in your Apple Developer account
 (Certificates, Identifiers & Profiles, then Keys, with Apple Push Notifications service), download
