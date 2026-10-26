@@ -1975,7 +1975,8 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "A walk with Ari",
       summary:
         "You start a call for a walk. What you say arrives as a spoken message with its recording and the names " +
-        "the phone corrected; Ari answers the way a person would on a call, and the call closes with its length.",
+        "the phone corrected; Ari answers the way a person would on a call, and the call closes with its length. " +
+        "Opening Ari afresh later, the call is in the snapshot, before its first message.",
       guarantees: ["G23"],
     });
     transcript.begin("2026-10-26T07:30:00.000Z");
@@ -2005,6 +2006,11 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.endTurn("completed");
     transcript.wait(24 * 60 * 1000);
     transcript.endCall(call);
+    transcript.wait(2000);
+    transcript.disconnect("app_closed");
+    transcript.wait(10 * 60 * 1000);
+    transcript.world("app_opened");
+    transcript.connect({ isFresh: true });
     return transcript;
   },
 
@@ -2090,7 +2096,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.disconnect("app_closed");
     transcript.wait(60_000);
     transcript.world("app_opened");
-    transcript.connect();
+    transcript.connect({ isFresh: true });
     return transcript;
   },
 ];

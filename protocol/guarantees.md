@@ -314,7 +314,9 @@ where the protocol has to make it possible, marked *App*.
 ### 38 · [A walk with Ari](transcripts/38-a-walk-with-ari.jsonl)
 
 - A call has an id the app chose; starting and ending it are events with a place in the
-  conversation, so the call shows as a block with its length. (G23)
+  conversation, so the call shows as a block with its length. A snapshot or history page carries
+  every call after the message before its first one, so a call that opens the window is never lost.
+  (G23)
 - A spoken message names its call, its recording and the words the phone corrected, by offset into
   the corrected text. The agent gets the words, never the recording. (G23)
 

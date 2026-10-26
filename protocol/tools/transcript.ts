@@ -48,6 +48,8 @@ type RequestOptions = {
 
 type ResponseOptions = { readonly headers?: HttpHeaders; readonly isLost?: boolean };
 
+type ConnectOptions = { readonly headers?: HttpHeaders; readonly isFresh?: boolean };
+
 type SpokenOptions = { readonly call: string; readonly audio?: string; readonly corrections?: readonly Correction[] };
 
 type SendOptions = {
@@ -103,7 +105,7 @@ export type Transcript = {
   readonly world: (marker: string, fields?: Fields) => void;
   readonly request: (method: string, path: string, options?: RequestOptions) => void;
   readonly response: (status: number, body: unknown, options?: ResponseOptions) => void;
-  readonly connect: (options?: { readonly headers?: HttpHeaders }) => void;
+  readonly connect: (options?: ConnectOptions) => void;
   readonly disconnect: (marker: string, fields?: Fields) => void;
   readonly stall: (durationMs: number) => void;
   readonly exchange: (user: string, agent: string, files?: readonly string[]) => Exchange;
@@ -276,6 +278,9 @@ const project = (log: readonly Event[]): Projection =>
     asks: new Map(),
     calls: new Map(),
   });
+
+const positionBefore = (order: readonly string[], byId: ReadonlyMap<string, Message>, index: number): number =>
+  index > 0 ? (byId.get(order[index - 1] ?? "")?.position ?? 0) : 0;
 
 const callsFrom = (calls: ReadonlyMap<string, Call>, from: number, until = Infinity): readonly Call[] =>
   calls
@@ -463,7 +468,7 @@ export const createTranscript = (header: Header): Transcript => {
         has_more: order.length > messagesPerSnapshot,
         steps: first === undefined ? [] : between(steps, first),
         asks: first === undefined ? [] : between(asks, first),
-        calls: first === undefined ? [] : callsFrom(calls, first),
+        calls: callsFrom(calls, positionBefore(order, byId, order.length - messagesPerSnapshot) + 1),
         turn: turn.get() ?? null,
         next: next.get(),
       },
@@ -471,8 +476,8 @@ export const createTranscript = (header: Header): Transcript => {
     cursor.set(latest);
   };
 
-  const connect = (options: { readonly headers?: HttpHeaders } = {}): void => {
-    const appCursor = cursor.get();
+  const connect = (options: ConnectOptions = {}): void => {
+    const appCursor = options.isFresh === true ? undefined : cursor.get();
     const headers = { ...options.headers, ...(appCursor && { "Last-Event-ID": appCursor }) };
     request("GET", "/v0/events", Object.keys(headers).length > 0 ? { headers } : {});
     response(200, undefined, { headers: { "Content-Type": "text/event-stream" } });
@@ -1013,7 +1018,7 @@ export const createTranscript = (header: Header): Transcript => {
       messages,
       steps: from === undefined ? [] : between(steps, from, until),
       asks: from === undefined ? [] : between(asks, from, until),
-      calls: from === undefined ? [] : callsFrom(calls, from, until),
+      calls: callsFrom(calls, positionBefore(order, byId, first) + 1, until),
       has_more: first > 0,
     });
   };
