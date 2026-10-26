@@ -7,18 +7,14 @@ import { createCell } from "#cell.ts";
 import { toMessageId, toTurnId, type TurnId } from "#conversation/ids.ts";
 import { createCodexEngine, threadSetting } from "#engine/codex/codex-engine.ts";
 import type { Engine, EngineEvent, Input } from "#engine/engine.ts";
-import { createGitHub } from "#reports/github.ts";
-import { createReporter, reportsTokenSetting } from "#reports/reporter.ts";
-import { createReportTool } from "#reports/tool.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { ok } from "#result.ts";
 import type { AskFields } from "#engine/engine.ts";
 import type { Settings } from "#store/store.ts";
-import { startFakeGitHub, type FakeGitHub } from "./support/fake-github.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
+import type { Tool } from "#tools/mcp.ts";
 import { startMockModel, type MockModel } from "./support/mock-model.ts";
 import { startToolServer, type RunningToolServer } from "./support/tool-server.ts";
-import { createVirtualClock } from "./support/virtual-clock.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-codex-"));
 const codexHome = path.join(home, "codex");
@@ -26,8 +22,8 @@ const workspace = path.join(home, "workspace");
 const hasManagedConfig = existsSync("/etc/codex/managed_config.toml");
 const instructions = "You are Ari, in a test.";
 
-const createMemorySettings = (initial: ReadonlyMap<string, string> = new Map()): Settings => {
-  const values = createCell(initial);
+const createMemorySettings = (): Settings => {
+  const values = createCell<ReadonlyMap<string, string>>(new Map());
   return {
     setting: (key) => values.get().get(key),
     setSetting: (key, value) => {
@@ -50,7 +46,7 @@ const collectInfo = (message: string, details: Readonly<Record<string, unknown>>
 const turnCount = createCell(0);
 const model = createCell<MockModel | undefined>(undefined);
 const engine = createCell<Engine | undefined>(undefined);
-const github = createCell<FakeGitHub | undefined>(undefined);
+const reported = createCell<readonly unknown[]>([]);
 const asked = createCell<readonly AskFields[]>([]);
 const toolServer = createCell<RunningToolServer | undefined>(undefined);
 
@@ -141,17 +137,17 @@ const sendAttachments = async (attachments: Input["attachments"]): Promise<Engin
 
 describe("the Codex engine against the pinned codex app-server", () => {
   beforeAll(async () => {
-    const fake = await startFakeGitHub();
-    github.set(fake);
-    const reporter = createReporter({
-      settings: createMemorySettings(new Map([[reportsTokenSetting, fake.token]])),
-      clock: createVirtualClock(Date.parse("2026-10-15T12:00:00.000Z")),
-      info: collectInfo,
-      versions: { ito: "0.2.0", codex: "0.162.1" },
-      connect: (token) =>
-        createGitHub({ apiUrl: fake.apiUrl, repository: fake.repository, token, userAgent: "ito/test" }),
-      dailyLimit: 20,
-    });
+    const issue = "https://github.com/akai-ito/ito-core/issues/1";
+    const reportTool: Tool = {
+      name: "report_gap",
+      title: "Report a gap to Ito",
+      description: "Report a gap.",
+      inputSchema: { type: "object", properties: { capability: { type: "string" } } },
+      call: (input) => {
+        reported.update((current) => [...current, input]);
+        return Promise.resolve({ text: `Reported as a new issue: ${issue}`, structured: { url: issue } });
+      },
+    };
     const askTool = createAskTool({
       ask: (fields) => {
         asked.set([...asked.get(), fields]);
@@ -164,7 +160,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
         });
       },
     });
-    toolServer.set(await startToolServer([createReportTool(reporter, () => currentTurn()), askTool]));
+    toolServer.set(await startToolServer([reportTool, askTool]));
     const started = await startMockModel();
     model.set(started);
     writeCodexConfig(started.baseUrl);
@@ -175,7 +171,6 @@ describe("the Codex engine against the pinned codex app-server", () => {
     await engine.get()?.close();
     await model.get()?.close();
     await toolServer.get()?.close();
-    await github.get()?.close();
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -259,7 +254,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(events.at(-1)).toEqual({ type: "ended" });
   });
 
-  it("files a gap report through Ito's tool server, as a tool step with the issue's link", async () => {
+  it("calls a tool on Ito's tool server, as a tool step with the link it returned", async () => {
     const events = await runTurn("[[report]] What time does the Battersea parkrun start?");
     const reportStarted = events.find((event) => event.type === "step.started" && event.kind === "tool");
     expect(reportStarted).toMatchObject({ facts: { capability: "ito", operation: "report_gap" } });
@@ -270,12 +265,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
     const issue = `https://github.com/akai-ito/ito-core/issues/1`;
     expect(reportEnded).toMatchObject({ outcome: "completed", facts: { url: issue } });
     expect(textOf(events)).toBe("Most parkruns start at 9:00, and I've reported that.");
-    expect(
-      github
-        .get()
-        ?.issues()
-        .map(({ title }) => title),
-    ).toEqual(["Gap: web search · open a page"]);
+    expect(reported.get()).toMatchObject([{ capability: "web search" }]);
   });
 
   it("ends the turn when the agent asks through Ito's ask tool", async () => {

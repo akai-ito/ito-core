@@ -260,6 +260,21 @@ export const replay = async (name: string): Promise<void> => {
         }
         return;
       }
+      case "capability_on": {
+        await advance(time);
+        const { capability, values } = step as unknown as {
+          readonly capability: string;
+          readonly values: Readonly<Record<string, string>>;
+        };
+        const host = live.get()?.server.host;
+        const saved = await host?.setUp(capability, values);
+        const switched = await host?.switchTo(capability, true);
+        check(
+          saved?.ok === false || switched?.ok === false ? `${capability} couldn't be switched on` : undefined,
+          index,
+        );
+        return;
+      }
       case "agent_calls": {
         await advance(time);
         const { tool, input } = step as unknown as { readonly tool: string; readonly input: unknown };

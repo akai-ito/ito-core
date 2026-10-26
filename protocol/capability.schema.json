@@ -140,8 +140,17 @@
     "StartParams": {
       "description": "`start`, from the server, when the capability is on and set up: its values, its own secrets among them, and its private folder, which is also its working directory. An error answer shows the capability as needing you, with the error's message.",
       "type": "object",
-      "required": ["values", "folder"],
-      "properties": { "values": { "$ref": "#/$defs/Values" }, "folder": { "type": "string" } }
+      "required": ["values", "folder", "server"],
+      "properties": {
+        "values": { "$ref": "#/$defs/Values" },
+        "folder": { "type": "string" },
+        "server": {
+          "description": "The server's version and its engine's, for what a capability reports about itself.",
+          "type": "object",
+          "required": ["version", "engine"],
+          "properties": { "version": { "type": "string" }, "engine": { "type": "string" } }
+        }
+      }
     },
     "CheckParams": {
       "description": "`check`, from the server, to test setup values before they're saved; it may come before `start`.",

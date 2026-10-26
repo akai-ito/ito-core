@@ -17,6 +17,8 @@ import type { Info } from "#turns/turns.ts";
 
 export type Installed = { readonly id: string; readonly entry: string };
 
+export type Server = { readonly version: string; readonly engine: string };
+
 export type CapabilityState = "off" | "setup" | "on" | "needs_you";
 
 export type Capability = {
@@ -53,6 +55,7 @@ export type Host = {
 
 export type HostOptions = {
   readonly installed: readonly Installed[];
+  readonly server: Server;
   readonly settings: Settings;
   readonly folders: string;
   readonly clock: Clock;
@@ -117,7 +120,7 @@ const unavailable = (title: string, { state, detail = "it isn't working" }: Capa
 const notFound = (id: string): Result<never, HostFailure> =>
   fail({ code: "not_found", detail: `No capability called ${id} is installed.` });
 
-export const createHost = ({ installed, settings, folders, clock, info }: HostOptions): Host => {
+export const createHost = ({ installed, server, settings, folders, clock, info }: HostOptions): Host => {
   const runners = createCell<ReadonlyMap<string, Runner>>(new Map(installed.map(({ id }) => [id, idle])));
   const queues = createCell<ReadonlyMap<string, Promise<unknown>>>(new Map());
   const listeners = createCell<ReadonlySet<() => void>>(new Set());
@@ -220,7 +223,7 @@ export const createHost = ({ installed, settings, folders, clock, info }: HostOp
       await process.stop();
       return;
     }
-    const begun = await process.start(valuesOf(id));
+    const begun = await process.start(valuesOf(id), server);
     if (!begun.ok) {
       update(id, (runner) => ({ ...runner, problem: begun.failure }));
       await process.stop();

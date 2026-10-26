@@ -105,4 +105,10 @@ export const migrations: readonly string[] = [
   );
   CREATE INDEX memory_chunks_by_address ON memory_chunks (address);
   CREATE VIRTUAL TABLE memory_text USING fts5(text);`,
+  `INSERT INTO settings (key, value)
+    SELECT 'capability:reports:values', json_object('token', value) FROM settings
+    WHERE key = 'reports_github_token' AND value != '';
+  INSERT INTO settings (key, value)
+    SELECT 'capability:reports:on', 'true' FROM settings WHERE key = 'reports_github_token' AND value != '';
+  DELETE FROM settings WHERE key = 'reports_github_token';`,
 ];

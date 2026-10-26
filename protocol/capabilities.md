@@ -6,7 +6,9 @@ own Node process and talks to it over standard input and output. Each capability
 own setup values and secrets, and works in its own folder under `ITO_HOME`.
 
 [capability.schema.json](capability.schema.json) defines every message. The server and a
-capability must speak the same `0.MINOR`, which is 0.1 for now.
+capability must speak the same `0.MINOR`, which is 0.1 for now. The SDK in
+[ito-capabilities](https://github.com/akai-ito/ito-capabilities) implements a capability's half,
+and the server installs that package with itself, pinned to an exact commit.
 
 ## Messages
 
@@ -16,7 +18,7 @@ Standard error is the capability's log.
 | From | Message | What it does |
 | --- | --- | --- |
 | server | `initialize` | Asks for the manifest: title, summary, setup fields, operations, skill, and the hosts and folders it uses |
-| server | `start` | Hands over its setup values and folder once it's on and set up; an error means it needs you |
+| server | `start` | Hands over its setup values, its folder and the server's versions once it's on and set up; an error means it needs you |
 | server | `check` | Tests setup values before they're saved (*Test connection*) |
 | server | `call` | Runs an operation for the agent, with the turn it's in |
 | server | `cancel` | Gives up on a `call`, by its request id |
@@ -39,7 +41,7 @@ A capability exits when its standard input closes, so nothing outlives the serve
 ```jsonl
 {"id":1,"method":"initialize","params":{"protocol":"0.1"}}
 {"id":1,"result":{"protocol":"0.1","manifest":{"id":"echo","version":"0.1","kind":"hand","title":"Echo","summary":"Says back what it's given.","setup":[{"name":"token","kind":"secret","title":"Token"}],"operations":[{"name":"say","title":"Say something back","running":"Echoing","done":"Echoed","description":"Says the text back.","input":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]},"tool":"echo_say"}],"skill":"Use echo to hear yourself.","uses":{"hosts":[],"folders":[]}}}}
-{"id":2,"method":"start","params":{"values":{"token":"a-secret"},"folder":"/home/you/.ito/capabilities/echo"}}
+{"id":2,"method":"start","params":{"values":{"token":"a-secret"},"folder":"/home/you/.ito/capabilities/echo","server":{"version":"0.6.0","engine":"Codex 0.164.0"}}}
 {"id":2,"result":{}}
 {"id":3,"method":"call","params":{"operation":"say","input":{"text":"hello"},"turn":"turn_01"}}
 {"id":3,"result":{"text":"hello"}}

@@ -40,6 +40,7 @@ const startHost = async (
   const folders = mkdtempSync(path.join(home, "folders-"));
   const host = createHost({
     installed,
+    server: { version: "0.6.0", engine: "Codex test" },
     settings,
     folders,
     clock,

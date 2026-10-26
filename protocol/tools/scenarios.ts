@@ -928,11 +928,13 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "Reporting a gap",
       summary:
         "The agent can't load a page it needs, so it gives its best answer, reports the gap to Ito and says so " +
-        "in one line. The report is a tool step titled by what it did, linking the issue it opened.",
+        "in one line. Reports is a capability that's switched on, and the report is a tool step titled by " +
+        "what it did, linking the issue it opened.",
       guarantees: ["G10", "G14"],
     });
     yesterday(transcript);
     transcript.begin(todayAt, { cursor: "latest" });
+    transcript.world("capability_on", { capability: "reports", values: { token: "github_pat_example" } });
     transcript.connect();
     transcript.wait(2000);
     sendAndStart(transcript, "What time does the Battersea parkrun start?");
@@ -950,8 +952,8 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "Reporting it to Ito",
       endedTitle: "Reported it to Ito",
       fields: {
-        capability: "ito",
-        operation: "report_gap",
+        capability: "reports",
+        operation: "report",
         arguments: {
           capability: "web search",
           operation: "open a page",

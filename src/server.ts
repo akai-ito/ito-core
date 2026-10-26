@@ -19,9 +19,6 @@ import { createGate, createToken, tokenSetting } from "#http/auth.ts";
 import { registerTools, toolsPath } from "#http/tools.ts";
 import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
-import { createGitHub } from "#reports/github.ts";
-import { createReporter, defaultDailyLimit } from "#reports/reporter.ts";
-import { createReportTool } from "#reports/tool.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { createAttachments, type Attachments } from "#attachments/attachments.ts";
 import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
@@ -43,7 +40,6 @@ export type ServerOptions = {
   readonly limits?: Limits;
   readonly heartbeatMs?: number;
   readonly logger?: FastifyServerOptions["logger"];
-  readonly reports?: Partial<ReportsOptions>;
   readonly push?: Partial<PushOptions>;
   readonly capabilities?: readonly Installed[];
   readonly embedder: Embedder;
@@ -51,8 +47,6 @@ export type ServerOptions = {
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
-
-export type ReportsOptions = { readonly apiUrl: string; readonly repository: string; readonly dailyLimit: number };
 
 export type EngineContext = {
   readonly settings: Settings;
@@ -78,11 +72,6 @@ export type Server = {
 const dayMs = 24 * 60 * 60 * 1000;
 const textRetentionMs = 30 * dayMs;
 const defaultHeartbeatMs = 15_000;
-const defaultReports: ReportsOptions = {
-  apiUrl: "https://api.github.com",
-  repository: "akai-ito/ito-core",
-  dailyLimit: defaultDailyLimit,
-};
 
 export const databaseFile = (dataDirectory: string): string => path.join(dataDirectory, "ito.db");
 
@@ -115,6 +104,7 @@ export const createServer = (options: ServerOptions): Server => {
     installed: options.capabilities ?? [],
     settings: store,
     folders: path.join(options.dataDirectory, "capabilities"),
+    server: { version: packageVersion(), engine: `Codex ${codexVersion()}` },
     clock,
     info,
   });
@@ -177,27 +167,8 @@ export const createServer = (options: ServerOptions): Server => {
   logInfo.set((message, details) => {
     app.log.info(details, message);
   });
-  const reports = { ...defaultReports, ...options.reports };
-  const reporter = createReporter({
-    settings: store,
-    clock,
-    info,
-    versions: { ito: packageVersion(), codex: codexVersion() },
-    connect: (token) =>
-      createGitHub({
-        apiUrl: reports.apiUrl,
-        repository: reports.repository,
-        token,
-        userAgent: `ito/${packageVersion()}`,
-      }),
-    dailyLimit: reports.dailyLimit,
-  });
   const doors = createDoors({ host, secrets, currentTurn: () => store.runningTurn()?.id, command: launcher });
-  const coreTools: readonly Tool[] = [
-    createReportTool(reporter, () => store.runningTurn()?.id, secrets),
-    createAskTool(turns),
-    ...memory.tools,
-  ];
+  const coreTools: readonly Tool[] = [createAskTool(turns), ...memory.tools];
   const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()];
   const callTool = async (name: string, input: unknown): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
