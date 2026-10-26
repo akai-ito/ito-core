@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.6"
+  version: "0.7"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -25,6 +25,7 @@ info:
       and fill in its setup sheet.
     - **Read memory:** what's in Ari's mind, the shelves and their pages, the journal, and what each
       change Ari made changed. Ari writes memory itself; the API only reads it.
+    - **Choose the model** the agent runs on, and how hard it thinks, from those its engine offers.
 
     **Versioning.** Routes carry the protocol's major version, and every response carries an
     `Ito-Protocol` header with the full version. Until 1.0, every protocol change may break, so
@@ -65,6 +66,8 @@ tags:
     description: Switch capabilities on and off, and set them up.
   - name: Memory
     description: Read what Ari remembers. Ari writes it; apps only read.
+  - name: Model
+    description: Choose the model the agent runs on.
 paths:
   /.well-known/ito:
     get:
@@ -86,7 +89,7 @@ paths:
               schema: { $ref: "#/components/schemas/Discovery" }
               example:
                 product: ito
-                protocol: ["0.6"]
+                protocol: ["0.7"]
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/pair:
     post:
@@ -133,11 +136,12 @@ paths:
               schema: { $ref: "#/components/schemas/ServerInfo" }
               example:
                 name: studio
-                version: 0.6.0
-                protocol: "0.6"
+                version: 0.7.0
+                protocol: "0.7"
                 agent:
                   name: Ari
                   model: gpt-6.1-sol
+                  effort: low
                   account: { kind: chatgpt, plan: plus, email_domain: example.com }
                 setup: { notifications: true, memory_backup: true }
                 capabilities: [{ id: reports, version: "0.1" }]
@@ -738,6 +742,50 @@ paths:
               schema: { $ref: "#/components/schemas/MemoryChange" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/models:
+    get:
+      tags: [Model]
+      operationId: listModels
+      summary: The models the agent can run on
+      description: |
+        Every model the agent's engine offers, with how hard each can think, and the current choice.
+        Until one is chosen, `chosen` is the engine's default model at its default effort. A chosen
+        model the engine no longer offers stays chosen, but is missing from `models`.
+      responses:
+        "200":
+          description: The models and the choice.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/agent:
+    put:
+      tags: [Model]
+      operationId: chooseModel
+      summary: Choose the agent's model
+      description: |
+        One choice for the whole server, kept across restarts. It applies from the next message;
+        a turn already running finishes on the model it started with.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelChoice" }
+            example: { model: gpt-6-luna, effort: medium }
+      responses:
+        "200":
+          description: The choice, as saved.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelChoice" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 components:
   securitySchemes:
     token:
@@ -753,7 +801,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.6"
+        example: "0.7"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -867,6 +915,44 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
   schemas:
+    ModelChoice:
+      type: object
+      required: [model, effort]
+      properties:
+        model: { description: The model's id., type: string, minLength: 1 }
+        effort: { description: "One of the model's efforts, such as `medium`.", type: string, minLength: 1 }
+    ModelList:
+      type: object
+      required: [models, chosen]
+      properties:
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/ModelOption" }
+        chosen: { $ref: "#/components/schemas/ModelChoice" }
+    ModelOption:
+      description: A model the engine offers.
+      type: object
+      required: [id, title, summary, efforts, default_effort, is_default, images]
+      properties:
+        id: { description: What to send as `model` to choose it., type: string }
+        title:
+          description: Its name, such as GPT-6.1-Sol.
+          type: string
+        summary:
+          description: One line on what it's for, in the engine's words.
+          type: string
+        efforts:
+          description: How hard it can think, lightest first, each with the engine's own line about it.
+          type: array
+          items:
+            type: object
+            required: [id, summary]
+            properties:
+              id: { description: "Such as `low`, `medium`, `high` or `xhigh`.", type: string }
+              summary: { type: string }
+        default_effort: { description: The effort it runs at unless one is chosen., type: string }
+        is_default: { description: True for the engine's default model., type: boolean }
+        images: { description: Whether it can see photos you attach., type: boolean }
     Shelf:
       description: A shelf in memory; `journal` holds one page per day.
       enum: [people, goals, projects, places, topics, journal]
@@ -1139,7 +1225,12 @@ components:
               description: What the agent is called; Ari until you choose another name.
               type: string
             model:
-              description: The model the agent last ran on, as its engine names it. Absent until the agent has run once.
+              description: |
+                The model the agent runs on: the one chosen with `PUT /v0/agent`, or otherwise the one it
+                last ran on, as its engine names it. Absent until either has happened.
+              type: string
+            effort:
+              description: How hard it thinks on that model, as the engine names it, such as `low`.
               type: string
             account:
               description: How the agent's engine is signed in, as of its last run. Never the whole email address.

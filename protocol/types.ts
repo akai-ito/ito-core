@@ -500,10 +500,84 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The models the agent can run on
+     * @description Every model the agent's engine offers, with how hard each can think, and the current choice.
+     *     Until one is chosen, `chosen` is the engine's default model at its default effort. A chosen
+     *     model the engine no longer offers stays chosen, but is missing from `models`.
+     */
+    get: operations["listModels"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/agent": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Choose the agent's model
+     * @description One choice for the whole server, kept across restarts. It applies from the next message;
+     *     a turn already running finishes on the model it started with.
+     */
+    put: operations["chooseModel"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    ModelChoice: {
+      /** @description The model's id. */
+      model: string;
+      /** @description One of the model's efforts, such as `medium`. */
+      effort: string;
+    };
+    ModelList: {
+      models: components["schemas"]["ModelOption"][];
+      chosen: components["schemas"]["ModelChoice"];
+    };
+    /** @description A model the engine offers. */
+    ModelOption: {
+      /** @description What to send as `model` to choose it. */
+      id: string;
+      /** @description Its name, such as GPT-6.1-Sol. */
+      title: string;
+      /** @description One line on what it's for, in the engine's words. */
+      summary: string;
+      /** @description How hard it can think, lightest first, each with the engine's own line about it. */
+      efforts: {
+        /** @description Such as `low`, `medium`, `high` or `xhigh`. */
+        id: string;
+        summary: string;
+      }[];
+      /** @description The effort it runs at unless one is chosen. */
+      default_effort: string;
+      /** @description True for the engine's default model. */
+      is_default: boolean;
+      /** @description Whether it can see photos you attach. */
+      images: boolean;
+    };
     /**
      * @description A shelf in memory; `journal` holds one page per day.
      * @enum {unknown}
@@ -1087,8 +1161,13 @@ export interface components {
       agent: {
         /** @description What the agent is called; Ari until you choose another name. */
         name: string;
-        /** @description The model the agent last ran on, as its engine names it. Absent until the agent has run once. */
+        /**
+         * @description The model the agent runs on: the one chosen with `PUT /v0/agent`, or otherwise the one it
+         *     last ran on, as its engine names it. Absent until either has happened.
+         */
         model?: string;
+        /** @description How hard it thinks on that model, as the engine names it, such as `low`. */
+        effort?: string;
         /** @description How the agent's engine is signed in, as of its last run. Never the whole email address. */
         account?: {
           /**
@@ -1468,6 +1547,9 @@ export interface components {
   };
   pathItems: never;
 }
+export type ModelChoice = components["schemas"]["ModelChoice"];
+export type ModelList = components["schemas"]["ModelList"];
+export type ModelOption = components["schemas"]["ModelOption"];
 export type Shelf = components["schemas"]["Shelf"];
 export type MemoryPageSummary = components["schemas"]["MemoryPageSummary"];
 export type MemoryPage = components["schemas"]["MemoryPage"];
@@ -1582,7 +1664,7 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.6"
+           *         "0.7"
            *       ]
            *     }
            */
@@ -1645,11 +1727,12 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.6.0",
-           *       "protocol": "0.6",
+           *       "version": "0.7.0",
+           *       "protocol": "0.7",
            *       "agent": {
            *         "name": "Ari",
            *         "model": "gpt-6.1-sol",
+           *         "effort": "low",
            *         "account": {
            *           "kind": "chatgpt",
            *           "plan": "plus",
@@ -2387,6 +2470,63 @@ export interface operations {
       };
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  listModels: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The models and the choice. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  chooseModel: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "model": "gpt-6-luna",
+         *       "effort": "medium"
+         *     }
+         */
+        "application/json": components["schemas"]["ModelChoice"];
+      };
+    };
+    responses: {
+      /** @description The choice, as saved. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelChoice"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
     };
   };
 }
