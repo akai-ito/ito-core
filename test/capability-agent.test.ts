@@ -175,4 +175,42 @@ describe("capabilities, through the pinned Codex", () => {
     expect(during).toContain("You're on a call.");
     expect(after.slice(after.lastIndexOf("<call>"))).toContain("The call has ended.");
   });
+
+  it("shows the agent which words the phone corrected in a spoken message", async () => {
+    const { app, store } = currentServer();
+    const call = randomUUID();
+    store.startCall(call);
+    const text = "[[reply]] What did Bora say about the QRT panel?";
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v0/messages",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        id: randomUUID(),
+        text,
+        spoken: {
+          call,
+          corrections: [
+            { offset: text.indexOf("Bora"), length: 4, heard: "Bara" },
+            { offset: text.indexOf("QRT"), length: 3, heard: "cutie" },
+          ],
+        },
+      },
+    });
+    await vi.waitFor(
+      () => {
+        expect(store.runningTurn()).toBeUndefined();
+        expect(currentModel().userTexts().at(-1)).toContain("Bora");
+      },
+      { timeout: 20_000, interval: 100 },
+    );
+    store.endCall(call);
+
+    expect(response.statusCode).toBe(201);
+    expect(currentModel().userTexts().at(-1)).toBe(
+      `${text}\n\n(Spoken. The phone corrected what it heard: heard “Bara”, wrote Bora; heard “cutie”, wrote QRT. ` +
+        "Either could be right.)",
+    );
+  });
 });
