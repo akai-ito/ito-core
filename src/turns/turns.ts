@@ -6,9 +6,9 @@ import { isAdjustingAfterRead, route, type Conversation } from "#conversation/ro
 import { createSecrets, type Secrets } from "#conversation/secrets.ts";
 import { adjustingStatus, stoppingStatus, toStepStatus, writingStatus } from "#conversation/status.ts";
 import { toEndedStep, toStepTitle, toUpdatedStep, type Trail } from "#conversation/steps.ts";
-import type { AskFields, Engine, EngineEvent, Input } from "#engine/engine.ts";
+import type { AskFields, Engine, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Ask, Error as ErrorBody, Outcome, Status, Step } from "#protocol/types.ts";
+import type { Ask, Error as ErrorBody, Outcome, Status, Step, StepKind } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { PendingWork, Store } from "#store/store.ts";
 
@@ -40,6 +40,7 @@ export type Turns = {
   readonly stop: (turn: TurnId, cut: Cut | undefined) => StopState | undefined;
   readonly retry: (failed: TurnId) => Result<RetryStarted, "not_found" | "not_failed">;
   readonly ask: (fields: AskFields) => Result<Ask, "no_turn">;
+  readonly recordStep: (kind: StepKind, facts: StepFacts) => boolean;
   readonly cancelAsk: (ask: AskId) => Result<Ask, "not_found">;
   readonly recover: () => void;
   readonly settled: () => Promise<void>;
@@ -528,6 +529,15 @@ export const createTurns = (
     ask: (fields) => {
       const state = running.get();
       return state ? askNow(state.id, fields) : fail("no_turn");
+    },
+
+    recordStep: (kind, facts) => {
+      const state = running.get();
+      if (!state) return false;
+      const key = `core:${identifiers.step()}`;
+      startStep(state.id, { type: "step.started", key, kind, facts });
+      endStep(state.id, { type: "step.ended", key, outcome: "completed", facts: {} });
+      return true;
     },
 
     cancelAsk: (ask) => {

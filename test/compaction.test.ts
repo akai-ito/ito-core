@@ -10,6 +10,7 @@ import { createServer, type Server } from "#server.ts";
 import type { LoggedEvent } from "#store/projection.ts";
 import { openEventStream } from "./support/event-stream.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
+import { wordEmbedder } from "#memory/embedder.ts";
 
 const dayMs = 24 * 60 * 60 * 1000;
 const token = "ito_compaction_test_not_a_real_token_000000000000000";
@@ -39,6 +40,7 @@ const given: readonly LoggedEvent[] = [
 
 const openServer = (): Server =>
   createServer({
+    embedder: wordEmbedder,
     dataDirectory: directory,
     createEngine: () =>
       createScriptEngine(clock, () => {

@@ -9,6 +9,7 @@ import type { TurnError } from "#engine/codex/bindings/v2/TurnError.ts";
 import type { EngineEvent, EngineFailureCode, StepFacts } from "#engine/engine.ts";
 import { toMessageId } from "#conversation/ids.ts";
 import { askToolName } from "#asks/tool.ts";
+import { memoryToolNames } from "#memory/tool-names.ts";
 import { toolServerName } from "#tools/mcp.ts";
 
 export type TurnState = {
@@ -171,6 +172,9 @@ const closing = (state: TurnState): readonly EngineEvent[] => (state.openMessage
 const isAskCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
   item.server === toolServerName && item.tool === askToolName;
 
+const isMemoryCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
+  item.server === toolServerName && memoryToolNames.has(item.tool);
+
 const startStep = (item: ThreadItem): EngineEvent | undefined => {
   switch (item.type) {
     case "reasoning": {
@@ -194,7 +198,7 @@ const startStep = (item: ThreadItem): EngineEvent | undefined => {
       return started(item.id, "web_search", searchFacts(item));
     }
     case "mcpToolCall": {
-      return isAskCall(item)
+      return isAskCall(item) || isMemoryCall(item)
         ? undefined
         : started(item.id, "tool", { capability: item.server, operation: item.tool, arguments: item.arguments });
     }
@@ -253,6 +257,7 @@ const endStep = (item: ThreadItem): EngineEvent | undefined => {
     case "mcpToolCall": {
       const isCompleted = item.status === "completed";
       if (isAskCall(item)) return isCompleted ? { type: "asked" } : undefined;
+      if (isMemoryCall(item)) return undefined;
       return ended(
         item.id,
         isCompleted,

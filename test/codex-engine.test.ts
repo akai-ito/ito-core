@@ -73,11 +73,12 @@ const writeCodexConfig = (baseUrl: string): void => {
   );
 };
 
-const openEngine = (baseUrl: string, given = instructions): Engine =>
+const openEngine = (baseUrl: string, given = instructions, context?: () => string): Engine =>
   createCodexEngine({
     codexHome,
     workspace,
     instructions: () => given,
+    ...(context && { context }),
     settings,
     log: collectLog,
     info: collectInfo,
@@ -415,6 +416,27 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(currentModel().developerTexts()).toContain(
       `<model_instructions>\nThe following instructions replace the previous base instructions:\n\n${changed}\n</model_instructions>`,
     );
+    expect(logged.get()).toEqual([]);
+  });
+
+  it("puts what's in Ari's mind before a turn, and again only once it changes", async () => {
+    const first = "<in_mind>\nNow: training for Valencia (as of 22 Oct).\n</in_mind>";
+    const second = "<in_mind>\nNow: tapering for Valencia (as of 1 Nov).\n</in_mind>";
+    const inMind = createCell(first);
+    await currentEngine().close();
+    engine.set(openEngine(currentModel().baseUrl, instructions, () => inMind.get()));
+    const countOf = (text: string): number =>
+      currentModel()
+        .developerTexts()
+        .filter((given) => given === text).length;
+
+    await runTurn("[[reply]] Morning.");
+    await runTurn("[[reply]] Still there?");
+    expect(countOf(first)).toBe(1);
+    inMind.set(second);
+    await runTurn("[[reply]] And now?");
+
+    expect([countOf(first), countOf(second)]).toEqual([1, 1]);
     expect(logged.get()).toEqual([]);
   });
 });

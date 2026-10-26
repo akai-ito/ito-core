@@ -12,6 +12,7 @@ import type { Attachment } from "#protocol/types.ts";
 import { apnsSettings } from "#notifications/apns.ts";
 import { openNotification } from "#notifications/crypto.ts";
 import type { Envelope } from "#notifications/notifier.ts";
+import type { SeededPage } from "#memory/memory.ts";
 import { createServer, databaseFile, type Server } from "#server.ts";
 import { openEventStream, type EventStream } from "./event-stream.ts";
 import { startFakeApns, type Pushed } from "./fake-apns.ts";
@@ -26,6 +27,7 @@ import {
   type TranscriptPush,
 } from "./transcript-file.ts";
 import { createVirtualClock } from "./virtual-clock.ts";
+import { wordEmbedder } from "#memory/embedder.ts";
 
 export const transcriptToken = "ito_example_not_a_real_token_00000000000000000000";
 
@@ -53,7 +55,7 @@ const fail = (message: string): never => {
 const isWorldStep = (step: Step): step is WorldStep => "world" in step;
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emsta]_\d{4}_\d{5}$/u.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstac]_\d{4}_\d{5}$/u.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap((item) => idsIn(item));
   return value && typeof value === "object" ? Object.values(value).flatMap((item) => idsIn(item)) : [];
 };
@@ -116,6 +118,7 @@ export const replay = async (name: string): Promise<void> => {
 
   const createReplayServer = (): Server =>
     createServer({
+      embedder: wordEmbedder,
       dataDirectory: directory,
       createEngine: () => createScriptEngine(clock, scripts),
       name: "studio",
@@ -123,6 +126,7 @@ export const replay = async (name: string): Promise<void> => {
       clock,
       push: { hosts: { production: apns.origin, sandbox: apns.origin } },
       capabilities,
+      timeZone: "UTC",
     });
 
   const listen = async (server: Server): Promise<void> => {
@@ -245,6 +249,22 @@ export const replay = async (name: string): Promise<void> => {
         await stopServer();
         restoreBackup();
         await listen(createReplayServer());
+        return;
+      }
+      case "memory_holds": {
+        await advance(time);
+        const { pages } = step as unknown as { readonly pages: readonly SeededPage[] };
+        for (const page of pages) {
+          const seeded = await (live.get()?.server.memory.seed(page) ?? Promise.resolve(undefined));
+          check(seeded?.ok === false ? `memory refused ${page.address}: ${seeded.failure}` : undefined, index);
+        }
+        return;
+      }
+      case "agent_calls": {
+        await advance(time);
+        const { tool, input } = step as unknown as { readonly tool: string; readonly input: unknown };
+        const called = await (live.get()?.server.callTool(tool, input) ?? Promise.resolve(undefined));
+        check(called?.isError === true ? `${tool} failed: ${called.text}` : undefined, index);
         return;
       }
       case "pairing_code_shown": {

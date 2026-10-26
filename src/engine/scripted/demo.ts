@@ -1,6 +1,6 @@
 import { createCell } from "#cell.ts";
 import type { AskFields, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
-import type { ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
+import type { Act, CallTool, ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
 
 const pieceMs = 70;
 
@@ -10,6 +10,7 @@ const shortReply = [
   "- It streams a reply in small pieces, the way a real model does.",
   "- Send a message while it writes to try **steering**.",
   "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, *approve* for an approval, or *secret* for a secret question.",
+  "- *remember* writes Alex's page in memory (again, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
 ].join("\n");
 
 const longReply = Array.from(
@@ -149,28 +150,71 @@ const askFor = (text: string): AskFields | undefined => {
   };
 };
 
-const scriptFor = (inputs: readonly Input[], now: number): readonly TimedEvent[] => {
+const alex = "memory:people/alex";
+
+const dayOf = (at: number): string => new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(at);
+
+const rememberAlex =
+  (now: number): Act["act"] =>
+  async (callTool: CallTool) => {
+    const existing = await callTool("read_page", { address: alex });
+    const today = dayOf(now);
+    const body = existing.isError
+      ? `Taking things slow; you've been on two dates (as of ${today}).`
+      : `Seeing each other a lot, and it's going really well (as of ${today}).\n\n## Earlier\n\n- ${today}: taking things slow.`;
+    await callTool("remember", { address: alex, title: "Alex", aliases: ["Alex R"], body });
+    await callTool("journal", { text: "Talked about Alex; things are going well." });
+  };
+
+const recallAlex: Act["act"] = async (callTool) => {
+  await callTool("recall", { query: "Alex" });
+};
+
+type Script = { readonly events: readonly TimedEvent[]; readonly acts?: readonly Act[] };
+
+const memoryScript = (text: string, start: readonly TimedEvent[], now: number): Script | undefined => {
+  const isRemembering = /\bremember\b/u.test(text);
+  if (!isRemembering && !/\brecall\b/u.test(text)) return undefined;
+  const actAt = lastAt(start) + 300;
+  const reply = writeMessage(
+    "reply",
+    isRemembering ? "I've updated Alex's page, and added to today's journal." : "Here's what I remember about Alex.",
+    actAt + 1200,
+  );
+  return {
+    events: [...start, ...reply, ending(reply, { type: "ended" })],
+    acts: [{ at: actAt, act: isRemembering ? rememberAlex(now) : recallAlex }],
+  };
+};
+
+const scriptFor = (inputs: readonly Input[], now: number): Script => {
   const text = inputs
     .map((input) => input.text)
     .join("\n")
     .toLowerCase();
   const opened = opening(text, now);
   const start = text.includes("busy") ? [...opened, ...busyTrail(lastAt(opened) + 300)] : opened;
-  if (text.includes("silent")) return start;
+  if (text.includes("silent")) return { events: start };
+  const remembering = memoryScript(text, start, now);
+  if (remembering) return remembering;
   const fields = askFor(text);
   if (fields) {
     const askedAt = lastAt(start) + 300;
-    return [
-      ...start,
-      { at: askedAt, event: { type: "ask", fields } },
-      { at: askedAt + pieceMs, event: { type: "ended" } },
-    ];
+    return {
+      events: [
+        ...start,
+        { at: askedAt, event: { type: "ask", fields } },
+        { at: askedAt + pieceMs, event: { type: "ended" } },
+      ],
+    };
   }
   if (text.includes("fail")) {
-    return [
-      ...start,
-      ending(start, { type: "failed", code: "model_unavailable", detail: "The demo engine was asked to fail." }),
-    ];
+    return {
+      events: [
+        ...start,
+        ending(start, { type: "failed", code: "model_unavailable", detail: "The demo engine was asked to fail." }),
+      ],
+    };
   }
   const attached = inputs.flatMap((input) => input.attachments ?? []);
   const seen =
@@ -178,14 +222,15 @@ const scriptFor = (inputs: readonly Input[], now: number): readonly TimedEvent[]
       ? `I can see ${attached.map((attachment) => `${attachment.name} (${attachment.kind === "image" ? "a photo" : "a file"})`).join(" and ")}.\n\n`
       : "";
   const reply = writeMessage("reply", seen + (text.includes("long") ? longReply : shortReply), lastAt(start) + 800);
-  return [...start, ...reply, ending(reply, { type: "ended" })];
+  return { events: [...start, ...reply, ending(reply, { type: "ended" })] };
 };
 
 export const demoScripts: ScriptSource = (_turn, inputs, now) => {
-  const events = scriptFor(inputs, now);
+  const { events, acts } = scriptFor(inputs, now);
   const scheduledUntil = createCell(lastAt(events));
   return {
     events,
+    ...(acts && { acts }),
     steer: (input, steeredAt) => {
       const replyAt = Math.max(steeredAt + 600, scheduledUntil.get() + pieceMs);
       const reply = writeMessage("reply", `Got it: ${input.text}`, replyAt);

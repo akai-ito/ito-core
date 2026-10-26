@@ -22,7 +22,7 @@ where the protocol has to make it possible, marked *App*.
 | G11 | **The token stays secret.** It travels only over HTTPS (loopback excepted, for development), is never logged and is never sent back. | 1, 31 |
 | G12 | **Versioned and tolerant.** The server states its protocol version before asking for the token. Both sides ignore what they don't recognise. A major mismatch says which side to update. | 1 |
 | G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2, 30 |
-| G14 | **The agent's steps are kept.** Every step the agent takes (thinking, a search, a command, an edit, a tool, a plan) streams as it happens and is stored in the conversation, in order with the messages, so it comes back in snapshots, in history and on every app. Every step ends with an outcome; a step still running when its turn ends, ends with the turn. | 4, 7, 9, 15, 16, 17 |
+| G14 | **The agent's steps are kept.** Every step the agent takes (thinking, a search, a command, an edit, a tool, a plan) streams as it happens and is stored in the conversation, in order with the messages, so it comes back in snapshots, in history and on every app. Every step ends with an outcome; a step still running when its turn ends, ends with the turn. | 4, 7, 9, 15, 16, 17, 34, 35, 36 |
 | G15 | **Notified only while you're away.** The server pushes when a reply finishes, when a turn fails, when the agent asks you something, and once more for an ask still waiting after three hours, and never for progress or notes. Nothing is pushed while any of your devices is looking at the conversation with a live stream. | 18, 21, 24, 26 |
 | G16 | **Asks wait for you.** Asking ends the agent's turn, and the ask waits as long as it takes, through the app closing, the phone going offline and the server restarting. Your next message answers it, whichever way you write it, and only you can cancel it. Nothing happens on the agent's side until you answer. | 19, 20, 21, 22, 23, 24 |
 | G17 | **Secrets stay out of the conversation.** The answer to a secret ask reaches the agent and nothing else: it never enters the server's log, a snapshot, history, a notification or a response. | 25 |
@@ -30,6 +30,7 @@ where the protocol has to make it possible, marked *App*.
 | G19 | **Attachments stay as you sent them.** A photo or file is uploaded once, under an id the app chooses, so a retry never makes a second copy. Its bytes never change, every app can fetch them, and the agent works on its own copy, so nothing it does changes what you sent. | 27, 28, 29, 30 |
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
 | G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
+| G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36 |
 
 ## Scenario by scenario
 
@@ -282,6 +283,24 @@ where the protocol has to make it possible, marked *App*.
   words. Saving a new setup restarts it. (G21)
 - Values its fields don't allow are refused as `invalid_request`, and an id the server doesn't know
   as `not_found`.
+
+### 34 · [Ari uses what it remembers](transcripts/34-ari-uses-what-it-remembers.jsonl)
+
+- Pages Ari recalls or reads show as one `memory` step with `action: used`, naming each page by
+  address and title, in title order. (G14, G22)
+- A page and what's in Ari's mind are fetched from memory, as Markdown without front matter.
+
+### 35 · [Ari updates what it knows](transcripts/35-ari-updates-what-it-knows.jsonl)
+
+- Each page Ari writes shows as a `memory` step with `action: updated` and a `change` id; tapping
+  it fetches the page before and after. Additions to the journal show with `action: journaled`.
+  (G14, G22)
+
+### 36 · [Forget that](transcripts/36-forget-that.jsonl)
+
+- Forgetting is an ordinary update: the page is rewritten without what you asked Ari to forget.
+  (G22)
+- The Memory screen lists recently changed pages, newest first, and how much is on each shelf.
 
 ## Not in this version
 

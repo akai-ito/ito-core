@@ -30,6 +30,7 @@ export type CodexEngineOptions = {
   readonly codexHome: string;
   readonly workspace: string;
   readonly instructions: () => string;
+  readonly context?: () => string;
   readonly settings: Settings;
   readonly log: Log;
   readonly info: Info;
@@ -188,6 +189,7 @@ export const createCodexEngine = ({
   codexHome,
   workspace,
   instructions,
+  context,
   settings,
   log,
   info,
@@ -200,6 +202,7 @@ export const createCodexEngine = ({
   const generation = createCell(0);
   const openThreadId = createCell<string | undefined>(undefined);
   const isRefreshing = createCell(false);
+  const injected = createCell<string | undefined>(undefined);
   const threadOptions = (server: ToolServer | undefined): ThreadStartParams => ({
     cwd: workspace,
     approvalPolicy: "never",
@@ -228,6 +231,9 @@ export const createCodexEngine = ({
   };
 
   const route = (notification: ServerNotification): void => {
+    if (notification.method === "item/completed" && notification.params.item.type === "contextCompaction") {
+      injected.set(undefined);
+    }
     const current = active.get();
     if (!current || fieldOf(notification, "threadId") !== openThreadId.get()) return;
     const { state, events } = toEngineEvents(current.state, notification);
@@ -292,6 +298,7 @@ export const createCodexEngine = ({
     const threadId = await openThread(process, server);
     if (!threadId.ok) return giveUp({ code: "engine_failed", detail: threadId.failure });
     openThreadId.set(threadId.value);
+    injected.set(undefined);
     return ok({ process, threadId: threadId.value });
   };
 
@@ -324,6 +331,15 @@ export const createCodexEngine = ({
     if (!opened.ok) {
       emit(turn, [{ type: "failed", ...opened.failure }]);
       return undefined;
+    }
+    const inMind = context?.() ?? "";
+    if (inMind !== "" && inMind !== injected.get()) {
+      const injecting = await opened.value.process.call("thread/inject_items", {
+        threadId: opened.value.threadId,
+        items: [{ type: "message", role: "developer", content: [{ type: "input_text", text: inMind }] }],
+      });
+      if (injecting.ok) injected.set(inMind);
+      else log("Codex didn't take what's in Ari's mind", injecting.failure.message);
     }
     const started = await opened.value.process.call("turn/start", {
       threadId: opened.value.threadId,

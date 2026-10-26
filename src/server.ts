@@ -7,6 +7,10 @@ import { createHost, type Host, type Installed } from "#capabilities/host.ts";
 import { writeLauncher } from "#capabilities/launcher.ts";
 import { writeSkills } from "#capabilities/skills.ts";
 import { createTrail } from "#capabilities/trail.ts";
+import type { Embedder } from "#memory/embedder.ts";
+import { createMemory, type Memory } from "#memory/memory.ts";
+import { createMemoryStore } from "#store/memory.ts";
+import type { Tool, ToolResult } from "#tools/mcp.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
 import type { Engine, ToolServer } from "#engine/engine.ts";
@@ -42,6 +46,8 @@ export type ServerOptions = {
   readonly reports?: Partial<ReportsOptions>;
   readonly push?: Partial<PushOptions>;
   readonly capabilities?: readonly Installed[];
+  readonly embedder: Embedder;
+  readonly timeZone?: string;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
@@ -54,6 +60,8 @@ export type EngineContext = {
   readonly info: Info;
   readonly tools: () => ToolServer | undefined;
   readonly skills: () => string;
+  readonly inMind: () => string;
+  readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
 };
 
 export type Server = {
@@ -62,6 +70,8 @@ export type Server = {
   readonly turns: Turns;
   readonly attachments: Attachments;
   readonly host: Host;
+  readonly memory: Memory;
+  readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
 
@@ -80,7 +90,8 @@ export const createServer = (options: ServerOptions): Server => {
   const clock = options.clock ?? systemClock;
   const identifiers = options.identifiers ?? randomIdentifiers;
   mkdirSync(options.dataDirectory, { recursive: true });
-  const store = createStore(openDatabase(databaseFile(options.dataDirectory)), clock, identifiers);
+  const database = openDatabase(databaseFile(options.dataDirectory));
+  const store = createStore(database, clock, identifiers);
   const logError = createCell<Log>((message, error) => {
     console.error(message, error);
   });
@@ -109,7 +120,26 @@ export const createServer = (options: ServerOptions): Server => {
   });
   const launcher = writeLauncher(path.join(options.dataDirectory, "bin", "ito"));
   const skills = (): string => writeSkills(path.join(options.dataDirectory, "skills"), host.offered(), launcher);
-  const engine = options.createEngine({ settings: store, log, info, tools: toolServer, skills });
+  const memory = createMemory({
+    directory: path.join(options.dataDirectory, "thread"),
+    store: createMemoryStore(database),
+    settings: store,
+    clock,
+    identifiers,
+    embedder: options.embedder,
+    recordStep: (facts) => turns.recordStep("memory", facts),
+    info,
+    timeZone: options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+  const engine = options.createEngine({
+    settings: store,
+    log,
+    info,
+    tools: toolServer,
+    skills,
+    inMind: memory.inMindText,
+    callTool: (name, input) => callTool(name, input),
+  });
   host.subscribe(() => {
     void engine.refresh();
   });
@@ -137,6 +167,7 @@ export const createServer = (options: ServerOptions): Server => {
     presence,
     attachments,
     host,
+    memory,
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
   });
@@ -162,10 +193,22 @@ export const createServer = (options: ServerOptions): Server => {
     dailyLimit: reports.dailyLimit,
   });
   const doors = createDoors({ host, secrets, currentTurn: () => store.runningTurn()?.id, command: launcher });
-  const coreTools = [createReportTool(reporter, () => store.runningTurn()?.id, secrets), createAskTool(turns)];
+  const coreTools: readonly Tool[] = [
+    createReportTool(reporter, () => store.runningTurn()?.id, secrets),
+    createAskTool(turns),
+    ...memory.tools,
+  ];
+  const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()];
+  const callTool = async (name: string, input: unknown): Promise<ToolResult> => {
+    const tool = allTools().find((candidate) => candidate.name === name);
+    return tool ? tool.call(input) : { text: `Ito has no tool ${name}.`, isError: true };
+  };
+  store.subscribe(({ event }) => {
+    if (event.type === "turn.ended") memory.indexConversation();
+  });
   registerTools(app, {
     token: toolsToken,
-    tools: () => [...coreTools, ...doors.tools()],
+    tools: allTools,
     command: doors.command,
     version: packageVersion(),
   });
@@ -186,6 +229,7 @@ export const createServer = (options: ServerOptions): Server => {
     await turns.close();
     await engine.close();
     await host.close();
+    await memory.close();
     apns.close();
     store.close();
   };
@@ -197,6 +241,8 @@ export const createServer = (options: ServerOptions): Server => {
     turns,
     attachments,
     host,
+    memory,
+    callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();
       closing.set(pending);

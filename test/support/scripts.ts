@@ -44,7 +44,12 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
   }
 };
 
+const isCoreStep = (event: LoggedEvent): boolean =>
+  (event.type === "step.started" || event.type === "step.updated" || event.type === "step.ended") &&
+  event.step.kind === "memory";
+
 const toTimed = (event: LoggedEvent): TimedEvent | undefined => {
+  if (isCoreStep(event)) return undefined;
   const at = Date.parse(event.at);
   switch (event.type) {
     case "ask.started": {

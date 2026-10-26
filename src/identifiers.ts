@@ -1,11 +1,13 @@
 import { randomBytes } from "node:crypto";
 import {
   toAskId,
+  toChangeId,
   toEventId,
   toMessageId,
   toStepId,
   toTurnId,
   type AskId,
+  type ChangeId,
   type EventId,
   type MessageId,
   type StepId,
@@ -18,6 +20,7 @@ export type Identifiers = {
   readonly turn: () => TurnId;
   readonly step: () => StepId;
   readonly ask: () => AskId;
+  readonly change: () => ChangeId;
 };
 
 const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -32,4 +35,5 @@ export const randomIdentifiers: Identifiers = {
   turn: () => toTurnId(`t_${randomText()}`),
   step: () => toStepId(`s_${randomText()}`),
   ask: () => toAskId(`a_${randomText()}`),
+  change: () => toChangeId(`c_${randomText()}`),
 };

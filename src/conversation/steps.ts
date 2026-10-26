@@ -165,6 +165,22 @@ const toolTitle = ({ capability = "a tool", operation, url }: StepFacts): Title 
   return title("Reporting it to Ito", url?.includes("#issuecomment-") ? "Added to an Ito issue" : "Reported it to Ito");
 };
 
+const memoryTitle = ({ action, pages = [] }: StepFacts): Title => {
+  const names = pages.map((page) => page.title).join(" · ");
+  switch (action) {
+    case "updated": {
+      return title(`Updating ${names}`, `Updated ${names}`);
+    }
+    case "journaled": {
+      return title("Adding to today's journal", "Added to today's journal");
+    }
+    case "used":
+    case undefined: {
+      return title(`Using ${names}`, `Used ${names}`);
+    }
+  }
+};
+
 const titleOf = (kind: StepKind, facts: StepFacts, trail: Trail | undefined): Title => {
   switch (kind) {
     case "thinking": {
@@ -199,6 +215,9 @@ const titleOf = (kind: StepKind, facts: StepFacts, trail: Trail | undefined): Ti
     }
     case "compacting": {
       return title("Tidying up its notes", "Tidied up its notes");
+    }
+    case "memory": {
+      return memoryTitle(facts);
     }
   }
 };

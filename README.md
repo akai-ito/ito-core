@@ -42,7 +42,8 @@ Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code inste
 redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new` makes
 another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
 in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a timeout,
-*ask* a question, *approve* an approval, and *secret* a secret question.
+*ask* a question, *approve* an approval, *secret* a secret question, *remember* writes a page and
+the journal in memory, and *recall* looks it up.
 
 Before reaching for your phone, check a real turn from the machine itself, with the server running
 and your token in `TOKEN`. The stream should show the turn start, statuses, the reply's text
@@ -91,6 +92,17 @@ ito-core, never with anything from your conversation. To switch it on, create a
 akai-ito/ito-core with *Issues: read and write*, then run `node bin/ito.ts reports token` and paste
 it. Up to 20 reports a day are filed; any more go to Ito's log.
 
+Ari remembers you in the Thread, a git repository of Markdown pages in `~/.ito/thread` that you can
+read without Ito: your portrait, what's going on now, how you like to be helped, pages on people,
+goals, projects, places and topics, and a journal. Ari writes it as you talk, and finds things in it
+and in past conversations with a small embedding model it downloads once and runs on the CPU. To
+back it up, create a private repository and point the Thread at it; Ito pushes after each change
+with this machine's own git credentials:
+
+```sh
+node bin/ito.ts memory remote git@github.com:<you>/ito-thread.git
+```
+
 Ari notifies you while you're away: when a reply finishes, when something fails, and when it asks
 you something. To switch notifications on, create an APNs key in your Apple Developer account
 (Certificates, Identifiers & Profiles, then Keys, with Apple Push Notifications service), download
@@ -105,7 +117,8 @@ The box needs to reach `api.push.apple.com` on port 443. Notifications travel en
 each phone makes, so Apple only ever carries ciphertext.
 
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
-sign-in and sessions in `codex`, and the agent's working directory in `workspace`.
+sign-in and sessions in `codex`, the agent's working directory in `workspace`, its memory in
+`thread`, and the embedding model in `models`.
 
 ## What it will do
 

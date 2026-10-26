@@ -10,6 +10,7 @@ import { createServer, type Server } from "#server.ts";
 import type { LoggedEvent } from "#store/projection.ts";
 import { openEventStream } from "./support/event-stream.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
+import { wordEmbedder } from "#memory/embedder.ts";
 
 const token = "ito_recovery_test_not_a_real_token_00000000000000000";
 const directory = mkdtempSync(path.join(os.tmpdir(), "ito-recovery-"));
@@ -50,6 +51,7 @@ const given: readonly LoggedEvent[] = [
 
 const openServer = (): Server =>
   createServer({
+    embedder: wordEmbedder,
     dataDirectory: directory,
     createEngine: () =>
       createScriptEngine(clock, () => {

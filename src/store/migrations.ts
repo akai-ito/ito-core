@@ -85,4 +85,24 @@ export const migrations: readonly string[] = [
     expires_at TEXT NOT NULL,
     device_name TEXT
   );`,
+  `CREATE TABLE memory_changes (
+    id TEXT PRIMARY KEY,
+    address TEXT NOT NULL,
+    title TEXT NOT NULL,
+    file TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    at TEXT NOT NULL
+  );
+  CREATE INDEX memory_changes_by_address ON memory_changes (address, at);
+  CREATE TABLE memory_chunks (
+    id INTEGER PRIMARY KEY,
+    address TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT,
+    text TEXT NOT NULL,
+    at TEXT NOT NULL,
+    vector BLOB
+  );
+  CREATE INDEX memory_chunks_by_address ON memory_chunks (address);
+  CREATE VIRTUAL TABLE memory_text USING fts5(text);`,
 ];

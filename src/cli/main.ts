@@ -1,6 +1,7 @@
 import { canRunCapability, runCapability } from "#cli/capability.ts";
 import type { Io } from "#cli/io.ts";
 import { login } from "#cli/login.ts";
+import { memoryUsage, setMemoryRemote } from "#cli/memory.ts";
 import { pair } from "#cli/pair.ts";
 import { pushUsage, setUpPush } from "#cli/push.ts";
 import { setReportsToken } from "#cli/reports.ts";
@@ -14,6 +15,7 @@ export const usage = [
   "  ito token new",
   "  ito pair [--address <https://machine.tailnet.ts.net:8443>]",
   "  ito reports token",
+  `  ${memoryUsage}`,
   `  ${pushUsage}`,
   "  ito login [codex login options]",
   "  ito <capability> <operation> [--flag value]…   (inside Ari's agent sessions)",
@@ -36,6 +38,10 @@ export const main = async (argv: readonly string[], io: Io): Promise<number> => 
     }
     case "reports": {
       return rest.length === 1 && rest[0] === "token" ? setReportsToken(io) : usageError(io);
+    }
+    case "memory": {
+      const [subcommand, ...flags] = rest;
+      return subcommand === "remote" ? setMemoryRemote(flags, io) : usageError(io);
     }
     case "push": {
       const [subcommand, ...flags] = rest;
