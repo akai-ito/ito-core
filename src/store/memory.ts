@@ -50,6 +50,7 @@ export type MemoryStore = {
   readonly chunks: () => readonly StoredChunk[];
   readonly searchText: (query: string, limit: number) => readonly number[];
   readonly unindexedMessages: () => readonly ConversationMessage[];
+  readonly yourMessages: () => readonly string[];
 };
 
 type ChunkRow = {
@@ -151,5 +152,11 @@ export const createMemoryStore = (database: DatabaseSync): MemoryStore => {
       return rows.map(({ id }) => id);
     },
     unindexedMessages: () => unindexedMessages(database),
+    yourMessages: () =>
+      (
+        database
+          .prepare("SELECT text FROM messages WHERE role = 'user' AND text != '' ORDER BY position DESC LIMIT 2000")
+          .all() as unknown as readonly { readonly text: string }[]
+      ).map(({ text }) => text),
   };
 };

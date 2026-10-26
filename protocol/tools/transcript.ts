@@ -9,6 +9,8 @@ import type {
   AskKind,
   Attachment,
   AskOption,
+  Call,
+  Correction,
   Error as ErrorBody,
   LiveTurn,
   Message,
@@ -46,11 +48,14 @@ type RequestOptions = {
 
 type ResponseOptions = { readonly headers?: HttpHeaders; readonly isLost?: boolean };
 
+type SpokenOptions = { readonly call: string; readonly audio?: string; readonly corrections?: readonly Correction[] };
+
 type SendOptions = {
   readonly id?: string;
   readonly isLost?: boolean;
   readonly answers?: string;
   readonly attachments?: readonly string[];
+  readonly spoken?: SpokenOptions;
 };
 
 type UploadOptions = { readonly id?: string; readonly name?: string; readonly isLost?: boolean };
@@ -128,6 +133,9 @@ export type Transcript = {
   readonly showPairingCode: (code: string) => void;
   readonly pair: (code: string, deviceName: string, token: string) => void;
   readonly listMessages: (before: string, limit: number) => void;
+  readonly startCall: () => string;
+  readonly endCall: (call: string) => void;
+  readonly deleteCallAudio: (call: string) => void;
   readonly change: () => string;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
@@ -147,6 +155,7 @@ type Projection = {
   readonly byId: ReadonlyMap<string, Message>;
   readonly steps: ReadonlyMap<string, Step>;
   readonly asks: ReadonlyMap<string, Ask>;
+  readonly calls: ReadonlyMap<string, Call>;
 };
 
 type SnapshotReason = "no_cursor" | "cursor_unknown" | "too_far_behind";
@@ -165,6 +174,7 @@ const mediaTypes: Readonly<Record<string, string>> = {
   png: "image/png",
   csv: "text/csv",
   mov: "video/quicktime",
+  m4a: "audio/mp4",
 };
 
 const mediaTypeOf = (name: string): string => mediaTypes[name.split(".").at(-1) ?? ""] ?? "application/octet-stream";
@@ -200,6 +210,28 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
     case "ask.ended": {
       const ask = event.ask as Ask;
       return { ...projection, asks: new Map(projection.asks).set(ask.id, ask) };
+    }
+    case "call.started":
+    case "call.ended": {
+      const call = event.call as Call;
+      return { ...projection, calls: new Map(projection.calls).set(call.id, call) };
+    }
+    case "call.audio_deleted": {
+      const call = event.call as Call;
+      const silenced = byId
+        .values()
+        .filter((message) => message.spoken?.call === call.id && message.spoken.audio)
+        .map((message) => {
+          const corrections = message.spoken?.corrections;
+          const spoken = { call: call.id, ...(corrections && { corrections }) };
+          return [message.id, { ...message, spoken }] as const;
+        })
+        .toArray();
+      return {
+        ...projection,
+        calls: new Map(projection.calls).set(call.id, call),
+        byId: new Map([...byId, ...silenced]),
+      };
     }
     case "message.delta": {
       const message = byId.get(event.message as string);
@@ -237,7 +269,20 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
 };
 
 const project = (log: readonly Event[]): Projection =>
-  log.reduce<Projection>(projectEvent, { order: [], byId: new Map(), steps: new Map(), asks: new Map() });
+  log.reduce<Projection>(projectEvent, {
+    order: [],
+    byId: new Map(),
+    steps: new Map(),
+    asks: new Map(),
+    calls: new Map(),
+  });
+
+const callsFrom = (calls: ReadonlyMap<string, Call>, from: number, until = Infinity): readonly Call[] =>
+  calls
+    .values()
+    .filter((call) => (call.position >= from && call.position < until) || (until === Infinity && !call.ended_at))
+    .toArray()
+    .toSorted((left, right) => left.position - right.position);
 
 const between = <Entry extends { readonly position: number }>(
   entries: ReadonlyMap<string, Entry>,
@@ -404,7 +449,7 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const snapshot = (reason: SnapshotReason): void => {
-    const { order, byId, steps, asks } = project(log.get());
+    const { order, byId, steps, asks, calls } = project(log.get());
     const latest = latestEventId();
     const messages = order.slice(-messagesPerSnapshot).flatMap((id) => byId.get(id) ?? []);
     const first = messages[0]?.position;
@@ -418,6 +463,7 @@ export const createTranscript = (header: Header): Transcript => {
         has_more: order.length > messagesPerSnapshot,
         steps: first === undefined ? [] : between(steps, first),
         asks: first === undefined ? [] : between(asks, first),
+        calls: first === undefined ? [] : callsFrom(calls, first),
         turn: turn.get() ?? null,
         next: next.get(),
       },
@@ -629,7 +675,7 @@ export const createTranscript = (header: Header): Transcript => {
     const dimensions = isImage(mediaType) ? readDimensions(bytes, mediaType) : undefined;
     return {
       id,
-      kind: isImage(mediaType) ? "image" : "file",
+      kind: isImage(mediaType) ? "image" : mediaType.startsWith("audio/") ? "audio" : "file",
       name,
       media_type: mediaType,
       size: bytes.length,
@@ -664,15 +710,67 @@ export const createTranscript = (header: Header): Transcript => {
     return { user: userMessageId, agent: agentMessageId, turn: turnId };
   };
 
+  const attachmentById = (id: string): Attachment => {
+    const found = attachments.get().get(id);
+    if (!found) throw new Error(`unknown attachment ${id}`);
+    return found;
+  };
+
+  const callById = (id: string): Call => {
+    const found = project(log.get()).calls.get(id);
+    if (!found) throw new Error(`unknown call ${id}`);
+    return found;
+  };
+
+  const endCallNow = (id: string): Call => {
+    const call = callById(id);
+    if (call.ended_at) return call;
+    const ended: Call = { ...call, ended_at: timestamp(), duration_ms: now.get() - Date.parse(call.started_at) };
+    emit("call.ended", { call: ended });
+    return ended;
+  };
+
+  const startCall = (): string => {
+    const id = newUserId();
+    request("PUT", `/v0/calls/${id}`);
+    const open = project(log.get())
+      .calls.values()
+      .find((call) => !call.ended_at);
+    if (open) endCallNow(open.id);
+    const call: Call = { id, started_at: timestamp(), position: nextPosition() };
+    emit("call.started", { call });
+    response(201, { call });
+    return id;
+  };
+
+  const endCall = (id: string): void => {
+    request("POST", `/v0/calls/${id}/end`);
+    response(200, { call: endCallNow(id) });
+  };
+
+  const deleteCallAudio = (id: string): void => {
+    request("DELETE", `/v0/calls/${id}/audio`);
+    const call = callById(id);
+    if (call.audio_deleted) {
+      response(200, { call });
+      return;
+    }
+    const deleted: Call = { ...call, audio_deleted: true };
+    emit("call.audio_deleted", { call: deleted });
+    response(200, { call: deleted });
+  };
+
   const send = (text: string, options: SendOptions = {}): string => {
     const id = options.id ?? newUserId();
     const attached = options.attachments ?? [];
+    const { spoken } = options;
     request("POST", "/v0/messages", {
       body: {
         id,
         text,
         ...(options.answers && { answers: options.answers }),
         ...(attached.length > 0 && { attachments: attached }),
+        ...(spoken && { spoken }),
       },
     });
     const isKnown = project(log.get()).byId.has(id);
@@ -705,6 +803,13 @@ export const createTranscript = (header: Header): Transcript => {
               if (!found) throw new Error(`unknown attachment ${attachment}`);
               return found;
             }),
+          }),
+          ...(spoken && {
+            spoken: {
+              call: spoken.call,
+              ...(spoken.audio !== undefined && { audio: attachmentById(spoken.audio) }),
+              ...(spoken.corrections && spoken.corrections.length > 0 && { corrections: spoken.corrections }),
+            },
           }),
         },
       });
@@ -897,7 +1002,7 @@ export const createTranscript = (header: Header): Transcript => {
 
   const listMessages = (before: string, limit: number): void => {
     request("GET", `/v0/messages?before=${before}&limit=${limit}`);
-    const { order, byId, steps, asks } = project(log.get());
+    const { order, byId, steps, asks, calls } = project(log.get());
     const index = order.indexOf(before);
     if (index === -1) throw new Error(`no message ${before}`);
     const first = Math.max(0, index - limit);
@@ -908,6 +1013,7 @@ export const createTranscript = (header: Header): Transcript => {
       messages,
       steps: from === undefined ? [] : between(steps, from, until),
       asks: from === undefined ? [] : between(asks, from, until),
+      calls: from === undefined ? [] : callsFrom(calls, from, until),
       has_more: first > 0,
     });
   };
@@ -966,6 +1072,9 @@ export const createTranscript = (header: Header): Transcript => {
     stepAtOffset,
     world,
     change: () => newId("c"),
+    startCall,
+    endCall,
+    deleteCallAudio,
     request,
     response,
     connect,

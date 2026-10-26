@@ -16,7 +16,10 @@ import type { Identifiers } from "#identifiers.ts";
 import type {
   Ask,
   Attachment,
+  Call,
+  Correction,
   Error as ErrorBody,
+  Spoken,
   LiveTurn,
   Message,
   Outcome,
@@ -58,11 +61,22 @@ export type Page = {
   readonly messages: readonly Message[];
   readonly steps: readonly Step[];
   readonly asks: readonly Ask[];
+  readonly calls: readonly Call[];
   readonly hasMore: boolean;
 };
 
 export type AcceptFailure =
-  "id_conflict" | "unknown_ask" | "unknown_attachment" | "attachment_taken" | "secret_attachments";
+  "id_conflict" | "unknown_ask" | "unknown_attachment" | "attachment_taken" | "secret_attachments" | "call_not_on";
+
+export type SpokenInput = {
+  readonly call: string;
+  readonly audio?: string;
+  readonly corrections?: readonly Correction[];
+};
+
+export type StartedCall = { readonly call: Call; readonly isNew: boolean };
+
+export type DeletedAudio = { readonly call: Call; readonly audio: readonly string[] };
 
 export type SavedAttachment = { readonly attachment: Attachment; readonly isNew: boolean };
 
@@ -94,7 +108,12 @@ export type Store = Settings & {
     text: string,
     answers?: AskId,
     attachments?: readonly string[],
+    spoken?: SpokenInput,
   ) => Result<Accepted, AcceptFailure>;
+  readonly startCall: (id: string) => StartedCall;
+  readonly endCall: (id: string) => Call | undefined;
+  readonly deleteCallAudio: (id: string) => DeletedAudio | undefined;
+  readonly latestCall: () => Call | undefined;
   readonly saveAttachment: (attachment: Attachment, sha256: string) => Result<SavedAttachment, "id_conflict">;
   readonly findAttachment: (id: string) => { readonly attachment: Attachment; readonly sha256: string } | undefined;
   readonly unattachedBefore: (before: string) => readonly string[];
@@ -159,6 +178,7 @@ type MessageRow = {
   readonly answers: string | null;
   readonly secret: number;
   readonly attachments: string | null;
+  readonly spoken: string | null;
 };
 
 type AttachmentRow = { readonly body: string; readonly sha256: string; readonly message: string | null };
@@ -211,6 +231,7 @@ const toMessage = (row: MessageRow): Message =>
         ...(row.answers && { answers: row.answers }),
         ...(row.secret === 1 && { secret: true }),
         ...(row.attachments && { attachments: JSON.parse(row.attachments) as Attachment[] }),
+        ...(row.spoken && { spoken: JSON.parse(row.spoken) as Spoken }),
       }
     : {
         id: row.id,
@@ -315,6 +336,35 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         .all(from, until) as unknown as readonly StepRow[]
     ).map((row) => toStep(row));
 
+  const callsFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Call[] =>
+    (
+      database
+        .prepare(
+          "SELECT body FROM calls WHERE (position >= ? AND position < ?) OR (ended = 0 AND ? = ?) ORDER BY position",
+        )
+        .all(from, until, until, Number.MAX_SAFE_INTEGER) as unknown as readonly { readonly body: string }[]
+    ).map((row) => JSON.parse(row.body) as Call);
+
+  const callRow = (id: string): { readonly body: string; readonly ended: number } | undefined =>
+    database.prepare("SELECT body, ended FROM calls WHERE id = ?").get(id) as
+      { readonly body: string; readonly ended: number } | undefined;
+
+  const openCallRow = (): { readonly body: string } | undefined =>
+    database.prepare("SELECT body FROM calls WHERE ended = 0 ORDER BY position DESC LIMIT 1").get() as
+      { readonly body: string } | undefined;
+
+  const endCallNow = (call: Call): Call => {
+    if (call.ended_at !== undefined) return call;
+    const at = now();
+    const ended: Call = {
+      ...call,
+      ended_at: at,
+      duration_ms: Math.max(0, Date.parse(at) - Date.parse(call.started_at)),
+    };
+    append({ id: identifiers.event(), type: "call.ended", at, call: ended });
+    return ended;
+  };
+
   const asksFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Ask[] =>
     (
       database
@@ -401,13 +451,14 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           has_more: rows.length > snapshotSize,
           steps: window[0] ? [...stepsFrom(window[0].position)] : [],
           asks: window[0] ? [...asksFrom(window[0].position)] : [],
+          calls: window[0] ? [...callsFrom(window[0].position)] : [],
           turn: turn ? toLiveTurn(turn) : null,
           next: next.map((row) => row.message),
         },
       };
     },
 
-    acceptMessage: (id, text, answers, attachments = []) =>
+    acceptMessage: (id, text, answers, attachments = [], spoken) =>
       transaction(() => {
         const existing = messageRow(id);
         if (existing) {
@@ -421,9 +472,14 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         const named = answers === undefined ? undefined : askRow(answers);
         if (answers !== undefined && !named) return fail("unknown_ask");
         if (named && toAsk(named).secret && attachments.length > 0) return fail("secret_attachments");
+        const call = spoken ? callRow(spoken.call) : undefined;
+        if (spoken && call?.ended !== 0) return fail("call_not_on");
+        const audioRow = spoken?.audio === undefined ? undefined : attachmentRow(spoken.audio);
+        if (!audioRow && spoken?.audio !== undefined) return fail("unknown_attachment");
         const attachedRows = attachments.map((attachment) => attachmentRow(attachment));
         if (attachedRows.includes(undefined)) return fail("unknown_attachment");
-        if (attachedRows.some((row) => row?.message !== null)) return fail("attachment_taken");
+        if ([...attachedRows, audioRow].some((row) => row !== undefined && row.message !== null))
+          return fail("attachment_taken");
         const attached = attachedRows.flatMap((row) => (row ? [JSON.parse(row.body) as Attachment] : []));
         const isSecret = named !== undefined && toAsk(named).secret;
         const waiting = waitingRow();
@@ -437,11 +493,62 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           ...(waiting && { answers: toAsk(waiting).id }),
           ...(isSecret && { secret: true }),
           ...(attached.length > 0 && { attachments: attached }),
+          ...(spoken && {
+            spoken: {
+              call: spoken.call,
+              ...(audioRow && { audio: JSON.parse(audioRow.body) as Attachment }),
+              ...(spoken.corrections?.length && { corrections: [...spoken.corrections] }),
+            },
+          }),
         };
         append({ id: identifiers.event(), type: "message.accepted", at, message });
         if (waiting) endAsk(toAsk(waiting), "answered", id);
         return ok({ message, isNew: true });
       }),
+
+    startCall: (id) =>
+      transaction(() => {
+        const existing = callRow(id);
+        if (existing) return { call: JSON.parse(existing.body) as Call, isNew: false };
+        const open = openCallRow();
+        if (open) endCallNow(JSON.parse(open.body) as Call);
+        const at = now();
+        const call: Call = { id, started_at: at, position: nextSeq() };
+        append({ id: identifiers.event(), type: "call.started", at, call });
+        return { call, isNew: true };
+      }),
+
+    endCall: (id) =>
+      transaction(() => {
+        const row = callRow(id);
+        return row ? endCallNow(JSON.parse(row.body) as Call) : undefined;
+      }),
+
+    deleteCallAudio: (id) =>
+      transaction(() => {
+        const row = callRow(id);
+        if (!row) return;
+        const call = JSON.parse(row.body) as Call;
+        const audio = (
+          database
+            .prepare(
+              "SELECT json_extract(spoken, '$.audio.id') AS audio FROM messages WHERE json_extract(spoken, '$.call') = ?",
+            )
+            .all(id) as unknown as readonly { readonly audio: string | null }[]
+        )
+          .map((spokenRow) => spokenRow.audio)
+          .filter((audio) => audio !== null);
+        if (call.audio_deleted) return { call, audio };
+        const deleted: Call = { ...call, audio_deleted: true };
+        append({ id: identifiers.event(), type: "call.audio_deleted", at: now(), call: deleted });
+        return { call: deleted, audio };
+      }),
+
+    latestCall: () => {
+      const row = database.prepare("SELECT body FROM calls ORDER BY position DESC LIMIT 1").get() as
+        { readonly body: string } | undefined;
+      return row ? (JSON.parse(row.body) as Call) : undefined;
+    },
 
     listMessages: (before, limit) => {
       const anchor = database.prepare("SELECT position FROM messages WHERE id = ?").get(before) as
@@ -455,6 +562,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         messages: page.map((row) => toMessage(row)),
         steps: page[0] ? stepsFrom(page[0].position, anchor.position) : [],
         asks: page[0] ? asksFrom(page[0].position, anchor.position) : [],
+        calls: page[0] ? callsFrom(page[0].position, anchor.position) : [],
         hasMore: rows.length > limit,
       });
     },

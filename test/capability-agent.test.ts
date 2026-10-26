@@ -96,11 +96,12 @@ describe("capabilities, through the pinned Codex", () => {
       capabilities: findInstalled(path.join(import.meta.dirname, "support", "capabilities")).filter(
         ({ id }) => id === "echo",
       ),
-      createEngine: ({ settings, log, info, tools, skills }) =>
+      createEngine: ({ settings, log, info, tools, skills, inMind }) =>
         createCodexEngine({
           codexHome,
           workspace: path.join(home, "workspace"),
           instructions: () => `You are Ari, in a test.${skills()}`,
+          context: inMind,
           settings,
           log,
           info,
@@ -160,5 +161,18 @@ describe("capabilities, through the pinned Codex", () => {
     expect(latestInstructions).toContain("You are Ari, in a test.");
     expect(latestInstructions).not.toContain("- echo:");
     expect(existsSync(launcher)).toBe(true);
+  });
+
+  it("tells the agent a call is on, and when it has ended", async () => {
+    const call = randomUUID();
+    currentServer().store.startCall(call);
+    await send("[[reply]] Can you hear me?");
+    const during = currentModel().developerTexts().join("\n");
+    currentServer().store.endCall(call);
+    await send("[[reply]] Back at my desk.");
+    const after = currentModel().developerTexts().join("\n");
+
+    expect(during).toContain("You're on a call.");
+    expect(after.slice(after.lastIndexOf("<call>"))).toContain("The call has ended.");
   });
 });

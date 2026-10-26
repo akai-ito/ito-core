@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.7"
+  version: "0.8"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -26,6 +26,9 @@ info:
     - **Read memory:** what's in Ari's mind, the shelves and their pages, the journal, and what each
       change Ari made changed. Ari writes memory itself; the API only reads it.
     - **Choose the model** the agent runs on, and how hard it thinks, from those its engine offers.
+    - **Talk:** start and end a call with the agent, send what you say as spoken messages with their
+      audio and the words the phone corrected, and fetch a vocabulary from memory that steers
+      speech recognition toward your names.
 
     **Versioning.** Routes carry the protocol's major version, and every response carries an
     `Ito-Protocol` header with the full version. Until 1.0, every protocol change may break, so
@@ -68,6 +71,8 @@ tags:
     description: Read what Ari remembers. Ari writes it; apps only read.
   - name: Model
     description: Choose the model the agent runs on.
+  - name: Talk
+    description: Call the agent, speak your messages, and steer speech recognition with your words.
 paths:
   /.well-known/ito:
     get:
@@ -89,7 +94,7 @@ paths:
               schema: { $ref: "#/components/schemas/Discovery" }
               example:
                 product: ito
-                protocol: ["0.7"]
+                protocol: ["0.8"]
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/pair:
     post:
@@ -136,8 +141,8 @@ paths:
               schema: { $ref: "#/components/schemas/ServerInfo" }
               example:
                 name: studio
-                version: 0.7.0
-                protocol: "0.7"
+                version: 0.8.0
+                protocol: "0.8"
                 agent:
                   name: Ari
                   model: gpt-6.1-sol
@@ -786,6 +791,113 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/calls/{call}:
+    put:
+      tags: [Talk]
+      operationId: startCall
+      summary: Start a call
+      description: |
+        Starts a call under the id the app chose, so starting it again is safe. While it's on, the
+        agent speaks: short replies, no lists, the details in the chat, and notes as spoken lines.
+        Starting a call while another is on ends the earlier one first.
+      parameters:
+        - $ref: "#/components/parameters/Call"
+      responses:
+        "201":
+          description: The call started.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallResult" }
+        "200":
+          description: It had already started; nothing changed.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/calls/{call}/end:
+    post:
+      tags: [Talk]
+      operationId: endCall
+      summary: End a call
+      description: Ends the call, with its length. Ending one that has already ended changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/Call"
+      responses:
+        "200":
+          description: The call, as it ended.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/calls/{call}/audio:
+    delete:
+      tags: [Talk]
+      operationId: deleteCallAudio
+      summary: Delete a call's audio
+      description: Deletes the recordings of the call's spoken messages; their text stays. Deleting it again changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/Call"
+      responses:
+        "200":
+          description: The call, with its audio deleted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CallResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/vocabulary:
+    get:
+      tags: [Talk]
+      operationId: getVocabulary
+      summary: Words to steer speech recognition
+      description: |
+        Up to 300 terms from memory (page titles and aliases, with the kind from the shelf), from
+        words you keep using in conversation, and from fixes you've taught it. Each has a weight,
+        a few example phrases from real use, and the mishearings learnt for it.
+      responses:
+        "200":
+          description: The vocabulary, heaviest first.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Vocabulary" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/vocabulary/corrections:
+    post:
+      tags: [Talk]
+      operationId: teachVocabulary
+      summary: Teach it what you meant
+      description: |
+        Each pair is a word the recogniser heard and what you meant. When `meant` is a page's title
+        or alias, `heard` joins that page's mishearings; otherwise the pair is kept as a term of its
+        own. Teaching the same pair again changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Corrections" }
+            example: { corrections: [{ heard: Bara, meant: Bora }] }
+      responses:
+        "200":
+          description: Where each one went.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Corrections" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
 components:
   securitySchemes:
     token:
@@ -801,7 +913,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.7"
+        example: "0.8"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -834,6 +946,12 @@ components:
       schema:
         type: string
         format: uuid
+    Call:
+      name: call
+      in: path
+      required: true
+      description: The id the app chose when it started the call.
+      schema: { $ref: "events.schema.json#/$defs/CallId" }
     Capability:
       name: capability
       in: path
@@ -915,6 +1033,59 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
   schemas:
+    CallResult:
+      type: object
+      required: [call]
+      properties:
+        call: { $ref: "events.schema.json#/$defs/Call" }
+    Vocabulary:
+      type: object
+      required: [terms]
+      properties:
+        terms:
+          type: array
+          maxItems: 300
+          items: { $ref: "#/components/schemas/Term" }
+    Term:
+      type: object
+      required: [text, kind, weight, phrases, heard]
+      properties:
+        text: { description: The word or name as it should be written., type: string }
+        kind:
+          description: "Where it comes from: a memory shelf, or `term` for a word from conversation or a fix."
+          enum: [person, place, project, goal, topic, term]
+        weight:
+          description: How much it's used, from 0 to 1.
+          type: number
+          minimum: 0
+          maximum: 1
+        phrases:
+          description: Up to 3 short phrases that use it, from your own messages or its page.
+          type: array
+          maxItems: 3
+          items: { type: string, maxLength: 100 }
+        heard:
+          description: Mishearings learnt for it, to correct on the phone.
+          type: array
+          items: { type: string }
+        address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+    Corrections:
+      type: object
+      required: [corrections]
+      properties:
+        corrections:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            required: [heard, meant]
+            properties:
+              heard: { type: string, minLength: 1, maxLength: 100 }
+              meant: { type: string, minLength: 1, maxLength: 100 }
+              address:
+                description: In an answer, the page the mishearing joined, when there was one.
+                $ref: "events.schema.json#/$defs/MemoryAddress"
     ModelChoice:
       type: object
       required: [model, effort]
@@ -1282,6 +1453,19 @@ components:
           properties:
             attachments: { type: array, minItems: 1 }
       properties:
+        spoken:
+          description: |
+            For a message you spoke on a call: the call, the recording's attachment (uploaded first,
+            with an `audio/*` type) and the words the phone corrected in `text`. The agent gets the
+            text; it never gets the audio. A call that isn't on is an `invalid_request`.
+          type: object
+          required: [call]
+          properties:
+            call: { $ref: "events.schema.json#/$defs/CallId" }
+            audio: { $ref: "events.schema.json#/$defs/AttachmentId" }
+            corrections:
+              type: array
+              items: { $ref: "events.schema.json#/$defs/Correction" }
         id:
           description: A random UUID the app makes when you tap Send. It is the message's id and its retry key.
           type: string
@@ -1306,7 +1490,7 @@ components:
         message: { $ref: "events.schema.json#/$defs/Message" }
     MessagePage:
       type: object
-      required: [messages, steps, asks, has_more]
+      required: [messages, steps, asks, calls, has_more]
       properties:
         messages:
           description: Oldest first.
@@ -1320,6 +1504,10 @@ components:
           description: Every ask in the same span, in position order.
           type: array
           items: { $ref: "events.schema.json#/$defs/Ask" }
+        calls:
+          description: Every call that started in the same span, in position order.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Call" }
         has_more:
           description: Whether even older messages exist.
           type: boolean

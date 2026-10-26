@@ -112,4 +112,11 @@ export const migrations: readonly string[] = [
     SELECT 'capability:reports:on', 'true' FROM settings WHERE key = 'reports_github_token' AND value != '';
   DELETE FROM settings WHERE key = 'reports_github_token';`,
   `ALTER TABLE memory_changes ADD COLUMN before_sha TEXT;`,
+  `ALTER TABLE messages ADD COLUMN spoken TEXT;
+  CREATE TABLE calls (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    ended INTEGER NOT NULL DEFAULT 0
+  );`,
 ];
