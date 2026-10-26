@@ -5,6 +5,7 @@ import path from "node:path";
 import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
 import { findInstalled } from "#capabilities/installed.ts";
+import { createCannedSpeech } from "./speech.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
@@ -119,6 +120,8 @@ export const replay = async (name: string): Promise<void> => {
   const apns = await startFakeApns();
   const deviceKey = createCell<DeviceKey | undefined>(undefined);
   const tokens = createCell<ReadonlyMap<string, string>>(new Map());
+  const isSpeechReady = createCell(true);
+  const speech = createCannedSpeech(new Uint8Array(fixture("spoken-sentence.wav")), () => isSpeechReady.get());
 
   const createReplayServer = (): Server =>
     createServer({
@@ -131,6 +134,7 @@ export const replay = async (name: string): Promise<void> => {
       push: { hosts: { production: apns.origin, sandbox: apns.origin } },
       capabilities,
       timeZone: "UTC",
+      createSpeech: () => speech,
     });
 
   const listen = async (server: Server): Promise<void> => {
@@ -262,6 +266,12 @@ export const replay = async (name: string): Promise<void> => {
           const seeded = await (live.get()?.server.memory.seed(page) ?? Promise.resolve(undefined));
           check(seeded?.ok === false ? `memory refused ${page.address}: ${seeded.failure}` : undefined, index);
         }
+        return;
+      }
+      case "speech_loading":
+      case "speech_ready": {
+        await advance(time);
+        isSpeechReady.set(step.world === "speech_ready");
         return;
       }
       case "capability_on": {

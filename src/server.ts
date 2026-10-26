@@ -8,6 +8,8 @@ import { writeLauncher } from "#capabilities/launcher.ts";
 import { writeSkills } from "#capabilities/skills.ts";
 import { createTrail } from "#capabilities/trail.ts";
 import type { Embedder } from "#memory/embedder.ts";
+import { voices, defaultVoice } from "#speech/voices.ts";
+import type { Speech } from "#speech/speech.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
@@ -43,6 +45,7 @@ export type ServerOptions = {
   readonly push?: Partial<PushOptions>;
   readonly capabilities?: readonly Installed[];
   readonly embedder: Embedder;
+  readonly createSpeech?: (info: Info, log: Log) => Speech;
   readonly timeZone?: string;
 };
 
@@ -67,6 +70,13 @@ export type Server = {
   readonly memory: Memory;
   readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
+};
+
+const silentSpeech: Speech = {
+  voices,
+  defaultVoice,
+  speak: () => Promise.resolve({ ok: false, failure: { code: "loading", detail: "This server has no voice." } }),
+  warm: () => Promise.resolve(),
 };
 
 const talkRules = readFileSync(new URL("../agent/talk.md", import.meta.url), "utf8").trim();
@@ -167,6 +177,7 @@ export const createServer = (options: ServerOptions): Server => {
     attachments,
     host,
     memory,
+    speech: options.createSpeech?.(info, log) ?? silentSpeech,
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,

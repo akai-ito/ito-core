@@ -16,6 +16,7 @@ import { createToken, hashToken, tokenSetting } from "#http/auth.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { createServer, type EngineContext, type ServerOptions } from "#server.ts";
 import { createLocalEmbedder, wordEmbedder } from "#memory/embedder.ts";
+import { createKokoroSpeech } from "#speech/speech.ts";
 
 export const defaultPort = 8787;
 
@@ -96,6 +97,7 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
   const paths = toPaths(io.environment);
   const server = createServer({
     embedder: engine === "demo" ? wordEmbedder : createLocalEmbedder(path.join(paths.home, "models")),
+    createSpeech: (info, log) => createKokoroSpeech(path.join(paths.home, "models"), info, log),
     dataDirectory: paths.home,
     createEngine: toEngineFactory(engine, paths),
     name,

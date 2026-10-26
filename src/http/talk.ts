@@ -3,9 +3,12 @@ import type { Attachments } from "#attachments/attachments.ts";
 import { toCommandError } from "#conversation/failures.ts";
 import type { RouteSchema } from "#http/validation.ts";
 import type { Memory } from "#memory/memory.ts";
+import type { Speech } from "#speech/speech.ts";
 import type { Store } from "#store/store.ts";
 
 type CallPath = { readonly call: string };
+
+type SpeechBody = { readonly text: string; readonly voice?: string };
 
 type CorrectionsBody = { readonly corrections: readonly { readonly heard: string; readonly meant: string }[] };
 
@@ -13,6 +16,7 @@ export type TalkOptions = {
   readonly store: Store;
   readonly attachments: Attachments;
   readonly memory: Memory;
+  readonly speech: Speech;
   readonly schemaFor: (operationId: string) => RouteSchema;
 };
 
@@ -20,8 +24,12 @@ const noCall = (call: string): { readonly error: ReturnType<typeof toCommandErro
   error: toCommandError("not_found", `No call ${call}.`),
 });
 
-export const registerTalk = (app: FastifyInstance, { store, attachments, memory, schemaFor }: TalkOptions): void => {
+export const registerTalk = (
+  app: FastifyInstance,
+  { store, attachments, memory, speech, schemaFor }: TalkOptions,
+): void => {
   app.put<{ Params: CallPath }>("/v0/calls/:call", { schema: schemaFor("startCall") }, (request, reply) => {
+    void speech.warm();
     const { call, isNew } = store.startCall(request.params.call);
     return reply.code(isNew ? 201 : 200).send({ call });
   });
@@ -43,6 +51,26 @@ export const registerTalk = (app: FastifyInstance, { store, attachments, memory,
   );
 
   app.get("/v0/vocabulary", async () => ({ terms: await memory.vocabulary() }));
+
+  app.get("/v0/voices", () => {
+    void speech.warm();
+    return { voices: speech.voices, default: speech.defaultVoice };
+  });
+
+  app.post<{ Body: SpeechBody }>("/v0/speech", { schema: schemaFor("speak") }, async (request, reply) => {
+    const spoken = await speech.speak(request.body.text, request.body.voice);
+    if (spoken.ok) return reply.type("audio/wav").send(Buffer.from(spoken.value));
+    const { code, detail } = spoken.failure;
+    if (code === "loading") {
+      return reply
+        .code(503)
+        .header("retry-after", "10")
+        .send({ error: toCommandError("unavailable", detail, "Ari's voice is still loading.") });
+    }
+    return code === "unknown_voice"
+      ? reply.code(400).send({ error: toCommandError("invalid_request", detail) })
+      : reply.code(500).send({ error: toCommandError("internal", detail) });
+  });
 
   app.post<{ Body: CorrectionsBody }>(
     "/v0/vocabulary/corrections",

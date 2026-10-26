@@ -18,6 +18,7 @@ import { registerMemory } from "#http/memory.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
+import type { Speech } from "#speech/speech.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
@@ -39,6 +40,7 @@ export type AppOptions = {
   readonly attachments: Attachments;
   readonly host: Host;
   readonly memory: Memory;
+  readonly speech: Speech;
   readonly models: ListModels;
   readonly heartbeatMs: number;
   readonly logger: FastifyServerOptions["logger"];
@@ -75,8 +77,22 @@ const isTooLong = (error: FastifyError): boolean =>
   error.validation?.some((issue) => issue.keyword === "maxLength" && issue.instancePath === "/text") ?? false;
 
 export const createApp = (options: AppOptions): FastifyInstance => {
-  const { store, turns, clock, schemas, info, gate, presence, attachments, host, memory, models, heartbeatMs, logger } =
-    options;
+  const {
+    store,
+    turns,
+    clock,
+    schemas,
+    info,
+    gate,
+    presence,
+    attachments,
+    host,
+    memory,
+    speech,
+    models,
+    heartbeatMs,
+    logger,
+  } = options;
   const protocol = protocolVersion(schemas.document);
   const routeSchemas = toRouteSchemas(schemas);
   const schemaFor = (operationId: string): RouteSchema => routeSchemas.get(operationId) ?? {};
@@ -109,7 +125,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error.statusCode === 413 && request.url.startsWith("/v0/attachments/"))
       return reply.code(413).send({ error: tooLargeAttachment });
-    if (isTooLong(error) || error.statusCode === 413)
+    if ((isTooLong(error) && request.url.startsWith("/v0/messages")) || error.statusCode === 413)
       return reply.code(413).send(toErrorResult("too_large", error.message));
     if (error.validation || (error.statusCode !== undefined && error.statusCode < 500)) {
       return reply.code(400).send(toErrorResult("invalid_request", error.message));
@@ -147,7 +163,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerCapabilities(app, host, schemaFor);
   registerMemory(app, memory, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
-  registerTalk(app, { store, attachments, memory, schemaFor });
+  registerTalk(app, { store, attachments, memory, speech, schemaFor });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);
