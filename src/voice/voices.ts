@@ -1,4 +1,5 @@
 import type { Voice } from "#protocol/types.ts";
+import type { Settings } from "#store/store.ts";
 
 export const defaultVoice = "af_heart";
 
@@ -33,4 +34,14 @@ export const voices: readonly Voice[] = [
   { id: "bm_fable", name: "Fable", accent: "british" },
 ];
 
+export const voiceSetting = "voice_choice";
+
 export const isKnownVoice = (voice: string): boolean => voices.some(({ id }) => id === voice);
+
+export const unknownVoice = (voice: string): string =>
+  `There's no voice called ${voice}: choose one from GET /v0/voices.`;
+
+export const chosenVoice = (settings: Settings): string => {
+  const chosen = settings.setting(voiceSetting);
+  return chosen !== undefined && isKnownVoice(chosen) ? chosen : defaultVoice;
+};

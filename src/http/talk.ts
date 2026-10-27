@@ -3,12 +3,15 @@ import type { Attachments } from "#attachments/attachments.ts";
 import { toCommandError } from "#conversation/failures.ts";
 import type { RouteSchema } from "#http/validation.ts";
 import type { Memory } from "#memory/memory.ts";
-import type { Speech } from "#speech/speech.ts";
 import type { Store } from "#store/store.ts";
+import type { VoiceLoop } from "#voice/loop.ts";
+import { chosenVoice, isKnownVoice, unknownVoice, voices, voiceSetting } from "#voice/voices.ts";
 
 type CallPath = { readonly call: string };
 
 type SpeechBody = { readonly text: string; readonly voice?: string };
+
+type VoiceBody = { readonly voice: string };
 
 type CorrectionsBody = { readonly corrections: readonly { readonly heard: string; readonly meant: string }[] };
 
@@ -16,7 +19,7 @@ export type TalkOptions = {
   readonly store: Store;
   readonly attachments: Attachments;
   readonly memory: Memory;
-  readonly speech: Speech;
+  readonly voice: VoiceLoop;
   readonly schemaFor: (operationId: string) => RouteSchema;
 };
 
@@ -26,10 +29,10 @@ const noCall = (call: string): { readonly error: ReturnType<typeof toCommandErro
 
 export const registerTalk = (
   app: FastifyInstance,
-  { store, attachments, memory, speech, schemaFor }: TalkOptions,
+  { store, attachments, memory, voice, schemaFor }: TalkOptions,
 ): void => {
   app.put<{ Params: CallPath }>("/v0/calls/:call", { schema: schemaFor("startCall") }, (request, reply) => {
-    void speech.warm();
+    void voice.refreshVocabulary();
     const { call, isNew } = store.startCall(request.params.call);
     return reply.code(isNew ? 201 : 200).send({ call });
   });
@@ -52,29 +55,37 @@ export const registerTalk = (
 
   app.get("/v0/vocabulary", async () => ({ terms: await memory.vocabulary() }));
 
-  app.get("/v0/voices", () => {
-    void speech.warm();
-    return { voices: speech.voices, default: speech.defaultVoice };
+  app.get("/v0/voices", () => ({ voices, chosen: chosenVoice(store), ...voice.readiness() }));
+
+  app.put<{ Body: VoiceBody }>("/v0/voice", { schema: schemaFor("chooseVoice") }, (request, reply) => {
+    const chosen = request.body.voice;
+    if (!isKnownVoice(chosen))
+      return reply.code(400).send({ error: toCommandError("invalid_request", unknownVoice(chosen)) });
+    store.setSetting(voiceSetting, chosen);
+    return { voice: chosen };
   });
 
   app.post<{ Body: SpeechBody }>("/v0/speech", { schema: schemaFor("speak") }, async (request, reply) => {
-    const spoken = await speech.speak(request.body.text, request.body.voice);
+    const chosen = request.body.voice ?? chosenVoice(store);
+    if (!isKnownVoice(chosen))
+      return reply.code(400).send({ error: toCommandError("invalid_request", unknownVoice(chosen)) });
+    const spoken = await voice.speak(request.body.text, chosen);
     if (spoken.ok) return reply.type("audio/wav").send(Buffer.from(spoken.value));
     const { code, detail } = spoken.failure;
-    if (code === "loading") {
-      return reply
-        .code(503)
-        .header("retry-after", "10")
-        .send({ error: toCommandError("unavailable", detail, "Ari's voice is still loading.") });
-    }
-    return code === "unknown_voice"
-      ? reply.code(400).send({ error: toCommandError("invalid_request", detail) })
-      : reply.code(500).send({ error: toCommandError("internal", detail) });
+    if (code === "failed") return reply.code(500).send({ error: toCommandError("internal", detail) });
+    const unavailable = { error: toCommandError("unavailable", detail, "Ari's voice isn't ready.") };
+    return voice.readiness().state === "loading"
+      ? reply.code(503).header("retry-after", "10").send(unavailable)
+      : reply.code(503).send(unavailable);
   });
 
   app.post<{ Body: CorrectionsBody }>(
     "/v0/vocabulary/corrections",
     { schema: schemaFor("teachVocabulary") },
-    async (request) => ({ corrections: await memory.learn(request.body.corrections) }),
+    async (request) => {
+      const corrections = await memory.learn(request.body.corrections);
+      void voice.refreshVocabulary();
+      return { corrections };
+    },
   );
 };

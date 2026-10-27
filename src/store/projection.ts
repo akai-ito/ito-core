@@ -138,6 +138,9 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       }
       return;
     }
+    case "voice.status": {
+      return;
+    }
     case "turn.ended": {
       database
         .prepare("UPDATE turns SET outcome = ?, error = ?, status = NULL WHERE id = ?")

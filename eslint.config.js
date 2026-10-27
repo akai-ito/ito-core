@@ -14,7 +14,7 @@ const shapeRules = [
 ];
 
 export default defineConfig(
-  { ignores: ["node_modules/", "site/", "protocol/types.ts", "src/engine/codex/bindings/"] },
+  { ignores: ["node_modules/", "site/", "voice/", "protocol/types.ts", "src/engine/codex/bindings/"] },
   js.configs.recommended,
   {
     files: ["**/*.ts"],
@@ -44,9 +44,9 @@ export default defineConfig(
       "unicorn/prefer-smaller-scope": "off",
     },
   },
-  { files: ["src/cell.ts", "src/speech/speech.ts"], rules: { "functional/immutable-data": "off" } },
+  { files: ["src/cell.ts"], rules: { "functional/immutable-data": "off" } },
   {
-    files: ["test/support/capabilities/*.ts"],
+    files: ["test/support/capabilities/*.ts", "test/support/voice/*.ts"],
     rules: { "functional/immutable-data": "off", "unicorn/no-process-exit": "off" },
   },
   { files: ["*.config.ts"], rules: { "no-restricted-syntax": ["error", ...shapeRules] } },

@@ -5,11 +5,12 @@ import path from "node:path";
 import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
 import { findInstalled } from "#capabilities/installed.ts";
-import { createCannedSpeech } from "./speech.ts";
+import { createCannedVoice } from "./canned-voice.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
 import type { Attachment } from "#protocol/types.ts";
+import type { Readiness, VoiceContext } from "#voice/loop.ts";
 import { apnsSettings } from "#notifications/apns.ts";
 import { openNotification } from "#notifications/crypto.ts";
 import type { Envelope } from "#notifications/notifier.ts";
@@ -120,8 +121,9 @@ export const replay = async (name: string): Promise<void> => {
   const apns = await startFakeApns();
   const deviceKey = createCell<DeviceKey | undefined>(undefined);
   const tokens = createCell<ReadonlyMap<string, string>>(new Map());
-  const isSpeechReady = createCell(true);
-  const speech = createCannedSpeech(new Uint8Array(fixture("spoken-sentence.wav")), () => isSpeechReady.get());
+  const voiceReadiness = createCell<Readiness>({ state: "ready" });
+  const voiceContext = createCell<VoiceContext | undefined>(undefined);
+  const spokenWav = new Uint8Array(fixture("spoken-sentence.wav"));
 
   const createReplayServer = (): Server =>
     createServer({
@@ -134,7 +136,10 @@ export const replay = async (name: string): Promise<void> => {
       push: { hosts: { production: apns.origin, sandbox: apns.origin } },
       capabilities,
       timeZone: "UTC",
-      createSpeech: () => speech,
+      createVoice: (context) => {
+        voiceContext.set(context);
+        return createCannedVoice(spokenWav, () => voiceReadiness.get());
+      },
     });
 
   const listen = async (server: Server): Promise<void> => {
@@ -268,10 +273,17 @@ export const replay = async (name: string): Promise<void> => {
         }
         return;
       }
-      case "speech_loading":
-      case "speech_ready": {
+      case "voice_loading":
+      case "voice_ready":
+      case "voice_failed": {
         await advance(time);
-        isSpeechReady.set(step.world === "speech_ready");
+        const { reason } = step as unknown as { readonly reason?: string };
+        const readiness: Readiness = {
+          state: step.world === "voice_ready" ? "ready" : step.world === "voice_loading" ? "loading" : "failed",
+          ...(reason !== undefined && { reason }),
+        };
+        voiceReadiness.set(readiness);
+        voiceContext.get()?.onReadiness(readiness);
         return;
       }
       case "capability_on": {

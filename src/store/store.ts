@@ -27,6 +27,7 @@ import type {
   Status,
   Step,
   StepKind,
+  VoiceState,
 } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { AskFields, StepFacts } from "#engine/engine.ts";
@@ -113,6 +114,7 @@ export type Store = Settings & {
   readonly startCall: (id: string) => StartedCall;
   readonly endCall: (id: string) => Call | undefined;
   readonly deleteCallAudio: (id: string) => DeletedAudio | undefined;
+  readonly recordVoiceStatus: (state: VoiceState, reason?: string) => void;
   readonly latestCall: () => Call | undefined;
   readonly saveAttachment: (attachment: Attachment, sha256: string) => Result<SavedAttachment, "id_conflict">;
   readonly findAttachment: (id: string) => { readonly attachment: Attachment; readonly sha256: string } | undefined;
@@ -524,6 +526,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         const row = callRow(id);
         return row ? endCallNow(JSON.parse(row.body) as Call) : undefined;
       }),
+
+    recordVoiceStatus: (state, reason) => {
+      record((stamp) => ({ ...stamp, type: "voice.status", state, ...(reason !== undefined && { reason }) }));
+    },
 
     deleteCallAudio: (id) =>
       transaction(() => {

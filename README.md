@@ -128,9 +128,28 @@ node bin/ito.ts push setup --key AuthKey_ABC123DEFG.p8 --key-id ABC123DEFG \
 The box needs to reach `api.push.apple.com` on port 443. Notifications travel encrypted with a key
 each phone makes, so Apple only ever carries ciphertext.
 
+Ari's voice runs on the box's NVIDIA GPU, in a sidecar in [voice](voice) that `ito serve` starts:
+Silero VAD and Smart Turn hear when you've finished, Parakeet recognises what you said, steered
+toward the names in your memory, and Kokoro speaks. It needs a driver for CUDA 12 on a Pascal card,
+such as a GTX 1050 Ti, or newer, and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+With `ito serve` stopped, one command installs it and measures the box:
+
+```sh
+node bin/ito.ts voice check
+```
+
+It installs the Python packages (about 6 GB the first time), downloads the models (about 3 GB),
+loads each on the GPU, and times listening, turn-taking, recognition with and without your
+vocabulary, and speaking. It prints a report and keeps it in `~/.ito/voice-check.md`; the details,
+which quote your memory, stay in `~/.ito/voice-check-details.md`. Then start `ito serve` again. Ari
+offers Talk only once the voice is ready, and otherwise says why. If espeak-ng, which says names
+Kokoro doesn't know, won't load from its Python package, install it with `sudo apt install
+espeak-ng`.
+
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, the agent's working directory in `workspace`, its memory in
-`thread`, the embedding model in `models`, and each capability's own folder in `capabilities`.
+`thread`, the embedding and voice models in `models`, and each capability's own folder in
+`capabilities`.
 
 ## What it will do
 
