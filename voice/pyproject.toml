@@ -1,0 +1,59 @@
+[project]
+name = "ito-voice"
+version = "0.1.0"
+description = "Ito's voice loop on the GPU: turn-taking, recognition and Ari's voice."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+  "espeakng-loader==0.2.4",
+  "huggingface-hub==2.3.0",
+  "kokoro==0.9.4",
+  "misaki[en]==0.9.4",
+  "nemo-toolkit[asr]==3.0.0",
+  "numpy==2.5.4",
+  "omegaconf==2.3.0",
+  "onnxruntime==1.31.1",
+  "scipy==1.18.1",
+  "silero-vad==6.2.3",
+  "torch==2.14.1",
+  "transformers==5.21.0",
+]
+
+[dependency-groups]
+dev = ["pyright==1.1.414", "pytest==9.1.1", "ruff==0.17.3"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["CPY001", "D", "PLR0915", "COM812", "T201", "S603", "S607", "PLR2004", "ANN401", "PLR0913", "PLC0415", "BLE001", "TRY003", "EM101", "EM102", "FBT001", "FBT002"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "INP001"]
+
+[tool.pyright]
+include = ["ito_voice", "tests"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
