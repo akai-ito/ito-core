@@ -21,6 +21,7 @@ import type {
   StatusKind,
   Step,
   StepKind,
+  VoiceState,
 } from "#protocol/types.ts";
 import type { Event, Line } from "./spec.ts";
 import { fixtureDirectory } from "./transcript-files.ts";
@@ -137,6 +138,7 @@ export type Transcript = {
   readonly startCall: () => string;
   readonly endCall: (call: string) => void;
   readonly deleteCallAudio: (call: string) => void;
+  readonly voiceStatus: (state: VoiceState, reason?: string) => void;
   readonly change: () => string;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
@@ -752,6 +754,12 @@ export const createTranscript = (header: Header): Transcript => {
     response(200, { call: endCallNow(id) });
   };
 
+  const voiceStatus = (state: VoiceState, reason?: string): void => {
+    const fields = reason === undefined ? {} : { reason };
+    world(`voice_${state}`, fields);
+    emit("voice.status", { state, ...fields });
+  };
+
   const deleteCallAudio = (id: string): void => {
     request("DELETE", `/v0/calls/${id}/audio`);
     const call = callById(id);
@@ -1113,6 +1121,7 @@ export const createTranscript = (header: Header): Transcript => {
     startCall,
     endCall,
     deleteCallAudio,
+    voiceStatus,
     request,
     response,
     connect,

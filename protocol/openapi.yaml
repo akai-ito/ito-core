@@ -29,8 +29,8 @@ info:
     - **Talk:** start and end a call with the agent, send what you say as spoken messages with their
       audio and the words the phone corrected, and fetch a vocabulary from memory that steers
       speech recognition toward your names.
-    - **Hear Ari:** turn its words into speech with the server's own voice, a sentence at a time,
-      and list the voices to choose from.
+    - **Ari's voice:** whether the server can hold a call, the voices Ari can speak in, choosing
+      one, and hearing a preview.
 
     **Versioning.** Routes carry the protocol's major version, and every response carries an
     `Ito-Protocol` header with the full version. Until 1.0, every protocol change may break, so
@@ -904,18 +904,18 @@ paths:
     post:
       tags: [Talk]
       operationId: speak
-      summary: Say something in Ari's voice
+      summary: Hear a preview of Ari's voice
       description: |
-        Renders the text with the server's speech model and answers with a WAV: 24 kHz, mono,
-        16-bit PCM. Send one sentence at a time, and ask for the next while the current one plays.
-        The text is spoken as given, so strip Markdown first. While the model is still loading, the
-        answer is `unavailable` with `Retry-After`; use the phone's own voice meanwhile.
+        Says the text in Ari's voice and answers with a WAV: 24 kHz, mono, 16-bit PCM. It's for
+        previewing voices in Settings. Left out, `voice` is the one chosen with `PUT /v0/voice`. While
+        the voice isn't ready, the answer is `unavailable`, with `Retry-After` while it's loading and
+        the reason in `detail`.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/SpeechRequest" }
-            example: { text: "She wants one more round on your design.", voice: af_heart }
+            example: { text: "Hi, I'm Ari. This is how I sound.", voice: bf_emma }
       responses:
         "200":
           description: The speech.
@@ -931,15 +931,40 @@ paths:
     get:
       tags: [Talk]
       operationId: listVoices
-      summary: The voices Ari can speak in
+      summary: Ari's voices, and whether the server can talk
+      description: |
+        Every voice, the one chosen, and the voice's state: offer Talk only while it's `ready`, and
+        otherwise show the reason. `voice.status` events say when the state changes.
       responses:
         "200":
-          description: Every voice, and the one used when none is named.
+          description: The voices and the voice's state.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/VoiceList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/voice:
+    put:
+      tags: [Talk]
+      operationId: chooseVoice
+      summary: Choose Ari's voice
+      description: One choice for the whole server, kept across restarts. It applies from the next sentence Ari says.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VoiceChoice" }
+            example: { voice: bf_emma }
+      responses:
+        "200":
+          description: The choice, as saved.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceChoice" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
 components:
   securitySchemes:
@@ -1081,23 +1106,30 @@ components:
       required: [text]
       properties:
         text:
-          description: One sentence or so, as it should be spoken.
+          description: What to say, as it should be spoken.
           type: string
           minLength: 1
           maxLength: 500
         voice:
-          description: "A voice's id from `GET /v0/voices`. Left out, the default voice speaks."
+          description: "A voice's id from `GET /v0/voices`. Left out, the chosen voice speaks."
           type: string
     VoiceList:
       type: object
-      required: [voices, default]
+      required: [voices, chosen, state]
       properties:
         voices:
           type: array
           items: { $ref: "#/components/schemas/Voice" }
-        default:
-          description: The id of the voice used when a request names none.
+        chosen:
+          description: The id of the voice Ari speaks in.
           type: string
+        state: { $ref: "events.schema.json#/$defs/VoiceState" }
+        reason: { $ref: "events.schema.json#/$defs/VoiceReason" }
+    VoiceChoice:
+      type: object
+      required: [voice]
+      properties:
+        voice: { description: "A voice's id from `GET /v0/voices`.", type: string, minLength: 1 }
     Voice:
       type: object
       required: [id, name, accent]

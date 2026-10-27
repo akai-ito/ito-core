@@ -49,6 +49,7 @@ request that shows its own `Authorization` header uses the token it names.
 | `notifications_allowed` | you allow notifications when the app offers them |
 | `notification_answered` | you answer an ask from its notification, without opening the app |
 | `pairing_code_shown` | `ito pair` shows a QR code holding the address and this `code` |
+| `voice_loading`, `voice_ready`, `voice_failed` | the server's voice starts loading, becomes ready, or fails; `reason` says why it isn't ready |
 
 ## Ids
 
