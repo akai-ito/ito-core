@@ -57,7 +57,10 @@ background_text = (
 test_voices = ["af_heart", "bf_emma", "am_michael", "bm_george"]
 strengths = [1.0, 2.0, 3.0]
 pauses_ms = [100, 200, 300]
-default_pause_ms = 200
+default_pause_ms = 300
+gate_window = heard_rate
+gate_every = 8
+enrolled_voice = "af_heart"
 hold_ms = 3000
 around_db = 12
 vocabulary_sample = 40
@@ -279,6 +282,7 @@ def check_downloads(report: Report) -> None:
         ("Parakeet", lambda: snapshot_download(models.parakeet_model)),
         ("Kokoro", lambda: snapshot_download(models.kokoro_repo, allow_patterns=["*.json", "*.pth", "voices/*.pt"])),
         ("Smart Turn", lambda: hf_hub_download(models.turn_repo, models.turn_file)),
+        ("TitaNet", lambda: snapshot_download(models.voiceprint_model)),
     ]
     for name, download in downloads:
         with report.step(lines, f"Downloading {name}"):
@@ -575,7 +579,15 @@ def scaled_bed(around: np.ndarray, speech: np.ndarray, length: int) -> np.ndarra
     return (bed * np.sqrt(np.mean(speech**2) / np.mean(bed**2) / 10 ** (around_db / 10))).astype(np.float32)
 
 
-def follow_turn(vad: Any, turn: models.TurnModel, speech: np.ndarray, pause_ms: int, around: np.ndarray | None) -> Turn:
+def follow_turn(
+    vad: Any,
+    turn: models.TurnModel,
+    speech: np.ndarray,
+    pause_ms: int,
+    around: np.ndarray | None,
+    *,
+    is_you: Callable[[np.ndarray], bool] | None = None,
+) -> Turn:
     lead = np.zeros(heard_rate // 2, dtype=np.float32)
     tail = np.zeros(hold_ms * heard_rate // 1000 + heard_rate, dtype=np.float32)
     timeline = np.concatenate([lead, speech, tail])
@@ -589,10 +601,14 @@ def follow_turn(vad: Any, turn: models.TurnModel, speech: np.ndarray, pause_ms: 
     asked = False
     probability: float | None = None
     decisions: list[float] = []
+    you = True
     for index in range(timeline.shape[0] // frame):
-        chunk = timeline[index * frame : (index + 1) * frame]
-        now = (index + 1) * frame / heard_rate
-        if models.speech_probability(vad, chunk) >= models.speech_threshold:
+        end = (index + 1) * frame
+        chunk = timeline[index * frame : end]
+        now = end / heard_rate
+        if is_you is not None and index % gate_every == 0:
+            you = is_you(timeline[max(0, end - gate_window) : end])
+        if models.speech_probability(vad, chunk) >= models.speech_threshold and you:
             started = index * frame if started is None else started
             quiet, asked = 0, False
             continue
@@ -712,6 +728,124 @@ def check_turns(report: Report, loaded: Models) -> dict[str, float]:
     return found
 
 
+def windows_of(samples: np.ndarray) -> list[np.ndarray]:
+    hop = gate_window // 2
+    return [samples[start : start + gate_window] for start in range(0, samples.shape[0] - gate_window + 1, hop)]
+
+
+def best_threshold(yours: Sequence[float], others: Sequence[float]) -> tuple[float, float, float]:
+    def score(threshold: float) -> tuple[float, float, float]:
+        passed = sum(value >= threshold for value in yours) / len(yours)
+        refused = sum(value < threshold for value in others) / len(others)
+        return passed + refused, passed, 1 - refused
+
+    candidates = sorted({*yours, *others})
+    chosen = max(candidates, key=lambda threshold: score(threshold)[0])
+    _, passed, let_in = score(chosen)
+    return chosen, passed, let_in
+
+
+def check_voiceprints(report: Report, loaded: Models) -> dict[str, float]:
+    lines = report.section("Your voice only (TitaNet)")
+    found: dict[str, float] = {}
+    vad, turn, speaker = loaded.vad, loaded.turn, loaded.speaker
+    if vad is None or turn is None or speaker is None:
+        lines.append("- Skipped: Silero, Smart Turn or Kokoro didn't load.")
+        return found
+    lines.append(
+        f"Kokoro's {enrolled_voice} stands in for you: enrolled from 3 sentences, then compared, a second at a "
+        "time, with other sentences of its own and with other voices. A real voice from your recordings will differ."
+    )
+    lines.append("")
+    model: Any = None
+    with report.step(lines, "Loading TitaNet"):
+        model, ms = timed(models.load_voiceprints, "cpu")
+        lines.append(f"- TitaNet on the CPU: {ms / 1000:.1f} s")
+    if model is None:
+        return found
+    if loaded.device == "cuda":
+        with report.step(lines, "TitaNet on the GPU"):
+            before = gpu_used()
+            on_gpu = models.load_voiceprints("cuda")
+            one = np.zeros(gate_window, dtype=np.float32)
+            models.voiceprint(on_gpu, one)
+            runs = [timed(models.voiceprint, on_gpu, one)[1] for _ in range(5)]
+            lines.append(f"- On the GPU instead: {gib(gpu_used() - before)} of GPU memory, {spread(runs)} per second")
+            del on_gpu
+            gc.collect()
+            torch.cuda.empty_cache()
+    with report.step(lines, "Comparing voices"):
+        enrolled = models.voiceprint(
+            model, np.concatenate([render(speaker, text, enrolled_voice) for text in everyday[:3]])
+        )
+        background = render(speaker, background_text, "am_michael")
+        yours = [render(speaker, text, enrolled_voice) for text in everyday[3:]]
+        groups = [
+            ("You, other sentences", yours, True),
+            (
+                f"You, with another voice {around_db} dB quieter",
+                [mix(clip, background, around_db) for clip in yours],
+                True,
+            ),
+            (
+                "Someone who sounds like you (af_bella)",
+                [render(speaker, text, "af_bella") for text in everyday[3:]],
+                False,
+            ),
+            (
+                "Someone else (am_michael, bf_emma, af_sarah)",
+                [
+                    render(speaker, text, voice)
+                    for text, voice in zip(everyday[3:], ["am_michael", "bf_emma", "af_sarah"], strict=True)
+                ],
+                False,
+            ),
+        ]
+        times: list[float] = []
+        similar: dict[bool, list[float]] = {True: [], False: []}
+        lines.append("| 1 s of speech | Likeness to you, median (min, max) |")
+        lines.append("| --- | --- |")
+        for label, clips, is_yours in groups:
+            values: list[float] = []
+            for window in [window for clip in clips for window in windows_of(clip)]:
+                print_, ms = timed(models.voiceprint, model, window)
+                times.append(ms)
+                values.append(float(enrolled @ print_))
+            similar[is_yours] += values
+            lines.append(f"| {label} | {statistics.median(values):.2f} ({min(values):.2f}, {max(values):.2f}) |")
+        threshold, passed, let_in = best_threshold(similar[True], similar[False])
+        found |= {"voiceprint_threshold": threshold, "voiceprint_passed": passed, "voiceprint_let_in": let_in}
+        lines.append("")
+        lines.append(
+            f"- At a likeness of {threshold:.2f}, {passed:.0%} of your seconds pass and {let_in:.0%} of others' do"
+        )
+        lines.append(f"- TitaNet: {spread(times)} per second of speech, on the CPU")
+
+        def is_you(window: np.ndarray) -> bool:
+            return float(enrolled @ models.voiceprint(model, window)) >= threshold
+
+        finished_clips = [render(speaker, text, enrolled_voice) for text in everyday]
+        unfinished_clips = [render(speaker, text, enrolled_voice) for text in unfinished]
+        lines.append("")
+        lines.append(
+            f"Turns in {enrolled_voice}'s voice beside another voice, with a {default_pause_ms} ms pause before Smart "
+            "Turn, without and with the gate: a sound holds the turn open only while the last second sounds like you."
+        )
+        lines.append("")
+        lines.append("| Beside another voice | 6 finished turns: ended | 6 unfinished turns |")
+        lines.append("| --- | --- | --- |")
+        for label, gate in [("Without the gate", None), ("With the gate", is_you)]:
+            done = [follow_turn(vad, turn, clip, default_pause_ms, background, is_you=gate) for clip in finished_clips]
+            held = [
+                follow_turn(vad, turn, clip, default_pause_ms, background, is_you=gate) for clip in unfinished_clips
+            ]
+            lines.append(f"| {label} | {describe_finished(done)} | {describe_unfinished(held)} |")
+            on_time = on_time_ms(done)
+            if on_time:
+                found["gated_turn" if gate else "ungated_turn"] = statistics.median(on_time)
+    return found
+
+
 def check_together(report: Report, loaded: Models) -> None:
     lines = report.section("Speaking and listening at once")
     if loaded.recogniser is None or loaded.speaker is None:
@@ -773,6 +907,9 @@ def summarise(report: Report, device: str, loaded: Models, results: Mapping[str,
 
     everything = all(part is not None for part in [loaded.speaker, loaded.recogniser, loaded.vad, loaded.turn])
 
+    def ms_or_na(value: float | None) -> str:
+        return "n/a" if value is None else f"{value:.0f} ms"
+
     def share(value: float | None) -> str:
         return "n/a" if value is None else f"{value:.0%}"
 
@@ -786,6 +923,11 @@ def summarise(report: Report, device: str, loaded: Models, results: Mapping[str,
         f"- Word error rate, everyday sentences: {share(results.get('wer'))}",
         f"- Built-in names right: {share(names_plain)} plain, {share(names_boosted)} boosted",
         f"- Your names right: {share(yours_plain)} plain, {share(yours_boosted)} boosted",
+        (
+            f"- Your voice only: {share(results.get('voiceprint_passed'))} of your seconds pass, "
+            f"{share(results.get('voiceprint_let_in'))} of others'; beside another voice, finished turns end in "
+            f"{ms_or_na(results.get('gated_turn'))} with the gate, {ms_or_na(results.get('ungated_turn'))} without"
+        ),
         f"- Problems: {len(report.problems)}",
     ]
 
@@ -804,6 +946,7 @@ def check(vocabulary_file: Path | None, report_file: Path, details_file: Path) -
     results |= check_recognition(report, loaded)
     results |= check_vocabulary(report, loaded, vocabulary)
     results |= check_turns(report, loaded)
+    results |= check_voiceprints(report, loaded)
     check_together(report, loaded)
     summarise(report, device, loaded, results)
     report.summary.append(f"- The check took {(time.perf_counter() - started) / 60:.1f} minutes")

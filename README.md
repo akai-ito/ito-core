@@ -140,11 +140,11 @@ node bin/ito.ts voice check
 
 It installs the Python packages (about 6 GB the first time), downloads the models (about 3 GB),
 loads each on the GPU, and times listening, turn-taking, recognition with and without your
-vocabulary, and speaking. It prints a report and keeps it in `~/.ito/voice-check.md`; the details,
-which quote your memory, stay in `~/.ito/voice-check-details.md`. Then start `ito serve` again. Ari
-offers Talk only once the voice is ready, and otherwise says why. If espeak-ng, which says names
-Kokoro doesn't know, won't load from its Python package, install it with `sudo apt install
-espeak-ng`.
+vocabulary, telling your voice from others', and speaking. It prints a report and keeps it in
+`~/.ito/voice-check.md`; the details, which quote your memory, stay in
+`~/.ito/voice-check-details.md`. Then start `ito serve` again. Ari offers Talk only once the voice is
+ready, and otherwise says why. If espeak-ng, which says names Kokoro doesn't know, won't load from
+its Python package, install it with `sudo apt install espeak-ng`.
 
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, the agent's working directory in `workspace`, its memory in

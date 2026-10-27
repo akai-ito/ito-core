@@ -14,6 +14,7 @@ from ito_voice.espeak import use_working_espeak
 
 kokoro_repo = "hexgrad/Kokoro-82M"
 parakeet_model = "nvidia/parakeet-tdt-0.6b-v2"
+voiceprint_model = "nvidia/speakerverification_en_titanet_large"
 turn_repo = "pipecat-ai/smart-turn-v3"
 turn_file = "smart-turn-v3.2-cpu.onnx"
 turn_seconds = 8
@@ -115,6 +116,25 @@ def recognise(model: Any, samples: np.ndarray) -> str:
             encoder_output=encoded, encoded_lengths=encoded_length
         )
     return hypotheses[0].text
+
+
+def load_voiceprints(device: str) -> Any:
+    from nemo.collections.asr.models import EncDecSpeakerLabelModel
+
+    model: Any = EncDecSpeakerLabelModel.from_pretrained(voiceprint_model, map_location=torch.device(device))
+    model.eval()
+    model.preprocessor.featurizer.dither = 0.0
+    return model
+
+
+def voiceprint(model: Any, samples: np.ndarray) -> np.ndarray:
+    device = next(model.parameters()).device
+    with torch.inference_mode():
+        signal = torch.from_numpy(samples).unsqueeze(0).to(device)
+        length = torch.tensor([samples.shape[0]], device=device)
+        _, embedding = model.forward(input_signal=signal, input_signal_length=length)
+    vector = embedding[0].float().cpu().numpy()
+    return vector / np.linalg.norm(vector)
 
 
 def load_vad() -> Any:
