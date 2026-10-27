@@ -659,11 +659,12 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Hear a preview of Ari's voice
-     * @description Says the text in Ari's voice and answers with a WAV: 24 kHz, mono, 16-bit PCM. It's for
-     *     previewing voices in Settings. Left out, `voice` is the one chosen with `PUT /v0/voice`. While
-     *     the voice isn't ready, the answer is `unavailable`, with `Retry-After` while it's loading and
-     *     the reason in `detail`.
+     * Say something in Ari's voice
+     * @description Says the text in Ari's voice and answers with a WAV: 24 kHz, mono, 16-bit PCM. Settings uses it
+     *     to preview voices, and a call uses it a sentence at a time, asking for the next while one plays,
+     *     until the call stream carries Ari's voice. Left out, `voice` is the one chosen with
+     *     `PUT /v0/voice`. While the voice isn't ready, the answer is `unavailable`, with `Retry-After`
+     *     while it's loading and the reason in `detail`.
      */
     post: operations["speak"];
     delete?: never;

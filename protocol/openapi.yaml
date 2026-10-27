@@ -30,7 +30,7 @@ info:
       audio and the words the phone corrected, and fetch a vocabulary from memory that steers
       speech recognition toward your names.
     - **Ari's voice:** whether the server can hold a call, the voices Ari can speak in, choosing
-      one, and hearing a preview.
+      one, and hearing it speak.
 
     **Versioning.** Routes carry the protocol's major version, and every response carries an
     `Ito-Protocol` header with the full version. Until 1.0, every protocol change may break, so
@@ -904,12 +904,13 @@ paths:
     post:
       tags: [Talk]
       operationId: speak
-      summary: Hear a preview of Ari's voice
+      summary: Say something in Ari's voice
       description: |
-        Says the text in Ari's voice and answers with a WAV: 24 kHz, mono, 16-bit PCM. It's for
-        previewing voices in Settings. Left out, `voice` is the one chosen with `PUT /v0/voice`. While
-        the voice isn't ready, the answer is `unavailable`, with `Retry-After` while it's loading and
-        the reason in `detail`.
+        Says the text in Ari's voice and answers with a WAV: 24 kHz, mono, 16-bit PCM. Settings uses it
+        to preview voices, and a call uses it a sentence at a time, asking for the next while one plays,
+        until the call stream carries Ari's voice. Left out, `voice` is the one chosen with
+        `PUT /v0/voice`. While the voice isn't ready, the answer is `unavailable`, with `Retry-After`
+        while it's loading and the reason in `detail`.
       requestBody:
         required: true
         content:
