@@ -198,7 +198,7 @@ describe("Ari's voice, from its sidecar", () => {
     await vi.waitFor(() => {
       expect(server.voice.readiness()).toEqual({
         state: "failed",
-        reason: "The voice speaks protocol 0.0, and ito-core speaks 0.1: run ito voice check.",
+        reason: "The voice speaks protocol 0.0, and ito-core speaks 0.2: run ito voice check.",
       });
     });
   });

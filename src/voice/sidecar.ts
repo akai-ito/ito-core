@@ -10,7 +10,7 @@ import { createConnection, type Connection, type RpcFailure } from "#json-rpc.ts
 import { fail, ok } from "#result.ts";
 import { toWav, type Readiness, type SpeechFailure, type VoiceContext, type VoiceLoop } from "#voice/loop.ts";
 
-export const voiceProtocol = "0.1";
+export const voiceProtocol = "0.2";
 
 export const voiceDirectory = fileURLToPath(new URL("../../voice", import.meta.url));
 
