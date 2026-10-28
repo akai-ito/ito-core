@@ -59,6 +59,7 @@ export type EngineEvent =
   | { readonly type: "input.read"; readonly messageId: MessageId }
   | { readonly type: "failed"; readonly code: EngineFailureCode; readonly detail: string }
   | { readonly type: "ask"; readonly fields: AskFields }
+  | { readonly type: "approval"; readonly key: string; readonly fields: AskFields }
   | { readonly type: "asked" }
   | { readonly type: "progress" }
   | { readonly type: "stopped" }
@@ -70,6 +71,7 @@ export type Engine = {
   readonly start: (turn: TurnId, inputs: readonly Input[]) => AsyncIterable<EngineEvent>;
   readonly steer: (turn: TurnId, input: Input) => Promise<SteerOutcome>;
   readonly interrupt: (turn: TurnId) => Promise<void>;
+  readonly approve: (turn: TurnId, key: string, isAllowed: boolean) => void;
   readonly restart: () => Promise<void>;
   readonly refresh: () => Promise<void>;
   readonly models: () => Promise<Result<readonly ModelOption[], string>>;

@@ -40,3 +40,9 @@ export const writingStatus: Status = { kind: "writing", label: "Writing" };
 export const adjustingStatus: Status = { kind: "adjusting", label: "Adjusting to your message" };
 
 export const stoppingStatus: Status = { kind: "stopping", label: "Stopping" };
+
+export const approvalStatus: Status = { kind: "waiting", label: "Waiting for your approval" };
+
+export const approvedStatus: Status = { kind: "working", label: "Going ahead" };
+
+export const declinedStatus: Status = { kind: "working", label: "Leaving it" };

@@ -11,6 +11,9 @@ import type { ThreadStartParams } from "#engine/codex/bindings/v2/ThreadStartPar
 import type { ThreadStartResponse } from "#engine/codex/bindings/v2/ThreadStartResponse.ts";
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
 import { startCodexProcess, type CodexProcess } from "#engine/codex/codex-process.ts";
+import { declined, toApprovalFields, toElicitationResponse } from "#engine/codex/approvals.ts";
+import type { McpServerElicitationRequestParams } from "#engine/codex/bindings/v2/McpServerElicitationRequestParams.ts";
+import type { McpServerElicitationRequestResponse } from "#engine/codex/bindings/v2/McpServerElicitationRequestResponse.ts";
 import { initialTurnState, toEngineEvents, type TurnState } from "#engine/codex/mapping.ts";
 import {
   accountSetting,
@@ -191,6 +194,16 @@ const shutDown = async (opening: Opening | undefined, how: (process: CodexProces
 
 const delegatingEffort = "ultra";
 
+const appApprovalsOnly: ThreadStartParams["approvalPolicy"] = {
+  granular: {
+    sandbox_approval: false,
+    rules: false,
+    skill_approval: false,
+    request_permissions: false,
+    mcp_elicitations: true,
+  },
+};
+
 const toModelOption = (model: Model): ModelOption => ({
   id: model.model,
   title: model.displayName,
@@ -221,9 +234,11 @@ export const createCodexEngine = ({
   const openThreadId = createCell<string | undefined>(undefined);
   const isRefreshing = createCell(false);
   const injected = createCell<string | undefined>(undefined);
+  const approvals = createCell<ReadonlyMap<string, (isAllowed: boolean) => void>>(new Map());
+  const approvalCount = createCell(0);
   const threadOptions = (server: ToolServer | undefined): ThreadStartParams => ({
     cwd: workspace,
-    approvalPolicy: "never",
+    approvalPolicy: appApprovalsOnly,
     sandbox: "workspace-write",
     baseInstructions: instructions(),
     config: {
@@ -231,6 +246,8 @@ export const createCodexEngine = ({
       web_search: "live",
       agents: { enabled: false },
       skills: { include_instructions: false },
+      features: { tool_call_mcp_elicitation: true },
+      apps: { _default: { default_tools_approval_mode: "writes" } },
       ...toolsConfig(server),
       ...config,
     },
@@ -295,6 +312,7 @@ export const createCodexEngine = ({
       onNotification: (notification) => {
         if (isCurrent()) route(notification);
       },
+      onElicitation: (parameters) => (isCurrent() ? onElicitation(parameters) : Promise.resolve(declined)),
       onExit: (description) => {
         if (!isCurrent() || isGivenUp.get()) return;
         session.set(undefined);
@@ -372,9 +390,47 @@ export const createCodexEngine = ({
     return undefined;
   };
 
+  const declineWaiting = (): void => {
+    const waiting = approvals.get();
+    approvals.set(new Map());
+    for (const respond of waiting.values()) respond(false);
+  };
+
+  const onElicitation = (
+    parameters: McpServerElicitationRequestParams,
+  ): Promise<McpServerElicitationRequestResponse> => {
+    info("Codex asks for approval", {
+      server: parameters.serverName,
+      mode: parameters.mode,
+      message: parameters.message,
+      meta: parameters._meta,
+    });
+    const current = active.get();
+    const fields = toApprovalFields(parameters);
+    if (!current || !fields) return Promise.resolve(declined);
+    approvalCount.set(approvalCount.get() + 1);
+    const key = `approval-${String(approvalCount.get())}`;
+    return new Promise((resolve) => {
+      approvals.update(
+        (waiting) =>
+          new Map([
+            ...waiting,
+            [
+              key,
+              (isAllowed: boolean) => {
+                resolve(toElicitationResponse(parameters, isAllowed));
+              },
+            ],
+          ]),
+      );
+      emit(current.id, [{ type: "approval", key, fields }]);
+    });
+  };
+
   const endActiveTurn = (): void => {
     const current = active.get();
     active.set(undefined);
+    declineWaiting();
     current?.queue.end();
   };
 
@@ -417,9 +473,16 @@ export const createCodexEngine = ({
       return "refused";
     },
 
+    approve: (turn, key, isAllowed) => {
+      const respond = active.get()?.id === turn ? approvals.get().get(key) : undefined;
+      approvals.update((waiting) => new Map([...waiting].filter(([waitingKey]) => waitingKey !== key)));
+      respond?.(isAllowed);
+    },
+
     interrupt: async (turn) => {
       const current = active.get();
       if (current?.id !== turn) return;
+      declineWaiting();
       const codexTurn = await current.codexTurn;
       const opened = await session.get();
       if (!codexTurn || !opened?.ok) return;

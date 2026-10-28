@@ -1,10 +1,18 @@
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import { toCommandError, toTurnError, toWatchdogError } from "#conversation/failures.ts";
-import type { AskId, MessageId, TurnId } from "#conversation/ids.ts";
+import { toAskId, type AskId, type MessageId, type TurnId } from "#conversation/ids.ts";
 import { isAdjustingAfterRead, route, type Conversation } from "#conversation/routing.ts";
 import { createSecrets, type Secrets } from "#conversation/secrets.ts";
-import { adjustingStatus, stoppingStatus, toStepStatus, writingStatus } from "#conversation/status.ts";
+import {
+  adjustingStatus,
+  approvalStatus,
+  approvedStatus,
+  declinedStatus,
+  stoppingStatus,
+  toStepStatus,
+  writingStatus,
+} from "#conversation/status.ts";
 import { toEndedStep, toStepTitle, toUpdatedStep, type Trail } from "#conversation/steps.ts";
 import type { AskFields, Engine, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
@@ -63,7 +71,29 @@ type Running = {
   readonly cancelWatchdog: Cancel;
   readonly cancelForcedStop: Cancel | undefined;
   readonly steps: ReadonlyMap<string, Step>;
+  readonly approvals: ReadonlyMap<AskId, string>;
 };
+
+const yes =
+  /^(yes|yeah|yep|yup|sure|ok|okay|fine|allow|allow it|go ahead|do it|please do)( (please|go ahead|do it|thanks|thank you))*$/u;
+
+const plain = (text: string): string =>
+  text
+    .toLowerCase()
+    .replaceAll(/[^\p{L}\p{N}' ]+/gu, " ")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+
+export const isAllowing = (answer: string, ask: Ask): boolean => {
+  const said = plain(answer);
+  const acting = ask.options.find((option) => option.acts)?.label;
+  return (acting !== undefined && said === plain(acting)) || yes.test(said);
+};
+
+const isOption = (answer: string, ask: Ask): boolean =>
+  ask.options.some((option) => plain(option.label) === plain(answer));
+
+export const isApprovalChoice = (answer: string, ask: Ask): boolean => isAllowing(answer, ask) || isOption(answer, ask);
 
 export const toCorrectionNote = (text: string, corrections: readonly Correction[]): string =>
   corrections.length === 0
@@ -198,6 +228,13 @@ export const createTurns = (
     running.set({ ...state, writing: undefined });
   };
 
+  const cancelApprovals = (state: Running): void => {
+    for (const [ask, key] of state.approvals) {
+      store.cancelAsk(ask);
+      engine.approve(state.id, key, false);
+    }
+  };
+
   const afterTurn = (state: Running): void => {
     clearTimers(state);
     running.set(undefined);
@@ -249,6 +286,7 @@ export const createTurns = (
       store.endMessage(state.writing.message, "stopped", length);
     }
     endOpenSteps(state, "stopped");
+    cancelApprovals(state);
     store.endTurn(turn, "stopped");
     afterTurn(state);
   };
@@ -261,6 +299,7 @@ export const createTurns = (
     if (state.writing) store.endMessage(state.writing.message, "failed", sentLength(state), error);
     endOpenSteps(state, "failed");
     if (!state.hasStartedReply) store.endMessage(store.startMessage(turn, "reply"), "failed", 0, error);
+    cancelApprovals(state);
     store.endTurn(turn, "failed", error);
     afterTurn(state);
   };
@@ -272,6 +311,7 @@ export const createTurns = (
     if (!state) return;
     if (state.writing) store.endMessage(state.writing.message, "completed", sentLength(state));
     endOpenSteps(state, "completed");
+    cancelApprovals(state);
     store.endTurn(turn, "completed");
     afterTurn(state);
   };
@@ -297,7 +337,7 @@ export const createTurns = (
   const armWatchdog = (turn: TurnId): Cancel =>
     clock.after(limits.watchdogMs, () => {
       const state = current(turn);
-      if (state?.phase !== "running") return;
+      if (state?.phase !== "running" || state.approvals.size > 0) return;
       failTurn(turn, toWatchdogError(limits.watchdogMs, state.writing !== undefined));
       void interruptEngine(turn, () => engine.restart());
     });
@@ -393,6 +433,20 @@ export const createTurns = (
         askNow(turn, event.fields);
         return;
       }
+      case "approval": {
+        if (isQuiet) {
+          engine.approve(turn, event.key, false);
+          return;
+        }
+        endOpenMessage(turn);
+        const asked = store.startAsk(turn, event.fields);
+        store.setStatus(turn, approvalStatus);
+        change(turn, (latest) => ({
+          ...latest,
+          approvals: new Map([...latest.approvals, [toAskId(asked.id), event.key]]),
+        }));
+        return;
+      }
       case "asked": {
         if (isAsking) endAfterAsking(turn);
         return;
@@ -485,6 +539,7 @@ export const createTurns = (
       cancelWatchdog: armWatchdog(turn),
       cancelForcedStop: undefined,
       steps: new Map(),
+      approvals: new Map(),
     });
     const engineInputs = withNotes(inputs.map((message) => inputOf(message)));
     received.update((texts) => new Map([...texts].filter(([message]) => !inputs.includes(message))));
@@ -503,7 +558,28 @@ export const createTurns = (
     startTurn(leadingMessages(pending));
   };
 
+  const answerApproval = (message: MessageId): boolean => {
+    const state = running.get();
+    const ask = store.answeredAsk(message);
+    const key = ask === undefined ? undefined : state?.approvals.get(ask);
+    const asked = ask === undefined ? undefined : store.findAsk(ask);
+    if (!state || ask === undefined || key === undefined || !asked) return false;
+    const answer = received.get().get(message) ?? store.messageText(message) ?? "";
+    const isAllowed = isAllowing(answer, asked);
+    const isChoice = isApprovalChoice(answer, asked);
+    if (isChoice) store.markRead(state.id, message);
+    store.setStatus(state.id, isAllowed ? approvedStatus : declinedStatus);
+    change(state.id, (latest) => ({
+      ...latest,
+      approvals: new Map([...latest.approvals].filter(([waiting]) => waiting !== ask)),
+    }));
+    resetWatchdog(state.id);
+    engine.approve(state.id, key, isAllowed);
+    return isChoice;
+  };
+
   const routeMessage = async (message: MessageId): Promise<void> => {
+    if (answerApproval(message)) return;
     const decision = route(conversation(), message);
     switch (decision.kind) {
       case "start": {
@@ -551,6 +627,18 @@ export const createTurns = (
     cancelAsk: (ask) => {
       const before = store.findAsk(ask);
       const cancelled = store.cancelAsk(ask);
+      const state = running.get();
+      const key = state?.approvals.get(ask);
+      if (state && key !== undefined && cancelled.ok) {
+        change(state.id, (latest) => ({
+          ...latest,
+          approvals: new Map([...latest.approvals].filter(([waiting]) => waiting !== ask)),
+        }));
+        store.setStatus(state.id, declinedStatus);
+        resetWatchdog(state.id);
+        engine.approve(state.id, key, false);
+        return cancelled;
+      }
       if (before && !before.outcome && cancelled.ok) {
         notes.update((current) => [
           ...current,
