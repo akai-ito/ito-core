@@ -8,8 +8,8 @@ import { defaultVoice, voices } from "#voice/voices.ts";
 import type { Term } from "#memory/vocabulary.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.9";
-const serverVersion = "0.9.0";
+const protocol = "0.10";
+const serverVersion = "0.10.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -108,6 +108,18 @@ const booking = (operation: string, fields: Readonly<Record<string, unknown>>) =
   endedTitle: "Used booking",
   fields: { capability: "booking", operation, arguments: fields },
 });
+
+const addToCalendar = (fields: Readonly<Record<string, unknown>>) => ({
+  title: "Using calendar",
+  endedTitle: "Used calendar",
+  fields: { capability: "calendar", operation: "create_event", arguments: fields },
+});
+
+const calendarApproval = {
+  question: "Allow Google Calendar to create an event?",
+  preview: "title: Call Mum\nstart: Sunday 1 November, 2pm",
+  options: [{ label: "Allow", acts: true as const }, { label: "Don't" }],
+};
 
 const reportsTokenField = {
   name: "token",
@@ -2150,7 +2162,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.begin("2026-10-27T18:00:00.000Z");
     transcript.request("GET", "/v0/voices");
     transcript.wait(40);
-    transcript.response(200, { voices, chosen: defaultVoice, state: "ready" }, headers);
+    transcript.response(200, { voices, chosen: defaultVoice, state: "ready", voiceprint: "learning" }, headers);
     transcript.wait(6000);
     speak(transcript, "bf_emma");
     transcript.wait(4000);
@@ -2160,7 +2172,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     transcript.request("GET", "/v0/voices");
     transcript.wait(40);
-    transcript.response(200, { voices, chosen: "bf_emma", state: "ready" }, headers);
+    transcript.response(200, { voices, chosen: "bf_emma", state: "ready", voiceprint: "learning" }, headers);
     transcript.wait(3000);
     speak(transcript);
     transcript.wait(10_000);
@@ -2197,7 +2209,11 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.request("GET", "/v0/voices");
     transcript.wait(40);
-    transcript.response(200, { voices, chosen: defaultVoice, state: "loading", reason: loading }, headers);
+    transcript.response(
+      200,
+      { voices, chosen: defaultVoice, state: "loading", reason: loading, voiceprint: "learning" },
+      headers,
+    );
     transcript.wait(2000);
     transcript.request("POST", "/v0/speech", { body: { text: preview } });
     transcript.wait(20);
@@ -2232,7 +2248,11 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(5000);
     transcript.request("GET", "/v0/voices");
     transcript.wait(40);
-    transcript.response(200, { voices, chosen: defaultVoice, state: "failed", reason }, headers);
+    transcript.response(
+      200,
+      { voices, chosen: defaultVoice, state: "failed", reason, voiceprint: "learning" },
+      headers,
+    );
     transcript.wait(4000);
     transcript.request("POST", "/v0/speech", { body: { text: preview, voice: "am_michael" } });
     transcript.wait(20);
@@ -2552,6 +2572,118 @@ const scenarios: readonly (() => Transcript)[] = [
     for (const sentence of transcript.unplayed()) transcript.played(sentence);
     transcript.wait(10_000);
     transcript.hangUp();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "53-an-app-asks-first",
+      scenario: 53,
+      title: "An app asks first",
+      summary:
+        "Adding a calendar event needs your approval before the app runs it. The approval waits inside the running " +
+        "turn; you tap Allow, the same turn carries on, and the event is added.",
+      guarantees: ["G28"],
+    });
+    transcript.begin("2026-10-28T09:00:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const user = transcript.send("Add a reminder to call Mum on Sunday at 2.");
+    transcript.startTurn([user]);
+    transcript.wait(600);
+    transcript.step("tool", addToCalendar({ title: "Call Mum", start: "2026-11-01T14:00:00Z" }));
+    transcript.wait(400);
+    const asked = transcript.approval(calendarApproval);
+    transcript.wait(5000);
+    const allowed = transcript.send("Allow", { answers: asked });
+    transcript.read(allowed);
+    transcript.status("working", "Going ahead");
+    transcript.wait(800);
+    transcript.endStep();
+    writeWhole(transcript, "Added: Call Mum, Sunday at 2pm.");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "54-an-approval-answered-in-words",
+      scenario: 54,
+      title: "An approval answered in words",
+      summary:
+        "While an app's approval waits, you type something else. It answers the approval as not allowed, and your " +
+        "words reach the agent in the same turn, so it can act on them.",
+      guarantees: ["G28"],
+    });
+    transcript.begin("2026-10-28T09:20:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const user = transcript.send("Add a reminder to call Mum on Sunday at 2.");
+    transcript.startTurn([user]);
+    transcript.wait(600);
+    transcript.step("tool", addToCalendar({ title: "Call Mum", start: "2026-11-01T14:00:00Z" }));
+    transcript.wait(400);
+    transcript.approval(calendarApproval);
+    transcript.wait(6000);
+    const words = transcript.send("Do it at 3 instead");
+    transcript.status("working", "Leaving it");
+    transcript.wait(300);
+    transcript.endStep({ outcome: "failed" });
+    transcript.wait(200);
+    transcript.read(words);
+    transcript.wait(900);
+    writeWhole(transcript, "I've left it for now. Shall I add it at 3pm instead?");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "55-stopped-while-an-app-waits",
+      scenario: 55,
+      title: "Stopped while an app waits",
+      summary:
+        "You stop the turn while an app's approval is waiting. The approval is cancelled as the turn stops, and " +
+        "nothing is added.",
+      guarantees: ["G9", "G28"],
+    });
+    transcript.begin("2026-10-28T09:40:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const user = transcript.send("Add a reminder to call Mum on Sunday at 2.");
+    const turn = transcript.startTurn([user]);
+    transcript.wait(600);
+    transcript.step("tool", addToCalendar({ title: "Call Mum", start: "2026-11-01T14:00:00Z" }));
+    transcript.wait(400);
+    transcript.approval(calendarApproval);
+    transcript.wait(4000);
+    transcript.stop(turn);
+    transcript.status("stopping", "Stopping");
+    transcript.wait(300);
+    transcript.endTurn("stopped");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "56-relearn-my-voice",
+      scenario: 56,
+      title: "Relearn my voice",
+      summary:
+        "Settings shows the server knows your voice. You choose to relearn it, and the server forgets the voiceprint " +
+        "and learns your voice again from your next calls.",
+      guarantees: ["G25"],
+    });
+    const headers = { headers: { "Ito-Protocol": protocol } };
+    transcript.begin("2026-10-28T10:00:00.000Z");
+    transcript.world("voiceprint_learnt");
+    transcript.request("GET", "/v0/voices");
+    transcript.wait(40);
+    transcript.response(200, { voices, chosen: defaultVoice, state: "ready", voiceprint: "learnt" }, headers);
+    transcript.wait(5000);
+    transcript.request("DELETE", "/v0/voice/voiceprint");
+    transcript.wait(40);
+    transcript.response(200, { voices, chosen: defaultVoice, state: "ready", voiceprint: "learning" }, headers);
     return transcript;
   },
 ];

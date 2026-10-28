@@ -1,10 +1,10 @@
 {"transcript":"31-pair-with-a-qr-code","start":"2026-10-12T08:41:00.000Z","scenario":31,"title":"Pair with a QR code","summary":"ito pair shows a QR code holding the address and a short-lived code. The app exchanges the code for a token of its own and connects with it; the same code is refused afterwards.","guarantees":["G11","G20"],"app":{}}
 {"at":0,"world":"pairing_code_shown","code":"7F3K-92QD"}
 {"at":9000,"app":{"method":"GET","path":"/.well-known/ito"}}
-{"at":9000,"server":{"status":200,"headers":{"Ito-Protocol":"0.9"},"body":{"product":"ito","protocol":["0.9"]}}}
+{"at":9000,"server":{"status":200,"headers":{"Ito-Protocol":"0.10"},"body":{"product":"ito","protocol":["0.10"]}}}
 {"at":9300,"app":{"method":"POST","path":"/v0/pair","body":{"code":"7F3K-92QD","device_name":"iPhone"}}}
 {"at":9300,"server":{"status":201,"body":{"token":"ito_paired_example_not_a_real_token_000000000000000"}}}
 {"at":9500,"app":{"method":"GET","path":"/v0/server","headers":{"Authorization":"Bearer ito_paired_example_not_a_real_token_000000000000000"}}}
-{"at":9500,"server":{"status":200,"headers":{"Ito-Protocol":"0.9"},"body":{"name":"studio","version":"0.9.0","protocol":"0.9","agent":{"name":"Ari"},"setup":{"notifications":false,"memory_backup":false},"capabilities":[]}}}
+{"at":9500,"server":{"status":200,"headers":{"Ito-Protocol":"0.10"},"body":{"name":"studio","version":"0.10.0","protocol":"0.10","agent":{"name":"Ari"},"setup":{"notifications":false,"memory_backup":false},"capabilities":[]}}}
 {"at":69500,"app":{"method":"POST","path":"/v0/pair","body":{"code":"7F3K-92QD","device_name":"iPad"}}}
 {"at":69500,"server":{"status":401,"body":{"error":{"code":"pairing_code_rejected","message":"That pairing code has expired or was already used.","detail":"Run ito pair on the server for a new code."}}}}

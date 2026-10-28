@@ -31,7 +31,7 @@
 {"at":13700,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
 {"at":13700,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
 {"at":33700,"app":{"method":"POST","path":"/v0/vocabulary/corrections","body":{"corrections":[{"heard":"Bara","meant":"Bora"},{"heard":"cutie","meant":"QRT"}]}}}
-{"at":33780,"server":{"status":200,"headers":{"Ito-Protocol":"0.9"},"body":{"corrections":[{"heard":"Bara","meant":"Bora","address":"memory:people/bora"},{"heard":"cutie","meant":"QRT"}]}}}
+{"at":33780,"server":{"status":200,"headers":{"Ito-Protocol":"0.10"},"body":{"corrections":[{"heard":"Bara","meant":"Bora","address":"memory:people/bora"},{"heard":"cutie","meant":"QRT"}]}}}
 {"at":38780,"world":"you_say","text":"When does Bara want the cutie notes?"}
 {"at":38780,"socket":{"from":"app","audio":"walk-follow-up.pcm"}}
 {"at":38780,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}

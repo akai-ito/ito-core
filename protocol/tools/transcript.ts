@@ -139,6 +139,7 @@ export type Transcript = {
   readonly endCall: (call: string) => void;
   readonly deleteCallAudio: (call: string) => void;
   readonly voiceStatus: (state: VoiceState, reason?: string) => void;
+  readonly approval: (fields: AskFields) => string;
   readonly openStream: (call: string) => void;
   readonly appFrame: (frame: Fields) => void;
   readonly appAudio: (file: string) => void;
@@ -371,6 +372,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0 }, issued: new Set() });
   const callModel = createCell<CallModel | undefined>(undefined);
+  const approvals = createCell<ReadonlySet<string>>(new Set());
   const observer = createCell<((type: string, fields: Fields) => void) | undefined>(undefined);
   const users = createCell(0);
   const now = createCell(0);
@@ -698,6 +700,8 @@ export const createTranscript = (header: Header): Transcript => {
     if (writing.get()) throw new Error("the turn ended with a message still open");
     const running = runningTurn();
     endAllSteps(outcome);
+    const held = waiting.get();
+    if (held !== undefined && approvals.get().has(held)) endAsk(held, "cancelled");
     emit("turn.ended", { turn: running.id, outcome, ...(error && { error }) });
     turn.set(undefined);
     const { byId, asks } = project(log.get());
@@ -1075,6 +1079,40 @@ export const createTranscript = (header: Header): Transcript => {
     return asked.id;
   };
 
+  const approval = (fields: AskFields): string => {
+    const running = runningTurn();
+    const options = fields.options ?? [];
+    const asked: Ask = {
+      id: newId("a"),
+      turn: running.id,
+      kind: fields.kind ?? "approval",
+      question: fields.question,
+      options: [...options],
+      allows_text: fields.allowsText ?? true,
+      ...(fields.preview && { preview: fields.preview }),
+      secret: false,
+      at: timestamp(),
+      position: nextPosition(),
+    };
+    emit("ask.started", { ask: asked });
+    waiting.set(asked.id);
+    askedAt.set(now.get());
+    isReminded.set(false);
+    approvals.update((current) => new Set([...current, asked.id]));
+    push("time-sensitive", {
+      kind: "ask",
+      text: asked.question,
+      ask: {
+        id: asked.id,
+        options: options.map((option) => option.label),
+        allows_text: asked.allows_text,
+        secret: false,
+      },
+    });
+    setStatus("waiting", "Waiting for your approval");
+    return asked.id;
+  };
+
   const cancelAsk = (id: string): void => {
     request("POST", `/v0/asks/${id}/cancel`);
     if (waiting.get() === id) endAsk(id, "cancelled");
@@ -1298,6 +1336,7 @@ export const createTranscript = (header: Header): Transcript => {
     endCall,
     deleteCallAudio,
     voiceStatus,
+    approval,
     openStream,
     appFrame,
     appAudio,

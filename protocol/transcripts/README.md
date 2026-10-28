@@ -52,6 +52,7 @@ request that shows its own `Authorization` header uses the token it names.
 | `pairing_code_shown` | `ito pair` shows a QR code holding the address and this `code` |
 | `voice_loading`, `voice_ready`, `voice_failed` | the server's voice starts loading, becomes ready, or fails; `reason` says why it isn't ready |
 | `you_say` | what the server's recogniser will hear in your next audio on the call's stream: the turn's `text`, and the live captions on the way in `heard` |
+| `voiceprint_learnt` | the server has learnt your voice from your calls |
 
 ## Ids
 
