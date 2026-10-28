@@ -26,8 +26,10 @@ import type {
   Outcome,
   Snapshot,
   Status,
+  PlanTicked,
   Step,
   StepKind,
+  Tick,
   Topic,
   VoiceState,
 } from "#protocol/types.ts";
@@ -134,6 +136,10 @@ export type Store = Settings & {
   readonly pairingCode: (hash: string) => PairingCode | undefined;
   readonly listMessages: (before: MessageId, limit: number) => Result<Page, "not_found">;
   readonly messageText: (message: MessageId) => string | undefined;
+  readonly findMessage: (message: MessageId) => Message | undefined;
+  readonly tickItem: (message: MessageId, tick: Tick) => readonly Tick[];
+  readonly ticksSinceLastTurn: () => readonly PlanTicked[];
+  readonly keepAttachment: (id: string) => void;
   readonly messageAttachments: (message: MessageId) => readonly Attachment[];
   readonly messageSpoken: (message: MessageId) => Spoken | undefined;
   readonly answeredAsk: (message: MessageId) => AskId | undefined;
@@ -189,6 +195,7 @@ type MessageRow = {
   readonly secret: number;
   readonly attachments: string | null;
   readonly spoken: string | null;
+  readonly ticks: string | null;
 };
 
 type AttachmentRow = { readonly body: string; readonly sha256: string; readonly message: string | null };
@@ -255,6 +262,7 @@ const toMessage = (row: MessageRow): Message =>
         ...(row.ended_at && { ended_at: row.ended_at }),
         ...(row.outcome && { outcome: row.outcome }),
         ...(row.error && { error: JSON.parse(row.error) as ErrorBody }),
+        ...(row.ticks && { ticks: JSON.parse(row.ticks) as Tick[] }),
       };
 
 const toStoredTurn = (row: TurnRow): StoredTurn => ({
@@ -612,6 +620,32 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     messageText: (message) => messageRow(message)?.text,
 
+    findMessage: (message) => {
+      const row = messageRow(message);
+      return row ? toMessage(row) : undefined;
+    },
+
+    tickItem: (message, { part, item, done }) =>
+      transaction(() => {
+        append({ id: identifiers.event(), type: "plan.ticked", at: now(), message, part, item, done });
+        const row = messageRow(message);
+        return row?.ticks ? (JSON.parse(row.ticks) as readonly Tick[]) : [];
+      }),
+
+    ticksSinceLastTurn: () =>
+      (
+        database
+          .prepare(
+            `SELECT body FROM events WHERE type = 'plan.ticked'
+             AND seq > COALESCE((SELECT MAX(seq) FROM events WHERE type = 'turn.started'), 0) ORDER BY seq`,
+          )
+          .all() as unknown as readonly { readonly body: string }[]
+      ).map((row) => JSON.parse(row.body) as PlanTicked),
+
+    keepAttachment: (id) => {
+      database.prepare("UPDATE attachments SET kept = 1 WHERE id = ?").run(id);
+    },
+
     answeredAsk: (message) => {
       const answers = messageRow(message)?.answers;
       return answers ? toAskId(answers) : undefined;
@@ -844,7 +878,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     unattachedBefore: (before) =>
       (
         database
-          .prepare("SELECT id FROM attachments WHERE message IS NULL AND at < ?")
+          .prepare("SELECT id FROM attachments WHERE message IS NULL AND kept = 0 AND at < ?")
           .all(before) as unknown as readonly {
           readonly id: string;
         }[]

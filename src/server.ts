@@ -14,6 +14,7 @@ import { createCalls, type Calls } from "#voice/calls.ts";
 import { createVoiceprints } from "#voice/voiceprints.ts";
 import { chosenVoice } from "#voice/voices.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
+import { createImageTool, type FetchImage } from "#replies/images.ts";
 import { createTopicTool } from "#topics/tool.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
@@ -51,6 +52,7 @@ export type ServerOptions = {
   readonly embedder: Embedder;
   readonly createVoice?: (context: VoiceContext) => VoiceLoop;
   readonly timeZone?: string;
+  readonly fetchImage?: FetchImage;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
@@ -230,7 +232,15 @@ export const createServer = (options: ServerOptions): Server => {
     app.log.info(details, message);
   });
   const doors = createDoors({ host, secrets, currentTurn: () => store.runningTurn()?.id, command: launcher });
-  const coreTools: readonly Tool[] = [createAskTool(turns), createTopicTool(store), ...memory.tools];
+  const imageTool = createImageTool({
+    attachments,
+    keep: (id) => {
+      store.keepAttachment(id);
+    },
+    newId: () => identifiers.attachment(),
+    fetchImage: options.fetchImage ?? (async (url, signal) => fetch(url, { signal })),
+  });
+  const coreTools: readonly Tool[] = [createAskTool(turns), createTopicTool(store), imageTool, ...memory.tools];
   const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()];
   const callTool = async (name: string, input: unknown): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);

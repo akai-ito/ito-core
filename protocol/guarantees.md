@@ -38,6 +38,8 @@ where the protocol has to make it possible, marked *App*.
 | G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
 | G28 | **An app asks before it acts.** When an app's action needs your approval, it waits inside the running turn, which carries on once you answer. Your next message answers it: Allow, or a plain yes, lets it run; anything else doesn't, and your words reach the agent. Stop cancels it. | 53, 54, 55 |
 | G29 | **Topics mark where the subject changed.** When you change the subject, Ari puts a label of a few plain words on the message that changed it, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
+| G30 | **Ticks are kept.** A tick on an item in a reply's plan is kept on the server, reaches every app, and comes with the message in snapshots and history. The agent hears of it with your next message. Ticking an item to the state it's already in changes nothing. | 59 |
+| G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
 
 ## Scenario by scenario
 
@@ -431,6 +433,18 @@ where the protocol has to make it possible, marked *App*.
 - A topic is a label on the message that changed the subject; a follow-up gets none. (G29)
 - Snapshots and history carry the topics on their messages, windowed as calls are. Coming back to a
   subject reuses its label. (G29)
+
+### 59 · [A plan you can tick](transcripts/59-a-plan-you-can-tick.jsonl)
+
+- A reply's `ari:` blocks travel in its Markdown text; the app draws them, and shows a block it
+  doesn't know as its fenced text.
+- A tick names the plan by its index among the reply's blocks and the item by its id; the message
+  keeps each item's latest state in `ticks`. (G30)
+
+### 60 · [Pictures Ari found](transcripts/60-pictures-ari-found.jsonl)
+
+- Ari keeps a picture from the web on the server before showing it, and the block names it as an
+  attachment, with its source and credit. (G31)
 
 ## Not in this version
 

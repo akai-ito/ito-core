@@ -70,6 +70,7 @@ describe("Ito's tools over MCP", () => {
         tools: [
           { name: "ask" },
           { name: "mark_topic" },
+          { name: "keep_image" },
           { name: "recall" },
           { name: "read_page" },
           { name: "remember" },

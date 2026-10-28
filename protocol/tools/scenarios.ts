@@ -222,8 +222,13 @@ const memoryCall = (transcript: Transcript, path: string, answer: unknown): void
   transcript.response(200, answer, { headers: { "Ito-Protocol": protocol } });
 };
 
-const agentCalls = (transcript: Transcript, tool: string, input: Readonly<Record<string, unknown>>): void => {
-  transcript.world("agent_calls", { tool, input });
+const agentCalls = (
+  transcript: Transcript,
+  tool: string,
+  input: Readonly<Record<string, unknown>>,
+  returns?: Readonly<Record<string, unknown>>,
+): void => {
+  transcript.world("agent_calls", { tool, input, ...(returns && { returns }) });
 };
 
 const memoryStep = (
@@ -2880,6 +2885,122 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(300);
     writeWhole(transcript, "The first morning, before it gets busy. Book the 8:15 slot.");
     transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "59-a-plan-you-can-tick",
+      scenario: 59,
+      title: "A plan you can tick",
+      summary:
+        "Ari answers with a plan, a time and a place, as blocks the app draws. You tick the first item, and " +
+        "ticking it again changes nothing. Scrolling back later, the reply comes with its tick.",
+      guarantees: ["G30"],
+    });
+    transcript.begin("2026-10-28T12:00:00.000Z");
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Can you plan our three days in Florence? We land on Friday morning.");
+    transcript.wait(900);
+    transcript.status("writing", "Writing");
+    const reply = transcript.reply();
+    transcript.write(
+      [
+        "Here's a gentle shape for it, with the Uffizi first thing on Saturday, before the crowds.",
+        "",
+        "```ari:plan",
+        JSON.stringify({
+          title: "Florence",
+          items: [
+            { id: "book-uffizi", text: "Book the Uffizi for 8:15 on Saturday", when: "This week", done: false },
+            { id: "duomo-climb", text: "Climb the Duomo", when: "Fri 6 Nov, afternoon", done: false },
+            { id: "siena", text: "Train to Siena", when: "Sun 8 Nov", done: false },
+          ],
+        }),
+        "```",
+        "",
+        "```ari:time",
+        JSON.stringify({
+          title: "Uffizi, 8:15 entry",
+          start: "2026-11-07T08:15",
+          end: "2026-11-07T11:00",
+          timezone: "Europe/Rome",
+          location: "Uffizi Gallery",
+        }),
+        "```",
+        "",
+        "```ari:place",
+        JSON.stringify({
+          name: "Uffizi Gallery",
+          address: "Piazzale degli Uffizi 6, Florence",
+          lat: 43.7678,
+          lon: 11.2553,
+        }),
+        "```",
+      ].join("\n"),
+    );
+    transcript.endMessage("completed");
+    transcript.endTurn("completed");
+    transcript.wait(60_000);
+    transcript.tick(reply, 0, "book-uffizi", true);
+    transcript.wait(1000);
+    transcript.tick(reply, 0, "book-uffizi", true);
+    transcript.wait(5 * 60 * 1000);
+    const booked = sendAndStart(transcript, "Booked! How do we get from the station to the hotel?");
+    transcript.wait(800);
+    writeWhole(transcript, "It's a ten-minute walk, flat all the way, past San Lorenzo.");
+    transcript.endTurn("completed");
+    transcript.wait(2000);
+    transcript.listMessages(booked.user, 2);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "60-pictures-ari-found",
+      scenario: 60,
+      title: "Pictures Ari found",
+      summary:
+        "You ask what somewhere looks like. Ari finds a photo on the web and keeps it on the server, then shows " +
+        "it in its reply with its source and credit. The app fetches it from the server, never from the site.",
+      guarantees: ["G31"],
+    });
+    const url = "https://photos.example.org/lungarno-dusk.jpg";
+    transcript.begin("2026-10-28T13:00:00.000Z");
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "What does the Lungarno look like at dusk?");
+    transcript.wait(600);
+    transcript.step("web_search", searching("Lungarno at dusk photo"));
+    transcript.wait(1500);
+    transcript.endStep();
+    transcript.world("web_has", { url, file: "riverside.jpg" });
+    const picture = transcript.keptImage("riverside.jpg", "lungarno-dusk.jpg");
+    agentCalls(transcript, "keep_image", { url }, { attachment: picture });
+    transcript.wait(400);
+    writeWhole(
+      transcript,
+      [
+        "Golden, then blue: the river turns to glass and the bridges light up.",
+        "",
+        "```ari:images",
+        JSON.stringify({
+          images: [
+            {
+              attachment: picture,
+              alt: "The Arno at dusk, with the Ponte Vecchio lit up",
+              source_url: "https://commons.example.org/wiki/File:Lungarno_at_dusk.jpg",
+              credit: "Photo by M. Rossi, CC BY-SA 4.0",
+            },
+          ],
+        }),
+        "```",
+      ].join("\n"),
+    );
+    transcript.endTurn("completed");
+    transcript.wait(1500);
+    transcript.fetchAttachment(picture);
     return transcript;
   },
 ];

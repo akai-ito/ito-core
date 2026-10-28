@@ -1,5 +1,6 @@
 import { createCell } from "#cell.ts";
 import type { Ask } from "#protocol/types.ts";
+import { withoutBlocks } from "#replies/blocks.ts";
 
 const isDivider = (line: string): boolean => line.trim() === "---";
 
@@ -30,7 +31,7 @@ export const speakable = (markdown: string): string =>
     .replaceAll(/\[([^\]]*)\]\([^)]*\)/gu, "$1")
     .replaceAll(/[*`_]/gu, "");
 
-export const spokenPart = (text: string): string => speakable(beforeDivider(text));
+export const spokenPart = (text: string): string => speakable(withoutBlocks(beforeDivider(text)));
 
 const sentenceEnds = (text: string): readonly number[] =>
   text

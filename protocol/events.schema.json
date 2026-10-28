@@ -67,6 +67,9 @@
         },
         {
           "$ref": "#/$defs/TopicStarted"
+        },
+        {
+          "$ref": "#/$defs/PlanTicked"
         }
       ]
     },
@@ -186,7 +189,7 @@
           "description": "Agent messages only: the turn that wrote it."
         },
         "text": {
-          "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing.",
+          "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing. A reply may hold `ari:` blocks, described in [the blocks schema](blocks.schema.json).",
           "type": "string"
         },
         "at": {
@@ -226,6 +229,13 @@
         "error": {
           "$ref": "#/$defs/Error",
           "description": "Present when the outcome is `failed`."
+        },
+        "ticks": {
+          "description": "Replies only: the items you ticked or unticked in its plans, each at its latest. Absent until you tick one. An item without a tick is as Ari wrote it.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Tick"
+          }
         }
       },
       "if": {
@@ -244,6 +254,57 @@
           "turn": {
             "$ref": "#/$defs/TurnId"
           }
+        }
+      }
+    },
+    "Tick": {
+      "description": "An item in one of a reply's plans, ticked or not.",
+      "type": "object",
+      "required": ["part", "item", "done"],
+      "properties": {
+        "part": {
+          "description": "The plan's index among the reply's `ari:` blocks, from 0.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "item": {
+          "description": "The item's `id` in the plan.",
+          "type": "string",
+          "minLength": 1
+        },
+        "done": {
+          "type": "boolean"
+        }
+      }
+    },
+    "PlanTicked": {
+      "title": "plan.ticked",
+      "description": "You ticked or unticked an item in a reply's plan, on any device. The agent hears about it with your next message.",
+      "type": "object",
+      "required": ["id", "type", "at", "message", "part", "item", "done"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "plan.ticked"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/MessageId"
+        },
+        "part": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "item": {
+          "type": "string",
+          "minLength": 1
+        },
+        "done": {
+          "type": "boolean"
         }
       }
     },

@@ -8,6 +8,7 @@ import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.t
 import type { Ask, Notification } from "#protocol/types.ts";
 import type { LogEntry, Store, StoredDevice } from "#store/store.ts";
 import type { Log } from "#turns/turns.ts";
+import { withoutBlocks } from "#replies/blocks.ts";
 
 export type PushLevel = "active" | "time-sensitive";
 
@@ -140,7 +141,11 @@ export const createNotifier = ({
       return;
     }
     const reply = !hasAsked && event.outcome === "completed" ? store.lastReply(toTurnId(event.turn)) : undefined;
-    if (reply) notify({ kind: "reply", text: toFirstLine(reply.text), turn: event.turn, message: reply.id }, "active");
+    if (reply)
+      notify(
+        { kind: "reply", text: toFirstLine(withoutBlocks(reply.text)), turn: event.turn, message: reply.id },
+        "active",
+      );
   };
 
   const onEvent = ({ event }: LogEntry): void => {

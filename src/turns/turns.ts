@@ -1,7 +1,7 @@
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import { toCommandError, toTurnError, toWatchdogError } from "#conversation/failures.ts";
-import { toAskId, type AskId, type MessageId, type TurnId } from "#conversation/ids.ts";
+import { toAskId, toMessageId, type AskId, type MessageId, type TurnId } from "#conversation/ids.ts";
 import { isAdjustingAfterRead, route, type Conversation } from "#conversation/routing.ts";
 import { createSecrets, type Secrets } from "#conversation/secrets.ts";
 import {
@@ -17,6 +17,7 @@ import { toEndedStep, toStepTitle, toUpdatedStep, type Trail } from "#conversati
 import type { AskFields, Engine, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type { Ask, Correction, Error as ErrorBody, Outcome, Status, Step, StepKind } from "#protocol/types.ts";
+import { blocksIn, toPlan, toTickNote, type Plan } from "#replies/blocks.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { PendingWork, Store } from "#store/store.ts";
 
@@ -511,12 +512,33 @@ export const createTurns = (
     };
   };
 
-  const withNotes = (inputs: readonly Input[]): readonly Input[] => {
-    const pending = notes.get();
+  const withNotes = (inputs: readonly Input[], ticked: string): readonly Input[] => {
+    const pending = [...notes.get(), ticked].filter(Boolean);
     const [first, ...rest] = inputs;
     if (!first || pending.length === 0) return inputs;
     notes.set([]);
     return [{ ...first, text: [...pending, first.text].join("\n\n") }, ...rest];
+  };
+
+  const planIn = (message: string, part: number): Plan | undefined => {
+    const text = store.messageText(toMessageId(message)) ?? "";
+    return toPlan(blocksIn(text)[part]);
+  };
+
+  const tickNote = (): string => {
+    const latest = new Map(
+      store.ticksSinceLastTurn().map((tick) => [`${tick.message} ${String(tick.part)} ${tick.item}`, tick]),
+    );
+    return toTickNote(
+      latest
+        .values()
+        .map(({ message, part, item, done }) => {
+          const plan = planIn(message, part);
+          const text = plan?.items.find(({ id }) => id === item)?.text ?? item;
+          return { plan: plan?.title ?? "your plan", item: text, done };
+        })
+        .toArray(),
+    );
   };
 
   const startTurn = (
@@ -524,6 +546,7 @@ export const createTurns = (
     retry?: { readonly turn: TurnId; readonly retryOf: TurnId },
   ): void => {
     const turn = retry?.turn ?? identifiers.turn();
+    const ticked = tickNote();
     store.startTurn(turn, inputs, retry?.retryOf);
     running.set({
       id: turn,
@@ -541,7 +564,10 @@ export const createTurns = (
       steps: new Map(),
       approvals: new Map(),
     });
-    const engineInputs = withNotes(inputs.map((message) => inputOf(message)));
+    const engineInputs = withNotes(
+      inputs.map((message) => inputOf(message)),
+      ticked,
+    );
     received.update((texts) => new Map([...texts].filter(([message]) => !inputs.includes(message))));
     void consume(turn, engine.start(turn, engineInputs));
   };

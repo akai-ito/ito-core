@@ -1,0 +1,28 @@
+{"transcript":"60-pictures-ari-found","start":"2026-10-28T13:00:00.000Z","scenario":60,"title":"Pictures Ari found","summary":"You ask what somewhere looks like. Ari finds a photo on the web and keeps it on the server, then shows it in its reply with its source and credit. The app fetches it from the server, never from the site.","guarantees":["G31"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T13:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"486c34a5-fffa-4b19-9774-2274b8460478","text":"What does the Lungarno look like at dusk?"}}}
+{"at":2000,"event":{"id":"e_0001_92448","type":"message.accepted","at":"2026-10-28T13:00:02.000Z","message":{"id":"486c34a5-fffa-4b19-9774-2274b8460478","role":"user","text":"What does the Lungarno look like at dusk?","at":"2026-10-28T13:00:02.000Z","position":1}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"486c34a5-fffa-4b19-9774-2274b8460478","role":"user","text":"What does the Lungarno look like at dusk?","at":"2026-10-28T13:00:02.000Z","position":1}}}}
+{"at":2000,"event":{"id":"e_0002_07964","type":"turn.started","at":"2026-10-28T13:00:02.000Z","turn":"t_0001_48316","inputs":["486c34a5-fffa-4b19-9774-2274b8460478"]}}
+{"at":2600,"event":{"id":"e_0003_16597","type":"step.started","at":"2026-10-28T13:00:02.600Z","step":{"id":"s_0001_56166","turn":"t_0001_48316","kind":"web_search","title":"Searching the web for Lungarno at dusk photo","at":"2026-10-28T13:00:02.600Z","position":3,"query":"Lungarno at dusk photo"}}}
+{"at":2600,"event":{"id":"e_0004_47172","type":"turn.status","at":"2026-10-28T13:00:02.600Z","turn":"t_0001_48316","kind":"working","label":"Searching the web for Lungarno at dusk photo"}}
+{"at":4100,"event":{"id":"e_0005_35562","type":"step.ended","at":"2026-10-28T13:00:04.100Z","step":{"id":"s_0001_56166","turn":"t_0001_48316","kind":"web_search","title":"Searched the web for Lungarno at dusk photo","at":"2026-10-28T13:00:02.600Z","position":3,"query":"Lungarno at dusk photo","ended_at":"2026-10-28T13:00:04.100Z","outcome":"completed","duration_ms":1500}}}
+{"at":4100,"world":"web_has","url":"https://photos.example.org/lungarno-dusk.jpg","file":"riverside.jpg"}
+{"at":4100,"world":"agent_calls","tool":"keep_image","input":{"url":"https://photos.example.org/lungarno-dusk.jpg"},"returns":{"attachment":"f_0001_06924"}}
+{"at":4500,"event":{"id":"e_0006_93316","type":"turn.status","at":"2026-10-28T13:00:04.500Z","turn":"t_0001_48316","kind":"writing","label":"Writing"}}
+{"at":4500,"event":{"id":"e_0007_01536","type":"message.started","at":"2026-10-28T13:00:04.500Z","message":{"id":"m_0001_68134","role":"agent","kind":"reply","turn":"t_0001_48316","text":"","at":"2026-10-28T13:00:04.500Z","position":7}}}
+{"at":4500,"event":{"id":"e_0008_32351","type":"message.delta","at":"2026-10-28T13:00:04.500Z","message":"m_0001_68134","offset":0,"text":"Golden, then blue: the river "}}
+{"at":4620,"event":{"id":"e_0009_68076","type":"message.delta","at":"2026-10-28T13:00:04.620Z","message":"m_0001_68134","offset":29,"text":"turns to glass and the "}}
+{"at":4740,"event":{"id":"e_0010_78586","type":"message.delta","at":"2026-10-28T13:00:04.740Z","message":"m_0001_68134","offset":52,"text":"bridges light "}}
+{"at":4860,"event":{"id":"e_0011_59856","type":"message.delta","at":"2026-10-28T13:00:04.860Z","message":"m_0001_68134","offset":66,"text":"up.\n\n```ari:images\n{\"images\":[{\"attachment\":\"f_0001_06924\",\"alt\":\"The "}}
+{"at":4980,"event":{"id":"e_0012_30444","type":"message.delta","at":"2026-10-28T13:00:04.980Z","message":"m_0001_68134","offset":136,"text":"Arno at dusk, with the Ponte "}}
+{"at":5100,"event":{"id":"e_0013_30798","type":"message.delta","at":"2026-10-28T13:00:05.100Z","message":"m_0001_68134","offset":165,"text":"Vecchio lit "}}
+{"at":5220,"event":{"id":"e_0014_70848","type":"message.delta","at":"2026-10-28T13:00:05.220Z","message":"m_0001_68134","offset":177,"text":"up\",\"source_url\":\"https://commons.example.org/wiki/File:Lungarno_at_dusk.jpg\",\"credit\":\"Photo "}}
+{"at":5340,"event":{"id":"e_0015_94431","type":"message.delta","at":"2026-10-28T13:00:05.340Z","message":"m_0001_68134","offset":271,"text":"by M. Rossi, CC BY-SA "}}
+{"at":5460,"event":{"id":"e_0016_67397","type":"message.delta","at":"2026-10-28T13:00:05.460Z","message":"m_0001_68134","offset":293,"text":"4.0\"}]}\n```"}}
+{"at":5460,"event":{"id":"e_0017_84401","type":"message.ended","at":"2026-10-28T13:00:05.460Z","message":"m_0001_68134","outcome":"completed","length":304}}
+{"at":5460,"event":{"id":"e_0018_69271","type":"turn.ended","at":"2026-10-28T13:00:05.460Z","turn":"t_0001_48316","outcome":"completed"}}
+{"at":6960,"app":{"method":"GET","path":"/v0/attachments/f_0001_06924"}}
+{"at":6960,"server":{"status":200,"headers":{"Content-Type":"image/jpeg","Content-Length":"1454"}}}

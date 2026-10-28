@@ -15,6 +15,7 @@ import { toAskId, toDeviceId, toMessageId, toTurnId } from "#conversation/ids.ts
 import { createToken, hashToken, type Gate } from "#http/auth.ts";
 import { registerCapabilities } from "#http/capabilities.ts";
 import { registerMemory } from "#http/memory.ts";
+import { registerReplies } from "#http/replies.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
@@ -168,6 +169,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   registerCapabilities(app, host, schemaFor);
   registerMemory(app, memory, schemaFor);
+  registerReplies(app, store, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
   registerTalk(app, { store, attachments, memory, voice, calls, voiceprints, schemaFor });
   registerStream(app, { store, calls, voice, protocol });

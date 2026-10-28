@@ -125,4 +125,6 @@ export const migrations: readonly string[] = [
     position INTEGER NOT NULL UNIQUE,
     body TEXT NOT NULL
   );`,
+  `ALTER TABLE messages ADD COLUMN ticks TEXT;
+  ALTER TABLE attachments ADD COLUMN kept INTEGER NOT NULL DEFAULT 0;`,
 ];

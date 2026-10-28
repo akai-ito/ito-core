@@ -9,6 +9,7 @@ Read it rendered, with the guarantees and a timeline of every transcript, at
 | [openapi.yaml](openapi.yaml) | The commands, as OpenAPI 3.1 |
 | [events.schema.json](events.schema.json) | Every event on the stream, as JSON Schema |
 | [push.schema.json](push.schema.json) | What a push notification carries, encrypted and decrypted |
+| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: plans, places, times, comparisons, choices and pictures |
 | [capability.schema.json](capability.schema.json) | What the server and a capability say to each other, explained in [capabilities.md](capabilities.md) |
 | [guarantees.md](guarantees.md) | What the server and the protocol promise |
 | [transcripts](transcripts) | One golden transcript per scenario: what crosses the API, step by step |

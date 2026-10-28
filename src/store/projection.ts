@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Event, Snapshot } from "#protocol/types.ts";
+import type { Event, Snapshot, Tick } from "#protocol/types.ts";
 
 export type LoggedEvent = Exclude<Event, Snapshot>;
 
@@ -139,6 +139,15 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       return;
     }
     case "voice.status": {
+      return;
+    }
+    case "plan.ticked": {
+      const { message, part, item, done } = event;
+      const row = database.prepare("SELECT ticks FROM messages WHERE id = ?").get(message) as
+        { readonly ticks: string | null } | undefined;
+      const ticks = row?.ticks ? (JSON.parse(row.ticks) as readonly Tick[]) : [];
+      const latest = [...ticks.filter((tick) => tick.part !== part || tick.item !== item), { part, item, done }];
+      database.prepare("UPDATE messages SET ticks = ? WHERE id = ?").run(toJson(latest), message);
       return;
     }
     case "topic.started": {
