@@ -47,6 +47,7 @@ class Turn:
 
 @dataclass(frozen=True)
 class Hearing:
+    on_hearing: Callable[[], None]
     on_heard: Callable[[str], None]
     on_turn: Callable[[Turn], None]
     on_barge: Callable[[], None]
@@ -144,6 +145,7 @@ class Listener:
             self._turn = self._recent[-lead - 1 : -1] if lead else []
             self._since_caption = 0
             self._barged = False
+            self.hearing.on_hearing()
         self._turn.append(chunk)
         self._quiet, self._asked = 0, False
         self._voiced += frame

@@ -22,6 +22,7 @@ def pitch(samples: np.ndarray) -> float:
 
 @dataclass
 class Heard:
+    starts: int = 0
     captions: list[str] = field(default_factory=list)
     turns: list[Turn] = field(default_factory=list)
     barges: int = 0
@@ -31,7 +32,10 @@ class Heard:
         def barge() -> None:
             self.barges += 1
 
-        return Hearing(self.captions.append, self.turns.append, barge, self.voiceprints.append)
+        def start() -> None:
+            self.starts += 1
+
+        return Hearing(start, self.captions.append, self.turns.append, barge, self.voiceprints.append)
 
 
 def ears(text: str = "Call the dentist tomorrow.", finished: float = 0.9) -> Ears:
@@ -57,6 +61,7 @@ def test_a_finished_thought_ends_the_turn_after_a_short_pause_with_captions_on_t
     assert heard.turns == []
     listener.feed(quiet(0.1))
 
+    assert heard.starts == 1
     assert [turn.text for turn in heard.turns] == ["Call the dentist tomorrow."]
     assert heard.captions[:3] == ["Call the dentist tomorrow."] * 3
     assert 1.6 * heard_rate < heard.turns[0].audio.shape[0] < 2.3 * heard_rate

@@ -79,13 +79,16 @@ class Session:
             transcriber.reset()
 
         ears = Ears(speech, reset, tools.finished, transcriber.words, tools.voiceprint)
-        hearing = Hearing(self._heard, self._turn, self._barge, self._voiceprint)
+        hearing = Hearing(self._hearing, self._heard, self._turn, self._barge, self._voiceprint)
         self._listener = Listener(ears, hearing, voiceprint)
         self._thread = threading.Thread(target=self._run, name=f"session-{name}", daemon=True)
         self._thread.start()
 
     def _say(self, method: str, params: Mapping[str, Any]) -> None:
         self._notify(method, {"session": self._name, **params})
+
+    def _hearing(self) -> None:
+        self._say("hearing", {})
 
     def _heard(self, text: str) -> None:
         self._say("heard", {"text": text})
