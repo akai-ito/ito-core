@@ -447,10 +447,11 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * The pages changed most recently
-     * @description Up to 20 pages and journal days, the most recently changed first.
+     * What Ari changed in memory lately
+     * @description The 20 newest changes, newest first, one row per change, each with Ari's note on what it
+     *     changed. A page changed twice has two rows. `getChange` opens any of them.
      */
-    get: operations["listRecentPages"];
+    get: operations["listRecentChanges"];
     put?: never;
     post?: never;
     delete?: never;
@@ -832,14 +833,29 @@ export interface components {
      * @enum {unknown}
      */
     Shelf: "people" | "goals" | "projects" | "places" | "topics" | "journal";
+    /**
+     * @description What the page is now, in one line, written by Ari and kept current with every change: a
+     *     journal day's headline, who someone is to you, where a project stands. Absent until Ari
+     *     has written one; Ari writes one for every page that lacks it, soon after the server starts.
+     */
+    Gist: string;
     MemoryPageSummary: {
       address: components["schemas"]["MemoryAddress"];
       title: string;
+      gist?: components["schemas"]["Gist"];
       changed_at: components["schemas"]["Timestamp"];
+    };
+    /** @description A page this one links to, as it is now. */
+    MemoryLink: {
+      address: components["schemas"]["MemoryAddress"];
+      title: string;
+      /** @description Other names Ari knows it by, for finding mentions of it in the page. */
+      aliases: string[];
     };
     MemoryPage: {
       address: components["schemas"]["MemoryAddress"];
       title: string;
+      gist?: components["schemas"]["Gist"];
       /**
        * @description Its shelf, or `portrait`, `now` or `helping-you` for the pages in mind.
        * @enum {unknown}
@@ -847,8 +863,8 @@ export interface components {
       shelf: "portrait" | "now" | "helping-you" | "people" | "goals" | "projects" | "places" | "topics" | "journal";
       /** @description Other names Ari knows it by. */
       aliases: string[];
-      /** @description Addresses of related pages. */
-      links: components["schemas"]["MemoryAddress"][];
+      /** @description The related pages that exist, in Ari's order. */
+      links: components["schemas"]["MemoryLink"][];
       changed_at: components["schemas"]["Timestamp"];
       /** @description The page as Ari wrote it, without front matter. */
       markdown: string;
@@ -858,6 +874,21 @@ export interface components {
     };
     PageList: {
       pages: components["schemas"]["MemoryPageSummary"][];
+    };
+    RecentChange: {
+      change: components["schemas"]["ChangeId"];
+      address: components["schemas"]["MemoryAddress"];
+      /** @description The page's title when it changed. */
+      title: string;
+      at: components["schemas"]["Timestamp"];
+      /**
+       * @description What the change did, in a few words, such as "Florence together 6–9 Nov". Absent for
+       *     pages that came from outside with `ito memory pull`, and for changes made before 0.11.
+       */
+      note?: string;
+    };
+    RecentChanges: {
+      changes: components["schemas"]["RecentChange"][];
     };
     ShelfList: {
       shelves: {
@@ -1908,10 +1939,14 @@ export type ModelChoice = components["schemas"]["ModelChoice"];
 export type ModelList = components["schemas"]["ModelList"];
 export type ModelOption = components["schemas"]["ModelOption"];
 export type Shelf = components["schemas"]["Shelf"];
+export type Gist = components["schemas"]["Gist"];
 export type MemoryPageSummary = components["schemas"]["MemoryPageSummary"];
+export type MemoryLink = components["schemas"]["MemoryLink"];
 export type MemoryPage = components["schemas"]["MemoryPage"];
 export type MemoryPages = components["schemas"]["MemoryPages"];
 export type PageList = components["schemas"]["PageList"];
+export type RecentChange = components["schemas"]["RecentChange"];
+export type RecentChanges = components["schemas"]["RecentChanges"];
 export type ShelfList = components["schemas"]["ShelfList"];
 export type MemoryChange = components["schemas"]["MemoryChange"];
 export type CapabilityId = components["schemas"]["CapabilityId"];
@@ -2769,7 +2804,7 @@ export interface operations {
       401: components["responses"]["TokenRejected"];
     };
   };
-  listRecentPages: {
+  listRecentChanges: {
     parameters: {
       query?: never;
       header?: never;
@@ -2778,14 +2813,14 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description The pages. */
+      /** @description The changes. */
       200: {
         headers: {
           "Ito-Protocol": components["headers"]["ItoProtocol"];
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["PageList"];
+          "application/json": components["schemas"]["RecentChanges"];
         };
       };
       401: components["responses"]["TokenRejected"];

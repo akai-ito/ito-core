@@ -30,7 +30,7 @@ export const registerMemory = (
 
   app.get("/v0/memory/recent", async () => {
     await memory.sync();
-    return { pages: memory.recent() };
+    return { changes: memory.recent() };
   });
 
   app.get<{ Querystring: { readonly address: string } }>(

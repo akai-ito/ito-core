@@ -444,4 +444,16 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(efforts).not.toContain("ultra");
     expect(currentModel().lastRun()).toEqual({ model: "gpt-6-luna", effort: "medium" });
   });
+
+  it("answers a one-off prompt in a side thread, as JSON in the shape asked for", async () => {
+    const conversation = settings.setting(threadSetting);
+    const schema = { type: "object", properties: { gists: { type: "array" } }, required: ["gists"] };
+
+    const answered = await currentEngine().complete("[[json]] Write the gists", schema);
+
+    expect(answered).toEqual({ ok: true, value: { gists: [{ address: "memory:people/sam", gist: "Runs with you" }] } });
+    expect(currentModel().lastFormat()).toBe("json_schema");
+    expect(currentModel().developerTexts()).toContain(instructions);
+    expect(settings.setting(threadSetting)).toBe(conversation);
+  });
 });

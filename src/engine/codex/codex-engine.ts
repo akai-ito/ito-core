@@ -64,6 +64,8 @@ type ActiveTurn = {
 
 type Scope = Readonly<Partial<Record<"threadId" | "turnId", unknown>>>;
 
+type SideJob = { readonly answer: string; readonly finish: (answer: Result<string, string>) => void };
+
 export const threadSetting = "codex_thread_id";
 
 const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "failed", "stopped"]);
@@ -236,6 +238,7 @@ export const createCodexEngine = ({
   const injected = createCell<string | undefined>(undefined);
   const approvals = createCell<ReadonlyMap<string, (isAllowed: boolean) => void>>(new Map());
   const approvalCount = createCell(0);
+  const sideJobs = createCell<ReadonlyMap<string, SideJob>>(new Map());
   const threadOptions = (server: ToolServer | undefined): ThreadStartParams => ({
     cwd: workspace,
     approvalPolicy: appApprovalsOnly,
@@ -254,6 +257,30 @@ export const createCodexEngine = ({
     ...(modelProvider && { modelProvider }),
   });
 
+  const sideThreadOptions = (): ThreadStartParams => ({
+    cwd: workspace,
+    approvalPolicy: "never",
+    sandbox: "read-only",
+    baseInstructions: instructions(),
+    ephemeral: true,
+    config: { web_search: "disabled", agents: { enabled: false }, ...config },
+    ...(modelProvider && { modelProvider }),
+  });
+
+  const failSideJobs = (detail: string): void => {
+    for (const job of sideJobs.get().values()) job.finish(fail(detail));
+  };
+
+  const routeSideJob = (threadId: string, job: SideJob, notification: ServerNotification): void => {
+    if (notification.method === "item/completed" && notification.params.item.type === "agentMessage") {
+      const { text } = notification.params.item;
+      sideJobs.update((jobs) => new Map([...jobs, [threadId, { ...job, answer: text }]]));
+    }
+    if (notification.method !== "turn/completed") return;
+    const { status, error } = notification.params.turn;
+    job.finish(status === "completed" ? ok(job.answer) : fail(error?.message ?? `Codex's turn ${status}.`));
+  };
+
   const emit = (turn: TurnId, events: readonly EngineEvent[]): void => {
     for (const event of events) {
       const current = active.get();
@@ -266,6 +293,12 @@ export const createCodexEngine = ({
   };
 
   const route = (notification: ServerNotification): void => {
+    const threadId = fieldOf(notification, "threadId");
+    const sideJob = threadId === undefined ? undefined : sideJobs.get().get(threadId);
+    if (threadId !== undefined && sideJob) {
+      routeSideJob(threadId, sideJob, notification);
+      return;
+    }
     if (notification.method === "item/completed" && notification.params.item.type === "contextCompaction") {
       injected.set(undefined);
     }
@@ -316,6 +349,7 @@ export const createCodexEngine = ({
       onExit: (description) => {
         if (!isCurrent() || isGivenUp.get()) return;
         session.set(undefined);
+        failSideJobs(description);
         const current = active.get();
         if (current) emit(current.id, [{ type: "failed", code: "engine_failed", detail: description }]);
       },
@@ -351,6 +385,7 @@ export const createCodexEngine = ({
 
   const detachSession = (): Opening | undefined => {
     generation.update((count) => count + 1);
+    failSideJobs("Codex restarted before it answered.");
     const opening = session.get();
     session.set(undefined);
     openThreadId.set(undefined);
@@ -477,6 +512,40 @@ export const createCodexEngine = ({
       const respond = active.get()?.id === turn ? approvals.get().get(key) : undefined;
       approvals.update((waiting) => new Map([...waiting].filter(([waitingKey]) => waitingKey !== key)));
       respond?.(isAllowed);
+    },
+
+    complete: async (prompt, schema) => {
+      const opened = await ensureSession();
+      if (!opened.ok) return fail(opened.failure.detail);
+      const { process } = opened.value;
+      const started = await process.call("thread/start", sideThreadOptions());
+      if (!started.ok) return fail(`Codex couldn't start a side thread: ${started.failure.message}`);
+      const threadId = started.value.thread.id;
+      const finished = new Promise<Result<string, string>>((resolve) => {
+        const finish = (answer: Result<string, string>): void => {
+          sideJobs.update((jobs) => new Map([...jobs].filter(([id]) => id !== threadId)));
+          resolve(answer);
+        };
+        sideJobs.update((jobs) => new Map([...jobs, [threadId, { answer: "", finish }]]));
+      });
+      const turn = await process.call("turn/start", {
+        threadId,
+        input: [{ type: "text", text: prompt, text_elements: [] }],
+        outputSchema: schema as JsonValue,
+        ...readChoice(settings.setting),
+      });
+      if (!turn.ok)
+        sideJobs
+          .get()
+          .get(threadId)
+          ?.finish(fail(`Codex didn't start: ${turn.failure.message}`));
+      const answered = await finished;
+      if (!answered.ok) return answered;
+      try {
+        return ok(JSON.parse(answered.value) as unknown);
+      } catch {
+        return fail(`Codex didn't answer in JSON: ${answered.value}`);
+      }
     },
 
     interrupt: async (turn) => {

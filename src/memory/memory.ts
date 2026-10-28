@@ -2,9 +2,10 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
-import type { StepFacts } from "#engine/engine.ts";
+import type { JsonSchema, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type { Embedder } from "#memory/embedder.ts";
+import { gistGuide, gistSchema, gistsPerRequest, toGistPrompt, toGists, toOneLine } from "#memory/gists.ts";
 import {
   appendEntry,
   dayTitle,
@@ -35,17 +36,35 @@ import type { Term } from "#memory/vocabulary.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 
+export type LinkBody = { readonly address: string; readonly title: string; readonly aliases: readonly string[] };
+
 export type PageBody = {
   readonly address: string;
   readonly title: string;
+  readonly gist?: string;
   readonly shelf: Shelf | InMindPage;
   readonly aliases: readonly string[];
-  readonly links: readonly string[];
+  readonly links: readonly LinkBody[];
   readonly changed_at: string;
   readonly markdown: string;
 };
 
-export type PageSummary = { readonly address: string; readonly title: string; readonly changed_at: string };
+type ReadPage = Omit<PageBody, "links"> & { readonly links: readonly string[] };
+
+export type PageSummary = {
+  readonly address: string;
+  readonly title: string;
+  readonly gist?: string;
+  readonly changed_at: string;
+};
+
+export type RecentChangeBody = {
+  readonly change: string;
+  readonly address: string;
+  readonly title: string;
+  readonly at: string;
+  readonly note?: string;
+};
 
 export type ChangeBody = {
   readonly change: string;
@@ -59,6 +78,8 @@ export type ChangeBody = {
 export type SeededPage = {
   readonly address: string;
   readonly title: string;
+  readonly gist?: string;
+  readonly note?: string;
   readonly aliases: readonly string[];
   readonly links: readonly string[];
   readonly markdown: string;
@@ -71,7 +92,7 @@ export type Memory = {
   readonly inMind: () => readonly PageBody[];
   readonly shelves: () => readonly { readonly shelf: Shelf; readonly count: number }[];
   readonly pages: (shelf: Shelf) => readonly PageSummary[];
-  readonly recent: () => readonly PageSummary[];
+  readonly recent: () => readonly RecentChangeBody[];
   readonly page: (
     address: string,
   ) => Result<PageBody, { readonly code: "invalid" | "not_found"; readonly detail: string }>;
@@ -99,6 +120,7 @@ export type MemoryOptions = {
   readonly recordStep: (facts: StepFacts) => boolean;
   readonly info: Info;
   readonly timeZone: string;
+  readonly complete?: (prompt: string, schema: JsonSchema) => Promise<Result<unknown, string>>;
   readonly pushDelayMs?: number;
 };
 
@@ -110,7 +132,7 @@ const failingSinceSetting = "memory_push_failing_since";
 const dayMs = 24 * 60 * 60 * 1000;
 const longestPushDelayMs = 60 * 60 * 1000;
 const passagesPerRecall = 6;
-const recentPages = 20;
+const recentChanges = 20;
 
 const fieldOf = (value: unknown, field: string): unknown =>
   value && typeof value === "object" ? Reflect.get(value, field) : undefined;
@@ -138,6 +160,16 @@ const toPageReference = ({
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
+const missingField: Readonly<Record<string, string>> = {
+  gist: "Give the page a gist: what it is now, in one line.",
+  note: "Give a note: what this change does, in a few words.",
+};
+
+const toMissing = (input: unknown, fields: readonly string[]): string | undefined => {
+  const missing = fields.filter((field) => textOf(input, field).trim() === "").map((field) => missingField[field]);
+  return missing.length === 0 ? undefined : missing.join(" ");
+};
+
 const formatPassage = (passage: Passage, index: number): string =>
   `${String(index + 1)}. ${passage.title} (${passage.address}, ${passage.at.slice(0, 10)})\n${passage.text}`;
 
@@ -158,6 +190,7 @@ export const createMemory = ({
   recordStep,
   info,
   timeZone,
+  complete,
   pushDelayMs = 30_000,
 }: MemoryOptions): Memory => {
   const thread = createCell<Thread | undefined>(undefined);
@@ -166,6 +199,7 @@ export const createMemory = ({
   const pushAttempts = createCell(0);
   const hasRemote = createCell(false);
   const isClosed = createCell(false);
+  const gistPass = createCell<Promise<void> | undefined>(undefined);
 
   const opened = (): Thread => {
     const current = thread.get();
@@ -204,20 +238,33 @@ export const createMemory = ({
     return text === undefined ? undefined : parsePage(text, fallbackTitle(location));
   };
 
-  const readPage = (location: Location): PageBody | undefined => {
+  const readPage = (location: Location): ReadPage | undefined => {
     const page = readParsed(location);
     if (!page) return undefined;
-    const { title, aliases, links, markdown } = page;
+    const { title, gist, aliases, links, markdown } = page;
     return {
       address: location.address,
       shelf: location.shelf,
       title,
+      ...(gist !== undefined && { gist }),
       aliases,
       links,
       markdown,
       changed_at: fileChangedAt(location),
     };
   };
+
+  const toLink = (address: string): LinkBody | undefined => {
+    const location = toLocation(address);
+    if (!location.ok) return undefined;
+    const page = readParsed(location.value);
+    return page && { address: location.value.address, title: page.title, aliases: page.aliases };
+  };
+
+  const toPageBody = (page: ReadPage): PageBody => ({
+    ...page,
+    links: page.links.map((address) => toLink(address)).filter((link) => link !== undefined),
+  });
 
   const indexPage = async (location: Location, title: string, markdown: string | undefined): Promise<void> => {
     if (markdown === undefined || isInMindPage(location.shelf)) {
@@ -269,12 +316,21 @@ export const createMemory = ({
     title: string,
     text: string | undefined,
     message: string,
+    note: string | undefined,
   ): Promise<Result<string, string>> => {
     const committed = await opened().write(location.path, text, message);
     if (!committed.ok) return committed;
     const id = identifiers.change();
     const at = toTimestamp(clock.now());
-    store.recordChange({ id, address: location.address, title, file: location.path, commit: committed.value, at });
+    store.recordChange({
+      id,
+      address: location.address,
+      title,
+      file: location.path,
+      commit: committed.value,
+      ...(note !== undefined && { note }),
+      at,
+    });
     settings.setSetting(indexedSetting, committed.value);
     changedAt.update((current) => new Map([...current, [location.address, at]]));
     await indexPage(location, title, text === undefined ? undefined : parsePage(text, title).markdown);
@@ -298,11 +354,14 @@ export const createMemory = ({
             "Keep it to what matters on every turn, and move the detail to a page on a shelf.",
         );
       }
+      const gist = toOneLine(textOf(input, "gist")) || existing?.gist;
+      const note = toOneLine(textOf(input, "note")) || undefined;
       const text =
         markdown === ""
           ? undefined
           : formatPage({
               title,
+              ...(gist !== undefined && { gist }),
               aliases: stringsOf(input, "aliases"),
               links: stringsOf(input, "links"),
               heard: readParsed(location.value)?.heard ?? [],
@@ -310,7 +369,7 @@ export const createMemory = ({
             });
       if (text === opened().read(location.value.path)) return fail(`${title} already says exactly that.`);
       const verb = text === undefined ? "Delete" : existing ? "Update" : "Add";
-      const committed = await commit(location.value, title, text, `${verb} ${title}`);
+      const committed = await commit(location.value, title, text, `${verb} ${title}`, note);
       return committed.ok ? ok({ title, change: committed.value }) : committed;
     });
 
@@ -328,11 +387,12 @@ export const createMemory = ({
       const entry = toJournalEntry(words, fieldOf(input, "yours") === true, toTimeOfDay(clock.now(), timeZone));
       const text = formatPage({
         title,
+        gist: toOneLine(textOf(input, "gist")),
         aliases: [],
         links: [],
         markdown: appendEntry(existing?.markdown ?? "", entry),
       });
-      const committed = await commit(location.value, title, text, `Journal ${day}`);
+      const committed = await commit(location.value, title, text, `Journal ${day}`, toOneLine(textOf(input, "note")));
       return committed.ok ? ok({ address: location.value.address, title }) : committed;
     });
 
@@ -406,6 +466,67 @@ export const createMemory = ({
       await reindex();
     }
     settings.setSetting(indexedSetting, head);
+    startGistPass();
+  };
+
+  const writeGists = (gists: ReadonlyMap<string, string>): Promise<void> =>
+    serially(async () => {
+      if (isClosed.get()) return;
+      await catchUp();
+      const files = [...gists]
+        .map(([address, gist]) => {
+          const location = toLocation(address);
+          if (!location.ok) return;
+          const page = readParsed(location.value);
+          return page && page.gist === undefined
+            ? { file: location.value.path, text: formatPage({ ...page, gist }) }
+            : undefined;
+        })
+        .filter((file) => file !== undefined);
+      if (files.length === 0) return;
+      const committed = await opened().writeFiles(files, "Write gists");
+      if (!committed.ok) {
+        info("Ari's gists couldn't be saved", { error: committed.failure });
+        return;
+      }
+      settings.setSetting(indexedSetting, committed.value);
+      schedulePush();
+    });
+
+  const fillGists = async (ask: NonNullable<MemoryOptions["complete"]>): Promise<void> => {
+    const missing = opened()
+      .files()
+      .map((file) => toLocation(toAddress(file)))
+      .filter((location) => location.ok)
+      .map(({ value }) => readPage(value))
+      .filter((page): page is ReadPage => page !== undefined && page.gist === undefined)
+      .map(({ address, title, markdown }) => ({ address, title, markdown }));
+    const batches = Array.from({ length: Math.ceil(missing.length / gistsPerRequest) }, (_, index) =>
+      missing.slice(index * gistsPerRequest, (index + 1) * gistsPerRequest),
+    );
+    for (const batch of batches) {
+      if (isClosed.get()) return;
+      const answered = await ask(toGistPrompt(batch), gistSchema);
+      if (!answered.ok) {
+        info("Ari couldn't write gists for its pages yet", { error: answered.failure });
+        return;
+      }
+      await writeGists(toGists(answered.value, batch));
+    }
+  };
+
+  const startGistPass = (): void => {
+    if (!complete || gistPass.get() || isClosed.get()) return;
+    const run = async (): Promise<void> => {
+      try {
+        await fillGists(complete);
+      } catch (error) {
+        info("Ari's gists stopped partway", { error: String(error) });
+      } finally {
+        gistPass.set(undefined);
+      }
+    };
+    gistPass.set(run());
   };
 
   const ready = (async (): Promise<void> => {
@@ -415,6 +536,7 @@ export const createMemory = ({
     await serially(catchUp);
     indexConversation();
     schedulePush();
+    startGistPass();
   })();
 
   const sync = async (): Promise<void> => {
@@ -494,6 +616,12 @@ export const createMemory = ({
         properties: {
           address: { type: "string", description: "The page's address, such as memory:people/alex." },
           title: { type: "string", description: "The page's title, such as Alex." },
+          gist: { type: "string", description: `${gistGuide} Keep it current with every change.` },
+          note: {
+            type: "string",
+            description:
+              "What this change does, in a few words, such as “Florence together 6–9 Nov” or “Forgot the first date”.",
+          },
           aliases: { type: "array", items: { type: "string" }, description: "Other names for it." },
           links: {
             type: "array",
@@ -502,11 +630,13 @@ export const createMemory = ({
           },
           body: { type: "string", description: "The whole page as Markdown, without front matter." },
         },
-        required: ["address", "body"],
+        required: ["address", "gist", "note", "body"],
         additionalProperties: false,
       },
       call: (input) =>
         whenReady(async () => {
+          const missing = toMissing(input, textOf(input, "body").trim() === "" ? ["note"] : ["gist", "note"]);
+          if (missing) return failed(missing);
           const written = await writePage(input);
           if (!written.ok) return failed(written.failure);
           const address = textOf(input, "address").trim();
@@ -529,12 +659,21 @@ export const createMemory = ({
         properties: {
           text: { type: "string", description: "What to add, as Markdown." },
           yours: { type: "boolean", description: "True when these are the person's own words." },
+          gist: {
+            type: "string",
+            description:
+              "The day's headline so far, in one line, such as “Home from Ljubljana; Bora's first sub-two”. " +
+              "Keep it current as the day goes on.",
+          },
+          note: { type: "string", description: "What this entry adds, in a few words." },
         },
-        required: ["text"],
+        required: ["text", "gist", "note"],
         additionalProperties: false,
       },
       call: (input) =>
         whenReady(async () => {
+          const missing = toMissing(input, ["gist", "note"]);
+          if (missing) return failed(missing);
           const written = await writeJournal(input);
           if (!written.ok) return failed(written.failure);
           recordStep({ action: "journaled", pages: toPageReference(written.value) });
@@ -580,9 +719,22 @@ export const createMemory = ({
     }
     const heardBefore = page.heard ?? [];
     if (!heardBefore.includes(heard)) {
-      const { title, aliases, links, markdown } = page;
-      const text = formatPage({ title, aliases, links, heard: [...heardBefore, heard], markdown });
-      await commit(page.location, title, text, `Learn that ${title} can sound like ${heard}`);
+      const { title, gist, aliases, links, markdown } = page;
+      const text = formatPage({
+        title,
+        ...(gist !== undefined && { gist }),
+        aliases,
+        links,
+        heard: [...heardBefore, heard],
+        markdown,
+      });
+      await commit(
+        page.location,
+        title,
+        text,
+        `Learn that ${title} can sound like ${heard}`,
+        `Can sound like “${heard}”`,
+      );
     }
     return { heard, meant, address: page.address };
   };
@@ -595,6 +747,7 @@ export const createMemory = ({
             return location.ok ? readPage(location.value) : undefined;
           })
           .filter((page) => page !== undefined)
+          .map((page) => toPageBody(page))
       : [];
 
   const summariesOf = (files: readonly string[]): readonly PageSummary[] =>
@@ -604,7 +757,12 @@ export const createMemory = ({
         return location.ok ? readPage(location.value) : undefined;
       })
       .filter((page) => page !== undefined)
-      .map((page) => ({ address: page.address, title: page.title, changed_at: page.changed_at }));
+      .map(({ address, title, gist, changed_at }) => ({
+        address,
+        title,
+        ...(gist !== undefined && { gist }),
+        changed_at,
+      }));
 
   return {
     ready,
@@ -634,16 +792,18 @@ export const createMemory = ({
       );
     },
     recent: () =>
-      summariesOf(thread.get()?.files() ?? [])
-        .toSorted(
-          (left, right) => right.changed_at.localeCompare(left.changed_at) || left.title.localeCompare(right.title),
-        )
-        .slice(0, recentPages),
+      store.recentChanges(recentChanges).map(({ id, address, title, note, at }) => ({
+        change: id,
+        address,
+        title,
+        at,
+        ...(note !== undefined && { note }),
+      })),
     page: (address) => {
       const location = toLocation(address);
       if (!location.ok) return fail({ code: "invalid", detail: location.failure });
       const page = thread.get() ? readPage(location.value) : undefined;
-      return page ? ok(page) : fail({ code: "not_found", detail: `There's no page at ${address}.` });
+      return page ? ok(toPageBody(page)) : fail({ code: "not_found", detail: `There's no page at ${address}.` });
     },
     change: async (id) => {
       await ready;

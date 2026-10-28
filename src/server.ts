@@ -130,6 +130,10 @@ export const createServer = (options: ServerOptions): Server => {
     recordStep: (facts) => turns.recordStep("memory", facts),
     info,
     timeZone: options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
+    complete: async (prompt, schema) => {
+      await listening;
+      return engine.complete(prompt, schema);
+    },
   });
   const callContext = (): string => {
     const latest = store.latestCall();
@@ -211,6 +215,12 @@ export const createServer = (options: ServerOptions): Server => {
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
+  });
+  const listening = new Promise<void>((resolve) => {
+    app.addHook("onListen", (done) => {
+      resolve();
+      done();
+    });
   });
   logError.set((message, error) => {
     app.log.error({ err: error }, message);

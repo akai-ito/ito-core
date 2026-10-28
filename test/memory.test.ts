@@ -5,13 +5,19 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
+import { systemClock } from "#clock.ts";
+import { demoScripts } from "#engine/scripted/demo.ts";
+import { demoModels } from "#engine/scripted/models.ts";
+import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import type { StepFacts } from "#engine/engine.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
-import { createMemory, type Memory } from "#memory/memory.ts";
+import { createMemory, type Memory, type MemoryOptions } from "#memory/memory.ts";
 import { openThread } from "#memory/thread.ts";
+import { ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createMemoryStore } from "#store/memory.ts";
+import { createServer } from "#server.ts";
 import { createStore } from "#store/store.ts";
 import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
@@ -25,7 +31,7 @@ type Opened = {
   readonly steps: () => readonly StepFacts[];
 };
 
-const openMemory = async (): Promise<Opened> => {
+const openMemory = async (complete?: MemoryOptions["complete"]): Promise<Opened> => {
   const directory = mkdtempSync(path.join(home, "home-"));
   const database = openDatabase(path.join(directory, "ito.db"));
   const clock = createVirtualClock(Date.parse("2026-10-26T19:00:00.000Z"));
@@ -43,6 +49,7 @@ const openMemory = async (): Promise<Opened> => {
     },
     info: () => true,
     timeZone: "UTC",
+    ...(complete && { complete }),
   });
   memories.update((current) => [...current, memory]);
   await memory.ready;
@@ -54,6 +61,9 @@ const call = async (memory: Memory, name: string, input: unknown): Promise<{ tex
   if (!tool) throw new Error(`No tool ${name}.`);
   return tool.call(input);
 };
+
+const write = async (memory: Memory, input: Readonly<Record<string, unknown>>): Promise<{ text: string }> =>
+  call(memory, "remember", { gist: "A page", note: "A change", ...input });
 
 const git = (directory: string, ...arguments_: readonly string[]): string =>
   execFileSync("git", ["-C", directory, ...arguments_], { encoding: "utf8" });
@@ -71,8 +81,8 @@ describe("memory", () => {
   it("keeps the pages in mind short, and says where the detail goes", async () => {
     const { memory } = await openMemory();
 
-    const refused = await call(memory, "remember", { address: "memory:now", body: "a".repeat(2001) });
-    const saved = await call(memory, "remember", {
+    const refused = await write(memory, { address: "memory:now", body: "a".repeat(2001) });
+    const saved = await write(memory, {
       address: "memory:now",
       body: "Training for Valencia (as of 22 Oct).",
     });
@@ -89,9 +99,9 @@ describe("memory", () => {
 
   it("deletes a page given an empty body, and the change still shows what it said", async () => {
     const { memory, steps } = await openMemory();
-    await call(memory, "remember", { address: "memory:places/dishoom", title: "Dishoom", body: "Our first date." });
+    await write(memory, { address: "memory:places/dishoom", title: "Dishoom", body: "Our first date." });
 
-    await call(memory, "remember", { address: "memory:places/dishoom", body: "" });
+    await write(memory, { address: "memory:places/dishoom", body: "" });
     const change = steps().at(-1)?.change ?? "";
 
     expect(memory.page("memory:places/dishoom")).toMatchObject({ ok: false, failure: { code: "not_found" } });
@@ -101,8 +111,8 @@ describe("memory", () => {
 
   it("recalls pages by their words, and never the pages already in mind", async () => {
     const { memory, steps } = await openMemory();
-    await call(memory, "remember", { address: "memory:now", body: "Lisbon is coming up." });
-    await call(memory, "remember", {
+    await write(memory, { address: "memory:now", body: "Lisbon is coming up." });
+    await write(memory, {
       address: "memory:projects/lisbon",
       title: "Lisbon trip",
       body: "Four nights in Lisbon.",
@@ -125,7 +135,7 @@ describe("memory", () => {
     const thread = await openThread(path.join(directory, "thread"));
     await thread.setRemote(remote);
 
-    await call(memory, "remember", { address: "memory:people/sam", title: "Sam", body: "A friend from running." });
+    await write(memory, { address: "memory:people/sam", title: "Sam", body: "A friend from running." });
     clock.runNext(clock.now() + 30_000);
     await vi.waitFor(() => {
       expect(git(remote, "log", "--format=%s", "main")).toContain("Add Sam");
@@ -133,7 +143,7 @@ describe("memory", () => {
     expect(memory.isBackedUp()).toBe(true);
 
     rmSync(remote, { recursive: true, force: true });
-    await call(memory, "remember", { address: "memory:people/sam", title: "Sam", body: "A friend from the club." });
+    await write(memory, { address: "memory:people/sam", title: "Sam", body: "A friend from the club." });
     clock.runNext(clock.now() + 30_000);
     await delay(500);
     clock.moveTo(clock.now() + 25 * 60 * 60 * 1000);
@@ -144,7 +154,7 @@ describe("memory", () => {
   it("catches up with pages that arrive in the Thread from outside, and drops deleted ones", async () => {
     const { memory, directory } = await openMemory();
     const thread = path.join(directory, "thread");
-    await call(memory, "remember", { address: "memory:places/dishoom", title: "Dishoom", body: "Our first date." });
+    await write(memory, { address: "memory:places/dishoom", title: "Dishoom", body: "Our first date." });
 
     mkdirSync(path.join(thread, "people"), { recursive: true });
     writeFileSync(path.join(thread, "people", "sam.md"), "---\ntitle: Sam\n---\n\nYou run with Sam on Sundays.\n");
@@ -157,7 +167,92 @@ describe("memory", () => {
 
     expect(sam.text).toContain("Sam (memory:people/sam");
     expect(dishoom.text).not.toContain("Dishoom");
-    expect(memory.recent().map(({ address }) => address)).toEqual(["memory:people/sam"]);
+    expect(memory.recent()).toMatchObject([
+      { address: "memory:people/sam", title: "Sam" },
+      { address: "memory:places/dishoom", title: "Dishoom", note: "A change" },
+    ]);
+    expect(memory.recent()[0]).not.toHaveProperty("note");
+  });
+
+  it("asks for a gist and a note with every page it writes, and only a note to delete one", async () => {
+    const { memory } = await openMemory();
+    const both =
+      "Give the page a gist: what it is now, in one line. Give a note: what this change does, in a few words.";
+
+    const bare = await call(memory, "remember", { address: "memory:people/sam", title: "Sam", body: "A friend." });
+    const deleting = await call(memory, "remember", { address: "memory:people/sam", body: "", gist: "Gone" });
+    const journal = await call(memory, "journal", { text: "Ran with Sam." });
+
+    expect(bare).toEqual({ text: both, isError: true });
+    expect(deleting).toEqual({ text: "Give a note: what this change does, in a few words.", isError: true });
+    expect(journal).toEqual({ text: both, isError: true });
+  });
+
+  it("writes a gist for each page that arrives without one, in a commit that isn't a change", async () => {
+    const prompts = createCell<readonly string[]>([]);
+    const { memory, directory } = await openMemory((prompt) => {
+      prompts.update((current) => [...current, prompt]);
+      return Promise.resolve(
+        ok({
+          gists: [
+            { address: "memory:people/sam", gist: "Your Sunday\nrunning friend" },
+            { address: "memory:people/nobody", gist: "Never asked for" },
+          ],
+        }),
+      );
+    });
+    const thread = path.join(directory, "thread");
+    await write(memory, { address: "memory:places/dishoom", title: "Dishoom", body: "Our first date." });
+    mkdirSync(path.join(thread, "people"), { recursive: true });
+    writeFileSync(path.join(thread, "people", "sam.md"), "---\ntitle: Sam\n---\n\nYou run with Sam on Sundays.\n");
+    git(thread, "add", "people/sam.md");
+    git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
+
+    await memory.sync();
+    await vi.waitFor(() => {
+      expect(memory.page("memory:people/sam")).toMatchObject({
+        ok: true,
+        value: { gist: "Your Sunday running friend" },
+      });
+    });
+    await memory.sync();
+
+    expect(prompts.get()).toHaveLength(1);
+    expect(prompts.get()[0]).toContain("## Sam (memory:people/sam)\n\nYou run with Sam on Sundays.");
+    expect(prompts.get()[0]).not.toContain("Dishoom");
+    expect(git(thread, "log", "-1", "--format=%s")).toBe("Write gists\n");
+    expect(memory.page("memory:people/nobody")).toMatchObject({ ok: false });
+    expect(memory.recent().map(({ address }) => address)).toEqual(["memory:people/sam", "memory:places/dishoom"]);
+  });
+
+  it("asks the engine for gists only once the server is listening, so Codex starts with Ito's tools", async () => {
+    const directory = mkdtempSync(path.join(home, "server-"));
+    const thread = await openThread(path.join(directory, "thread"));
+    await thread.write("people/sam.md", "---\ntitle: Sam\n---\n\nYou run with Sam.\n", "Imported from Ariadne");
+    const asked = createCell(0);
+    const server = createServer({
+      dataDirectory: directory,
+      name: "gists",
+      embedder: wordEmbedder,
+      timeZone: "UTC",
+      createEngine: ({ callTool }) =>
+        createScriptEngine(systemClock, demoScripts, callTool, demoModels, () => {
+          asked.update((count) => count + 1);
+          return Promise.resolve(ok({ gists: [{ address: "memory:people/sam", gist: "Runs with you" }] }));
+        }),
+    });
+    await server.memory.ready;
+    await delay(200);
+    const askedBeforeListening = asked.get();
+
+    await server.app.listen({ host: "127.0.0.1", port: 0 });
+    await vi.waitFor(() => {
+      expect(server.memory.page("memory:people/sam")).toMatchObject({ ok: true, value: { gist: "Runs with you" } });
+    });
+    await server.close();
+
+    expect(askedBeforeListening).toBe(0);
+    expect(asked.get()).toBe(1);
   });
 
   it("pulls only when it can fast-forward, and refuses when both sides changed", async () => {
@@ -192,13 +287,13 @@ describe("memory", () => {
 
   it("learns how a name is misheard, and keeps it when Ari rewrites the page", async () => {
     const { memory } = await openMemory();
-    await call(memory, "remember", { address: "memory:people/bora", title: "Bora", body: "You run with Bora." });
+    await write(memory, { address: "memory:people/bora", title: "Bora", body: "You run with Bora." });
 
     const learnt = await memory.learn([
       { heard: "Bara", meant: "bora" },
       { heard: "cutie", meant: "QRT" },
     ]);
-    await call(memory, "remember", {
+    await write(memory, {
       address: "memory:people/bora",
       title: "Bora",
       body: "You run with Bora on Saturdays.",
