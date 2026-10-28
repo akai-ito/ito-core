@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Term } from "#memory/vocabulary.ts";
 import { correct } from "#voice/corrector.ts";
-import { createSentenceFeed, spokenPart } from "#voice/spoken.ts";
+import { createSentenceFeed, longestSpoken, spokenPart, toClauses } from "#voice/spoken.ts";
 
 const term = (text: string, kind: Term["kind"], heard: readonly string[] = []): Term => ({
   text,
@@ -10,6 +10,8 @@ const term = (text: string, kind: Term["kind"], heard: readonly string[] = []): 
   phrases: [],
   heard: [...heard],
 });
+
+const words = (text: string): number => text.split(" ").length;
 
 const vocabulary: readonly Term[] = [
   term("Bora", "person", ["Bara"]),
@@ -49,6 +51,19 @@ describe("what Ari says on a call", () => {
     expect(spokenPart(reply)).toBe("She wants one more round on your design. I've put the list in the chat.");
     expect(spokenPart("- Eggs\n- [Milk](https://shop.example)")).toBe("Eggs. Milk.");
     expect(spokenPart("A rule --- inside a line stays")).toBe("A rule --- inside a line stays.");
+  });
+
+  it("says a long sentence in clauses, cutting at the punctuation nearest its middle", () => {
+    const long =
+      "I looked through every note from the trip last spring, including the ones from the train, and the main " +
+      "thing is that the budget review moved to Friday afternoon so the draft has to reach Maya by Thursday.";
+    expect(toClauses(long)).toEqual([
+      "I looked through every note from the trip last spring, including the ones from the train,",
+      "and the main thing is that the budget review moved to Friday afternoon so the draft has to reach Maya by Thursday.",
+    ]);
+    expect(toClauses(Array.from({ length: 60 }, () => "word").join(" ")).map(words)).toEqual([15, 15, 15, 15]);
+    expect(toClauses("Short and sweet.")).toEqual(["Short and sweet."]);
+    expect(toClauses(long).every((clause) => words(clause) <= longestSpoken)).toBe(true);
   });
 
   it("feeds a streaming reply to the voice a sentence at a time, and stops at the divider", () => {

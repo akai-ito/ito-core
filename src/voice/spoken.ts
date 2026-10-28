@@ -37,6 +37,21 @@ const sentenceEnds = (text: string): readonly number[] =>
     .map((match) => match.index + 1)
     .toArray();
 
+export const longestSpoken = 25;
+
+const clauseEnd = /[,;:\u{2013}\u{2014}]$/u;
+
+export const toClauses = (sentence: string): readonly string[] => {
+  const words = sentence.split(/\s+/u).filter((word) => word !== "");
+  if (words.length <= longestSpoken) return [sentence];
+  const middle = words.length / 2;
+  const cuts = words
+    .map((word, index) => (clauseEnd.test(word) && index + 1 < words.length ? index + 1 : 0))
+    .filter((index) => index > 0);
+  const cut = cuts.toSorted((left, right) => Math.abs(left - middle) - Math.abs(right - middle))[0] ?? Math.ceil(middle);
+  return [...toClauses(words.slice(0, cut).join(" ")), ...toClauses(words.slice(cut).join(" "))];
+};
+
 export type SentenceFeed = (text: string, isFinished: boolean) => readonly string[];
 
 export const createSentenceFeed = (): SentenceFeed => {
@@ -50,7 +65,8 @@ export const createSentenceFeed = (): SentenceFeed => {
     const sentences = bounds
       .slice(1)
       .map((end, index) => rest.slice(bounds[index] ?? 0, end).trim())
-      .filter((sentence) => sentence !== "");
+      .filter((sentence) => sentence !== "")
+      .flatMap((sentence) => toClauses(sentence));
     spokenCount.set(spokenCount.get() + cut);
     return sentences;
   };

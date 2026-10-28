@@ -54,6 +54,10 @@ names = [
 background_text = (
     "No, the other one, by the fountain. We walked past it twice yesterday and the dog wanted to stop every time."
 )
+background_sentences = [
+    "No, the other one, by the fountain.",
+    "We walked past it twice yesterday, and the dog wanted to stop every time.",
+]
 test_voices = ["af_heart", "bf_emma", "am_michael", "bm_george"]
 strengths = [1.0, 2.0, 3.0]
 pauses_ms = [100, 200, 300]
@@ -684,7 +688,9 @@ def check_turns(report: Report, loaded: Models) -> dict[str, float]:
         )
     finished_clips = [render(speaker, text, test_voices[index % 4]) for index, text in enumerate(everyday)]
     unfinished_clips = [render(speaker, text, test_voices[index % 4]) for index, text in enumerate(unfinished)]
-    background = render(speaker, background_text + " " + background_text, "am_michael")
+    background = np.concatenate(
+        [render(speaker, sentence, "am_michael") for sentence in background_sentences + background_sentences]
+    )
     noise = street_noise(20)
     reference = np.concatenate(finished_clips)
     with report.step(lines, "What Silero takes for speech"):
