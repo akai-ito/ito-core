@@ -130,6 +130,19 @@ def test_it_learns_your_voiceprint_from_two_minutes_of_turns() -> None:
     assert listener.voiceprint == heard.voiceprints[0]
 
 
+def test_forgetting_the_voiceprint_lets_any_voice_through_until_it_relearns() -> None:
+    heard = Heard()
+    listener = Listener(ears(), heard.hearing(), voiceprint=Voiceprint(np.array([0.0, 1.0]), 0.6))
+
+    listener.feed(np.concatenate([tone(1.5), quiet(0.5)]))
+    assert heard.turns == []
+    listener.forget()
+    listener.feed(np.concatenate([tone(1.5), quiet(0.5)]))
+
+    assert len(heard.turns) == 1
+    assert listener.voiceprint is None
+
+
 def test_flushing_sends_a_turn_in_progress() -> None:
     heard = Heard()
     listener = Listener(ears(), heard.hearing())

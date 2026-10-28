@@ -176,6 +176,12 @@ class Voice:
         await asyncio.get_running_loop().run_in_executor(None, done.wait)
         return {}
 
+    async def forget(self, _: Mapping[str, Any]) -> Mapping[str, Any]:
+        loop = asyncio.get_running_loop()
+        for session in list(self._sessions.values()):
+            await loop.run_in_executor(None, session.forget().wait)
+        return {}
+
     async def stop(self, params: Mapping[str, Any]) -> Mapping[str, Any]:
         session = self._sessions.pop(str(params.get("session")), None)
         if session is not None:
@@ -202,6 +208,7 @@ async def run() -> None:
         "listen": voice.listen,
         "flush": voice.flush,
         "stop": voice.stop,
+        "forget": voice.forget,
     }
     await link.run(handlers, {"audio": voice.hear, "speaking": voice.speaking})
     loading.cancel()

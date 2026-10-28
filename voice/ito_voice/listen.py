@@ -121,6 +121,11 @@ class Listener:
             self._step(pending[start : start + frame])
         self._pending = pending[whole:]
 
+    def forget(self) -> None:
+        self.voiceprint = None
+        self._learning = []
+        self._you = False
+
     def flush(self) -> None:
         if self._turn:
             self._end_turn()

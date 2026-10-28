@@ -6,6 +6,7 @@ import type { Memory } from "#memory/memory.ts";
 import type { Store } from "#store/store.ts";
 import { spokenRate, toWav, type VoiceLoop } from "#voice/loop.ts";
 import type { Calls } from "#voice/calls.ts";
+import type { Voiceprints } from "#voice/voiceprints.ts";
 import { chosenVoice, isKnownVoice, unknownVoice, voices, voiceSetting } from "#voice/voices.ts";
 
 type CallPath = { readonly call: string };
@@ -22,6 +23,7 @@ export type TalkOptions = {
   readonly memory: Memory;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
+  readonly voiceprints: Voiceprints;
   readonly schemaFor: (operationId: string) => RouteSchema;
 };
 
@@ -31,7 +33,7 @@ const noCall = (call: string): { readonly error: ReturnType<typeof toCommandErro
 
 export const registerTalk = (
   app: FastifyInstance,
-  { store, attachments, memory, voice, calls, schemaFor }: TalkOptions,
+  { store, attachments, memory, voice, calls, voiceprints, schemaFor }: TalkOptions,
 ): void => {
   app.put<{ Params: CallPath }>("/v0/calls/:call", { schema: schemaFor("startCall") }, async (request, reply) => {
     void voice.refreshVocabulary();
@@ -57,7 +59,20 @@ export const registerTalk = (
     },
   );
 
-  app.get("/v0/voices", () => ({ voices, chosen: chosenVoice(store), ...voice.readiness() }));
+  const voiceList = (): Readonly<Record<string, unknown>> => ({
+    voices,
+    chosen: chosenVoice(store),
+    ...voice.readiness(),
+    voiceprint: voiceprints.state(),
+  });
+
+  app.get("/v0/voices", voiceList);
+
+  app.delete("/v0/voice/voiceprint", async () => {
+    voiceprints.forget();
+    await voice.forgetVoiceprint();
+    return voiceList();
+  });
 
   app.put<{ Body: VoiceBody }>("/v0/voice", { schema: schemaFor("chooseVoice") }, (request, reply) => {
     const chosen = request.body.voice;

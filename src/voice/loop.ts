@@ -33,6 +33,7 @@ export type VoiceLoop = {
     onHeard: (heard: Heard) => void,
   ) => Promise<Result<Listening, string>>;
   readonly refreshVocabulary: () => Promise<void>;
+  readonly forgetVoiceprint: () => Promise<void>;
   readonly close: () => Promise<void>;
 };
 
@@ -76,5 +77,6 @@ export const noVoice = (reason: string): VoiceLoop => ({
   speak: () => Promise.resolve(fail({ code: "unavailable", detail: reason })),
   listen: () => Promise.resolve(fail(reason)),
   refreshVocabulary: () => Promise.resolve(),
+  forgetVoiceprint: () => Promise.resolve(),
   close: () => Promise.resolve(),
 });

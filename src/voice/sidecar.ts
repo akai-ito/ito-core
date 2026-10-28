@@ -317,6 +317,10 @@ export const createSidecarVoice = ({
       const current = running.get();
       if (current) await sendVocabulary(current.connection);
     },
+    forgetVoiceprint: async () => {
+      const current = running.get();
+      if (current) await current.connection.request("forget", {});
+    },
     close: async () => {
       isClosed.set(true);
       restart.get()?.();

@@ -7,7 +7,8 @@ import type { Term } from "#memory/vocabulary.ts";
 import type { Store } from "#store/store.ts";
 import type { Info, Log, Turns } from "#turns/turns.ts";
 import { correct } from "#voice/corrector.ts";
-import { heardRate, toWav, type Heard, type Listening, type VoiceLoop, type Voiceprint } from "#voice/loop.ts";
+import { heardRate, toWav, type Heard, type Listening, type VoiceLoop } from "#voice/loop.ts";
+import type { Voiceprints } from "#voice/voiceprints.ts";
 import { askAloud, createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
 
 export type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
@@ -29,11 +30,6 @@ export type CallSocket = {
   readonly send: (frame: ToApp) => void;
   readonly sendAudio: (pcm: Uint8Array) => void;
   readonly close: (code: number, reason: string) => void;
-};
-
-export type Voiceprints = {
-  readonly load: () => Voiceprint | undefined;
-  readonly save: (voiceprint: Voiceprint) => void;
 };
 
 export type CallOptions = {
