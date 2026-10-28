@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Term } from "#memory/vocabulary.ts";
 import { correct } from "#voice/corrector.ts";
-import { createSentenceFeed, longestSpoken, spokenPart, toClauses } from "#voice/spoken.ts";
+import { askAloud, createSentenceFeed, longestSpoken, secretAloud, spokenPart, toClauses } from "#voice/spoken.ts";
 
 const term = (text: string, kind: Term["kind"], heard: readonly string[] = []): Term => ({
   text,
@@ -64,6 +64,30 @@ describe("what Ari says on a call", () => {
     expect(toClauses(Array.from({ length: 60 }, () => "word").join(" ")).map(words)).toEqual([15, 15, 15, 15]);
     expect(toClauses("Short and sweet.")).toEqual(["Short and sweet."]);
     expect(toClauses(long).every((clause) => words(clause) <= longestSpoken)).toBe(true);
+  });
+
+  it("says an ask with its choices, an approval's preview first, and never a secret", () => {
+    const options = [{ label: "Add it" }, { label: "Leave it" }];
+
+    expect(askAloud({ kind: "question", question: "Shall I add a reminder?", options, secret: false })).toEqual([
+      "Shall I add a reminder?",
+      "Add it, or Leave it?",
+    ]);
+    expect(askAloud({ kind: "question", question: "Add it or leave it?", options, secret: false })).toEqual([
+      "Add it or leave it?",
+    ]);
+    expect(
+      askAloud({
+        kind: "approval",
+        question: "Shall I add it?",
+        options: [{ label: "Add reminder", acts: true }, { label: "Don't" }],
+        preview: "**Calendar:** Call Mum, Sunday 1 November, 2pm London",
+        secret: false,
+      }),
+    ).toEqual(["Calendar: Call Mum, Sunday 1 November, 2pm London.", "Shall I add it?", "Add reminder, or Don't?"]);
+    expect(askAloud({ kind: "question", question: "What's the code?", options: [], secret: true })).toEqual([
+      secretAloud,
+    ]);
   });
 
   it("feeds a streaming reply to the voice a sentence at a time, and stops at the divider", () => {

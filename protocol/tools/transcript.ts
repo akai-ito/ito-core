@@ -27,7 +27,7 @@ import type { Event, Line } from "./spec.ts";
 import { fixtureDirectory } from "./transcript-files.ts";
 import type { Term } from "#memory/vocabulary.ts";
 import { correct } from "#voice/corrector.ts";
-import { createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
+import { askAloud, createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
 
 export type Header = {
   readonly name: string;
@@ -843,6 +843,7 @@ export const createTranscript = (header: Header): Transcript => {
     const message = fields.message as string | undefined | { readonly id: string; readonly role?: string };
     if (type === "turn.started" && model.state !== "hearing" && model.unplayed.length === 0) moveTo("working");
     if (type === "turn.ended") settleCall(false);
+    else if (type === "ask.started") speak(askAloud(fields.ask as Ask));
     if (type === "message.started" && typeof message === "object" && message.role === "agent") {
       callModel.set({ ...model, feeds: new Map([...model.feeds, [message.id, createSentenceFeed()]]) });
     }
@@ -894,6 +895,8 @@ export const createTranscript = (header: Header): Transcript => {
       size: readFileSync(path.join(fixtureDirectory, file)).length + 44,
     };
     const id = newId("m");
+    const asked = waiting.get();
+    const answering = asked === undefined || askById(asked).secret ? undefined : asked;
     emit("message.accepted", {
       message: {
         id,
@@ -901,9 +904,11 @@ export const createTranscript = (header: Header): Transcript => {
         text,
         at: timestamp(),
         position: nextPosition(),
+        ...(answering && { answers: answering }),
         spoken: { call: model.call, audio, ...(corrections.length > 0 && { corrections }) },
       },
     });
+    if (answering) endAsk(answering, "answered", id);
     serverFrame({ type: "heard", text, final: true, message: id });
     return id;
   };

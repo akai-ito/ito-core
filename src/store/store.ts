@@ -486,7 +486,8 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           return fail("attachment_taken");
         const attached = attachedRows.flatMap((row) => (row ? [JSON.parse(row.body) as Attachment] : []));
         const isSecret = named !== undefined && toAsk(named).secret;
-        const waiting = waitingRow();
+        const waitingAsk = waitingRow();
+        const waiting = waitingAsk && !(spoken && toAsk(waitingAsk).secret) ? waitingAsk : undefined;
         const at = now();
         const message: Message = {
           id,

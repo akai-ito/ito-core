@@ -2466,6 +2466,94 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.hangUp();
     return transcript;
   },
+
+  () => {
+    const transcript = createTranscript({
+      name: "51-asked-on-a-call",
+      scenario: 51,
+      title: "Asked on a call",
+      summary:
+        "On a call, Ari asks for approval: the server says the preview, the question and the choices aloud, " +
+        "and your next words answer it, so the reminder is added without looking at the phone.",
+      guarantees: ["G25", "G26"],
+    });
+    transcript.begin("2026-10-28T08:00:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(3000);
+    const asked = transcript.youSay("walk-question.pcm", "Remind me to call Mum on Sunday at two.");
+    transcript.startTurn([asked]);
+    transcript.wait(1200);
+    transcript.ask({
+      kind: "approval",
+      question: "Shall I add it to your calendar?",
+      preview: "Calendar: Call Mum, Sunday 1 November, 2pm",
+      options: [{ label: "Add it", acts: true }, { label: "Leave it" }],
+      allowsText: false,
+    });
+    transcript.endTurn("completed");
+    transcript.wait(4000);
+    for (const sentence of transcript.unplayed()) transcript.played(sentence);
+    transcript.wait(1500);
+    const yes = transcript.youSay("walk-follow-up.pcm", "Add it.");
+    transcript.startTurn([yes]);
+    transcript.wait(900);
+    writeWhole(transcript, "Added. I'll remind you on Sunday.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(2000);
+    for (const sentence of transcript.unplayed()) transcript.played(sentence);
+    transcript.wait(10_000);
+    transcript.hangUp();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "52-a-code-on-a-call",
+      scenario: 52,
+      title: "A code on a call",
+      summary:
+        "Ari needs a code mid-call. The server never takes a secret by voice: it says to type it in the chat, " +
+        "a code said aloud stays an ordinary message, and the ask waits until you type the answer.",
+      guarantees: ["G25"],
+    });
+    transcript.begin("2026-10-28T08:30:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(3000);
+    const asked = transcript.youSay("walk-question.pcm", "Confirm the Juno booking.");
+    transcript.startTurn([asked]);
+    transcript.wait(1200);
+    const code = transcript.ask({ question: "Juno texted you a 6-digit code. What is it?", secret: true });
+    transcript.endTurn("completed");
+    transcript.wait(2500);
+    for (const sentence of transcript.unplayed()) transcript.played(sentence);
+    transcript.wait(1500);
+    const said = transcript.youSay("walk-follow-up.pcm", "It's four eight one five one six.");
+    transcript.startTurn([said]);
+    transcript.wait(900);
+    writeWhole(transcript, "Type it in the chat, please. I won't take a code by voice.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(2500);
+    for (const sentence of transcript.unplayed()) transcript.played(sentence);
+    transcript.wait(8000);
+    const answer = transcript.send("481516", { answers: code });
+    transcript.startTurn([answer]);
+    transcript.wait(900);
+    writeWhole(transcript, "Confirmed. You're booked at Juno on Saturday.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(2500);
+    for (const sentence of transcript.unplayed()) transcript.played(sentence);
+    transcript.wait(10_000);
+    transcript.hangUp();
+    return transcript;
+  },
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

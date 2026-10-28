@@ -8,7 +8,7 @@ import type { Store } from "#store/store.ts";
 import type { Info, Log, Turns } from "#turns/turns.ts";
 import { correct } from "#voice/corrector.ts";
 import { heardRate, toWav, type Heard, type Listening, type VoiceLoop, type Voiceprint } from "#voice/loop.ts";
-import { createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
+import { askAloud, createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
 
 export type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -200,13 +200,16 @@ export const createCallStream = (options: CallOptions): CallStream => {
           enqueue(feed(text, event.type === "message.ended"));
           return;
         }
+        case "ask.started": {
+          enqueue(askAloud(event.ask));
+          return;
+        }
         case "message.accepted":
         case "message.queued":
         case "message.read":
         case "step.started":
         case "step.updated":
         case "step.ended":
-        case "ask.started":
         case "ask.ended":
         case "call.started":
         case "call.ended":

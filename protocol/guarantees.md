@@ -33,8 +33,8 @@ where the protocol has to make it possible, marked *App*.
 | G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36 |
 | G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. What you teach the vocabulary corrects how names are heard, never what they're called. | 38, 40, 41 |
 | G24 | **Talk only when the server can talk.** The server says whether it can hold a call, meaning it can listen and speak with your names loaded, and when it can't, why in a line to show. It says so on the event stream as soon as that changes. There's no worse fallback: while the voice isn't ready, the app doesn't offer Talk. | 43, 44, 49 |
-| G25 | **The server hears your turns.** Each turn you finish becomes one spoken message, posted by the server with its recording and the words it corrected from what it has learnt, and shown live as you speak. Nothing you say while muted is heard. | 38, 39, 45, 48 |
-| G26 | **Ari's voice gives way to yours.** Ari speaks only what comes before a line holding `---`, a sentence at a time with its caption, and stops at once when you talk over it. Silence while it works is covered by the phone's tone; Ari says what it's doing only after a long quiet, once. | 38, 45, 50 |
+| G25 | **The server hears your turns.** Each turn you finish becomes one spoken message, posted by the server with its recording and the words it corrected from what it has learnt, and shown live as you speak. Nothing you say while muted is heard, and nothing you say answers a secret ask: secrets are typed. | 38, 39, 45, 48, 51, 52 |
+| G26 | **Ari's voice gives way to yours.** Ari speaks only what comes before a line holding `---`, a sentence at a time with its caption, and stops at once when you talk over it. On a call, asks are said aloud with their choices. Silence while it works is covered by the phone's tone; Ari says what it's doing only after a long quiet, once. | 38, 45, 50, 51 |
 | G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
 
 ## Scenario by scenario
@@ -386,6 +386,16 @@ where the protocol has to make it possible, marked *App*.
 
 - While Ari works, the server stays quiet until about 9 seconds have passed, then speaks the
   status once. (G26)
+
+### 51 · [Asked on a call](transcripts/51-asked-on-a-call.jsonl)
+
+- An ask during a call is spoken: an approval's preview in a line, the question, then its choices;
+  the next spoken turn answers it. (G25, G26)
+
+### 52 · [A code on a call](transcripts/52-a-code-on-a-call.jsonl)
+
+- A secret ask is never answered by voice: the server says to type it in the chat, a spoken turn
+  stays an ordinary message, and the ask waits for the typed answer. (G25)
 
 ## Not in this version
 
