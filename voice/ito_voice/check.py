@@ -253,9 +253,10 @@ def check_box(report: Report) -> str:
         lines.append(f"- GPU: {properties.name}, {capability}, {gib(total)} ({gib(free)} free at the start)")
         lines.append(f"- PyTorch's kernels: {', '.join(built)}; {capability} {'is' if covered else 'is NOT'} covered")
         lines.append(f"- cuDNN {torch.backends.cudnn.version()}")
-        others = run_command(
+        listed = run_command(
             ["nvidia-smi", "--query-compute-apps=pid,process_name,used_memory", "--format=csv,noheader"]
         )
+        others = "; ".join(line for line in listed.splitlines() if not line.startswith(f"{os.getpid()},"))
         lines.append(f"- Already on the GPU: {others or 'nothing'}")
         if others:
             lines.append("  (If one is ito serve's voice, stop ito serve and run the check again for clean numbers.)")
@@ -319,15 +320,20 @@ def load_models(report: Report, device: str) -> Models:
 
     with report.step(lines, f"Loading Kokoro on the {device.upper()}"):
         load_speaker(device)
+    fits = True
     with report.step(lines, f"Loading Parakeet on the {device.upper()}"):
         try:
             load_recogniser()
-        except torch.cuda.OutOfMemoryError:
-            lines.append("- **Both didn't fit on the GPU: trying Parakeet on the GPU and Kokoro on the CPU**")
-            report.problems.append("Kokoro and Parakeet don't fit on the GPU together.")
-            loaded.speaker, loaded.recogniser = None, None
-            gc.collect()
-            torch.cuda.empty_cache()
+        except torch.cuda.OutOfMemoryError as error:
+            fits = False
+            lines.append(f"- **Parakeet didn't fit beside Kokoro: {str(error).splitlines()[0]}**")
+    if not fits:
+        lines.append("- **Trying Parakeet on the GPU and Kokoro on the CPU**")
+        report.problems.append("Kokoro and Parakeet don't fit on the GPU together.")
+        loaded.speaker, loaded.recogniser = None, None
+        gc.collect()
+        torch.cuda.empty_cache()
+        with report.step(lines, "Loading Parakeet on the GPU, with Kokoro on the CPU"):
             load_recogniser()
             load_speaker("cpu")
     with report.step(lines, "Loading Silero VAD"):
@@ -338,6 +344,7 @@ def load_models(report: Report, device: str) -> Models:
         lines.append(f"- Smart Turn on the CPU: {ms:.0f} ms")
     if on_gpu:
         lines.append(f"- GPU memory in use now: {gib(gpu_used())} of {gib(torch.cuda.mem_get_info()[1])}")
+        lines.append(f"- The most PyTorch held while loading: {gib(torch.cuda.max_memory_reserved())}")
         torch.cuda.reset_peak_memory_stats()
     return loaded
 

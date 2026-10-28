@@ -68,11 +68,11 @@ def load_recogniser(device: str) -> Any:
     from nemo.utils import logging as nemo_logging
 
     nemo_logging.setLevel(logging.ERROR)
-    model: Any = ASRModel.from_pretrained(parakeet_model, map_location=torch.device(device))
+    model: Any = ASRModel.from_pretrained(parakeet_model, map_location=torch.device("cpu"))
     model.eval()
     model.preprocessor.featurizer.dither = 0.0
     model.preprocessor.featurizer.pad_to = 0
-    return model
+    return model.to(device)
 
 
 def configure_recogniser(
@@ -121,10 +121,10 @@ def recognise(model: Any, samples: np.ndarray) -> str:
 def load_voiceprints(device: str) -> Any:
     from nemo.collections.asr.models import EncDecSpeakerLabelModel
 
-    model: Any = EncDecSpeakerLabelModel.from_pretrained(voiceprint_model, map_location=torch.device(device))
+    model: Any = EncDecSpeakerLabelModel.from_pretrained(voiceprint_model, map_location=torch.device("cpu"))
     model.eval()
     model.preprocessor.featurizer.dither = 0.0
-    return model
+    return model.to(device)
 
 
 def voiceprint(model: Any, samples: np.ndarray) -> np.ndarray:
