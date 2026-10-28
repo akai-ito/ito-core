@@ -1,4 +1,5 @@
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -88,6 +89,7 @@ class Listener:
     _asked: bool = False
     _frames: int = 0
     _since_caption: int = 0
+    _caption_cost_ms: float = 0.0
     _you: bool = False
     _barged: bool = False
     _learning: list[np.ndarray] = field(default_factory=list)
@@ -153,9 +155,12 @@ class Listener:
         if self.ari_speaking and not self._barged and self._voiced * 1000 / heard_rate >= barge_ms:
             self._barged = True
             self.hearing.on_barge()
-        if self._since_caption * 1000 / heard_rate >= caption_every_ms:
+        if self._since_caption * 1000 / heard_rate >= max(caption_every_ms, 2 * self._caption_cost_ms):
             self._since_caption = 0
-            self.hearing.on_heard(self.ears.words(np.concatenate(self._turn)))
+            started = time.perf_counter()
+            text = self.ears.words(np.concatenate(self._turn))
+            self._caption_cost_ms = (time.perf_counter() - started) * 1000
+            self.hearing.on_heard(text)
 
     def _end_turn(self, text: str | None = None) -> None:
         whole = np.concatenate(self._turn)

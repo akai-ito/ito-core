@@ -893,6 +893,77 @@ def check_together(report: Report, loaded: Models) -> None:
             )
 
 
+def feed_paced(session: Any, samples: np.ndarray) -> None:
+    for index in range(0, samples.shape[0], models.vad_frame):
+        session.hear(samples[index : index + models.vad_frame])
+        time.sleep(models.vad_frame / heard_rate)
+
+
+def stream_like_a_call(session: Any, clips: Sequence[np.ndarray]) -> list[float]:
+    ends: list[float] = []
+    for clip in clips:
+        feed_paced(session, clip)
+        ends.append(time.perf_counter())
+        feed_paced(session, np.zeros(heard_rate * 2, dtype=np.float32))
+    return ends
+
+
+def check_call(report: Report, loaded: Models) -> dict[str, float]:
+    lines = report.section("A call through the box")
+    found: dict[str, float] = {}
+    speaker, recogniser, turn_model = loaded.speaker, loaded.recogniser, loaded.turn
+    if speaker is None or recogniser is None or turn_model is None:
+        lines.append("- Skipped: Kokoro, Parakeet or Smart Turn didn't load.")
+        return found
+    lines.append(
+        "Three turns stream through a real listening session at the pace of speech, 32 ms at a time, as a "
+        "call's microphone would: the same code ito serve runs, from its own thread."
+    )
+    lines.append("")
+    with report.step(lines, "A call through the box"):
+        from ito_voice.serve import new_vad
+        from ito_voice.session import Session, Tools
+
+        lock = threading.Lock()
+
+        def recognise(samples: np.ndarray) -> str:
+            with lock:
+                return models.recognise(recogniser, samples)
+
+        tools = Tools(
+            recognise=recognise,
+            finished=lambda samples: models.turn_probability(turn_model, samples),
+            voiceprint=lambda _samples: np.zeros(1, dtype=np.float32),
+            vad=new_vad,
+        )
+        heard: list[tuple[float, str, Mapping[str, Any]]] = []
+        start = time.perf_counter()
+
+        def notify(method: str, params: Mapping[str, Any]) -> None:
+            heard.append((time.perf_counter() - start, method, params))
+
+        session = Session("check", tools, notify, None)
+        turns = [render(speaker, text, "af_heart") for text in everyday[:3]]
+        ends = [end - start for end in stream_like_a_call(session, turns)]
+        session.stop().wait(timeout=30)
+        finished = [(at, params.get("text", "")) for at, method, params in heard if method == "turn"]
+        problems = [params.get("reason") for _, method, params in heard if method == "problem"]
+        captions = sum(method == "heard" for _, method, _ in heard)
+        delays = [(at - end) * 1000 for (at, _), end in zip(finished, ends, strict=False)]
+        lines.append(f"- Turns sent: {len(finished)} of {len(turns)}; live captions: {captions}")
+        lines.append(f"- End of speech to the turn's words, as heard: {spread(delays)}")
+        for (_, text), expected in zip(finished, everyday, strict=False):
+            lines.append(f'  - "{text}" (said: "{expected}")')
+        if problems:
+            lines.append(f"- **The session failed: {problems[0]}**")
+            report.problems.append(f"The listening session failed: {problems[0]}")
+        if delays:
+            found["call_turn"] = statistics.median(delays)
+        if len(finished) != len(turns):
+            report.problems.append(f"Only {len(finished)} of {len(turns)} turns came through a call.")
+    return found
+
+
 def summarise(report: Report, device: str, loaded: Models, results: Mapping[str, float]) -> None:
     def verdict(value: float | None, target: float) -> str:
         return (
@@ -927,6 +998,7 @@ def summarise(report: Report, device: str, loaded: Models, results: Mapping[str,
         f"- End of speech to `turn_ended`, finished thoughts, quiet: {verdict(results.get('turn'), turn_target_ms)}"
         + (f", {results['turn_cut']:.0f} of 6 cut off mid-sentence" if results.get("turn_cut") else ""),
         f"- Recognising a 5 s turn: {verdict(results.get('recognition_5s'), recognition_target_ms)}",
+        f"- On a call, end of speech to the turn's words: {ms_or_na(results.get('call_turn'))}",
         f"- Word error rate, everyday sentences: {share(results.get('wer'))}",
         f"- Built-in names right: {share(names_plain)} plain, {share(names_boosted)} boosted",
         f"- Your names right: {share(yours_plain)} plain, {share(yours_boosted)} boosted",
@@ -954,6 +1026,7 @@ def check(vocabulary_file: Path | None, report_file: Path, details_file: Path) -
     results |= check_vocabulary(report, loaded, vocabulary)
     results |= check_turns(report, loaded)
     results |= check_voiceprints(report, loaded)
+    results |= check_call(report, loaded)
     check_together(report, loaded)
     summarise(report, device, loaded, results)
     report.summary.append(f"- The check took {(time.perf_counter() - started) / 60:.1f} minutes")
