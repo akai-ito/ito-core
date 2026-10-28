@@ -9,6 +9,7 @@ from ito_voice.audio import heard_rate
 
 frame = 512
 pause_ms = 300
+trail_ms = 1500
 hold_ms = 3000
 barge_ms = 200
 caption_every_ms = 500
@@ -19,10 +20,15 @@ gate_every = 8
 learn_seconds = 120
 lowest_threshold = 0.45
 
-unfinished_endings = re.compile(
-    r"(,|\.\.\.|…|\b(and|but|or|so|because|um+|uh+|er+|like|the|a|an|to|of|with|that|if|when|then))\W*$",
-    re.IGNORECASE,
+joining_words = (
+    "and|but|or|so|because|um+|uh+|er+m?|hmm+|like|the|a|an|to|of|with|that|if|when|then|at|for|in|on|by|"
+    "from|about|into|onto|my|your|his|her|their|our|its|this|these|those|is|are|was|were|be|been|will|would|"
+    "can|could|should|i|we|you|they|which|who|where|while|as|than|whether|just|maybe"
 )
+
+unfinished_endings = re.compile(rf"(,|\.\.\.|…|\b({joining_words}))\W*$", re.IGNORECASE)
+
+sentence_end = re.compile(r"[^.][.?!][\"')\]]*$")
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,19 @@ def sounds_unfinished(text: str) -> bool:
     return bool(unfinished_endings.search(text.strip()))
 
 
+def ends_like_a_sentence(text: str) -> bool:
+    stripped = text.strip()
+    if not sentence_end.search(stripped):
+        return False
+    return stripped.endswith(("?", "!")) or not sounds_unfinished(stripped)
+
+
+def hold_for(text: str) -> int:
+    if ends_like_a_sentence(text):
+        return trail_ms
+    return hold_ms if sounds_unfinished(text) else trail_ms
+
+
 def learn_voiceprint(ears: Ears, turns: list[np.ndarray]) -> Voiceprint:
     vectors = [ears.voiceprint(turn) for turn in turns]
     mean = np.mean(vectors, axis=0)
@@ -87,6 +106,7 @@ class Listener:
     _quiet: int = 0
     _voiced: int = 0
     _asked: bool = False
+    _hold_ms: int = hold_ms
     _frames: int = 0
     _since_caption: int = 0
     _caption_cost_ms: float = 0.0
@@ -135,10 +155,11 @@ class Listener:
             audio = np.concatenate(self._turn)
             text = self.ears.words(audio)
             self.hearing.on_heard(text)
-            if self.ears.finished(audio) >= 0.5 and not sounds_unfinished(text):
+            if self.ears.finished(audio) >= 0.5 and ends_like_a_sentence(text):
                 self._end_turn(text)
                 return
-        if quiet_ms >= hold_ms:
+            self._hold_ms = hold_for(text)
+        if quiet_ms >= self._hold_ms:
             self._end_turn()
 
     def _hear(self, chunk: np.ndarray) -> None:
@@ -149,7 +170,7 @@ class Listener:
             self._barged = False
             self.hearing.on_hearing()
         self._turn.append(chunk)
-        self._quiet, self._asked = 0, False
+        self._quiet, self._asked, self._hold_ms = 0, False, hold_ms
         self._voiced += frame
         self._since_caption += frame
         if self.ari_speaking and not self._barged and self._voiced * 1000 / heard_rate >= barge_ms:
