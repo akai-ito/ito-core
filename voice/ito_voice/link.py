@@ -2,13 +2,16 @@ import asyncio
 import json
 import os
 import sys
+import threading
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, BinaryIO
 
-protocol = "0.1"
+protocol = "0.2"
 line_limit = 64 * 1024 * 1024
 
 type Handler = Callable[[Mapping[str, Any]], Awaitable[Mapping[str, Any]]]
+
+type Listener = Callable[[Mapping[str, Any]], None]
 
 
 class LinkError(Exception):
@@ -27,9 +30,12 @@ def claim_stdout() -> BinaryIO:
 class Link:
     def __init__(self, output: BinaryIO) -> None:
         self._output = output
+        self._writing = threading.Lock()
 
     def _send(self, message: Mapping[str, Any]) -> None:
-        self._output.write(json.dumps(message, separators=(",", ":")).encode() + b"\n")
+        line = json.dumps(message, separators=(",", ":")).encode() + b"\n"
+        with self._writing:
+            self._output.write(line)
 
     def notify(self, method: str, params: Mapping[str, Any]) -> None:
         self._send({"jsonrpc": "2.0", "method": method, "params": params})
@@ -50,7 +56,17 @@ class Link:
         except Exception as error:
             self._send({"jsonrpc": "2.0", "id": identifier, "error": {"code": -32_603, "message": str(error)}})
 
-    async def run(self, handlers: Mapping[str, Handler]) -> None:
+    def hear(self, listeners: Mapping[str, Listener], message: Mapping[str, Any]) -> None:
+        method, params = message.get("method"), message.get("params")
+        listener = listeners.get(method) if isinstance(method, str) else None
+        if listener is None:
+            return
+        try:
+            listener(params if isinstance(params, Mapping) else {})
+        except Exception as error:
+            print(f"Couldn't take {method}: {error}", file=sys.stderr)
+
+    async def run(self, handlers: Mapping[str, Handler], listeners: Mapping[str, Listener]) -> None:
         loop = asyncio.get_running_loop()
         reader = asyncio.StreamReader(limit=line_limit)
         await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
@@ -61,7 +77,10 @@ class Link:
             except json.JSONDecodeError:
                 print(f"Unreadable line from ito-core: {line[:200]!r}", file=sys.stderr)
                 continue
-            if not isinstance(message, dict) or "id" not in message:
+            if not isinstance(message, dict):
+                continue
+            if "id" not in message:
+                self.hear(listeners, message)
                 continue
             task = asyncio.create_task(self.answer(handlers, message))
             answering.add(task)

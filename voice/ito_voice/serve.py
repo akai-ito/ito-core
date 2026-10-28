@@ -1,6 +1,8 @@
 import asyncio
+import base64
 import os
 import sys
+import threading
 import traceback
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -11,8 +13,9 @@ import numpy as np
 import torch
 
 from ito_voice import models
-from ito_voice.audio import spoken_rate, to_base64
+from ito_voice.audio import from_pcm, spoken_rate, to_base64
 from ito_voice.link import Link, LinkError, claim_stdout, protocol
+from ito_voice.session import Session, Tools, to_voiceprint
 
 loading_code = -32_001
 failed_code = -32_002
@@ -22,7 +25,7 @@ failed_code = -32_002
 class Loaded:
     speaker: models.Speaker
     recogniser: Any
-    vad: Any
+    voiceprints: Any
     turn: models.TurnModel
     cuda_graphs: bool
 
@@ -35,7 +38,14 @@ def load() -> Loaded:
     graphs_failure = models.warm_recogniser(recogniser)
     if graphs_failure is not None:
         print(f"CUDA graphs failed, so decoding runs without them: {graphs_failure}", file=sys.stderr)
-    return Loaded(speaker, recogniser, models.load_vad(), models.load_turn_model(), graphs_failure is None)
+    voiceprints = models.load_voiceprints("cpu")
+    models.load_vad()
+    return Loaded(speaker, recogniser, voiceprints, models.load_turn_model(), graphs_failure is None)
+
+
+def new_vad() -> tuple[Callable[[np.ndarray], float], Callable[[], None]]:
+    vad = models.load_vad()
+    return (lambda chunk: models.speech_probability(vad, chunk)), vad.reset_states
 
 
 def describe_failure(error: BaseException) -> str:
@@ -54,6 +64,8 @@ class Voice:
         self._failure: str | None = None
         self._applied: Sequence[str] | None = None
         self._reported: tuple[str, str | None] | None = None
+        self._recognising = threading.Lock()
+        self._sessions: dict[str, Session] = {}
 
     def _state(self) -> tuple[str, str | None]:
         if self._failure is not None:
@@ -77,7 +89,8 @@ class Voice:
 
     async def _apply(self, loaded: Loaded, phrases: Sequence[str]) -> None:
         def configure() -> None:
-            models.configure_recogniser(loaded.recogniser, phrases, cuda_graphs=loaded.cuda_graphs)
+            with self._recognising:
+                models.configure_recogniser(loaded.recogniser, phrases, cuda_graphs=loaded.cuda_graphs)
 
         await self._on_gpu(configure)
         self._applied = phrases
@@ -130,12 +143,69 @@ class Voice:
         samples = await self._on_gpu(render)
         return {"audio": to_base64(samples), "rate": spoken_rate}
 
+    def _tools(self, loaded: Loaded) -> Tools:
+        def recognise(samples: np.ndarray) -> str:
+            with self._recognising:
+                return models.recognise(loaded.recogniser, samples)
+
+        return Tools(
+            recognise=recognise,
+            finished=lambda samples: models.turn_probability(loaded.turn, samples),
+            voiceprint=lambda samples: models.voiceprint(loaded.voiceprints, samples),
+            vad=new_vad,
+        )
+
+    def _session(self, params: Mapping[str, Any]) -> Session:
+        session = self._sessions.get(str(params.get("session")))
+        if session is None:
+            raise LinkError(-32_602, f"There's no session {params.get('session')}.")
+        return session
+
+    async def listen(self, params: Mapping[str, Any]) -> Mapping[str, Any]:
+        self._ready_speaker()
+        loaded = self._loaded
+        name = params.get("session")
+        if loaded is None or not isinstance(name, str):
+            raise LinkError(-32_602, "listen needs a session.")
+        previous = self._sessions.pop(name, None)
+        if previous is not None:
+            previous.stop()
+        self._sessions[name] = Session(name, self._tools(loaded), self._link.notify, to_voiceprint(params))
+        return {}
+
+    async def flush(self, params: Mapping[str, Any]) -> Mapping[str, Any]:
+        done = self._session(params).flush()
+        await asyncio.get_running_loop().run_in_executor(None, done.wait)
+        return {}
+
+    async def stop(self, params: Mapping[str, Any]) -> Mapping[str, Any]:
+        session = self._sessions.pop(str(params.get("session")), None)
+        if session is not None:
+            await asyncio.get_running_loop().run_in_executor(None, session.stop().wait)
+        return {}
+
+    def hear(self, params: Mapping[str, Any]) -> None:
+        pcm = params.get("pcm")
+        if isinstance(pcm, str):
+            self._session(params).hear(from_pcm(base64.b64decode(pcm)))
+
+    def speaking(self, params: Mapping[str, Any]) -> None:
+        self._session(params).speaking(on=params.get("on") is True)
+
 
 async def run() -> None:
     link = Link(claim_stdout())
     voice = Voice(link)
     loading = asyncio.create_task(voice.start())
-    await link.run({"initialize": voice.initialize, "vocabulary": voice.vocabulary, "speak": voice.speak})
+    handlers = {
+        "initialize": voice.initialize,
+        "vocabulary": voice.vocabulary,
+        "speak": voice.speak,
+        "listen": voice.listen,
+        "flush": voice.flush,
+        "stop": voice.stop,
+    }
+    await link.run(handlers, {"audio": voice.hear, "speaking": voice.speaking})
     loading.cancel()
 
 
