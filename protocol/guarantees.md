@@ -30,7 +30,7 @@ where the protocol has to make it possible, marked *App*.
 | G19 | **Attachments stay as you sent them.** A photo or file is uploaded once, under an id the app chooses, so a retry never makes a second copy. Its bytes never change, every app can fetch them, and the agent works on its own copy, so nothing it does changes what you sent. | 27, 28, 29, 30 |
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
 | G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
-| G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36 |
+| G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36, 57 |
 | G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. What you teach the vocabulary corrects how names are heard, never what they're called. | 38, 40, 41 |
 | G24 | **Talk only when the server can talk.** The server says whether it can hold a call, meaning it can listen and speak with your names loaded, and when it can't, why in a line to show. It says so on the event stream as soon as that changes. There's no worse fallback: while the voice isn't ready, the app doesn't offer Talk. | 43, 44, 49 |
 | G25 | **The server hears your turns.** Each turn you finish becomes one spoken message, posted by the server with its recording and the words it corrected from what it has learnt, and shown live as you speak. Nothing you say while muted is heard, and nothing you say answers a secret ask: secrets are typed. | 38, 39, 45, 48, 51, 52, 56 |
@@ -306,7 +306,8 @@ where the protocol has to make it possible, marked *App*.
 
 - Forgetting is an ordinary update: the page is rewritten without what you asked Ari to forget.
   (G22)
-- The Memory screen lists recently changed pages, newest first, and how much is on each shelf.
+- The Library lists what Ari changed lately, newest first, one row per change with Ari's note on
+  it, and how much is on each shelf.
 
 ### 37 · [Choose the model](transcripts/37-choose-the-model.jsonl)
 
@@ -416,6 +417,13 @@ where the protocol has to make it possible, marked *App*.
 
 - The voice list says whether the server has learnt your voice; forgetting it starts learning
   again. (G25)
+
+### 57 · [What Ari learnt lately](transcripts/57-what-ari-learnt-lately.jsonl)
+
+- Every page and journal day Ari writes carries a gist, a line on what it is now, and every change
+  a note on what it did; both are fetched from memory, never carried in the log. (G22)
+- A page's links come with each linked page's title and other names; links to pages that don't
+  exist are left out.
 
 ## Not in this version
 

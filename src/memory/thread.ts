@@ -12,6 +12,10 @@ export type Thread = {
   readonly directory: string;
   readonly read: (file: string) => string | undefined;
   readonly write: (file: string, text: string | undefined, message: string) => Promise<Result<string, string>>;
+  readonly writeFiles: (
+    files: readonly { readonly file: string; readonly text: string }[],
+    message: string,
+  ) => Promise<Result<string, string>>;
   readonly readAt: (commit: string, file: string) => Promise<string | undefined>;
   readonly files: () => readonly string[];
   readonly head: () => Promise<string>;
@@ -72,6 +76,17 @@ export const openThread = async (directory: string): Promise<Thread> => {
         }
         await git("add", "--all", "--", file);
         await git("commit", "--quiet", "--allow-empty", "--message", message);
+        const head = await git("rev-parse", "HEAD");
+        return ok(head.trim());
+      } catch (error) {
+        return fail(describe(error));
+      }
+    },
+    writeFiles: async (files, message) => {
+      try {
+        for (const { file, text } of files) writeFileSync(path.join(directory, file), text);
+        await git("add", "--", ...files.map(({ file }) => file));
+        await git("commit", "--quiet", "--message", message);
         const head = await git("rev-parse", "HEAD");
         return ok(head.trim());
       } catch (error) {

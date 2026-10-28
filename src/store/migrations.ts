@@ -119,4 +119,5 @@ export const migrations: readonly string[] = [
     body TEXT NOT NULL,
     ended INTEGER NOT NULL DEFAULT 0
   );`,
+  `ALTER TABLE memory_changes ADD COLUMN note TEXT;`,
 ];

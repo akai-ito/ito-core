@@ -159,11 +159,23 @@ const rememberAlex =
   async (callTool: CallTool) => {
     const existing = await callTool("read_page", { address: alex });
     const today = dayOf(now);
-    const body = existing.isError
+    const isNew = existing.isError === true;
+    const body = isNew
       ? `Taking things slow; you've been on two dates (as of ${today}).`
       : `Seeing each other a lot, and it's going really well (as of ${today}).\n\n## Earlier\n\n- ${today}: taking things slow.`;
-    await callTool("remember", { address: alex, title: "Alex", aliases: ["Alex R"], body });
-    await callTool("journal", { text: "Talked about Alex; things are going well." });
+    await callTool("remember", {
+      address: alex,
+      title: "Alex",
+      gist: isNew ? "Someone you're seeing; taking it slow" : "Someone you're seeing a lot; going really well",
+      note: isNew ? "Two dates so far" : "Seeing each other a lot now",
+      aliases: ["Alex R"],
+      body,
+    });
+    await callTool("journal", {
+      text: "Talked about Alex; things are going well.",
+      gist: "Things going well with Alex",
+      note: "Talked about Alex",
+    });
   };
 
 const recallAlex: Act["act"] = async (callTool) => {

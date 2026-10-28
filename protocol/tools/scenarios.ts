@@ -8,8 +8,8 @@ import { defaultVoice, voices } from "#voice/voices.ts";
 import type { Term } from "#memory/vocabulary.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.10";
-const serverVersion = "0.10.0";
+const protocol = "0.11";
+const serverVersion = "0.11.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -157,6 +157,7 @@ const capabilityCall = (
 const alexBefore = {
   address: "memory:people/alex",
   title: "Alex",
+  gist: "Someone you're seeing; taking it slow",
   aliases: ["Alex R"],
   links: ["memory:places/dishoom-shoreditch"],
   markdown:
@@ -166,6 +167,7 @@ const alexBefore = {
 
 const alexNow = {
   ...alexBefore,
+  gist: "Someone you're seeing a lot; going really well",
   markdown:
     "Seeing each other a lot, and it's going really well (as of 26 Oct).\n\n## Earlier\n\n" +
     "- 15 Oct: decided to take things slow.\n- 12 Oct: first date, Dishoom Shoreditch.\n",
@@ -174,6 +176,7 @@ const alexNow = {
 const lisbonTrip = {
   address: "memory:projects/lisbon-trip",
   title: "Lisbon trip",
+  gist: "Four nights in November; no hotel yet",
   aliases: [],
   links: ["memory:people/alex"],
   markdown: "Four nights in Lisbon, 14 to 18 November. Flights booked; no hotel yet (as of 20 Oct).\n",
@@ -182,21 +185,33 @@ const lisbonTrip = {
 const nowPage = {
   address: "memory:now",
   title: "Now",
+  gist: "Busy at work; training for Valencia",
   aliases: [],
   links: [],
   markdown: "A busy fortnight at work, and training for the Valencia half marathon (as of 22 Oct).\n",
 };
 
-type SeededPage = typeof alexBefore;
+type SeededPage = typeof alexBefore & { readonly note?: string };
 
 const shelfOf = (address: string): string => address.replace(/^memory:/u, "").split("/", 1)[0] ?? "";
 
-const pageBody = (page: SeededPage, changedAt: string): Readonly<Record<string, unknown>> => ({
+const linkTo = ({ address, title, aliases }: SeededPage): Readonly<Record<string, unknown>> => ({
+  address,
+  title,
+  aliases,
+});
+
+const pageBody = (
+  page: SeededPage,
+  changedAt: string,
+  links: readonly SeededPage[] = [],
+): Readonly<Record<string, unknown>> => ({
   address: page.address,
   title: page.title,
+  gist: page.gist,
   shelf: shelfOf(page.address),
   aliases: page.aliases,
-  links: page.links,
+  links: links.map((link) => linkTo(link)),
   changed_at: changedAt,
   markdown: page.markdown,
 });
@@ -225,6 +240,7 @@ const memoryStep = (
 const boraPage = {
   address: "memory:people/bora",
   title: "Bora",
+  gist: "Chairs the QRT panel; your Saturday running partner",
   aliases: ["Bora K"],
   links: ["memory:projects/qrt-panel"],
   markdown: "Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct).\n",
@@ -233,6 +249,7 @@ const boraPage = {
 const qrtPage = {
   address: "memory:projects/qrt-panel",
   title: "QRT panel",
+  gist: "Reviews your design in November",
   aliases: [],
   links: ["memory:people/bora"],
   markdown: "The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct).\n",
@@ -1808,6 +1825,8 @@ const scenarios: readonly (() => Transcript)[] = [
     agentCalls(transcript, "remember", {
       address: alexNow.address,
       title: alexNow.title,
+      gist: alexNow.gist,
+      note: "Seeing each other a lot now",
       aliases: alexNow.aliases,
       links: alexNow.links,
       body: alexNow.markdown,
@@ -1822,6 +1841,8 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(400);
     agentCalls(transcript, "journal", {
       text: "Things with Alex are going really well: they're seeing a lot of each other.",
+      gist: "Things going really well with Alex",
+      note: "Going well with Alex",
     });
     memoryStep(transcript, "journaled", [{ address: "memory:journal/2026-10-26", title: "26 October 2026" }], {
       title: "Adding to today's journal",
@@ -1850,7 +1871,7 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "Forget that",
       summary:
         "You ask Ari to forget part of a page. Ari rewrites the page without it, as an ordinary update, and " +
-        "the Memory screen shows the page among the most recently changed.",
+        "the Library shows the change first among what Ari changed lately, with Ari's note on it.",
       guarantees: ["G14", "G22"],
     });
     const seededAt = "2026-10-26T20:00:00.000Z";
@@ -1862,7 +1883,12 @@ const scenarios: readonly (() => Transcript)[] = [
         "- 15 Oct: decided to take things slow.\n",
     };
     transcript.begin(seededAt);
-    transcript.world("memory_holds", { pages: [alexNow, nowPage] });
+    transcript.world("memory_holds", {
+      pages: [
+        { ...alexNow, note: "Seeing each other a lot now" },
+        { ...nowPage, note: "Training for Valencia" },
+      ],
+    });
     transcript.wait(30 * 60 * 1000);
     transcript.connect();
     transcript.wait(2000);
@@ -1872,6 +1898,8 @@ const scenarios: readonly (() => Transcript)[] = [
     agentCalls(transcript, "remember", {
       address: alexForgotten.address,
       title: alexForgotten.title,
+      gist: alexForgotten.gist,
+      note: "Forgot the first date",
       aliases: alexForgotten.aliases,
       links: alexForgotten.links,
       body: alexForgotten.markdown,
@@ -1898,9 +1926,22 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.wait(3000);
     memoryCall(transcript, "/v0/memory/recent", {
-      pages: [
-        { address: alexForgotten.address, title: "Alex", changed_at: updatedAt },
-        { address: nowPage.address, title: "Now", changed_at: seededAt },
+      changes: [
+        { change, address: alexForgotten.address, title: "Alex", at: updatedAt, note: "Forgot the first date" },
+        {
+          change: transcript.change(),
+          address: nowPage.address,
+          title: "Now",
+          at: seededAt,
+          note: "Training for Valencia",
+        },
+        {
+          change: transcript.change(),
+          address: alexNow.address,
+          title: "Alex",
+          at: seededAt,
+          note: "Seeing each other a lot now",
+        },
       ],
     });
     transcript.wait(2000);
@@ -2684,6 +2725,120 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.request("DELETE", "/v0/voice/voiceprint");
     transcript.wait(40);
     transcript.response(200, { voices, chosen: defaultVoice, state: "ready", voiceprint: "learning" }, headers);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "57-what-ari-learnt-lately",
+      scenario: 57,
+      title: "What Ari learnt lately",
+      summary:
+        "You tell Ari about a trip. Ari starts a page for it and adds to today's journal, each with a line on " +
+        "what the page is now and a note on what changed. The Library leads with those notes, lists journal " +
+        "days by their headlines, and shows the trip's linked page by its name.",
+      guarantees: ["G22"],
+    });
+    const seededAt = "2026-10-27T18:00:00.000Z";
+    const janki = {
+      address: "memory:people/janki",
+      title: "Janki",
+      gist: "Your oldest friend, from school",
+      aliases: ["Janks"],
+      links: [],
+      markdown: "Your oldest friend; you met at school in Pune (as of 20 Oct).\n",
+      note: "Oldest friend, from school",
+    };
+    const yesterday = {
+      address: "memory:journal/2026-10-26",
+      title: "26 October 2026",
+      gist: "Home from Ljubljana; Bora's first sub-two",
+      aliases: [],
+      links: [],
+      markdown: "### 21:10\n\nHome from Ljubljana. Bora ran her first half marathon under two hours.\n",
+      note: "Home from Ljubljana",
+    };
+    const florence = {
+      address: "memory:projects/florence-trip",
+      title: "Florence trip",
+      gist: "With Janki, 6–9 November; nothing booked yet",
+      aliases: [],
+      links: [janki.address],
+      markdown: "Florence with Janki, 6 to 9 November. Nothing booked yet (as of 27 Oct).\n",
+    };
+    const today = { address: "memory:journal/2026-10-27", title: "27 October 2026" };
+    transcript.begin(seededAt);
+    transcript.world("memory_holds", { pages: [janki, yesterday] });
+    transcript.wait(10 * 60 * 1000);
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Janki and I are off to Florence together, 6 to 9 November!");
+    transcript.wait(700);
+    const change = transcript.change();
+    agentCalls(transcript, "remember", {
+      address: florence.address,
+      title: florence.title,
+      gist: florence.gist,
+      note: "Florence with Janki, 6–9 Nov",
+      links: florence.links,
+      body: florence.markdown,
+    });
+    memoryStep(
+      transcript,
+      "updated",
+      [{ address: florence.address, title: florence.title }],
+      { title: "Updating Florence trip", endedTitle: "Updated Florence trip" },
+      change,
+    );
+    transcript.wait(400);
+    agentCalls(transcript, "journal", {
+      text: "Divy and Janki are off to Florence together, 6 to 9 November.",
+      gist: "Florence planned with Janki",
+      note: "Florence with Janki",
+    });
+    memoryStep(transcript, "journaled", [today], {
+      title: "Adding to today's journal",
+      endedTitle: "Added to today's journal",
+    });
+    transcript.wait(300);
+    writeWhole(transcript, "Florence with Janki, lovely! I've started a page for the trip.");
+    transcript.endTurn("completed");
+    transcript.wait(5000);
+    const writtenAt = new Date(Date.parse(seededAt) + 10 * 60 * 1000 + 2000 + 700).toISOString();
+    const journaledAt = new Date(Date.parse(writtenAt) + 400).toISOString();
+    memoryCall(transcript, "/v0/memory/recent", {
+      changes: [
+        { change: transcript.change(), ...today, at: journaledAt, note: "Florence with Janki" },
+        {
+          change,
+          address: florence.address,
+          title: florence.title,
+          at: writtenAt,
+          note: "Florence with Janki, 6–9 Nov",
+        },
+        {
+          change: transcript.change(),
+          address: yesterday.address,
+          title: yesterday.title,
+          at: seededAt,
+          note: yesterday.note,
+        },
+        { change: transcript.change(), address: janki.address, title: janki.title, at: seededAt, note: janki.note },
+      ],
+    });
+    transcript.wait(2000);
+    memoryCall(transcript, "/v0/memory/pages?shelf=journal", {
+      pages: [
+        { ...today, gist: "Florence planned with Janki", changed_at: journaledAt },
+        { address: yesterday.address, title: yesterday.title, gist: yesterday.gist, changed_at: seededAt },
+      ],
+    });
+    transcript.wait(2000);
+    memoryCall(
+      transcript,
+      `/v0/memory/page?address=${florence.address}`,
+      pageBody({ ...florence, links: [] }, writtenAt, [janki]),
+    );
     return transcript;
   },
 ];

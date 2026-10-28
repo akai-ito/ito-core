@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.10"
+  version: "0.11"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -23,8 +23,9 @@ info:
       on screen. [The push schema](push.schema.json) describes what it receives.
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
       and fill in its setup sheet.
-    - **Read memory:** what's in Ari's mind, the shelves and their pages, the journal, and what each
-      change Ari made changed. Ari writes memory itself; the API only reads it.
+    - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
+      journal, what Ari changed lately and why, and what each change changed. Ari writes memory
+      itself; the API only reads it.
     - **Choose the model** the agent runs on, and how hard it thinks, from those its engine offers.
     - **Talk:** start and end a call with the agent, and stream it: your microphone up, Ari's voice
       down, with states and captions. The server hears your turns, steered toward the names in
@@ -692,17 +693,19 @@ paths:
   /v0/memory/recent:
     get:
       tags: [Memory]
-      operationId: listRecentPages
-      summary: The pages changed most recently
-      description: Up to 20 pages and journal days, the most recently changed first.
+      operationId: listRecentChanges
+      summary: What Ari changed in memory lately
+      description: |
+        The 20 newest changes, newest first, one row per change, each with Ari's note on what it
+        changed. A page changed twice has two rows. `getChange` opens any of them.
       responses:
         "200":
-          description: The pages.
+          description: The changes.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/PageList" }
+              schema: { $ref: "#/components/schemas/RecentChanges" }
         "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/memory/page:
     get:
@@ -1012,7 +1015,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.10"
+        example: "0.11"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -1243,19 +1246,38 @@ components:
     Shelf:
       description: A shelf in memory; `journal` holds one page per day.
       enum: [people, goals, projects, places, topics, journal]
+    Gist:
+      description: |
+        What the page is now, in one line, written by Ari and kept current with every change: a
+        journal day's headline, who someone is to you, where a project stands. Absent until Ari
+        has written one; Ari writes one for every page that lacks it, soon after the server starts.
+      type: string
     MemoryPageSummary:
       type: object
       required: [address, title, changed_at]
       properties:
         address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
         title: { type: string }
+        gist: { $ref: "#/components/schemas/Gist" }
         changed_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    MemoryLink:
+      description: A page this one links to, as it is now.
+      type: object
+      required: [address, title, aliases]
+      properties:
+        address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        title: { type: string }
+        aliases:
+          description: Other names Ari knows it by, for finding mentions of it in the page.
+          type: array
+          items: { type: string }
     MemoryPage:
       type: object
       required: [address, title, shelf, aliases, links, changed_at, markdown]
       properties:
         address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
         title: { type: string }
+        gist: { $ref: "#/components/schemas/Gist" }
         shelf:
           description: Its shelf, or `portrait`, `now` or `helping-you` for the pages in mind.
           enum: [portrait, now, helping-you, people, goals, projects, places, topics, journal]
@@ -1264,9 +1286,9 @@ components:
           type: array
           items: { type: string }
         links:
-          description: Addresses of related pages.
+          description: The related pages that exist, in Ari's order.
           type: array
-          items: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+          items: { $ref: "#/components/schemas/MemoryLink" }
         changed_at: { $ref: "events.schema.json#/$defs/Timestamp" }
         markdown:
           description: The page as Ari wrote it, without front matter.
@@ -1285,6 +1307,28 @@ components:
         pages:
           type: array
           items: { $ref: "#/components/schemas/MemoryPageSummary" }
+    RecentChange:
+      type: object
+      required: [change, address, title, at]
+      properties:
+        change: { $ref: "events.schema.json#/$defs/ChangeId" }
+        address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        title:
+          description: The page's title when it changed.
+          type: string
+        at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        note:
+          description: |
+            What the change did, in a few words, such as "Florence together 6–9 Nov". Absent for
+            pages that came from outside with `ito memory pull`, and for changes made before 0.11.
+          type: string
+    RecentChanges:
+      type: object
+      required: [changes]
+      properties:
+        changes:
+          type: array
+          items: { $ref: "#/components/schemas/RecentChange" }
     ShelfList:
       type: object
       required: [shelves]

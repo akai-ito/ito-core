@@ -2,10 +2,10 @@ import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import type { TurnId } from "#conversation/ids.ts";
-import type { Engine, EngineEvent, Input, SteerOutcome } from "#engine/engine.ts";
+import type { Engine, EngineEvent, Input, JsonSchema, SteerOutcome } from "#engine/engine.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import type { ModelOption } from "#protocol/types.ts";
-import { ok } from "#result.ts";
+import { fail, ok, type Result } from "#result.ts";
 import type { ToolResult } from "#tools/mcp.ts";
 
 export type CallTool = (name: string, input: unknown) => Promise<ToolResult>;
@@ -25,6 +25,8 @@ export type TurnScript = {
 
 export type ScriptSource = (turn: TurnId, inputs: readonly Input[], now: number) => TurnScript;
 
+export type Complete = (prompt: string, schema: JsonSchema) => Promise<Result<unknown, string>>;
+
 type Scheduled = { readonly at: number; readonly event: EngineEvent; readonly cancel: Cancel };
 
 type Playing = {
@@ -36,6 +38,8 @@ type Playing = {
 
 const noTools: CallTool = (name) => Promise.resolve({ text: `The demo has no tool ${name}.`, isError: true });
 
+const noAnswers: Complete = () => Promise.resolve(fail("The scripted engine answers nothing outside a turn."));
+
 const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "failed", "stopped"]);
 
 const isTerminal = (event: EngineEvent): boolean => terminalTypes.has(event.type);
@@ -45,6 +49,7 @@ export const createScriptEngine = (
   scriptFor: ScriptSource,
   callTool = noTools,
   models: readonly ModelOption[] = demoModels,
+  complete = noAnswers,
 ): Engine => {
   const playing = createCell<ReadonlyMap<TurnId, Playing>>(new Map());
 
@@ -92,6 +97,7 @@ export const createScriptEngine = (
     approve: (turn) => {
       emit(turn, { type: "progress" });
     },
+    complete,
     start: (turn, inputs) => {
       const queue = createAsyncQueue<EngineEvent>();
       const script = scriptFor(turn, inputs, clock.now());

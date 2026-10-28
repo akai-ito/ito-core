@@ -7,6 +7,15 @@ export type ChangeRow = {
   readonly file: string;
   readonly commit: string;
   readonly before?: string;
+  readonly note?: string;
+  readonly at: string;
+};
+
+export type RecentChange = {
+  readonly id: string;
+  readonly address: string;
+  readonly title: string;
+  readonly note?: string;
   readonly at: string;
 };
 
@@ -44,6 +53,7 @@ export type MemoryStore = {
   readonly recordChange: (change: ChangeRow) => void;
   readonly findChange: (id: string) => ChangeRow | undefined;
   readonly latestChanges: () => readonly LatestChange[];
+  readonly recentChanges: (limit: number) => readonly RecentChange[];
   readonly replaceChunks: (address: string, chunks: readonly Chunk[]) => void;
   readonly addChunks: (chunks: readonly Chunk[]) => void;
   readonly clearChunks: () => void;
@@ -97,12 +107,13 @@ export const createMemoryStore = (database: DatabaseSync): MemoryStore => {
   };
 
   return {
-    recordChange: ({ id, address, title, file, commit, before, at }) => {
+    recordChange: ({ id, address, title, file, commit, before, note, at }) => {
       database
         .prepare(
-          "INSERT INTO memory_changes (id, address, title, file, commit_sha, before_sha, at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          `INSERT INTO memory_changes (id, address, title, file, commit_sha, before_sha, note, at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(id, address, title, file, commit, before ?? null, at);
+        .run(id, address, title, file, commit, before ?? null, note ?? null, at);
     },
     findChange: (id) => {
       const row = database
@@ -122,6 +133,12 @@ export const createMemoryStore = (database: DatabaseSync): MemoryStore => {
            GROUP BY address ORDER BY at DESC, address`,
         )
         .all() as unknown as readonly LatestChange[],
+    recentChanges: (limit) =>
+      (
+        database
+          .prepare("SELECT id, address, title, note, at FROM memory_changes ORDER BY at DESC, rowid DESC LIMIT ?")
+          .all(limit) as unknown as readonly (Omit<RecentChange, "note"> & { readonly note: string | null })[]
+      ).map(({ note, ...change }) => (note === null ? change : { ...change, note })),
     replaceChunks: (address, chunks) => {
       inTransaction(() => {
         database

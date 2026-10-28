@@ -10,6 +10,7 @@ export type MockModel = {
   readonly images: () => number;
   readonly toolOutputs: () => readonly string[];
   readonly lastRun: () => { readonly model?: string; readonly effort?: string };
+  readonly lastFormat: () => string | undefined;
   readonly close: () => Promise<void>;
 };
 
@@ -85,6 +86,7 @@ export const startMockModel = async (): Promise<MockModel> => {
   const latestImages = createCell(0);
   const latestToolOutputs = createCell<readonly string[]>([]);
   const latestRun = createCell<{ readonly model?: string; readonly effort?: string }>({});
+  const latestFormat = createCell<string | undefined>(undefined);
   const nextId = (prefix: string): string => `${prefix}_${String(counter.update((count) => count + 1))}`;
 
   const reason = async (send: Send, text: string): Promise<void> => {
@@ -166,6 +168,16 @@ export const startMockModel = async (): Promise<MockModel> => {
       response.end();
       return;
     }
+    if (scenario === "json") {
+      await say(
+        send,
+        JSON.stringify({ gists: [{ address: "memory:people/sam", gist: "Runs with you" }] }),
+        "final_answer",
+      );
+      await send("response.completed", { response: { id: nextId("resp"), usage } });
+      response.end();
+      return;
+    }
     if (scenario === "slow" && isSteered) {
       await say(send, "Got it, wrapping up.", "final_answer");
     } else if (scenario === "slow") {
@@ -211,7 +223,14 @@ export const startMockModel = async (): Promise<MockModel> => {
     latestUserTexts.set(texts);
     latestImages.set(imagesIn(body));
     latestToolOutputs.set(toolOutputsOf(body));
-    const run = body as { readonly model?: string; readonly reasoning?: { readonly effort?: string } } | undefined;
+    const run = body as
+      | {
+          readonly model?: string;
+          readonly reasoning?: { readonly effort?: string };
+          readonly text?: { readonly format?: { readonly type?: string } };
+        }
+      | undefined;
+    latestFormat.set(run?.text?.format?.type);
     latestRun.set({
       ...(run?.model !== undefined && { model: run.model }),
       ...(run?.reasoning?.effort !== undefined && { effort: run.reasoning.effort }),
@@ -250,6 +269,7 @@ export const startMockModel = async (): Promise<MockModel> => {
     images: () => latestImages.get(),
     toolOutputs: () => latestToolOutputs.get(),
     lastRun: () => latestRun.get(),
+    lastFormat: () => latestFormat.get(),
     close: async () => {
       server.closeAllConnections();
       server.close();
