@@ -6,7 +6,7 @@ import threading
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, BinaryIO
 
-protocol = "0.2"
+protocol = "0.1"
 line_limit = 64 * 1024 * 1024
 
 type Handler = Callable[[Mapping[str, Any]], Awaitable[Mapping[str, Any]]]
