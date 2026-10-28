@@ -1,3 +1,4 @@
+import gc
 import logging
 import os
 from collections.abc import Iterator, Sequence
@@ -75,14 +76,18 @@ def load_recogniser(device: str) -> Any:
     return model.to(device)
 
 
-def configure_recogniser(
-    model: Any, phrases: Sequence[str], strength: float = boost_strength, *, cuda_graphs: bool = True
-) -> None:
+def release_gpu_memory() -> None:
+    gc.collect()
+    if torch.cuda.is_available() and torch.cuda.is_initialized():
+        torch.cuda.empty_cache()
+
+
+def configure_recogniser(model: Any, phrases: Sequence[str], strength: float = boost_strength) -> None:
     from omegaconf import open_dict
 
     decoding = model.cfg.decoding
     with open_dict(decoding):
-        decoding.greedy.use_cuda_graph_decoder = cuda_graphs
+        decoding.greedy.use_cuda_graph_decoder = False
         decoding.greedy.boosting_tree = (
             {"key_phrases_list": list(phrases), "use_triton": False, "context_score": strength, "depth_scaling": 2.0}
             if phrases
@@ -90,20 +95,12 @@ def configure_recogniser(
         )
         decoding.greedy.boosting_tree_alpha = 1.0 if phrases else 0.0
     model.change_decoding_strategy(decoding, verbose=False)
+    release_gpu_memory()
 
 
-def warm_recogniser(model: Any) -> str | None:
-    silence = np.zeros(heard_rate, dtype=np.float32)
-    try:
-        configure_recogniser(model, [])
-        recognise(model, silence)
-    except Exception as error:
-        if isinstance(error, torch.cuda.OutOfMemoryError):
-            raise
-        configure_recogniser(model, [], cuda_graphs=False)
-        recognise(model, silence)
-        return (str(error).strip().splitlines() or [type(error).__name__])[0]
-    return None
+def warm_recogniser(model: Any) -> None:
+    configure_recogniser(model, [])
+    recognise(model, np.zeros(heard_rate, dtype=np.float32))
 
 
 def recognise(model: Any, samples: np.ndarray) -> str:

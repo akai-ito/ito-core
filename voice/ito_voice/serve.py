@@ -27,7 +27,6 @@ class Loaded:
     recogniser: Any
     voiceprints: Any
     turn: models.TurnModel
-    cuda_graphs: bool
 
 
 def load() -> Loaded:
@@ -35,12 +34,10 @@ def load() -> Loaded:
     speaker = models.load_speaker(device)
     list(models.speak(speaker, "Ready.", "af_heart"))
     recogniser = models.load_recogniser(device)
-    graphs_failure = models.warm_recogniser(recogniser)
-    if graphs_failure is not None:
-        print(f"CUDA graphs failed, so decoding runs without them: {graphs_failure}", file=sys.stderr)
+    models.warm_recogniser(recogniser)
     voiceprints = models.load_voiceprints("cpu")
     models.load_vad()
-    return Loaded(speaker, recogniser, voiceprints, models.load_turn_model(), graphs_failure is None)
+    return Loaded(speaker, recogniser, voiceprints, models.load_turn_model())
 
 
 def new_vad() -> tuple[Callable[[np.ndarray], float], Callable[[], None]]:
@@ -90,7 +87,7 @@ class Voice:
     async def _apply(self, loaded: Loaded, phrases: Sequence[str]) -> None:
         def configure() -> None:
             with self._gpu_lock:
-                models.configure_recogniser(loaded.recogniser, phrases, cuda_graphs=loaded.cuda_graphs)
+                models.configure_recogniser(loaded.recogniser, phrases)
 
         await self._on_gpu(configure)
         self._applied = phrases
@@ -105,7 +102,7 @@ class Voice:
             self._report()
             return
         self._loaded = loaded
-        print(f"The voice is loaded, with CUDA graphs {'on' if loaded.cuda_graphs else 'off'}.", file=sys.stderr)
+        print("The voice is loaded.", file=sys.stderr)
         self._report()
         await self._arrived.wait()
         await self._apply(loaded, self._wanted)

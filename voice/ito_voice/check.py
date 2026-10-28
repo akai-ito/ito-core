@@ -64,6 +64,7 @@ enrolled_voice = "af_heart"
 hold_ms = 3000
 around_db = 12
 vocabulary_sample = 40
+long_call_rounds = 20
 first_audio_target_ms = 700
 turn_target_ms = 500
 recognition_target_ms = 300
@@ -225,7 +226,6 @@ class Models:
     speaker: models.Speaker | None = None
     speaker_device: str | None = None
     recogniser: Any = None
-    cuda_graphs: bool = True
     vad: Any = None
     turn: models.TurnModel | None = None
 
@@ -313,10 +313,8 @@ def load_models(report: Report, device: str) -> Models:
     def load_recogniser() -> None:
         before = gpu_used() if on_gpu else 0
         recogniser, ms = timed(models.load_recogniser, device)
-        graphs_failure = models.warm_recogniser(recogniser)
-        loaded.recogniser, loaded.cuda_graphs = recogniser, graphs_failure is None
-        if graphs_failure is not None:
-            lines.append(f"- CUDA graphs failed ({graphs_failure}), so decoding runs without them")
+        models.warm_recogniser(recogniser)
+        loaded.recogniser = recogniser
         memory = f", {gib(gpu_used() - before)} of GPU memory" if on_gpu else ""
         lines.append(f"- Parakeet on the {device.upper()}: {ms / 1000:.1f} s{memory}")
 
@@ -401,9 +399,7 @@ def recognised(loaded: Models, samples: np.ndarray) -> tuple[str, float]:
 
 
 def boosted(loaded: Models, phrases: Sequence[str], strength: float = models.boost_strength) -> float:
-    _, ms = timed(
-        lambda: models.configure_recogniser(loaded.recogniser, phrases, strength, cuda_graphs=loaded.cuda_graphs)
-    )
+    _, ms = timed(lambda: models.configure_recogniser(loaded.recogniser, phrases, strength))
     return ms
 
 
@@ -420,9 +416,6 @@ def check_recognition(report: Report, loaded: Models) -> dict[str, float]:
     talk = np.concatenate([part for clip in clips for part in (clip, gap)])
     while talk.shape[0] < 30 * heard_rate:
         talk = np.concatenate([talk, talk])
-    if loaded.device == "cuda":
-        lines.append(f"Decoding uses CUDA graphs: {'yes' if loaded.cuda_graphs else 'no'}.")
-        lines.append("")
     lines.append("| Speech | Recognition |")
     lines.append("| --- | --- |")
     for seconds in [2, 5, 10, 20, 30]:
@@ -772,17 +765,6 @@ def check_voiceprints(report: Report, loaded: Models) -> dict[str, float]:
         lines.append(f"- TitaNet on the CPU: {ms / 1000:.1f} s")
     if model is None:
         return found
-    if loaded.device == "cuda":
-        with report.step(lines, "TitaNet on the GPU"):
-            before = gpu_used()
-            on_gpu = models.load_voiceprints("cuda")
-            one = np.zeros(gate_window, dtype=np.float32)
-            models.voiceprint(on_gpu, one)
-            runs = [timed(models.voiceprint, on_gpu, one)[1] for _ in range(5)]
-            lines.append(f"- On the GPU instead: {gib(gpu_used() - before)} of GPU memory, {spread(runs)} per second")
-            del on_gpu
-            gc.collect()
-            torch.cuda.empty_cache()
     with report.step(lines, "Comparing voices"):
         enrolled = models.voiceprint(
             model, np.concatenate([render(speaker, text, enrolled_voice) for text in everyday[:3]])
@@ -976,6 +958,56 @@ def check_call(report: Report, loaded: Models) -> dict[str, float]:
     return found
 
 
+def check_long_call(report: Report, loaded: Models) -> dict[str, float]:
+    lines = report.section("A long call")
+    found: dict[str, float] = {}
+    speaker, recogniser = loaded.speaker, loaded.recogniser
+    if speaker is None or recogniser is None:
+        lines.append("- Skipped: Kokoro or Parakeet didn't load.")
+        return found
+    lines.append(
+        f"{long_call_rounds} rounds of what a long call does, one at a time on the GPU: the vocabulary changes, "
+        "Ari says a sentence, and Parakeet hears a turn. GPU memory should stay flat."
+    )
+    lines.append("")
+    with report.step(lines, "A long call"):
+        turn = np.concatenate([render(speaker, text, "af_heart") for text in everyday[:2]])
+        sentences = [medium_sentence, long_sentence, everyday[2]]
+        terms = [term for _, expected in names for term in expected]
+        held: list[float] = []
+        for index in range(long_call_rounds):
+            with gpu_lock:
+                models.configure_recogniser(recogniser, terms[: 4 + index % len(terms)])
+            with gpu_lock:
+                list(models.speak(speaker, sentences[index % len(sentences)], "af_heart"))
+            with gpu_lock:
+                models.recognise(recogniser, turn)
+            if loaded.device == "cuda":
+                held.append(torch.cuda.memory_allocated())
+        if held:
+            lines.append(
+                f"- GPU memory in use: {gib(held[0])} after the first round, {gib(held[-1])} after the last, "
+                f"peak {gib(torch.cuda.max_memory_allocated())}"
+            )
+            found["long_call_growth"] = (held[-1] - held[0]) / 1024**2
+        lines.append(f"- All {long_call_rounds} rounds came through")
+    models.configure_recogniser(recogniser, [])
+    return found
+
+
+def note_memory(report: Report) -> None:
+    if not (torch.cuda.is_available() and torch.cuda.is_initialized()):
+        return
+    models.release_gpu_memory()
+    _, lines = report.sections[-1]
+    lines.append("")
+    lines.append(
+        f"_GPU memory after this section: {gib(torch.cuda.memory_allocated())} in use, "
+        f"peak {gib(torch.cuda.max_memory_allocated())}._"
+    )
+    torch.cuda.reset_peak_memory_stats()
+
+
 def summarise(report: Report, device: str, loaded: Models, results: Mapping[str, float]) -> None:
     def verdict(value: float | None, target: float) -> str:
         return (
@@ -1011,6 +1043,11 @@ def summarise(report: Report, device: str, loaded: Models, results: Mapping[str,
         + (f", {results['turn_cut']:.0f} of 6 cut off mid-sentence" if results.get("turn_cut") else ""),
         f"- Recognising a 5 s turn: {verdict(results.get('recognition_5s'), recognition_target_ms)}",
         f"- On a call, end of speech to the turn's words: {ms_or_na(results.get('call_turn'))}",
+        (
+            f"- A long call: GPU memory grew {results['long_call_growth']:.0f} MB over {long_call_rounds} rounds"
+            if "long_call_growth" in results
+            else "- A long call: n/a"
+        ),
         f"- Word error rate, everyday sentences: {share(results.get('wer'))}",
         f"- Built-in names right: {share(names_plain)} plain, {share(names_boosted)} boosted",
         f"- Your names right: {share(yours_plain)} plain, {share(yours_boosted)} boosted",
@@ -1033,13 +1070,19 @@ def check(vocabulary_file: Path | None, report_file: Path, details_file: Path) -
     check_downloads(report)
     loaded = load_models(report, device)
     results: dict[str, float] = {}
-    results |= check_speaking(report, loaded)
-    results |= check_recognition(report, loaded)
-    results |= check_vocabulary(report, loaded, vocabulary)
-    results |= check_turns(report, loaded)
-    results |= check_voiceprints(report, loaded)
-    results |= check_call(report, loaded)
-    check_together(report, loaded)
+    sections: list[Callable[[], Mapping[str, float] | None]] = [
+        lambda: check_speaking(report, loaded),
+        lambda: check_recognition(report, loaded),
+        lambda: check_vocabulary(report, loaded, vocabulary),
+        lambda: check_turns(report, loaded),
+        lambda: check_voiceprints(report, loaded),
+        lambda: check_call(report, loaded),
+        lambda: check_long_call(report, loaded),
+        lambda: check_together(report, loaded),
+    ]
+    for section in sections:
+        results |= section() or {}
+        note_memory(report)
     summarise(report, device, loaded, results)
     report.summary.append(f"- The check took {(time.perf_counter() - started) / 60:.1f} minutes")
     text = report.markdown()
