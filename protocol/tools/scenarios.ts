@@ -2841,6 +2841,47 @@ const scenarios: readonly (() => Transcript)[] = [
     );
     return transcript;
   },
+
+  () => {
+    const transcript = createTranscript({
+      name: "58-topics",
+      scenario: 58,
+      title: "Topics",
+      summary:
+        "Last night you planned Florence, then asked about Bora. Ari marked each change of subject with a quiet " +
+        "label on the message that changed it, and none for a follow-up. In the morning the snapshot carries " +
+        "both labels, and when you come back to Florence, Ari marks it with the same label.",
+      guarantees: ["G29"],
+    });
+    transcript.time("2026-10-27T19:00:00.000Z");
+    transcript.exchange(
+      "Can you help me plan Florence with Janki?",
+      "Of course! Three days fits the Uffizi, the Duomo and a morning in Siena.",
+      [],
+      "Florence trip",
+    );
+    transcript.wait(60_000);
+    transcript.exchange(
+      "Different thing: what should I tell Bora about the QRT panel?",
+      "Tell her the design is ready for one more round, and ask which part worries her most.",
+      [],
+      "QRT panel",
+    );
+    transcript.wait(30_000);
+    transcript.exchange("And when should I send it?", "Before Friday, so she has the weekend to read it.");
+    transcript.begin("2026-10-28T08:00:00.000Z");
+    transcript.world("app_opened");
+    transcript.connect();
+    transcript.wait(3000);
+    const back = sendAndStart(transcript, "Back to Florence: which day should we do the Uffizi?");
+    transcript.wait(700);
+    agentCalls(transcript, "mark_topic", { label: "Florence trip" });
+    transcript.topic("Florence trip", back.user);
+    transcript.wait(300);
+    writeWhole(transcript, "The first morning, before it gets busy. Book the 8:15 slot.");
+    transcript.endTurn("completed");
+    return transcript;
+  },
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

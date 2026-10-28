@@ -246,6 +246,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
             steps: page.value.steps,
             asks: page.value.asks,
             calls: page.value.calls,
+            topics: page.value.topics,
             has_more: page.value.hasMore,
           }
         : reply

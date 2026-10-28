@@ -7,4 +7,4 @@
 {"at":9140,"server":{"status":200,"headers":{"Ito-Protocol":"0.11"},"body":{"name":"studio","version":"0.11.0","protocol":"0.11","agent":{"name":"Ari"},"setup":{"notifications":false,"memory_backup":false},"capabilities":[]}}}
 {"at":9150,"app":{"method":"GET","path":"/v0/events","headers":{"Authorization":"Bearer ito_example_not_a_real_token_00000000000000000000"}}}
 {"at":9150,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":9150,"event":{"type":"snapshot","at":"2026-10-12T08:41:09.150Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":9150,"event":{"type":"snapshot","at":"2026-10-12T08:41:09.150Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}

@@ -1,7 +1,7 @@
 {"transcript":"44-when-the-server-can-t-talk","start":"2026-10-27T09:00:00.000Z","scenario":44,"title":"When the server can't talk","summary":"The server's voice fails, and the event stream says why in a line, so Ari stops offering Talk and shows the reason. The voice list carries the same reason, and a preview is refused with it.","guarantees":["G10","G24"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-27T09:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-27T09:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
 {"at":60000,"world":"voice_failed","reason":"The GPU ran out of memory loading the voice."}
 {"at":60000,"event":{"id":"e_0001_92366","type":"voice.status","at":"2026-10-27T09:01:00.000Z","state":"failed","reason":"The GPU ran out of memory loading the voice."}}
 {"at":65000,"app":{"method":"GET","path":"/v0/voices"}}

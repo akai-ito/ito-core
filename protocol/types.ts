@@ -1025,7 +1025,8 @@ export interface components {
       | components["schemas"]["CallStarted"]
       | components["schemas"]["CallEnded"]
       | components["schemas"]["CallAudioDeleted"]
-      | components["schemas"]["VoiceStatus"];
+      | components["schemas"]["VoiceStatus"]
+      | components["schemas"]["TopicStarted"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -1054,6 +1055,8 @@ export interface components {
       next: components["schemas"]["MessageId"][];
       /** @description The calls that started within these messages, and one still on. */
       calls: components["schemas"]["Call"][];
+      /** @description The topics Ari marked on these messages, in position order. */
+      topics: components["schemas"]["Topic"][];
     };
     /**
      * message.accepted
@@ -1518,6 +1521,8 @@ export interface components {
       asks: components["schemas"]["Ask"][];
       /** @description Every call that started in the same span, in position order. */
       calls: components["schemas"]["Call"][];
+      /** @description The topics Ari marked on these messages, in position order. */
+      topics: components["schemas"]["Topic"][];
       /** @description Whether even older messages exist. */
       has_more: boolean;
     };
@@ -1708,6 +1713,17 @@ export interface components {
       /** @description Why the server ended it, in a line to show, such as "The connection dropped." Absent when you ended it. */
       end_reason?: string;
     };
+    /** @description Opaque. The server makes it when Ari marks a topic. */
+    TopicId: string;
+    /** @description Where the subject changed: a quiet label Ari puts on the message that changed it. A label used again is the same subject, returned to. */
+    Topic: {
+      id: components["schemas"]["TopicId"];
+      /** @description One to four words, such as "Florence trip", safe to show as it is. */
+      label: string;
+      /** @description The position of the message that changed the subject. Draw the label above it. */
+      position: components["schemas"]["Position"];
+      at: components["schemas"]["Timestamp"];
+    };
     /**
      * Format: uuid
      * @description A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.
@@ -1785,6 +1801,17 @@ export interface components {
       at: components["schemas"]["Timestamp"];
       state: components["schemas"]["VoiceState"];
       reason?: components["schemas"]["VoiceReason"];
+    };
+    /**
+     * topic.started
+     * @description Ari marked where the subject changed, while answering the message that changed it.
+     */
+    TopicStarted: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "topic.started";
+      at: components["schemas"]["Timestamp"];
+      topic: components["schemas"]["Topic"];
     };
     /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once.
@@ -2018,6 +2045,8 @@ export type AskKind = components["schemas"]["AskKind"];
 export type AskOption = components["schemas"]["AskOption"];
 export type AskOutcome = components["schemas"]["AskOutcome"];
 export type Call = components["schemas"]["Call"];
+export type TopicId = components["schemas"]["TopicId"];
+export type Topic = components["schemas"]["Topic"];
 export type UploadId = components["schemas"]["UploadId"];
 export type VoiceState = components["schemas"]["VoiceState"];
 export type VoiceReason = components["schemas"]["VoiceReason"];
@@ -2029,6 +2058,7 @@ export type CallStarted = components["schemas"]["CallStarted"];
 export type CallEnded = components["schemas"]["CallEnded"];
 export type CallAudioDeleted = components["schemas"]["CallAudioDeleted"];
 export type VoiceStatus = components["schemas"]["VoiceStatus"];
+export type TopicStarted = components["schemas"]["TopicStarted"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];

@@ -1,7 +1,7 @@
 {"transcript":"50-ari-says-what-it-s-doing","start":"2026-10-27T10:00:00.000Z","scenario":50,"title":"Ari says what it's doing","summary":"After your turn the phone chimes, and the tone covers the silence while Ari works. Only after a long quiet does Ari say what it's doing, once, then it answers.","guarantees":["G26"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-27T10:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-27T10:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
 {"at":1000,"app":{"method":"PUT","path":"/v0/calls/c4f4151d-d98e-40a6-8952-3dac9a2bec50"}}
 {"at":1000,"event":{"id":"e_0001_34058","type":"call.started","at":"2026-10-27T10:00:01.000Z","call":{"id":"c4f4151d-d98e-40a6-8952-3dac9a2bec50","started_at":"2026-10-27T10:00:01.000Z","position":1}}}
 {"at":1000,"server":{"status":201,"body":{"call":{"id":"c4f4151d-d98e-40a6-8952-3dac9a2bec50","started_at":"2026-10-27T10:00:01.000Z","position":1}}}}

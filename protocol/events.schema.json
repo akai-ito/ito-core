@@ -64,6 +64,9 @@
         },
         {
           "$ref": "#/$defs/VoiceStatus"
+        },
+        {
+          "$ref": "#/$defs/TopicStarted"
         }
       ]
     },
@@ -108,6 +111,12 @@
       "type": "string",
       "format": "uuid",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "TopicId": {
+      "description": "Opaque. The server makes it when Ari marks a topic.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
     },
     "CallId": {
       "description": "A random UUID the app makes when you start a call.",
@@ -668,7 +677,7 @@
       "title": "snapshot",
       "description": "The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.",
       "type": "object",
-      "required": ["type", "at", "reason", "messages", "has_more", "turn", "next", "steps", "asks", "calls"],
+      "required": ["type", "at", "reason", "messages", "has_more", "turn", "next", "steps", "asks", "calls", "topics"],
       "properties": {
         "id": {
           "$ref": "#/$defs/EventId"
@@ -732,6 +741,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/Call"
+          }
+        },
+        "topics": {
+          "description": "The topics Ari marked on these messages, in position order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Topic"
           }
         }
       }
@@ -1127,6 +1143,48 @@
           "description": "Why the server ended it, in a line to show, such as \"The connection dropped.\" Absent when you ended it.",
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "Topic": {
+      "description": "Where the subject changed: a quiet label Ari puts on the message that changed it. A label used again is the same subject, returned to.",
+      "type": "object",
+      "required": ["id", "label", "position", "at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/TopicId"
+        },
+        "label": {
+          "description": "One to four words, such as \"Florence trip\", safe to show as it is.",
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "The position of the message that changed the subject. Draw the label above it."
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      }
+    },
+    "TopicStarted": {
+      "title": "topic.started",
+      "description": "Ari marked where the subject changed, while answering the message that changed it.",
+      "type": "object",
+      "required": ["id", "type", "at", "topic"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "topic.started"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "topic": {
+          "$ref": "#/$defs/Topic"
         }
       }
     },

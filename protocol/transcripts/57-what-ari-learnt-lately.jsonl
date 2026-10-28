@@ -2,7 +2,7 @@
 {"at":0,"world":"memory_holds","pages":[{"address":"memory:people/janki","title":"Janki","gist":"Your oldest friend, from school","aliases":["Janks"],"links":[],"markdown":"Your oldest friend; you met at school in Pune (as of 20 Oct).\n","note":"Oldest friend, from school"},{"address":"memory:journal/2026-10-26","title":"26 October 2026","gist":"Home from Ljubljana; Bora's first sub-two","aliases":[],"links":[],"markdown":"### 21:10\n\nHome from Ljubljana. Bora ran her first half marathon under two hours.\n","note":"Home from Ljubljana"}]}
 {"at":600000,"app":{"method":"GET","path":"/v0/events"}}
 {"at":600000,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":600000,"event":{"type":"snapshot","at":"2026-10-27T18:10:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":600000,"event":{"type":"snapshot","at":"2026-10-27T18:10:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
 {"at":602000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"2b3878ca-83c1-4b5e-984e-6084e35ca1f3","text":"Janki and I are off to Florence together, 6 to 9 November!"}}}
 {"at":602000,"event":{"id":"e_0001_32509","type":"message.accepted","at":"2026-10-27T18:10:02.000Z","message":{"id":"2b3878ca-83c1-4b5e-984e-6084e35ca1f3","role":"user","text":"Janki and I are off to Florence together, 6 to 9 November!","at":"2026-10-27T18:10:02.000Z","position":1}}}
 {"at":602000,"server":{"status":201,"body":{"message":{"id":"2b3878ca-83c1-4b5e-984e-6084e35ca1f3","role":"user","text":"Janki and I are off to Florence together, 6 to 9 November!","at":"2026-10-27T18:10:02.000Z","position":1}}}}

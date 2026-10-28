@@ -2,7 +2,7 @@
 {"at":0,"world":"memory_holds","pages":[{"address":"memory:people/bora","title":"Bora","gist":"Chairs the QRT panel; your Saturday running partner","aliases":["Bora K"],"links":["memory:projects/qrt-panel"],"markdown":"Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct).\n"},{"address":"memory:projects/qrt-panel","title":"QRT panel","gist":"Reviews your design in November","aliases":[],"links":["memory:people/bora"],"markdown":"The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct).\n"}]}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-26T08:10:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-26T08:10:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
 {"at":2000,"app":{"method":"PUT","path":"/v0/calls/ec353bf7-0b41-4878-b1ca-f6108a4e9bb4"}}
 {"at":2000,"event":{"id":"e_0001_36865","type":"call.started","at":"2026-10-26T08:10:02.000Z","call":{"id":"ec353bf7-0b41-4878-b1ca-f6108a4e9bb4","started_at":"2026-10-26T08:10:02.000Z","position":1}}}
 {"at":2000,"server":{"status":201,"body":{"call":{"id":"ec353bf7-0b41-4878-b1ca-f6108a4e9bb4","started_at":"2026-10-26T08:10:02.000Z","position":1}}}}

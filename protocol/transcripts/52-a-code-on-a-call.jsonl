@@ -1,7 +1,7 @@
 {"transcript":"52-a-code-on-a-call","start":"2026-10-28T08:30:00.000Z","scenario":52,"title":"A code on a call","summary":"Ari needs a code mid-call. The server never takes a secret by voice: it says to type it in the chat, a code said aloud stays an ordinary message, and the ask waits until you type the answer.","guarantees":["G25"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-28T08:30:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T08:30:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
 {"at":1000,"app":{"method":"PUT","path":"/v0/calls/0f866ec1-92d3-4b75-9064-700dd314405b"}}
 {"at":1000,"event":{"id":"e_0001_81887","type":"call.started","at":"2026-10-28T08:30:01.000Z","call":{"id":"0f866ec1-92d3-4b75-9064-700dd314405b","started_at":"2026-10-28T08:30:01.000Z","position":1}}}
 {"at":1000,"server":{"status":201,"body":{"call":{"id":"0f866ec1-92d3-4b75-9064-700dd314405b","started_at":"2026-10-28T08:30:01.000Z","position":1}}}}

@@ -28,6 +28,7 @@ import type {
   Status,
   Step,
   StepKind,
+  Topic,
   VoiceState,
 } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -64,8 +65,11 @@ export type Page = {
   readonly steps: readonly Step[];
   readonly asks: readonly Ask[];
   readonly calls: readonly Call[];
+  readonly topics: readonly Topic[];
   readonly hasMore: boolean;
 };
+
+export type TopicFailure = { readonly code: "no_turn" } | { readonly code: "marked"; readonly topic: Topic };
 
 export type AcceptFailure =
   "id_conflict" | "unknown_ask" | "unknown_attachment" | "attachment_taken" | "secret_attachments" | "call_not_on";
@@ -117,6 +121,7 @@ export type Store = Settings & {
   readonly deleteCallAudio: (id: string) => DeletedAudio | undefined;
   readonly recordVoiceStatus: (state: VoiceState, reason?: string) => void;
   readonly latestCall: () => Call | undefined;
+  readonly markTopic: (label: string) => Result<Topic, TopicFailure>;
   readonly saveAttachment: (attachment: Attachment, sha256: string) => Result<SavedAttachment, "id_conflict">;
   readonly findAttachment: (id: string) => { readonly attachment: Attachment; readonly sha256: string } | undefined;
   readonly unattachedBefore: (before: string) => readonly string[];
@@ -201,6 +206,7 @@ type DeviceRow = {
 
 type TurnRow = {
   readonly id: string;
+  readonly position: number;
   readonly inputs: string;
   readonly read: string;
   readonly retry_of: string | null;
@@ -371,6 +377,13 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     return ended;
   };
 
+  const topicsFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Topic[] =>
+    (
+      database
+        .prepare("SELECT body FROM topics WHERE position >= ? AND position < ? ORDER BY position")
+        .all(from, until) as unknown as readonly { readonly body: string }[]
+    ).map((row) => JSON.parse(row.body) as Topic);
+
   const asksFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Ask[] =>
     (
       database
@@ -458,6 +471,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           steps: window[0] ? [...stepsFrom(window[0].position)] : [],
           asks: window[0] ? [...asksFrom(window[0].position)] : [],
           calls: [...callsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
+          topics: [...topicsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
           turn: turn ? toLiveTurn(turn) : null,
           next: next.map((row) => row.message),
         },
@@ -555,6 +569,23 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         return { call: deleted, audio };
       }),
 
+    markTopic: (label) =>
+      transaction(() => {
+        const running = database
+          .prepare("SELECT * FROM turns WHERE outcome IS NULL ORDER BY position DESC LIMIT 1")
+          .get() as TurnRow | undefined;
+        if (!running) return fail({ code: "no_turn" });
+        const [first] = toStoredTurn(running).inputs;
+        const position = (first && messageRow(first)?.position) ?? running.position;
+        const marked = database.prepare("SELECT body FROM topics WHERE position = ?").get(position) as
+          { readonly body: string } | undefined;
+        if (marked) return fail({ code: "marked", topic: JSON.parse(marked.body) as Topic });
+        const at = now();
+        const topic: Topic = { id: identifiers.topic(), label, position, at };
+        append({ id: identifiers.event(), type: "topic.started", at, topic });
+        return ok(topic);
+      }),
+
     latestCall: () => {
       const row = database.prepare("SELECT body FROM calls ORDER BY position DESC LIMIT 1").get() as
         { readonly body: string } | undefined;
@@ -574,6 +605,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         steps: page[0] ? stepsFrom(page[0].position, anchor.position) : [],
         asks: page[0] ? asksFrom(page[0].position, anchor.position) : [],
         calls: callsFrom((rows[limit]?.position ?? 0) + 1, anchor.position),
+        topics: topicsFrom((rows[limit]?.position ?? 0) + 1, anchor.position),
         hasMore: rows.length > limit,
       });
     },

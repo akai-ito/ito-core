@@ -67,7 +67,14 @@ describe("Ito's tools over MCP", () => {
     expect(await statusOf(post({ jsonrpc: "2.0", method: "notifications/initialized" }))).toBe(202);
     expect(await rpc("tools/list")).toMatchObject({
       result: {
-        tools: [{ name: "ask" }, { name: "recall" }, { name: "read_page" }, { name: "remember" }, { name: "journal" }],
+        tools: [
+          { name: "ask" },
+          { name: "mark_topic" },
+          { name: "recall" },
+          { name: "read_page" },
+          { name: "remember" },
+          { name: "journal" },
+        ],
       },
     });
     const { url } = toolServer();

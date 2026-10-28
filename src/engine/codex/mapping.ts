@@ -10,6 +10,7 @@ import type { EngineEvent, EngineFailureCode, StepFacts } from "#engine/engine.t
 import { toMessageId } from "#conversation/ids.ts";
 import { askToolName } from "#asks/tool.ts";
 import { memoryToolNames } from "#memory/tool-names.ts";
+import { topicToolName } from "#topics/tool.ts";
 import { toolServerName } from "#tools/mcp.ts";
 
 export type TurnState = {
@@ -172,8 +173,8 @@ const closing = (state: TurnState): readonly EngineEvent[] => (state.openMessage
 const isAskCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
   item.server === toolServerName && item.tool === askToolName;
 
-const isMemoryCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
-  item.server === toolServerName && memoryToolNames.has(item.tool);
+const isQuietCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
+  item.server === toolServerName && (memoryToolNames.has(item.tool) || item.tool === topicToolName);
 
 const startStep = (item: ThreadItem): EngineEvent | undefined => {
   switch (item.type) {
@@ -198,7 +199,7 @@ const startStep = (item: ThreadItem): EngineEvent | undefined => {
       return started(item.id, "web_search", searchFacts(item));
     }
     case "mcpToolCall": {
-      return isAskCall(item) || isMemoryCall(item)
+      return isAskCall(item) || isQuietCall(item)
         ? undefined
         : started(item.id, "tool", { capability: item.server, operation: item.tool, arguments: item.arguments });
     }
@@ -257,7 +258,7 @@ const endStep = (item: ThreadItem): EngineEvent | undefined => {
     case "mcpToolCall": {
       const isCompleted = item.status === "completed";
       if (isAskCall(item)) return isCompleted ? { type: "asked" } : undefined;
-      if (isMemoryCall(item)) return undefined;
+      if (isQuietCall(item)) return undefined;
       return ended(
         item.id,
         isCompleted,

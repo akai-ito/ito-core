@@ -120,4 +120,9 @@ export const migrations: readonly string[] = [
     ended INTEGER NOT NULL DEFAULT 0
   );`,
   `ALTER TABLE memory_changes ADD COLUMN note TEXT;`,
+  `CREATE TABLE topics (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL UNIQUE,
+    body TEXT NOT NULL
+  );`,
 ];
