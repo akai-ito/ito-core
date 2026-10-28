@@ -14,6 +14,7 @@ import { createCalls, type Calls } from "#voice/calls.ts";
 import { createVoiceprints } from "#voice/voiceprints.ts";
 import { chosenVoice } from "#voice/voices.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
+import { createTopicTool } from "#topics/tool.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
@@ -229,7 +230,7 @@ export const createServer = (options: ServerOptions): Server => {
     app.log.info(details, message);
   });
   const doors = createDoors({ host, secrets, currentTurn: () => store.runningTurn()?.id, command: launcher });
-  const coreTools: readonly Tool[] = [createAskTool(turns), ...memory.tools];
+  const coreTools: readonly Tool[] = [createAskTool(turns), createTopicTool(store), ...memory.tools];
   const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()];
   const callTool = async (name: string, input: unknown): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);

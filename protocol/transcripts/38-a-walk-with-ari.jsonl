@@ -1,7 +1,7 @@
 {"transcript":"38-a-walk-with-ari","start":"2026-10-26T07:30:00.000Z","scenario":38,"title":"A walk with Ari","summary":"You start a call for a walk and stream it. The server hears your turn, shows it live, and posts it as a spoken message with its recording; Ari's note and reply are spoken a sentence at a time up to the --- line, the phone says when each has played, and hanging up ends the call with its length.","guarantees":["G23","G25","G26"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-26T07:30:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-26T07:30:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
 {"at":1500,"app":{"method":"PUT","path":"/v0/calls/c40b7f14-bcb1-451e-8d2a-797ec1b00d4c"}}
 {"at":1500,"event":{"id":"e_0001_69536","type":"call.started","at":"2026-10-26T07:30:01.500Z","call":{"id":"c40b7f14-bcb1-451e-8d2a-797ec1b00d4c","started_at":"2026-10-26T07:30:01.500Z","position":1}}}
 {"at":1500,"server":{"status":201,"body":{"call":{"id":"c40b7f14-bcb1-451e-8d2a-797ec1b00d4c","started_at":"2026-10-26T07:30:01.500Z","position":1}}}}

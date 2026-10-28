@@ -37,6 +37,7 @@ where the protocol has to make it possible, marked *App*.
 | G26 | **Ari's voice gives way to yours.** Ari speaks only what comes before a line holding `---`, a sentence at a time with its caption, and stops at once when you talk over it. On a call, asks are said aloud with their choices. Silence while it works is covered by the phone's tone; Ari says what it's doing only after a long quiet, once. | 38, 45, 50, 51 |
 | G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
 | G28 | **An app asks before it acts.** When an app's action needs your approval, it waits inside the running turn, which carries on once you answer. Your next message answers it: Allow, or a plain yes, lets it run; anything else doesn't, and your words reach the agent. Stop cancels it. | 53, 54, 55 |
+| G29 | **Topics mark where the subject changed.** When you change the subject, Ari puts a label of a few plain words on the message that changed it, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
 
 ## Scenario by scenario
 
@@ -424,6 +425,12 @@ where the protocol has to make it possible, marked *App*.
   a note on what it did; both are fetched from memory, never carried in the log. (G22)
 - A page's links come with each linked page's title and other names; links to pages that don't
   exist are left out.
+
+### 58 · [Topics](transcripts/58-topics.jsonl)
+
+- A topic is a label on the message that changed the subject; a follow-up gets none. (G29)
+- Snapshots and history carry the topics on their messages, windowed as calls are. Coming back to a
+  subject reuses its label. (G29)
 
 ## Not in this version
 

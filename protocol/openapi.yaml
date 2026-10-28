@@ -1637,7 +1637,7 @@ components:
         message: { $ref: "events.schema.json#/$defs/Message" }
     MessagePage:
       type: object
-      required: [messages, steps, asks, calls, has_more]
+      required: [messages, steps, asks, calls, topics, has_more]
       properties:
         messages:
           description: Oldest first.
@@ -1655,6 +1655,10 @@ components:
           description: Every call that started in the same span, in position order.
           type: array
           items: { $ref: "events.schema.json#/$defs/Call" }
+        topics:
+          description: The topics Ari marked on these messages, in position order.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Topic" }
         has_more:
           description: Whether even older messages exist.
           type: boolean

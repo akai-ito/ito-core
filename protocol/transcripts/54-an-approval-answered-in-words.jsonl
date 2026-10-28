@@ -1,7 +1,7 @@
 {"transcript":"54-an-approval-answered-in-words","start":"2026-10-28T09:20:00.000Z","scenario":54,"title":"An approval answered in words","summary":"While an app's approval waits, you type something else. It answers the approval as not allowed, and your words reach the agent in the same turn, so it can act on them.","guarantees":["G28"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-28T09:20:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T09:20:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
 {"at":1000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"c6b16785-8519-4778-bedd-6619a109fd94","text":"Add a reminder to call Mum on Sunday at 2."}}}
 {"at":1000,"event":{"id":"e_0001_71783","type":"message.accepted","at":"2026-10-28T09:20:01.000Z","message":{"id":"c6b16785-8519-4778-bedd-6619a109fd94","role":"user","text":"Add a reminder to call Mum on Sunday at 2.","at":"2026-10-28T09:20:01.000Z","position":1}}}
 {"at":1000,"server":{"status":201,"body":{"message":{"id":"c6b16785-8519-4778-bedd-6619a109fd94","role":"user","text":"Add a reminder to call Mum on Sunday at 2.","at":"2026-10-28T09:20:01.000Z","position":1}}}}

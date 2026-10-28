@@ -10,6 +10,7 @@ import type {
   Attachment,
   AskOption,
   Call,
+  Topic,
   Correction,
   Error as ErrorBody,
   LiveTurn,
@@ -107,7 +108,7 @@ export type Transcript = {
   readonly connect: (options?: { readonly headers?: HttpHeaders }) => void;
   readonly disconnect: (marker: string, fields?: Fields) => void;
   readonly stall: (durationMs: number) => void;
-  readonly exchange: (user: string, agent: string, files?: readonly string[]) => Exchange;
+  readonly exchange: (user: string, agent: string, files?: readonly string[], topic?: string) => Exchange;
   readonly callExchange: (user: string, agent: string, corrections: readonly Correction[], recording: string) => string;
   readonly send: (text: string, options?: SendOptions) => string;
   readonly startTurn: (inputs: readonly string[], options?: { readonly retryOf?: string }) => string;
@@ -150,13 +151,14 @@ export type Transcript = {
   readonly hangUp: () => void;
   readonly voiceFails: (reason: string) => void;
   readonly streamTimesOut: () => void;
+  readonly topic: (label: string, message: string) => string;
   readonly change: () => string;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -185,6 +187,7 @@ type Projection = {
   readonly steps: ReadonlyMap<string, Step>;
   readonly asks: ReadonlyMap<string, Ask>;
   readonly calls: ReadonlyMap<string, Call>;
+  readonly topics: ReadonlyMap<string, Topic>;
 };
 
 type SnapshotReason = "no_cursor" | "cursor_unknown" | "too_far_behind";
@@ -245,6 +248,10 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
       const call = event.call as Call;
       return { ...projection, calls: new Map(projection.calls).set(call.id, call) };
     }
+    case "topic.started": {
+      const topic = event.topic as Topic;
+      return { ...projection, topics: new Map(projection.topics).set(topic.id, topic) };
+    }
     case "call.audio_deleted": {
       const call = event.call as Call;
       const silenced = byId
@@ -304,6 +311,7 @@ const project = (log: readonly Event[]): Projection =>
     steps: new Map(),
     asks: new Map(),
     calls: new Map(),
+    topics: new Map(),
   });
 
 const positionBefore = (order: readonly string[], byId: ReadonlyMap<string, Message>, index: number): number =>
@@ -345,7 +353,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacf]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfp]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -362,6 +370,7 @@ const toCounters = (log: readonly Event[]): Counters => {
     a: highest("a"),
     c: highest("c"),
     f: highest("f"),
+    p: highest("p"),
   };
 };
 
@@ -370,7 +379,11 @@ const toCounters = (log: readonly Event[]): Counters => {
 export const createTranscript = (header: Header): Transcript => {
   const lines = createCell<readonly Line[]>([]);
   const log = createCell<readonly Event[]>([]);
-  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0 }, issued: new Set() });
+  const ids = createCell<Ids>({
+    boot: 1,
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0 },
+    issued: new Set(),
+  });
   const callModel = createCell<CallModel | undefined>(undefined);
   const approvals = createCell<ReadonlySet<string>>(new Set());
   const observer = createCell<((type: string, fields: Fields) => void) | undefined>(undefined);
@@ -494,7 +507,7 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const snapshot = (reason: SnapshotReason): void => {
-    const { order, byId, steps, asks, calls } = project(log.get());
+    const { order, byId, steps, asks, calls, topics } = project(log.get());
     const latest = latestEventId();
     const messages = order.slice(-messagesPerSnapshot).flatMap((id) => byId.get(id) ?? []);
     const first = messages[0]?.position;
@@ -509,6 +522,7 @@ export const createTranscript = (header: Header): Transcript => {
         steps: first === undefined ? [] : between(steps, first),
         asks: first === undefined ? [] : between(asks, first),
         calls: callsFrom(calls, positionBefore(order, byId, order.length - messagesPerSnapshot) + 1),
+        topics: between(topics, positionBefore(order, byId, order.length - messagesPerSnapshot) + 1),
         turn: turn.get() ?? null,
         next: next.get(),
       },
@@ -734,7 +748,7 @@ export const createTranscript = (header: Header): Transcript => {
     };
   };
 
-  const exchange = (user: string, agent: string, files: readonly string[] = []): Exchange => {
+  const exchange = (user: string, agent: string, files: readonly string[] = [], topic?: string): Exchange => {
     const userMessageId = newUserId();
     const attached = files.map((file) => describeAttachment(file, newUserId()));
     emit("message.accepted", {
@@ -750,6 +764,7 @@ export const createTranscript = (header: Header): Transcript => {
     wait(1);
     const turnId = startTurn([userMessageId]);
     wait(300);
+    if (topic !== undefined) markTopic(topic, userMessageId);
     step("thinking", { title: "Thinking it through", endedTitle: "Thought it through" });
     wait(1500);
     const agentMessageId = reply();
@@ -759,6 +774,14 @@ export const createTranscript = (header: Header): Transcript => {
     wait(1);
     endTurn("completed");
     return { user: userMessageId, agent: agentMessageId, turn: turnId };
+  };
+
+  const markTopic = (label: string, message: string): string => {
+    const position = project(log.get()).byId.get(message)?.position;
+    if (position === undefined) throw new Error(`a topic on unknown message ${message}`);
+    const topic: Topic = { id: newId("p"), label, position, at: timestamp() };
+    emit("topic.started", { topic });
+    return topic.id;
   };
 
   const callById = (id: string): Call => {
@@ -1261,7 +1284,7 @@ export const createTranscript = (header: Header): Transcript => {
 
   const listMessages = (before: string, limit: number): void => {
     request("GET", `/v0/messages?before=${before}&limit=${limit}`);
-    const { order, byId, steps, asks, calls } = project(log.get());
+    const { order, byId, steps, asks, calls, topics } = project(log.get());
     const index = order.indexOf(before);
     if (index === -1) throw new Error(`no message ${before}`);
     const first = Math.max(0, index - limit);
@@ -1273,6 +1296,7 @@ export const createTranscript = (header: Header): Transcript => {
       steps: from === undefined ? [] : between(steps, from, until),
       asks: from === undefined ? [] : between(asks, from, until),
       calls: callsFrom(calls, positionBefore(order, byId, first) + 1, until),
+      topics: between(topics, positionBefore(order, byId, first) + 1, until),
       has_more: first > 0,
     });
   };
@@ -1331,6 +1355,7 @@ export const createTranscript = (header: Header): Transcript => {
     stepAtOffset,
     world,
     callExchange,
+    topic: markTopic,
     change: () => newId("c"),
     startCall,
     endCall,

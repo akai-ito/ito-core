@@ -22,6 +22,7 @@ export type Identifiers = {
   readonly ask: () => AskId;
   readonly change: () => ChangeId;
   readonly attachment: () => string;
+  readonly topic: () => string;
 };
 
 const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -38,4 +39,5 @@ export const randomIdentifiers: Identifiers = {
   ask: () => toAskId(`a_${randomText()}`),
   change: () => toChangeId(`c_${randomText()}`),
   attachment: () => `f_${randomText()}`,
+  topic: () => `p_${randomText()}`,
 };

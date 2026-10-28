@@ -141,6 +141,13 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
     case "voice.status": {
       return;
     }
+    case "topic.started": {
+      const { topic } = event;
+      database
+        .prepare("INSERT INTO topics (id, position, body) VALUES (?, ?, ?)")
+        .run(topic.id, topic.position, toJson(topic));
+      return;
+    }
     case "turn.ended": {
       database
         .prepare("UPDATE turns SET outcome = ?, error = ?, status = NULL WHERE id = ?")
