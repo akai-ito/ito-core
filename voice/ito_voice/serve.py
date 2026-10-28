@@ -64,7 +64,7 @@ class Voice:
         self._failure: str | None = None
         self._applied: Sequence[str] | None = None
         self._reported: tuple[str, str | None] | None = None
-        self._recognising = threading.Lock()
+        self._gpu_lock = threading.Lock()
         self._sessions: dict[str, Session] = {}
 
     def _state(self) -> tuple[str, str | None]:
@@ -89,7 +89,7 @@ class Voice:
 
     async def _apply(self, loaded: Loaded, phrases: Sequence[str]) -> None:
         def configure() -> None:
-            with self._recognising:
+            with self._gpu_lock:
                 models.configure_recogniser(loaded.recogniser, phrases, cuda_graphs=loaded.cuda_graphs)
 
         await self._on_gpu(configure)
@@ -137,7 +137,8 @@ class Voice:
             raise LinkError(-32_602, "speak needs text and a voice.")
 
         def render() -> np.ndarray:
-            chunks = list(models.speak(speaker, text, voice))
+            with self._gpu_lock:
+                chunks = list(models.speak(speaker, text, voice))
             return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
 
         samples = await self._on_gpu(render)
@@ -145,7 +146,7 @@ class Voice:
 
     def _tools(self, loaded: Loaded) -> Tools:
         def recognise(samples: np.ndarray) -> str:
-            with self._recognising:
+            with self._gpu_lock:
                 return models.recognise(loaded.recogniser, samples)
 
         return Tools(

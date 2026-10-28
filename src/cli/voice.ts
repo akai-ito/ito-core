@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { createWriteStream, existsSync } from "node:fs";
 import path from "node:path";
 import type { Io } from "#cli/io.ts";
 import { toPaths } from "#cli/paths.ts";
@@ -7,11 +7,16 @@ import { toVoiceEnvironment, vocabularyFile, voiceDirectory, voiceModels, voiceP
 
 export const voiceUsage = "ito voice check";
 
-type Run = { readonly cwd: string; readonly env: NodeJS.ProcessEnv };
+type Run = { readonly cwd: string; readonly env: NodeJS.ProcessEnv; readonly log?: string };
 
-const run = (command: string, parameters: readonly string[], { cwd, env }: Run): Promise<number> =>
+const run = (command: string, parameters: readonly string[], { cwd, env, log }: Run): Promise<number> =>
   new Promise((resolve) => {
-    const child = spawn(command, parameters, { cwd, env, stdio: "inherit" });
+    const child = spawn(command, parameters, { cwd, env, stdio: ["inherit", "inherit", log ? "pipe" : "inherit"] });
+    if (log && child.stderr) {
+      const kept = createWriteStream(log);
+      child.stderr.pipe(process.stderr, { end: false });
+      child.stderr.pipe(kept);
+    }
     child.once("error", () => {
       resolve(127);
     });
@@ -48,6 +53,7 @@ export const checkVoice = async (io: Io, directory = voiceDirectory): Promise<nu
   const { home } = toPaths(io.environment);
   const report = path.join(home, "voice-check.md");
   const details = path.join(home, "voice-check-details.md");
+  const log = path.join(home, "voice-check.log");
   const vocabulary = vocabularyFile(home);
   io.print("Checking the voice. The first time, it downloads the models (about 3 GB); then it measures everything.");
   const checked = await run(
@@ -62,11 +68,12 @@ export const checkVoice = async (io: Io, directory = voiceDirectory): Promise<nu
       details,
       ...(existsSync(vocabulary) ? ["--vocabulary", vocabulary] : []),
     ],
-    { cwd: directory, env: toVoiceEnvironment(io.environment, voiceModels(home)) },
+    { cwd: directory, env: toVoiceEnvironment(io.environment, voiceModels(home)), log },
   );
   io.print(
     `\nThe report is in ${report}: post it on akai-ito/plans#21. ` +
-      `The details, with words from your memory, are in ${details} and stay on this box.`,
+      `The details, with words from your memory, are in ${details} and stay on this box; ` +
+      `everything the check printed along the way is in ${log}.`,
   );
   return checked;
 };

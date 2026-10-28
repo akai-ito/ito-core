@@ -70,6 +70,8 @@ recognition_target_ms = 300
 
 type Lines = list[str]
 
+gpu_lock = threading.Lock()
+
 
 def progress(text: str) -> None:
     print(f"· {text}", file=sys.stderr, flush=True)
@@ -854,7 +856,7 @@ def check_voiceprints(report: Report, loaded: Models) -> dict[str, float]:
 
 
 def check_together(report: Report, loaded: Models) -> None:
-    lines = report.section("Speaking and listening at once")
+    lines = report.section("Speaking and listening at once, taking turns on the GPU")
     if loaded.recogniser is None or loaded.speaker is None:
         lines.append("- Skipped: Parakeet or Kokoro didn't load.")
         return
@@ -867,13 +869,25 @@ def check_together(report: Report, loaded: Models) -> None:
         hearing: list[float] = []
         barrier = threading.Barrier(2)
 
+        def speak_once() -> float:
+            started = time.perf_counter()
+            with gpu_lock:
+                first_audio(speaker, long_sentence, "af_heart")
+            return (time.perf_counter() - started) * 1000
+
+        def hear_once() -> float:
+            started = time.perf_counter()
+            with gpu_lock:
+                recognised(loaded, speech)
+            return (time.perf_counter() - started) * 1000
+
         def speak_loop() -> None:
             barrier.wait()
-            speaking.extend(first_audio(speaker, long_sentence, "af_heart")[1] for _ in range(3))
+            speaking.extend(speak_once() for _ in range(3))
 
         def hear_loop() -> None:
             barrier.wait()
-            hearing.extend(recognised(loaded, speech)[1] for _ in range(3))
+            hearing.extend(hear_once() for _ in range(3))
 
         threads = [threading.Thread(target=speak_loop), threading.Thread(target=hear_loop)]
         for thread in threads:
@@ -924,10 +938,8 @@ def check_call(report: Report, loaded: Models) -> dict[str, float]:
         from ito_voice.serve import new_vad
         from ito_voice.session import Session, Tools
 
-        lock = threading.Lock()
-
         def recognise(samples: np.ndarray) -> str:
-            with lock:
+            with gpu_lock:
                 return models.recognise(recogniser, samples)
 
         tools = Tools(
