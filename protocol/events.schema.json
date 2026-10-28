@@ -98,6 +98,12 @@
       "maxLength": 64
     },
     "AttachmentId": {
+      "description": "Opaque: the `UploadId` the app made for what it uploaded, or an id the server made for a recording it keeps, such as a spoken message's.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "UploadId": {
       "description": "A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.",
       "type": "string",
       "format": "uuid",
@@ -1125,7 +1131,7 @@
       }
     },
     "Correction": {
-      "description": "A word the phone corrected in a spoken message: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard.",
+      "description": "A word the server corrected in a spoken message, from what it has learnt: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard.",
       "type": "object",
       "required": ["offset", "length", "heard"],
       "properties": {
@@ -1144,7 +1150,7 @@
       }
     },
     "Spoken": {
-      "description": "How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the phone corrected.",
+      "description": "How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the server corrected.",
       "type": "object",
       "required": ["call"],
       "properties": {

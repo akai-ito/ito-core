@@ -3,7 +3,7 @@ import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import { toMessageId, type MessageId } from "#conversation/ids.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Term } from "#protocol/types.ts";
+import type { Term } from "#memory/vocabulary.ts";
 import type { Store } from "#store/store.ts";
 import type { Info, Log, Turns } from "#turns/turns.ts";
 import { correct } from "#voice/corrector.ts";
@@ -149,7 +149,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
   };
 
   const enqueue = (texts: readonly string[]): void => {
-    if (texts.length === 0) return;
+    if (texts.length === 0 || !socket.get()) return;
     const added = texts.map((text) => {
       sentences.set(sentences.get() + 1);
       return { id: `s${String(sentences.get())}`, text };
@@ -324,6 +324,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
       if (socket.get() !== closed || isEnded.get()) return;
       socket.set(undefined);
       stopSpeaking();
+      if (state.get() === "speaking") state.set(isAgentWorking.get() ? "working" : "listening");
       reconnect.set(
         clock.after(reconnectMs, () => {
           void end(droppedReason);
@@ -345,6 +346,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
           return;
         }
         case "played": {
+          if (frame.cut === true) return;
           unplayed.set(new Set([...unplayed.get()].filter((id) => id !== frame.id)));
           settle();
           return;

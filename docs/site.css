@@ -240,6 +240,10 @@ tr.push .who {
   background: #4a1d33;
   color: #ff9ec7;
 }
+tr.socket .who {
+  background: #1d3f4a;
+  color: #8fdcf0;
+}
 .text {
   white-space: pre-wrap;
   background: var(--panel);

@@ -9,7 +9,12 @@ import type { VoiceLoop } from "#voice/loop.ts";
 
 type CallPath = { readonly call: string };
 
-export type StreamOptions = { readonly store: Store; readonly calls: Calls; readonly voice: VoiceLoop };
+export type StreamOptions = {
+  readonly store: Store;
+  readonly calls: Calls;
+  readonly voice: VoiceLoop;
+  readonly protocol: string;
+};
 
 const toBytes = (data: RawData): Uint8Array =>
   Array.isArray(data) ? Buffer.concat(data) : data instanceof ArrayBuffer ? new Uint8Array(data) : data;
@@ -42,9 +47,12 @@ const toCallSocket = (socket: WebSocket): CallSocket => ({
   },
 });
 
-export const registerStream = (app: FastifyInstance, { store, calls, voice }: StreamOptions): void => {
+export const registerStream = (app: FastifyInstance, { store, calls, voice, protocol }: StreamOptions): void => {
   void app.register(async (scoped) => {
     await scoped.register(websocket);
+    scoped.websocketServer.on("headers", (headers: string[]) => {
+      headers.push(`Ito-Protocol: ${protocol}`);
+    });
     scoped.get<{ Params: CallPath }>(
       "/v0/calls/:call/stream",
       {
@@ -53,12 +61,16 @@ export const registerStream = (app: FastifyInstance, { store, calls, voice }: St
           const latest = store.latestCall();
           if (latest?.id !== request.params.call || latest.ended_at !== undefined) {
             return reply
+              .header("ito-protocol", protocol)
               .code(404)
               .send({ error: toCommandError("not_found", `No call ${request.params.call} is on.`) });
           }
           const { state, reason = "The voice isn't ready." } = voice.readiness();
           if (state !== "ready") {
-            return reply.code(503).send({ error: toCommandError("unavailable", reason, "Ari's voice isn't ready.") });
+            return reply
+              .header("ito-protocol", protocol)
+              .code(503)
+              .send({ error: toCommandError("unavailable", reason, "Ari's voice isn't ready.") });
           }
         },
       },

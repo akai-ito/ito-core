@@ -26,9 +26,9 @@ info:
     - **Read memory:** what's in Ari's mind, the shelves and their pages, the journal, and what each
       change Ari made changed. Ari writes memory itself; the API only reads it.
     - **Choose the model** the agent runs on, and how hard it thinks, from those its engine offers.
-    - **Talk:** start and end a call with the agent, send what you say as spoken messages with their
-      audio and the words the phone corrected, and fetch a vocabulary from memory that steers
-      speech recognition toward your names.
+    - **Talk:** start and end a call with the agent, and stream it: your microphone up, Ari's voice
+      down, with states and captions. The server hears your turns, steered toward the names in
+      memory, and posts each as a spoken message; teach it a word it got wrong.
     - **Ari's voice:** whether the server can hold a call, the voices Ari can speak in, choosing
       one, and hearing it speak.
 
@@ -383,7 +383,7 @@ paths:
         that names it. Scale photos down first (about 2048 pixels on the long edge, as JPEG): that is
         roughly what the model looks at. An attachment no message names is deleted after a day.
       parameters:
-        - $ref: "#/components/parameters/Attachment"
+        - $ref: "#/components/parameters/Upload"
         - name: name
           in: query
           required: true
@@ -857,24 +857,37 @@ paths:
               schema: { $ref: "#/components/schemas/CallResult" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
-  /v0/vocabulary:
+  /v0/calls/{call}/stream:
     get:
       tags: [Talk]
-      operationId: getVocabulary
-      summary: Words to steer speech recognition
+      operationId: streamCall
+      summary: Stream a call
       description: |
-        Up to 300 terms from memory (page titles and aliases, with the kind from the shelf), from
-        words you keep using in conversation, and from fixes you've taught it. Each has a weight,
-        a few example phrases from real use, and the mishearings learnt for it.
+        Upgrades to a WebSocket once the call is on (`PUT /v0/calls/{call}`), with the token in
+        `Authorization` as everywhere. One stream per call: a second connection replaces the first,
+        which closes with code 4000.
+
+        - **Binary frames up:** your microphone, 16-bit little-endian PCM, mono, 16 kHz, in frames
+          of 20 to 40 ms. Send continuously while unmuted, silence included: turn-taking times it.
+        - **Binary frames down:** Ari's voice, 16-bit little-endian PCM, mono, 24 kHz. Play them in
+          order; each follows the `saying` frame that names its sentence.
+        - **Text frames** both ways are JSON, as in
+          [the stream schema](stream.schema.json): `mute`, `unmute`, `end` and `played` from the
+          app; `state`, `heard`, `saying`, `stop_playback` and `problem` from the server.
+
+        The server posts each of your turns as a spoken message itself, with its recording and the
+        words it corrected, so the conversation events are as for any message. If the socket
+        drops, the call stays on for 20 seconds and reconnecting carries on; past that the call
+        ends with `end_reason` "The connection dropped." A `problem` frame ends the call with its
+        reason, and the server closes the socket.
+      parameters:
+        - $ref: "#/components/parameters/Call"
       responses:
-        "200":
-          description: The vocabulary, heaviest first.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Vocabulary" }
+        "101":
+          description: Switching to the WebSocket.
         "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v0/vocabulary/corrections:
     post:
       tags: [Talk]
@@ -995,11 +1008,17 @@ components:
       required: true
       description: The turn's id, from `turn.started`.
       schema: { $ref: "events.schema.json#/$defs/TurnId" }
+    Upload:
+      name: attachment
+      in: path
+      required: true
+      description: The id the app made for what it's uploading.
+      schema: { $ref: "events.schema.json#/$defs/UploadId" }
     Attachment:
       name: attachment
       in: path
       required: true
-      description: The attachment's id, as the app made it.
+      description: The attachment's id, from its message.
       schema: { $ref: "events.schema.json#/$defs/AttachmentId" }
     Ask:
       name: ask
@@ -1143,37 +1162,6 @@ components:
       required: [call]
       properties:
         call: { $ref: "events.schema.json#/$defs/Call" }
-    Vocabulary:
-      type: object
-      required: [terms]
-      properties:
-        terms:
-          type: array
-          maxItems: 300
-          items: { $ref: "#/components/schemas/Term" }
-    Term:
-      type: object
-      required: [text, kind, weight, phrases, heard]
-      properties:
-        text: { description: The word or name as it should be written., type: string }
-        kind:
-          description: "Where it comes from: a memory shelf, or `term` for a word from conversation or a fix."
-          enum: [person, place, project, goal, topic, term]
-        weight:
-          description: How much it's used, from 0 to 1.
-          type: number
-          minimum: 0
-          maximum: 1
-        phrases:
-          description: Up to 3 short phrases that use it, from your own messages or its page.
-          type: array
-          maxItems: 3
-          items: { type: string, maxLength: 100 }
-        heard:
-          description: Mishearings learnt for it, to correct on the phone.
-          type: array
-          items: { type: string }
-        address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
     Corrections:
       type: object
       required: [corrections]
@@ -1558,19 +1546,6 @@ components:
           properties:
             attachments: { type: array, minItems: 1 }
       properties:
-        spoken:
-          description: |
-            For a message you spoke on a call: the call, the recording's attachment (uploaded first,
-            with an `audio/*` type) and the words the phone corrected in `text`. The agent gets the
-            text; it never gets the audio. A call that isn't on is an `invalid_request`.
-          type: object
-          required: [call]
-          properties:
-            call: { $ref: "events.schema.json#/$defs/CallId" }
-            audio: { $ref: "events.schema.json#/$defs/AttachmentId" }
-            corrections:
-              type: array
-              items: { $ref: "events.schema.json#/$defs/Correction" }
         id:
           description: A random UUID the app makes when you tap Send. It is the message's id and its retry key.
           type: string
@@ -1587,7 +1562,7 @@ components:
           type: array
           maxItems: 10
           uniqueItems: true
-          items: { $ref: "events.schema.json#/$defs/AttachmentId" }
+          items: { $ref: "events.schema.json#/$defs/UploadId" }
     MessageResult:
       type: object
       required: [message]

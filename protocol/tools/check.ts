@@ -40,8 +40,8 @@ type GuaranteeTable = ReadonlyMap<number, ReadonlySet<string>>;
 
 type GuaranteeHeader = { readonly scenario: number; readonly guarantees: readonly string[] };
 
-const lineKinds = ["given", "app", "server", "event", "world", "push"] as const;
-const scenarioCount = 44;
+const lineKinds = ["given", "app", "server", "event", "world", "push", "socket"] as const;
+const scenarioCount = 50;
 const disconnecting: ReadonlySet<string> = new Set(["offline", "app_closed", "server_restarted", "server_restored"]);
 const spec = loadSpec();
 
@@ -323,7 +323,10 @@ const checkPushes = (file: string, lines: readonly Line[]): void => {
 
 const checkFixtures = (file: string, lines: readonly Line[]): void => {
   const missing = lines
-    .map((line) => (line.app as { readonly body_file?: string } | undefined)?.body_file)
+    .flatMap((line) => [
+      (line.app as { readonly body_file?: string } | undefined)?.body_file,
+      (line.socket as { readonly audio?: string } | undefined)?.audio,
+    ])
     .find((name) => name !== undefined && !existsSync(path.join(fixtureDirectory, name)));
   if (missing) throw failure(file, `the fixture ${missing} isn't in transcripts/files`);
 };

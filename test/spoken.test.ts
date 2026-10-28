@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Term } from "#protocol/types.ts";
+import type { Term } from "#memory/vocabulary.ts";
 import { correct } from "#voice/corrector.ts";
 import { createSentenceFeed, spokenPart } from "#voice/spoken.ts";
 

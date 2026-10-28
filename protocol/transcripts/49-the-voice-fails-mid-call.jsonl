@@ -1,0 +1,35 @@
+{"transcript":"49-the-voice-fails-mid-call","start":"2026-10-27T09:30:00.000Z","scenario":49,"title":"The voice fails mid-call","summary":"The server's voice fails during a call. The stream says why, the call ends with that reason, and a reconnect is refused with it, so Ari stops offering Talk instead of carrying on worse.","guarantees":["G10","G24","G27"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-27T09:30:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":1000,"app":{"method":"PUT","path":"/v0/calls/15f84b6a-42c5-461c-8783-ad64eda8650e"}}
+{"at":1000,"event":{"id":"e_0001_79529","type":"call.started","at":"2026-10-27T09:30:01.000Z","call":{"id":"15f84b6a-42c5-461c-8783-ad64eda8650e","started_at":"2026-10-27T09:30:01.000Z","position":1}}}
+{"at":1000,"server":{"status":201,"body":{"call":{"id":"15f84b6a-42c5-461c-8783-ad64eda8650e","started_at":"2026-10-27T09:30:01.000Z","position":1}}}}
+{"at":1300,"app":{"method":"GET","path":"/v0/calls/15f84b6a-42c5-461c-8783-ad64eda8650e/stream"}}
+{"at":1300,"server":{"status":101}}
+{"at":1300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":5300,"world":"you_say","text":"What's on tomorrow?"}
+{"at":5300,"socket":{"from":"app","audio":"walk-question.pcm"}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":5300,"event":{"id":"e_0002_08705","type":"message.accepted","at":"2026-10-27T09:30:05.300Z","message":{"id":"m_0001_83382","role":"user","text":"What's on tomorrow?","at":"2026-10-27T09:30:05.300Z","position":2,"spoken":{"call":"15f84b6a-42c5-461c-8783-ad64eda8650e","audio":{"id":"f_0001_14781","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"heard","text":"What's on tomorrow?","final":true,"message":"m_0001_83382"}}}
+{"at":5300,"event":{"id":"e_0003_35515","type":"turn.started","at":"2026-10-27T09:30:05.300Z","turn":"t_0001_59777","inputs":["m_0001_83382"]}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":6200,"event":{"id":"e_0004_55523","type":"turn.status","at":"2026-10-27T09:30:06.200Z","turn":"t_0001_59777","kind":"writing","label":"Writing"}}
+{"at":6200,"event":{"id":"e_0005_11400","type":"message.started","at":"2026-10-27T09:30:06.200Z","message":{"id":"m_0002_93163","role":"agent","kind":"reply","turn":"t_0001_59777","text":"","at":"2026-10-27T09:30:06.200Z","position":5}}}
+{"at":6200,"event":{"id":"e_0006_33022","type":"message.delta","at":"2026-10-27T09:30:06.200Z","message":"m_0002_93163","offset":0,"text":"A dentist at nine, then the design review."}}
+{"at":6200,"event":{"id":"e_0007_54635","type":"message.ended","at":"2026-10-27T09:30:06.200Z","message":"m_0002_93163","outcome":"completed","length":42}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"A dentist at nine, then the design review."}}}
+{"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"event":{"id":"e_0008_40510","type":"turn.ended","at":"2026-10-27T09:30:06.200Z","turn":"t_0001_59777","outcome":"completed"}}
+{"at":7700,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
+{"at":7700,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":15700,"world":"voice_failed","reason":"The voice failed while listening: CUDA out of memory."}
+{"at":15700,"event":{"id":"e_0009_38192","type":"voice.status","at":"2026-10-27T09:30:15.700Z","state":"failed","reason":"The voice failed while listening: CUDA out of memory."}}
+{"at":15700,"socket":{"from":"server","frame":{"type":"problem","reason":"The voice failed while listening: CUDA out of memory."}}}
+{"at":15700,"event":{"id":"e_0010_78348","type":"call.ended","at":"2026-10-27T09:30:15.700Z","call":{"id":"15f84b6a-42c5-461c-8783-ad64eda8650e","started_at":"2026-10-27T09:30:01.000Z","position":1,"ended_at":"2026-10-27T09:30:15.700Z","duration_ms":14700,"end_reason":"The voice failed while listening: CUDA out of memory."}}}
+{"at":15700,"socket":{"from":"server","closed":1011,"reason":"The voice failed while listening: CUDA out of memory."}}
+{"at":17700,"app":{"method":"GET","path":"/v0/calls/15f84b6a-42c5-461c-8783-ad64eda8650e/stream"}}
+{"at":17720,"server":{"status":404,"headers":{"Ito-Protocol":"0.9"},"body":{"error":{"code":"not_found","message":"The server doesn't know that.","detail":"No call 15f84b6a-42c5-461c-8783-ad64eda8650e is on."}}}}

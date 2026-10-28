@@ -5,7 +5,8 @@ import path from "node:path";
 import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
 import { findInstalled } from "#capabilities/installed.ts";
-import { createCannedVoice } from "./canned-voice.ts";
+import { createCannedVoice, type CannedVoice, type YouSay } from "./canned-voice.ts";
+import { openCallSocket, type Arrived, type CallSocket } from "./call-socket.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
@@ -27,6 +28,7 @@ import {
   type ServerResponse,
   type Step,
   type TranscriptPush,
+  type SocketLine,
 } from "./transcript-file.ts";
 import { createVirtualClock } from "./virtual-clock.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
@@ -123,6 +125,9 @@ export const replay = async (name: string): Promise<void> => {
   const tokens = createCell<ReadonlyMap<string, string>>(new Map());
   const voiceReadiness = createCell<Readiness>({ state: "ready" });
   const voiceContext = createCell<VoiceContext | undefined>(undefined);
+  const cannedVoice = createCell<CannedVoice | undefined>(undefined);
+  const youSay = createCell<readonly YouSay[]>([]);
+  const callSocket = createCell<CallSocket | undefined>(undefined);
   const spokenPcm = new Uint8Array(fixture("spoken-sentence.wav")).slice(44);
 
   const createReplayServer = (): Server =>
@@ -138,7 +143,17 @@ export const replay = async (name: string): Promise<void> => {
       timeZone: "UTC",
       createVoice: (context) => {
         voiceContext.set(context);
-        return createCannedVoice(spokenPcm, () => voiceReadiness.get());
+        const voice = createCannedVoice(
+          spokenPcm,
+          () => voiceReadiness.get(),
+          () => {
+            const [next, ...rest] = youSay.get();
+            youSay.set(rest);
+            return next;
+          },
+        );
+        cannedVoice.set(voice);
+        return voice;
       },
     });
 
@@ -154,8 +169,16 @@ export const replay = async (name: string): Promise<void> => {
     stream.set(undefined);
   };
 
+  const closeCallSocket = async (): Promise<void> => {
+    const current = callSocket.get();
+    callSocket.set(undefined);
+    await current?.close();
+    await settle();
+  };
+
   const stopServer = async (): Promise<void> => {
     closeStream();
+    await closeCallSocket();
     const running = live.get();
     live.set(undefined);
     await running?.server.close();
@@ -232,6 +255,16 @@ export const replay = async (name: string): Promise<void> => {
     const registered = /^\/v0\/devices\/(?<device>[^/]+)$/u.exec(translated.path)?.groups?.device;
     const key = (translated.body as { readonly notification_key?: string } | undefined)?.notification_key;
     if (registered && key && translated.method === "PUT") deviceKey.set({ id: registered, notificationKey: key });
+    if (translated.method === "GET" && /^\/v0\/calls\/[^/]+\/stream$/u.test(translated.path)) {
+      await closeCallSocket();
+      const opened = await openCallSocket(
+        origin().replace(/^http/u, "ws") + translated.path,
+        toHeaders(translated.headers),
+      );
+      callSocket.set(opened);
+      response.set(Promise.resolve({ status: opened.status, headers: opened.headers, body: opened.body }));
+      return;
+    }
     if (translated.method !== "GET" || translated.path !== "/v0/events") {
       response.set(send(origin(), translated));
       return;
@@ -248,6 +281,13 @@ export const replay = async (name: string): Promise<void> => {
       case "app_closed": {
         closeStream();
         await advance(time);
+        await closeCallSocket();
+        return;
+      }
+      case "you_say": {
+        await advance(time);
+        const { text, heard = [] } = step as unknown as { readonly text: string; readonly heard?: readonly string[] };
+        youSay.update((current) => [...current, { text, heard }]);
         return;
       }
       case "server_restarted": {
@@ -284,6 +324,7 @@ export const replay = async (name: string): Promise<void> => {
         };
         voiceReadiness.set(readiness);
         voiceContext.get()?.onReadiness(readiness);
+        if (readiness.state === "failed") cannedVoice.get()?.fail(readiness.reason ?? "The voice failed.");
         return;
       }
       case "capability_on": {
@@ -320,6 +361,30 @@ export const replay = async (name: string): Promise<void> => {
     }
   };
 
+  const compareArrival = (received: Arrived | undefined, expected: SocketLine): string | undefined => {
+    if (received === undefined) return `nothing arrived on the call socket, expected ${JSON.stringify(expected)}`;
+    if (expected.frame !== undefined) {
+      return "frame" in received ? ids.match(expected.frame, received.frame) : `got ${JSON.stringify(received)}`;
+    }
+    const wanted = Object.fromEntries(Object.entries(expected).filter(([key]) => key !== "from"));
+    return JSON.stringify(received) === JSON.stringify(wanted)
+      ? undefined
+      : `got ${JSON.stringify(received)}, expected ${JSON.stringify(wanted)}`;
+  };
+
+  const playSocket = async (line: SocketLine, index: number, time: number): Promise<void> => {
+    const socket = callSocket.get() ?? fail(`${name}, step ${index + 1}: a socket line with no call socket open`);
+    if (line.from === "app") {
+      await advance(time);
+      if (line.frame !== undefined) socket.sendFrame(ids.translate(line.frame));
+      if (line.audio !== undefined) socket.sendAudio(fixture(line.audio));
+      await settle();
+      return;
+    }
+    await advance(time);
+    check(compareArrival(await socket.next(waitMs), line), index);
+  };
+
   const perform = async (step: Step, index: number): Promise<void> => {
     const time = start + step.at;
     if ("app" in step) {
@@ -340,6 +405,10 @@ export const replay = async (name: string): Promise<void> => {
         received ? comparePush(received, step.push) : `no push arrived, expected ${JSON.stringify(step.push)}`,
         index,
       );
+      return;
+    }
+    if ("socket" in step) {
+      await playSocket(step.socket, index, time);
       return;
     }
     if ("event" in step) {
@@ -378,6 +447,10 @@ export const replay = async (name: string): Promise<void> => {
     await advance(start + (transcript.steps.at(-1)?.at ?? 0) + afterwardsMs);
     const extra = await stream.get()?.next(quietMs);
     if (extra !== undefined) fail(`${name}: an unexpected event after the last step: ${JSON.stringify(extra)}`);
+    const extraFrame = await callSocket.get()?.next(quietMs);
+    if (extraFrame !== undefined) {
+      fail(`${name}: an unexpected frame on the call socket after the last step: ${JSON.stringify(extraFrame)}`);
+    }
     const extraPush = await apns.next(quietMs);
     if (extraPush) fail(`${name}: an unexpected push after the last step: ${JSON.stringify(extraPush.payload)}`);
   } finally {

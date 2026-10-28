@@ -5,6 +5,7 @@ import { loadSpec } from "./spec.ts";
 import { transcriptDirectory } from "./transcript-files.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import { defaultVoice, voices } from "#voice/voices.ts";
+import type { Term } from "#memory/vocabulary.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
 const protocol = "0.9";
@@ -223,26 +224,6 @@ const qrtPage = {
   aliases: [],
   links: ["memory:people/bora"],
   markdown: "The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct).\n",
-};
-
-const term = (
-  text: string,
-  kind: string,
-  phrases: readonly string[],
-  { address, heard = [] }: { readonly address?: string; readonly heard?: readonly string[] } = {},
-): Readonly<Record<string, unknown>> => ({
-  text,
-  kind,
-  weight: address ? 1 : 0.5,
-  phrases,
-  heard,
-  ...(address && { address }),
-});
-
-const spokenTurn = (transcript: Transcript, call: string, text: string, corrections: readonly Correction[]): string => {
-  const audio = transcript.upload("walk-turn.m4a");
-  transcript.wait(200);
-  return transcript.send(text, { spoken: { call, audio, ...(corrections.length > 0 && { corrections }) } });
 };
 
 const correctionOf = (text: string, meant: string, heard: string): Correction => ({
@@ -1985,20 +1966,21 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 38,
       title: "A walk with Ari",
       summary:
-        "You start a call for a walk. What you say arrives as a spoken message with its recording and the names " +
-        "the phone corrected; Ari answers the way a person would on a call, and the call closes with its length.",
-      guarantees: ["G23"],
+        "You start a call for a walk and stream it. The server hears your turn, shows it live, and posts it as a " +
+        "spoken message with its recording; Ari's note and reply are spoken a sentence at a time up to the --- " +
+        "line, the phone says when each has played, and hanging up ends the call with its length.",
+      guarantees: ["G23", "G25", "G26"],
     });
     transcript.begin("2026-10-26T07:30:00.000Z");
     transcript.connect();
     transcript.wait(1500);
     const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
     transcript.wait(6000);
-    const question = "What did Bora say about the QRT panel?";
-    const user = spokenTurn(transcript, call, question, [
-      correctionOf(question, "Bora", "Bara"),
-      correctionOf(question, "QRT", "cutie"),
-    ]);
+    const user = transcript.youSay("walk-question.pcm", "What did Bora say about the QRT panel?", {
+      heard: ["What did Bora", "What did Bora say about the"],
+    });
     transcript.startTurn([user]);
     transcript.wait(400);
     transcript.step("thinking", thinking);
@@ -2007,15 +1989,22 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.reply("note");
     transcript.write("Let me check what I have on Bora.", { pieces: 1 });
     transcript.endMessage("completed");
+    transcript.wait(300);
+    transcript.played("s1");
     transcript.wait(1200);
     writeWhole(
       transcript,
       "She wants one more round on your design before the panel sits in November. I've put what she " +
-        "asked for in the chat.",
+        "asked for in the chat.\n---\n- Tighten the intro\n- Add the latency numbers",
+      1,
     );
     transcript.endTurn("completed");
+    transcript.wait(5000);
+    transcript.played("s2");
+    transcript.wait(4000);
+    transcript.played("s3");
     transcript.wait(24 * 60 * 1000);
-    transcript.endCall(call);
+    transcript.hangUp();
     return transcript;
   },
 
@@ -2025,23 +2014,34 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 39,
       title: "Ari learns a name",
       summary:
-        "The vocabulary comes from memory, with phrases from real use. You undo two corrections the phone made; " +
-        "the mishearing of a name joins that person's page, and a word no page names becomes a term of its own.",
-      guarantees: ["G23"],
+        "On a call the server mishears a name and a word. You fix both from the chat: the name's mishearing joins " +
+        "that person's page and the word becomes a term of its own, so on your next turn the server corrects both " +
+        "and says what it changed.",
+      guarantees: ["G25"],
     });
+    const vocabulary: readonly Term[] = [
+      { text: "Bora", kind: "person", weight: 1, phrases: [], heard: ["Bara"] },
+      { text: "Bora K", kind: "person", weight: 1, phrases: [], heard: ["Bara"] },
+      { text: "QRT", kind: "term", weight: 0.5, phrases: [], heard: ["cutie"] },
+    ];
     transcript.begin("2026-10-26T08:10:00.000Z");
     transcript.world("memory_holds", { pages: [boraPage, qrtPage] });
+    transcript.connect();
     transcript.wait(2000);
-    const bora = boraPage.markdown.trim();
-    const qrt = qrtPage.markdown.trim();
-    memoryCall(transcript, "/v0/vocabulary", {
-      terms: [
-        term("Bora", "person", [bora, qrt], { address: boraPage.address }),
-        term("Bora K", "person", [], { address: boraPage.address }),
-        term("QRT panel", "project", [qrt, bora], { address: qrtPage.address }),
-      ],
-    });
-    transcript.wait(30_000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(5000);
+    const first = transcript.youSay("walk-question.pcm", "What did Bara say about the cutie panel?");
+    transcript.startTurn([first]);
+    transcript.wait(900);
+    writeWhole(transcript, "Did you mean Bora and the QRT panel? Tap a word to fix it.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(3000);
+    transcript.played("s1");
+    transcript.wait(2500);
+    transcript.played("s2");
+    transcript.wait(20_000);
     transcript.request("POST", "/v0/vocabulary/corrections", {
       body: {
         corrections: [
@@ -2062,14 +2062,15 @@ const scenarios: readonly (() => Transcript)[] = [
       { headers: { "Ito-Protocol": protocol } },
     );
     transcript.wait(5000);
-    memoryCall(transcript, "/v0/vocabulary", {
-      terms: [
-        term("Bora", "person", [bora, qrt], { address: boraPage.address, heard: ["Bara"] }),
-        term("Bora K", "person", [], { address: boraPage.address, heard: ["Bara"] }),
-        term("QRT panel", "project", [qrt, bora], { address: qrtPage.address }),
-        term("QRT", "term", [bora, qrt], { heard: ["cutie"] }),
-      ],
-    });
+    const second = transcript.youSay("walk-follow-up.pcm", "When does Bara want the cutie notes?", { vocabulary });
+    transcript.startTurn([second]);
+    transcript.wait(900);
+    writeWhole(transcript, "Bora wants them by Friday.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(2000);
+    transcript.played("s3");
+    transcript.wait(60_000);
+    transcript.hangUp();
     return transcript;
   },
 
@@ -2087,14 +2088,20 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.wait(1000);
     const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
     transcript.wait(5000);
-    const user = spokenTurn(transcript, call, "Today was a good day. The long run felt easy.", []);
+    const user = transcript.youSay("journal-turn.pcm", "Today was a good day. The long run felt easy.");
     transcript.startTurn([user]);
     transcript.wait(900);
-    writeWhole(transcript, "That's a lovely one to end on. I've added it to today's journal.");
+    writeWhole(transcript, "That's a lovely one to end on. I've added it to today's journal.", 1);
     transcript.endTurn("completed");
+    transcript.wait(3000);
+    transcript.played("s1");
+    transcript.wait(2500);
+    transcript.played("s2");
     transcript.wait(3 * 60 * 1000);
-    transcript.endCall(call);
+    transcript.hangUp();
     transcript.wait(20 * 60 * 1000);
     transcript.deleteCallAudio(call);
     transcript.wait(500);
@@ -2234,6 +2241,229 @@ const scenarios: readonly (() => Transcript)[] = [
       { error: { code: "unavailable", message: "Ari's voice isn't ready.", detail: reason } },
       headers,
     );
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "45-talking-over-ari",
+      scenario: 45,
+      title: "Talking over Ari",
+      summary:
+        "Ari is still speaking its reply when you start to talk. The server stops its voice at once, the phone " +
+        "drops what it hadn't played, and your words become the next turn.",
+      guarantees: ["G25", "G26"],
+    });
+    transcript.begin("2026-10-27T07:40:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(4000);
+    const asked = transcript.youSay("walk-question.pcm", "When's the design review?");
+    transcript.startTurn([asked]);
+    transcript.wait(900);
+    writeWhole(transcript, "It's on Wednesday at ten. Maya and Bora will both be there.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(800);
+    const cut = transcript.unplayed();
+    const followUp = transcript.youSay("walk-follow-up.pcm", "Actually, can we move it to Thursday?");
+    transcript.startTurn([followUp]);
+    transcript.wait(50);
+    for (const sentence of cut) transcript.played(sentence, true);
+    transcript.wait(900);
+    writeWhole(transcript, "I'll ask Maya for Thursday.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(2000);
+    for (const sentence of transcript.unplayed()) transcript.played(sentence);
+    transcript.wait(30_000);
+    transcript.hangUp();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "46-a-blip-in-the-signal",
+      scenario: 46,
+      title: "A blip in the signal",
+      summary:
+        "The signal drops for a few seconds while Ari is speaking. The call stays on: the phone reconnects to the " +
+        "same stream, the server says where the call stands, and the walk carries on.",
+      guarantees: ["G27"],
+    });
+    transcript.begin("2026-10-27T08:15:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(4000);
+    const asked = transcript.youSay("walk-question.pcm", "Remind me what's for dinner.");
+    transcript.startTurn([asked]);
+    transcript.wait(900);
+    writeWhole(transcript, "Pasta with the leftover pesto. You bought basil yesterday.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(400);
+    transcript.disconnect("offline");
+    transcript.wait(6000);
+    transcript.world("online");
+    transcript.connect();
+    transcript.wait(200);
+    transcript.openStream(call);
+    transcript.wait(3000);
+    const again = transcript.youSay("walk-follow-up.pcm", "Say that again?");
+    transcript.startTurn([again]);
+    transcript.wait(900);
+    writeWhole(transcript, "Pasta with the leftover pesto.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(2000);
+    for (const sentence of transcript.unplayed()) transcript.played(sentence);
+    transcript.wait(10_000);
+    transcript.hangUp();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "47-the-connection-drops",
+      scenario: 47,
+      title: "The connection drops",
+      summary:
+        "The phone loses its connection mid-call and doesn't get it back within 20 seconds, so the server ends " +
+        "the call with a plain reason. What you said is kept, and the phone sees why once it's back.",
+      guarantees: ["G27"],
+    });
+    transcript.begin("2026-10-27T08:40:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(4000);
+    const asked = transcript.youSay("walk-question.pcm", "Add oat milk to the shopping list.");
+    transcript.startTurn([asked]);
+    transcript.wait(900);
+    writeWhole(transcript, "Added.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(600);
+    transcript.played("s1");
+    transcript.wait(5000);
+    transcript.disconnect("offline");
+    transcript.wait(20_000);
+    transcript.streamTimesOut();
+    transcript.wait(40_000);
+    transcript.world("online");
+    transcript.connect();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "48-mute",
+      scenario: 48,
+      title: "Mute",
+      summary:
+        "You mute to cough. The server hears nothing while you're muted, and when you unmute your next words are " +
+        "an ordinary turn.",
+      guarantees: ["G25"],
+    });
+    transcript.begin("2026-10-27T09:05:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(3000);
+    transcript.appFrame({ type: "mute" });
+    transcript.wait(100);
+    transcript.appAudio("cough.pcm");
+    transcript.wait(1500);
+    transcript.appFrame({ type: "unmute" });
+    transcript.wait(800);
+    const asked = transcript.youSay("walk-question.pcm", "Sorry. What time is it in Lisbon?");
+    transcript.startTurn([asked]);
+    transcript.wait(900);
+    writeWhole(transcript, "It's just after nine there.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(1500);
+    transcript.played("s1");
+    transcript.wait(10_000);
+    transcript.hangUp();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "49-the-voice-fails-mid-call",
+      scenario: 49,
+      title: "The voice fails mid-call",
+      summary:
+        "The server's voice fails during a call. The stream says why, the call ends with that reason, and a " +
+        "reconnect is refused with it, so Ari stops offering Talk instead of carrying on worse.",
+      guarantees: ["G10", "G24", "G27"],
+    });
+    const reason = "The voice failed while listening: CUDA out of memory.";
+    transcript.begin("2026-10-27T09:30:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(4000);
+    const asked = transcript.youSay("walk-question.pcm", "What's on tomorrow?");
+    transcript.startTurn([asked]);
+    transcript.wait(900);
+    writeWhole(transcript, "A dentist at nine, then the design review.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(1500);
+    transcript.played("s1");
+    transcript.wait(8000);
+    transcript.voiceFails(reason);
+    transcript.wait(2000);
+    transcript.request("GET", `/v0/calls/${call}/stream`);
+    transcript.wait(20);
+    transcript.response(
+      404,
+      { error: { code: "not_found", message: "The server doesn't know that.", detail: `No call ${call} is on.` } },
+      { headers: { "Ito-Protocol": protocol } },
+    );
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "50-ari-says-what-it-s-doing",
+      scenario: 50,
+      title: "Ari says what it's doing",
+      summary:
+        "After your turn the phone chimes, and the tone covers the silence while Ari works. Only after a long " +
+        "quiet does Ari say what it's doing, once, then it answers.",
+      guarantees: ["G26"],
+    });
+    transcript.begin("2026-10-27T10:00:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(3000);
+    const asked = transcript.youSay("walk-question.pcm", "Find me a quiet café near Brighton station.");
+    transcript.startTurn([asked]);
+    transcript.wait(500);
+    transcript.step("web_search", searching("quiet cafés near Brighton station"));
+    transcript.wait(8500);
+    transcript.speak(["Searching the web for quiet cafés near Brighton station"]);
+    transcript.wait(1500);
+    transcript.played(transcript.unplayed()[0] ?? "s1");
+    transcript.wait(6000);
+    transcript.endStep();
+    writeWhole(transcript, "Try Small Batch on Queens Road. It's quiet before noon.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(3000);
+    for (const sentence of transcript.unplayed()) transcript.played(sentence);
+    transcript.wait(10_000);
+    transcript.hangUp();
     return transcript;
   },
 ];

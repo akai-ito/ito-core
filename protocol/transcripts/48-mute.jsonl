@@ -1,0 +1,34 @@
+{"transcript":"48-mute","start":"2026-10-27T09:05:00.000Z","scenario":48,"title":"Mute","summary":"You mute to cough. The server hears nothing while you're muted, and when you unmute your next words are an ordinary turn.","guarantees":["G25"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-27T09:05:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":1000,"app":{"method":"PUT","path":"/v0/calls/ec88bf4a-493a-49a4-9c0e-72a7ef107bc5"}}
+{"at":1000,"event":{"id":"e_0001_96593","type":"call.started","at":"2026-10-27T09:05:01.000Z","call":{"id":"ec88bf4a-493a-49a4-9c0e-72a7ef107bc5","started_at":"2026-10-27T09:05:01.000Z","position":1}}}
+{"at":1000,"server":{"status":201,"body":{"call":{"id":"ec88bf4a-493a-49a4-9c0e-72a7ef107bc5","started_at":"2026-10-27T09:05:01.000Z","position":1}}}}
+{"at":1300,"app":{"method":"GET","path":"/v0/calls/ec88bf4a-493a-49a4-9c0e-72a7ef107bc5/stream"}}
+{"at":1300,"server":{"status":101}}
+{"at":1300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":4300,"socket":{"from":"app","frame":{"type":"mute"}}}
+{"at":4400,"socket":{"from":"app","audio":"cough.pcm"}}
+{"at":5900,"socket":{"from":"app","frame":{"type":"unmute"}}}
+{"at":6700,"world":"you_say","text":"Sorry. What time is it in Lisbon?"}
+{"at":6700,"socket":{"from":"app","audio":"walk-question.pcm"}}
+{"at":6700,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":6700,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":6700,"event":{"id":"e_0002_44298","type":"message.accepted","at":"2026-10-27T09:05:06.700Z","message":{"id":"m_0001_02141","role":"user","text":"Sorry. What time is it in Lisbon?","at":"2026-10-27T09:05:06.700Z","position":2,"spoken":{"call":"ec88bf4a-493a-49a4-9c0e-72a7ef107bc5","audio":{"id":"f_0001_98438","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":6700,"socket":{"from":"server","frame":{"type":"heard","text":"Sorry. What time is it in Lisbon?","final":true,"message":"m_0001_02141"}}}
+{"at":6700,"event":{"id":"e_0003_20990","type":"turn.started","at":"2026-10-27T09:05:06.700Z","turn":"t_0001_09837","inputs":["m_0001_02141"]}}
+{"at":6700,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":7600,"event":{"id":"e_0004_90464","type":"turn.status","at":"2026-10-27T09:05:07.600Z","turn":"t_0001_09837","kind":"writing","label":"Writing"}}
+{"at":7600,"event":{"id":"e_0005_42887","type":"message.started","at":"2026-10-27T09:05:07.600Z","message":{"id":"m_0002_32832","role":"agent","kind":"reply","turn":"t_0001_09837","text":"","at":"2026-10-27T09:05:07.600Z","position":5}}}
+{"at":7600,"event":{"id":"e_0006_41337","type":"message.delta","at":"2026-10-27T09:05:07.600Z","message":"m_0002_32832","offset":0,"text":"It's just after nine there."}}
+{"at":7600,"event":{"id":"e_0007_20313","type":"message.ended","at":"2026-10-27T09:05:07.600Z","message":"m_0002_32832","outcome":"completed","length":27}}
+{"at":7600,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":7600,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"It's just after nine there."}}}
+{"at":7600,"socket":{"from":"server","audio_ms":250}}
+{"at":7600,"event":{"id":"e_0008_24075","type":"turn.ended","at":"2026-10-27T09:05:07.600Z","turn":"t_0001_09837","outcome":"completed"}}
+{"at":9100,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
+{"at":9100,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":19100,"socket":{"from":"app","frame":{"type":"end"}}}
+{"at":19100,"event":{"id":"e_0009_15739","type":"call.ended","at":"2026-10-27T09:05:19.100Z","call":{"id":"ec88bf4a-493a-49a4-9c0e-72a7ef107bc5","started_at":"2026-10-27T09:05:01.000Z","position":1,"ended_at":"2026-10-27T09:05:19.100Z","duration_ms":18100}}}
+{"at":19100,"socket":{"from":"server","closed":1000,"reason":"The call ended."}}

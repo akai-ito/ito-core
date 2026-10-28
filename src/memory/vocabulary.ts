@@ -1,4 +1,11 @@
-import type { Term } from "#protocol/types.ts";
+export type Term = {
+  readonly text: string;
+  readonly kind: "person" | "place" | "project" | "goal" | "topic" | "term";
+  readonly weight: number;
+  readonly phrases: readonly string[];
+  readonly heard: readonly string[];
+  readonly address?: string;
+};
 
 export type VocabularyPage = {
   readonly address: string;

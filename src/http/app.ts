@@ -26,7 +26,7 @@ import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
 import type { Presence } from "#notifications/presence.ts";
 import type { Error as ErrorBody, Presence as PresenceBody, RegisterDevice, StopTurn } from "#protocol/types.ts";
-import type { SpokenInput, Store } from "#store/store.ts";
+import type { Store } from "#store/store.ts";
 import { toRetryFailure, type Turns } from "#turns/turns.ts";
 
 export type ServerInfo = { readonly name: string; readonly version: string; readonly agentName: string };
@@ -66,7 +66,6 @@ type SendBody = {
   readonly text?: string;
   readonly answers?: string;
   readonly attachments?: readonly string[];
-  readonly spoken?: SpokenInput;
 };
 
 const maxReplay = 2000;
@@ -168,7 +167,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerMemory(app, memory, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
   registerTalk(app, { store, attachments, memory, voice, calls, schemaFor });
-  registerStream(app, { store, calls, voice });
+  registerStream(app, { store, calls, voice, protocol });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);
@@ -188,13 +187,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   );
 
   app.post<{ Body: SendBody }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text = "", answers, attachments: attached = [], spoken } = request.body;
+    const { id, text = "", answers, attachments: attached = [] } = request.body;
     const accepted = store.acceptMessage(
       toMessageId(id),
       text,
       answers === undefined ? undefined : toAskId(answers),
       attached,
-      spoken,
     );
     if (!accepted.ok) {
       switch (accepted.failure) {
@@ -218,7 +216,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
           return reply.code(400).send(toErrorResult("invalid_request", "A secret answer can't carry attachments."));
         }
         case "call_not_on": {
-          return reply.code(400).send(toErrorResult("invalid_request", `No call ${String(spoken?.call)} is on.`));
+          return reply.code(400).send(toErrorResult("invalid_request", "That call isn't on."));
         }
         case "id_conflict": {
           return reply

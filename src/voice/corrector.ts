@@ -1,4 +1,5 @@
-import type { Correction, Term } from "#protocol/types.ts";
+import type { Term } from "#memory/vocabulary.ts";
+import type { Correction } from "#protocol/types.ts";
 
 type Word = { readonly text: string; readonly start: number; readonly end: number };
 

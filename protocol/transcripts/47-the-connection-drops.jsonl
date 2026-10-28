@@ -1,0 +1,33 @@
+{"transcript":"47-the-connection-drops","start":"2026-10-27T08:40:00.000Z","scenario":47,"title":"The connection drops","summary":"The phone loses its connection mid-call and doesn't get it back within 20 seconds, so the server ends the call with a plain reason. What you said is kept, and the phone sees why once it's back.","guarantees":["G27"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-27T08:40:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":1000,"app":{"method":"PUT","path":"/v0/calls/a3f29071-07fc-4069-9eae-105d843044d6"}}
+{"at":1000,"event":{"id":"e_0001_10034","type":"call.started","at":"2026-10-27T08:40:01.000Z","call":{"id":"a3f29071-07fc-4069-9eae-105d843044d6","started_at":"2026-10-27T08:40:01.000Z","position":1}}}
+{"at":1000,"server":{"status":201,"body":{"call":{"id":"a3f29071-07fc-4069-9eae-105d843044d6","started_at":"2026-10-27T08:40:01.000Z","position":1}}}}
+{"at":1300,"app":{"method":"GET","path":"/v0/calls/a3f29071-07fc-4069-9eae-105d843044d6/stream"}}
+{"at":1300,"server":{"status":101}}
+{"at":1300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":5300,"world":"you_say","text":"Add oat milk to the shopping list."}
+{"at":5300,"socket":{"from":"app","audio":"walk-question.pcm"}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":5300,"event":{"id":"e_0002_61500","type":"message.accepted","at":"2026-10-27T08:40:05.300Z","message":{"id":"m_0001_82728","role":"user","text":"Add oat milk to the shopping list.","at":"2026-10-27T08:40:05.300Z","position":2,"spoken":{"call":"a3f29071-07fc-4069-9eae-105d843044d6","audio":{"id":"f_0001_28552","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"heard","text":"Add oat milk to the shopping list.","final":true,"message":"m_0001_82728"}}}
+{"at":5300,"event":{"id":"e_0003_51543","type":"turn.started","at":"2026-10-27T08:40:05.300Z","turn":"t_0001_37813","inputs":["m_0001_82728"]}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":6200,"event":{"id":"e_0004_42872","type":"turn.status","at":"2026-10-27T08:40:06.200Z","turn":"t_0001_37813","kind":"writing","label":"Writing"}}
+{"at":6200,"event":{"id":"e_0005_23536","type":"message.started","at":"2026-10-27T08:40:06.200Z","message":{"id":"m_0002_38491","role":"agent","kind":"reply","turn":"t_0001_37813","text":"","at":"2026-10-27T08:40:06.200Z","position":5}}}
+{"at":6200,"event":{"id":"e_0006_46525","type":"message.delta","at":"2026-10-27T08:40:06.200Z","message":"m_0002_38491","offset":0,"text":"Added."}}
+{"at":6200,"event":{"id":"e_0007_25428","type":"message.ended","at":"2026-10-27T08:40:06.200Z","message":"m_0002_38491","outcome":"completed","length":6}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Added."}}}
+{"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"event":{"id":"e_0008_52486","type":"turn.ended","at":"2026-10-27T08:40:06.200Z","turn":"t_0001_37813","outcome":"completed"}}
+{"at":6800,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
+{"at":6800,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":11800,"world":"offline"}
+{"at":71800,"world":"online"}
+{"at":71800,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0008_52486"}}}
+{"at":71800,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":71800,"event":{"id":"e_0009_80775","type":"call.ended","at":"2026-10-27T08:40:31.800Z","call":{"id":"a3f29071-07fc-4069-9eae-105d843044d6","started_at":"2026-10-27T08:40:01.000Z","position":1,"ended_at":"2026-10-27T08:40:31.800Z","duration_ms":30800,"end_reason":"The connection dropped."}}}

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akai-ito.github.io/ito-core/protocol/v0/stream.schema.json",
+  "title": "Ito call stream",
+  "description": "The JSON text frames on `GET /v0/calls/{call}/stream`. Audio travels in binary frames: 16 kHz 16-bit PCM up, 24 kHz 16-bit PCM down. Both sides ignore frame types they don't recognise.",
+  "$defs": {
+    "FromApp": {
+      "description": "A text frame the app sends.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Mute"
+        },
+        {
+          "$ref": "#/$defs/Unmute"
+        },
+        {
+          "$ref": "#/$defs/End"
+        },
+        {
+          "$ref": "#/$defs/Played"
+        }
+      ]
+    },
+    "FromServer": {
+      "description": "A text frame the server sends.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/State"
+        },
+        {
+          "$ref": "#/$defs/Heard"
+        },
+        {
+          "$ref": "#/$defs/Saying"
+        },
+        {
+          "$ref": "#/$defs/StopPlayback"
+        },
+        {
+          "$ref": "#/$defs/Problem"
+        }
+      ]
+    },
+    "CallState": {
+      "description": "`listening` for you; `hearing` the moment your voice is heard, before any words; `turn_ended` once your turn is over (the chime); `working` while Ari works (the tone in silent gaps); `speaking` while Ari's voice plays.",
+      "enum": ["listening", "hearing", "turn_ended", "working", "speaking"]
+    },
+    "SentenceId": {
+      "description": "Opaque, and unique within the call.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "Mute": {
+      "title": "mute",
+      "description": "Mutes your microphone: the server pauses your turn, neither ending nor dropping it, and you can stop sending audio.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "mute"
+        }
+      }
+    },
+    "Unmute": {
+      "title": "unmute",
+      "description": "Unmutes your microphone; a paused turn carries on.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "unmute"
+        }
+      }
+    },
+    "End": {
+      "title": "end",
+      "description": "Ends the call, as `POST /v0/calls/{call}/end` does. A turn in progress is sent as it stands.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "end"
+        }
+      }
+    },
+    "Played": {
+      "title": "played",
+      "description": "A sentence's audio has finished playing, or `cut` when `stop_playback` dropped it. It times when Ari went quiet.",
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "const": "played"
+        },
+        "id": {
+          "$ref": "#/$defs/SentenceId"
+        },
+        "cut": {
+          "type": "boolean"
+        }
+      }
+    },
+    "State": {
+      "title": "state",
+      "description": "What the call is doing now. Sent on every change, and first on every connection.",
+      "type": "object",
+      "required": ["type", "state"],
+      "properties": {
+        "type": {
+          "const": "state"
+        },
+        "state": {
+          "$ref": "#/$defs/CallState"
+        }
+      }
+    },
+    "Heard": {
+      "title": "heard",
+      "description": "What you're saying, for captions: live while you speak, then `final` with the text as sent and the spoken message's id.",
+      "type": "object",
+      "required": ["type", "text", "final"],
+      "properties": {
+        "type": {
+          "const": "heard"
+        },
+        "text": {
+          "type": "string"
+        },
+        "final": {
+          "type": "boolean"
+        },
+        "message": {
+          "$ref": "events.schema.json#/$defs/MessageId"
+        }
+      }
+    },
+    "Saying": {
+      "title": "saying",
+      "description": "The sentence Ari is about to speak, for captions; its audio follows in the next binary frames. Answer with `played` once it has played.",
+      "type": "object",
+      "required": ["type", "id", "text"],
+      "properties": {
+        "type": {
+          "const": "saying"
+        },
+        "id": {
+          "$ref": "#/$defs/SentenceId"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "StopPlayback": {
+      "title": "stop_playback",
+      "description": "You spoke over Ari: drop all audio you haven't played, at once, and answer each dropped sentence with `played` and `cut`.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "stop_playback"
+        }
+      }
+    },
+    "Problem": {
+      "title": "problem",
+      "description": "The call can't go on. The server closes the socket, and the call ends with this reason.",
+      "type": "object",
+      "required": ["type", "reason"],
+      "properties": {
+        "type": {
+          "const": "problem"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

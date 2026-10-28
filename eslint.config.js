@@ -44,7 +44,7 @@ export default defineConfig(
       "unicorn/prefer-smaller-scope": "off",
     },
   },
-  { files: ["src/cell.ts"], rules: { "functional/immutable-data": "off" } },
+  { files: ["src/cell.ts", "src/http/stream.ts"], rules: { "functional/immutable-data": "off" } },
   {
     files: ["test/support/capabilities/*.ts", "test/support/voice/*.ts"],
     rules: { "functional/immutable-data": "off", "unicorn/no-process-exit": "off" },

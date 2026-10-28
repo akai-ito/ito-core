@@ -68,7 +68,7 @@ type Running = {
 export const toCorrectionNote = (text: string, corrections: readonly Correction[]): string =>
   corrections.length === 0
     ? ""
-    : `(Spoken. The phone corrected what it heard: ${corrections
+    : `(Spoken. Words corrected from what was heard: ${corrections
         .map(({ offset, length, heard }) => `heard “${heard}”, wrote ${text.slice(offset, offset + length)}`)
         .join("; ")}. Either could be right.)`;
 
