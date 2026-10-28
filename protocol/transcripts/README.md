@@ -28,6 +28,7 @@ by the steps. Each step has `at`, in milliseconds from the start, and exactly on
 | `event` | the app receives an event from `GET /v0/events` |
 | `world` | something happens outside the API |
 | `push` | the server sends a notification to a registered device: `device`, `level`, and the `notification` as the device shows it once decrypted (see [the push schema](../push.schema.json)) |
+| `socket` | a frame on a call's stream: `from` (`app` or `server`) and one of `frame`, a text frame as in [the stream schema](../stream.schema.json); `audio`, the app's microphone audio as a file in [files](files) (16 kHz 16-bit PCM); `audio_ms`, how much of Ari's voice arrived; or `closed`, the server closing the socket with that code and `reason` |
 
 Events keep the server's own time in their `at` field, so an event replayed after a disconnect
 shows when it really happened. Requests other than the first connection leave out the
@@ -49,6 +50,8 @@ request that shows its own `Authorization` header uses the token it names.
 | `notifications_allowed` | you allow notifications when the app offers them |
 | `notification_answered` | you answer an ask from its notification, without opening the app |
 | `pairing_code_shown` | `ito pair` shows a QR code holding the address and this `code` |
+| `voice_loading`, `voice_ready`, `voice_failed` | the server's voice starts loading, becomes ready, or fails; `reason` says why it isn't ready |
+| `you_say` | what the server's recogniser will hear in your next audio on the call's stream: the turn's `text`, and the live captions on the way in `heard` |
 
 ## Ids
 

@@ -605,7 +605,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v0/vocabulary": {
+  "/v0/calls/{call}/stream": {
     parameters: {
       query?: never;
       header?: never;
@@ -613,12 +613,26 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Words to steer speech recognition
-     * @description Up to 300 terms from memory (page titles and aliases, with the kind from the shelf), from
-     *     words you keep using in conversation, and from fixes you've taught it. Each has a weight,
-     *     a few example phrases from real use, and the mishearings learnt for it.
+     * Stream a call
+     * @description Upgrades to a WebSocket once the call is on (`PUT /v0/calls/{call}`), with the token in
+     *     `Authorization` as everywhere. One stream per call: a second connection replaces the first,
+     *     which closes with code 4000.
+     *
+     *     - **Binary frames up:** your microphone, 16-bit little-endian PCM, mono, 16 kHz, in frames
+     *       of 20 to 40 ms. Send continuously while unmuted, silence included: turn-taking times it.
+     *     - **Binary frames down:** Ari's voice, 16-bit little-endian PCM, mono, 24 kHz. Play them in
+     *       order; each follows the `saying` frame that names its sentence.
+     *     - **Text frames** both ways are JSON, as in
+     *       [the stream schema](stream.schema.json): `mute`, `unmute`, `end` and `played` from the
+     *       app; `state`, `heard`, `saying`, `stop_playback` and `problem` from the server.
+     *
+     *     The server posts each of your turns as a spoken message itself, with its recording and the
+     *     words it corrected, so the conversation events are as for any message. If the socket
+     *     drops, the call stays on for 20 seconds and reconnecting carries on; past that the call
+     *     ends with `end_reason` "The connection dropped." A `problem` frame ends the call with its
+     *     reason, and the server closes the socket.
      */
-    get: operations["getVocabulary"];
+    get: operations["streamCall"];
     put?: never;
     post?: never;
     delete?: never;
@@ -649,31 +663,102 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/speech": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Say something in Ari's voice
+     * @description Says the text in Ari's voice and answers with a WAV: 24 kHz, mono, 16-bit PCM. Settings uses it
+     *     to preview voices, and a call uses it a sentence at a time, asking for the next while one plays,
+     *     until the call stream carries Ari's voice. Left out, `voice` is the one chosen with
+     *     `PUT /v0/voice`. While the voice isn't ready, the answer is `unavailable`, with `Retry-After`
+     *     while it's loading and the reason in `detail`.
+     */
+    post: operations["speak"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/voices": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Ari's voices, and whether the server can talk
+     * @description Every voice, the one chosen, and the voice's state: offer Talk only while it's `ready`, and
+     *     otherwise show the reason. `voice.status` events say when the state changes.
+     */
+    get: operations["listVoices"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/voice": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Choose Ari's voice
+     * @description One choice for the whole server, kept across restarts. It applies from the next sentence Ari says.
+     */
+    put: operations["chooseVoice"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    SpeechRequest: {
+      /** @description What to say, as it should be spoken. */
+      text: string;
+      /** @description A voice's id from `GET /v0/voices`. Left out, the chosen voice speaks. */
+      voice?: string;
+    };
+    VoiceList: {
+      voices: components["schemas"]["Voice"][];
+      /** @description The id of the voice Ari speaks in. */
+      chosen: string;
+      state: components["schemas"]["VoiceState"];
+      reason?: components["schemas"]["VoiceReason"];
+    };
+    VoiceChoice: {
+      /** @description A voice's id from `GET /v0/voices`. */
+      voice: string;
+    };
+    Voice: {
+      /** @description Such as `af_heart`. */
+      id: string;
+      /** @description Such as Heart. */
+      name: string;
+      /** @enum {unknown} */
+      accent: "american" | "british";
+    };
     CallResult: {
       call: components["schemas"]["Call"];
-    };
-    Vocabulary: {
-      terms: components["schemas"]["Term"][];
-    };
-    Term: {
-      /** @description The word or name as it should be written. */
-      text: string;
-      /**
-       * @description Where it comes from: a memory shelf, or `term` for a word from conversation or a fix.
-       * @enum {unknown}
-       */
-      kind: "person" | "place" | "project" | "goal" | "topic" | "term";
-      /** @description How much it's used, from 0 to 1. */
-      weight: number;
-      /** @description Up to 3 short phrases that use it, from your own messages or its page. */
-      phrases: string[];
-      /** @description Mishearings learnt for it, to correct on the phone. */
-      heard: string[];
-      address?: components["schemas"]["MemoryAddress"];
     };
     Corrections: {
       corrections: {
@@ -880,7 +965,8 @@ export interface components {
       | components["schemas"]["TurnEnded"]
       | components["schemas"]["CallStarted"]
       | components["schemas"]["CallEnded"]
-      | components["schemas"]["CallAudioDeleted"];
+      | components["schemas"]["CallAudioDeleted"]
+      | components["schemas"]["VoiceStatus"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -1344,16 +1430,6 @@ export interface components {
     SendMessage:
       | {
           /**
-           * @description For a message you spoke on a call: the call, the recording's attachment (uploaded first,
-           *     with an `audio/*` type) and the words the phone corrected in `text`. The agent gets the
-           *     text; it never gets the audio. A call that isn't on is an `invalid_request`.
-           */
-          spoken?: {
-            call: components["schemas"]["CallId"];
-            audio?: components["schemas"]["AttachmentId"];
-            corrections?: components["schemas"]["Correction"][];
-          };
-          /**
            * Format: uuid
            * @description A random UUID the app makes when you tap Send. It is the message's id and its retry key.
            */
@@ -1363,7 +1439,7 @@ export interface components {
           /** @description The ask this message answers, when you tap one of its options or answer a secret. When it names a secret ask, the text is never stored, even if the ask has stopped waiting. An ask the server doesn't know is an `invalid_request`. */
           answers?: components["schemas"]["AskId"];
           /** @description The photos and files to attach, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`. Naming one another message already carries, or attaching anything to a secret answer, is an `invalid_request`. */
-          attachments?: components["schemas"]["AttachmentId"][];
+          attachments?: components["schemas"]["UploadId"][];
         }
       | {
           text: string;
@@ -1480,10 +1556,7 @@ export interface components {
     Position: number;
     /** @description Opaque. The server makes it when the agent asks. */
     AskId: string;
-    /**
-     * Format: uuid
-     * @description A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.
-     */
+    /** @description Opaque: the `UploadId` the app made for what it uploaded, or an id the server made for a recording it keeps, such as a spoken message's. */
     AttachmentId: string;
     /**
      * @description `image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.
@@ -1495,13 +1568,13 @@ export interface components {
      * @description A random UUID the app makes when you start a call.
      */
     CallId: string;
-    /** @description A word the phone corrected in a spoken message: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard. */
+    /** @description A word the server corrected in a spoken message, from what it has learnt: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard. */
     Correction: {
       offset: number;
       length: number;
       heard: string;
     };
-    /** @description How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the phone corrected. */
+    /** @description How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the server corrected. */
     Spoken: {
       call: components["schemas"]["CallId"];
       /** @description The recording of what you said. Absent once you've deleted the call's audio. */
@@ -1573,7 +1646,21 @@ export interface components {
       duration_ms?: number;
       /** @description True once you've deleted the audio of its spoken messages. */
       audio_deleted?: boolean;
+      /** @description Why the server ended it, in a line to show, such as "The connection dropped." Absent when you ended it. */
+      end_reason?: string;
     };
+    /**
+     * Format: uuid
+     * @description A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.
+     */
+    UploadId: string;
+    /**
+     * @description Whether the server can hold a call: `ready` once it can both listen and speak, with memory's vocabulary loaded; `loading` while it starts; `failed` when it can't, until the server restarts.
+     * @enum {unknown}
+     */
+    VoiceState: "loading" | "ready" | "failed";
+    /** @description Why the voice isn't `ready`, in a plain line to show, such as "The GPU ran out of memory loading the voice." */
+    VoiceReason: string;
     /**
      * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
      * @enum {unknown}
@@ -1627,6 +1714,18 @@ export interface components {
       type: "call.audio_deleted";
       at: components["schemas"]["Timestamp"];
       call: components["schemas"]["Call"];
+    };
+    /**
+     * voice.status
+     * @description The server's voice changed. Offer Talk only while it's `ready`, and otherwise show the reason. It's sent on each change after the server starts; `GET /v0/voices` has the state at any time.
+     */
+    VoiceStatus: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "voice.status";
+      at: components["schemas"]["Timestamp"];
+      state: components["schemas"]["VoiceState"];
+      reason?: components["schemas"]["VoiceReason"];
     };
     /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once.
@@ -1748,7 +1847,9 @@ export interface components {
   parameters: {
     /** @description The turn's id, from `turn.started`. */
     Turn: components["schemas"]["TurnId"];
-    /** @description The attachment's id, as the app made it. */
+    /** @description The id the app made for what it's uploading. */
+    Upload: components["schemas"]["UploadId"];
+    /** @description The attachment's id, from its message. */
     Attachment: components["schemas"]["AttachmentId"];
     /** @description The ask's id, from `ask.started`. */
     Ask: components["schemas"]["AskId"];
@@ -1768,9 +1869,11 @@ export interface components {
   };
   pathItems: never;
 }
+export type SpeechRequest = components["schemas"]["SpeechRequest"];
+export type VoiceList = components["schemas"]["VoiceList"];
+export type VoiceChoice = components["schemas"]["VoiceChoice"];
+export type Voice = components["schemas"]["Voice"];
 export type CallResult = components["schemas"]["CallResult"];
-export type Vocabulary = components["schemas"]["Vocabulary"];
-export type Term = components["schemas"]["Term"];
 export type Corrections = components["schemas"]["Corrections"];
 export type ModelChoice = components["schemas"]["ModelChoice"];
 export type ModelList = components["schemas"]["ModelList"];
@@ -1851,6 +1954,9 @@ export type AskKind = components["schemas"]["AskKind"];
 export type AskOption = components["schemas"]["AskOption"];
 export type AskOutcome = components["schemas"]["AskOutcome"];
 export type Call = components["schemas"]["Call"];
+export type UploadId = components["schemas"]["UploadId"];
+export type VoiceState = components["schemas"]["VoiceState"];
+export type VoiceReason = components["schemas"]["VoiceReason"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
 export type StatusDetail = components["schemas"]["StatusDetail"];
@@ -1858,6 +1964,7 @@ export type LiveTurn = components["schemas"]["LiveTurn"];
 export type CallStarted = components["schemas"]["CallStarted"];
 export type CallEnded = components["schemas"]["CallEnded"];
 export type CallAudioDeleted = components["schemas"]["CallAudioDeleted"];
+export type VoiceStatus = components["schemas"]["VoiceStatus"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -1868,6 +1975,7 @@ export type ResponseTooLarge = components["responses"]["TooLarge"];
 export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
 export type ParameterTurn = components["parameters"]["Turn"];
+export type ParameterUpload = components["parameters"]["Upload"];
 export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
 export type ParameterDevice = components["parameters"]["Device"];
@@ -1897,7 +2005,7 @@ export interface operations {
            * @example {
            *       "product": "ito",
            *       "protocol": [
-           *         "0.8"
+           *         "0.9"
            *       ]
            *     }
            */
@@ -1960,8 +2068,8 @@ export interface operations {
           /**
            * @example {
            *       "name": "studio",
-           *       "version": "0.8.0",
-           *       "protocol": "0.8",
+           *       "version": "0.9.0",
+           *       "protocol": "0.9",
            *       "agent": {
            *         "name": "Ari",
            *         "model": "gpt-6.1-sol",
@@ -2230,7 +2338,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        /** @description The attachment's id, as the app made it. */
+        /** @description The attachment's id, from its message. */
         attachment: components["parameters"]["Attachment"];
       };
       cookie?: never;
@@ -2261,8 +2369,8 @@ export interface operations {
       };
       header?: never;
       path: {
-        /** @description The attachment's id, as the app made it. */
-        attachment: components["parameters"]["Attachment"];
+        /** @description The id the app made for what it's uploading. */
+        attachment: components["parameters"]["Upload"];
       };
       cookie?: never;
     };
@@ -2850,26 +2958,28 @@ export interface operations {
       404: components["responses"]["NotFound"];
     };
   };
-  getVocabulary: {
+  streamCall: {
     parameters: {
       query?: never;
       header?: never;
-      path?: never;
+      path: {
+        /** @description The id the app chose when it started the call. */
+        call: components["parameters"]["Call"];
+      };
       cookie?: never;
     };
     requestBody?: never;
     responses: {
-      /** @description The vocabulary, heaviest first. */
-      200: {
+      /** @description Switching to the WebSocket. */
+      101: {
         headers: {
-          "Ito-Protocol": components["headers"]["ItoProtocol"];
           [name: string]: unknown;
         };
-        content: {
-          "application/json": components["schemas"]["Vocabulary"];
-        };
+        content?: never;
       };
       401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      503: components["responses"]["Unavailable"];
     };
   };
   teachVocabulary: {
@@ -2903,6 +3013,94 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Corrections"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  speak: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "text": "Hi, I'm Ari. This is how I sound.",
+         *       "voice": "bf_emma"
+         *     }
+         */
+        "application/json": components["schemas"]["SpeechRequest"];
+      };
+    };
+    responses: {
+      /** @description The speech. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "audio/wav": string;
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  listVoices: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The voices and the voice's state. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VoiceList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  chooseVoice: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "voice": "bf_emma"
+         *     }
+         */
+        "application/json": components["schemas"]["VoiceChoice"];
+      };
+    };
+    responses: {
+      /** @description The choice, as saved. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VoiceChoice"];
         };
       };
       400: components["responses"]["InvalidRequest"];

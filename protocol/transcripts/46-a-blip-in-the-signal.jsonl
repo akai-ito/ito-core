@@ -1,0 +1,56 @@
+{"transcript":"46-a-blip-in-the-signal","start":"2026-10-27T08:15:00.000Z","scenario":46,"title":"A blip in the signal","summary":"The signal drops for a few seconds while Ari is speaking. The call stays on: the phone reconnects to the same stream, the server says where the call stands, and the walk carries on.","guarantees":["G27"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-27T08:15:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":1000,"app":{"method":"PUT","path":"/v0/calls/1f01a134-a12d-4fa8-8024-dbb070bd6568"}}
+{"at":1000,"event":{"id":"e_0001_09599","type":"call.started","at":"2026-10-27T08:15:01.000Z","call":{"id":"1f01a134-a12d-4fa8-8024-dbb070bd6568","started_at":"2026-10-27T08:15:01.000Z","position":1}}}
+{"at":1000,"server":{"status":201,"body":{"call":{"id":"1f01a134-a12d-4fa8-8024-dbb070bd6568","started_at":"2026-10-27T08:15:01.000Z","position":1}}}}
+{"at":1300,"app":{"method":"GET","path":"/v0/calls/1f01a134-a12d-4fa8-8024-dbb070bd6568/stream"}}
+{"at":1300,"server":{"status":101}}
+{"at":1300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":5300,"world":"you_say","text":"Remind me what's for dinner."}
+{"at":5300,"socket":{"from":"app","audio":"walk-question.pcm"}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":5300,"event":{"id":"e_0002_80745","type":"message.accepted","at":"2026-10-27T08:15:05.300Z","message":{"id":"m_0001_42443","role":"user","text":"Remind me what's for dinner.","at":"2026-10-27T08:15:05.300Z","position":2,"spoken":{"call":"1f01a134-a12d-4fa8-8024-dbb070bd6568","audio":{"id":"f_0001_13422","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"heard","text":"Remind me what's for dinner.","final":true,"message":"m_0001_42443"}}}
+{"at":5300,"event":{"id":"e_0003_18762","type":"turn.started","at":"2026-10-27T08:15:05.300Z","turn":"t_0001_35837","inputs":["m_0001_42443"]}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":6200,"event":{"id":"e_0004_34254","type":"turn.status","at":"2026-10-27T08:15:06.200Z","turn":"t_0001_35837","kind":"writing","label":"Writing"}}
+{"at":6200,"event":{"id":"e_0005_65955","type":"message.started","at":"2026-10-27T08:15:06.200Z","message":{"id":"m_0002_64292","role":"agent","kind":"reply","turn":"t_0001_35837","text":"","at":"2026-10-27T08:15:06.200Z","position":5}}}
+{"at":6200,"event":{"id":"e_0006_84130","type":"message.delta","at":"2026-10-27T08:15:06.200Z","message":"m_0002_64292","offset":0,"text":"Pasta with the leftover pesto. You bought basil yesterday."}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Pasta with the leftover pesto."}}}
+{"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"event":{"id":"e_0007_74300","type":"message.ended","at":"2026-10-27T08:15:06.200Z","message":"m_0002_64292","outcome":"completed","length":58}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"You bought basil yesterday."}}}
+{"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"event":{"id":"e_0008_14520","type":"turn.ended","at":"2026-10-27T08:15:06.200Z","turn":"t_0001_35837","outcome":"completed"}}
+{"at":6600,"world":"offline"}
+{"at":12600,"world":"online"}
+{"at":12600,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0008_14520"}}}
+{"at":12600,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":12800,"app":{"method":"GET","path":"/v0/calls/1f01a134-a12d-4fa8-8024-dbb070bd6568/stream"}}
+{"at":12800,"server":{"status":101}}
+{"at":12800,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":15800,"world":"you_say","text":"Say that again?"}
+{"at":15800,"socket":{"from":"app","audio":"walk-follow-up.pcm"}}
+{"at":15800,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":15800,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":15800,"event":{"id":"e_0009_71010","type":"message.accepted","at":"2026-10-27T08:15:15.800Z","message":{"id":"m_0003_84636","role":"user","text":"Say that again?","at":"2026-10-27T08:15:15.800Z","position":9,"spoken":{"call":"1f01a134-a12d-4fa8-8024-dbb070bd6568","audio":{"id":"f_0002_26314","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":15800,"socket":{"from":"server","frame":{"type":"heard","text":"Say that again?","final":true,"message":"m_0003_84636"}}}
+{"at":15800,"event":{"id":"e_0010_11852","type":"turn.started","at":"2026-10-27T08:15:15.800Z","turn":"t_0002_29811","inputs":["m_0003_84636"]}}
+{"at":15800,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":16700,"event":{"id":"e_0011_50382","type":"turn.status","at":"2026-10-27T08:15:16.700Z","turn":"t_0002_29811","kind":"writing","label":"Writing"}}
+{"at":16700,"event":{"id":"e_0012_96560","type":"message.started","at":"2026-10-27T08:15:16.700Z","message":{"id":"m_0004_96616","role":"agent","kind":"reply","turn":"t_0002_29811","text":"","at":"2026-10-27T08:15:16.700Z","position":12}}}
+{"at":16700,"event":{"id":"e_0013_90565","type":"message.delta","at":"2026-10-27T08:15:16.700Z","message":"m_0004_96616","offset":0,"text":"Pasta with the leftover pesto."}}
+{"at":16700,"event":{"id":"e_0014_66111","type":"message.ended","at":"2026-10-27T08:15:16.700Z","message":"m_0004_96616","outcome":"completed","length":30}}
+{"at":16700,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":16700,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"Pasta with the leftover pesto."}}}
+{"at":16700,"socket":{"from":"server","audio_ms":250}}
+{"at":16700,"event":{"id":"e_0015_39458","type":"turn.ended","at":"2026-10-27T08:15:16.700Z","turn":"t_0002_29811","outcome":"completed"}}
+{"at":18700,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}
+{"at":18700,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":28700,"socket":{"from":"app","frame":{"type":"end"}}}
+{"at":28700,"event":{"id":"e_0016_26381","type":"call.ended","at":"2026-10-27T08:15:28.700Z","call":{"id":"1f01a134-a12d-4fa8-8024-dbb070bd6568","started_at":"2026-10-27T08:15:01.000Z","position":1,"ended_at":"2026-10-27T08:15:28.700Z","duration_ms":27700}}}
+{"at":28700,"socket":{"from":"server","closed":1000,"reason":"The call ended."}}

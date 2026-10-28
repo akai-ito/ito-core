@@ -1,0 +1,52 @@
+{"transcript":"45-talking-over-ari","start":"2026-10-27T07:40:00.000Z","scenario":45,"title":"Talking over Ari","summary":"Ari is still speaking its reply when you start to talk. The server stops its voice at once, the phone drops what it hadn't played, and your words become the next turn.","guarantees":["G25","G26"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-27T07:40:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":1000,"app":{"method":"PUT","path":"/v0/calls/8599687d-f3a7-41de-9883-ad757a0db231"}}
+{"at":1000,"event":{"id":"e_0001_19613","type":"call.started","at":"2026-10-27T07:40:01.000Z","call":{"id":"8599687d-f3a7-41de-9883-ad757a0db231","started_at":"2026-10-27T07:40:01.000Z","position":1}}}
+{"at":1000,"server":{"status":201,"body":{"call":{"id":"8599687d-f3a7-41de-9883-ad757a0db231","started_at":"2026-10-27T07:40:01.000Z","position":1}}}}
+{"at":1300,"app":{"method":"GET","path":"/v0/calls/8599687d-f3a7-41de-9883-ad757a0db231/stream"}}
+{"at":1300,"server":{"status":101}}
+{"at":1300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":5300,"world":"you_say","text":"When's the design review?"}
+{"at":5300,"socket":{"from":"app","audio":"walk-question.pcm"}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":5300,"event":{"id":"e_0002_82533","type":"message.accepted","at":"2026-10-27T07:40:05.300Z","message":{"id":"m_0001_43488","role":"user","text":"When's the design review?","at":"2026-10-27T07:40:05.300Z","position":2,"spoken":{"call":"8599687d-f3a7-41de-9883-ad757a0db231","audio":{"id":"f_0001_51454","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"heard","text":"When's the design review?","final":true,"message":"m_0001_43488"}}}
+{"at":5300,"event":{"id":"e_0003_61691","type":"turn.started","at":"2026-10-27T07:40:05.300Z","turn":"t_0001_31388","inputs":["m_0001_43488"]}}
+{"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":6200,"event":{"id":"e_0004_76559","type":"turn.status","at":"2026-10-27T07:40:06.200Z","turn":"t_0001_31388","kind":"writing","label":"Writing"}}
+{"at":6200,"event":{"id":"e_0005_33457","type":"message.started","at":"2026-10-27T07:40:06.200Z","message":{"id":"m_0002_10070","role":"agent","kind":"reply","turn":"t_0001_31388","text":"","at":"2026-10-27T07:40:06.200Z","position":5}}}
+{"at":6200,"event":{"id":"e_0006_35432","type":"message.delta","at":"2026-10-27T07:40:06.200Z","message":"m_0002_10070","offset":0,"text":"It's on Wednesday at ten. Maya and Bora will both be there."}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"It's on Wednesday at ten."}}}
+{"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"event":{"id":"e_0007_68001","type":"message.ended","at":"2026-10-27T07:40:06.200Z","message":"m_0002_10070","outcome":"completed","length":59}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Maya and Bora will both be there."}}}
+{"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"event":{"id":"e_0008_83582","type":"turn.ended","at":"2026-10-27T07:40:06.200Z","turn":"t_0001_31388","outcome":"completed"}}
+{"at":7000,"world":"you_say","text":"Actually, can we move it to Thursday?"}
+{"at":7000,"socket":{"from":"app","audio":"walk-follow-up.pcm"}}
+{"at":7000,"socket":{"from":"server","frame":{"type":"stop_playback"}}}
+{"at":7000,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":7000,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":7000,"event":{"id":"e_0009_40734","type":"message.accepted","at":"2026-10-27T07:40:07.000Z","message":{"id":"m_0003_51829","role":"user","text":"Actually, can we move it to Thursday?","at":"2026-10-27T07:40:07.000Z","position":9,"spoken":{"call":"8599687d-f3a7-41de-9883-ad757a0db231","audio":{"id":"f_0002_36163","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":7000,"socket":{"from":"server","frame":{"type":"heard","text":"Actually, can we move it to Thursday?","final":true,"message":"m_0003_51829"}}}
+{"at":7000,"event":{"id":"e_0010_32985","type":"turn.started","at":"2026-10-27T07:40:07.000Z","turn":"t_0002_55430","inputs":["m_0003_51829"]}}
+{"at":7000,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":7050,"socket":{"from":"app","frame":{"type":"played","id":"s1","cut":true}}}
+{"at":7050,"socket":{"from":"app","frame":{"type":"played","id":"s2","cut":true}}}
+{"at":7950,"event":{"id":"e_0011_93146","type":"turn.status","at":"2026-10-27T07:40:07.950Z","turn":"t_0002_55430","kind":"writing","label":"Writing"}}
+{"at":7950,"event":{"id":"e_0012_85834","type":"message.started","at":"2026-10-27T07:40:07.950Z","message":{"id":"m_0004_30759","role":"agent","kind":"reply","turn":"t_0002_55430","text":"","at":"2026-10-27T07:40:07.950Z","position":12}}}
+{"at":7950,"event":{"id":"e_0013_60723","type":"message.delta","at":"2026-10-27T07:40:07.950Z","message":"m_0004_30759","offset":0,"text":"I'll ask Maya for Thursday."}}
+{"at":7950,"event":{"id":"e_0014_91319","type":"message.ended","at":"2026-10-27T07:40:07.950Z","message":"m_0004_30759","outcome":"completed","length":27}}
+{"at":7950,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":7950,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"I'll ask Maya for Thursday."}}}
+{"at":7950,"socket":{"from":"server","audio_ms":250}}
+{"at":7950,"event":{"id":"e_0015_49236","type":"turn.ended","at":"2026-10-27T07:40:07.950Z","turn":"t_0002_55430","outcome":"completed"}}
+{"at":9950,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}
+{"at":9950,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":39950,"socket":{"from":"app","frame":{"type":"end"}}}
+{"at":39950,"event":{"id":"e_0016_69538","type":"call.ended","at":"2026-10-27T07:40:39.950Z","call":{"id":"8599687d-f3a7-41de-9883-ad757a0db231","started_at":"2026-10-27T07:40:01.000Z","position":1,"ended_at":"2026-10-27T07:40:39.950Z","duration_ms":38950}}}
+{"at":39950,"socket":{"from":"server","closed":1000,"reason":"The call ended."}}

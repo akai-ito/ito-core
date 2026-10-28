@@ -21,9 +21,13 @@ import type {
   StatusKind,
   Step,
   StepKind,
+  VoiceState,
 } from "#protocol/types.ts";
 import type { Event, Line } from "./spec.ts";
 import { fixtureDirectory } from "./transcript-files.ts";
+import type { Term } from "#memory/vocabulary.ts";
+import { correct } from "#voice/corrector.ts";
+import { createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
 
 export type Header = {
   readonly name: string;
@@ -48,14 +52,11 @@ type RequestOptions = {
 
 type ResponseOptions = { readonly headers?: HttpHeaders; readonly isLost?: boolean };
 
-type SpokenOptions = { readonly call: string; readonly audio?: string; readonly corrections?: readonly Correction[] };
-
 type SendOptions = {
   readonly id?: string;
   readonly isLost?: boolean;
   readonly answers?: string;
   readonly attachments?: readonly string[];
-  readonly spoken?: SpokenOptions;
 };
 
 type UploadOptions = { readonly id?: string; readonly name?: string; readonly isLost?: boolean };
@@ -137,13 +138,39 @@ export type Transcript = {
   readonly startCall: () => string;
   readonly endCall: (call: string) => void;
   readonly deleteCallAudio: (call: string) => void;
+  readonly voiceStatus: (state: VoiceState, reason?: string) => void;
+  readonly openStream: (call: string) => void;
+  readonly appFrame: (frame: Fields) => void;
+  readonly appAudio: (file: string) => void;
+  readonly youSay: (file: string, raw: string, options?: YouSayOptions) => string;
+  readonly speak: (texts: readonly string[]) => readonly string[];
+  readonly played: (id: string, isCut?: boolean) => void;
+  readonly unplayed: () => readonly string[];
+  readonly hangUp: () => void;
+  readonly voiceFails: (reason: string) => void;
+  readonly streamTimesOut: () => void;
   readonly change: () => string;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f";
+
+type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
+
+type CallModel = {
+  readonly call: string;
+  readonly state: CallState;
+  readonly isAttached: boolean;
+  readonly unplayed: readonly string[];
+  readonly sentences: number;
+  readonly feeds: ReadonlyMap<string, SentenceFeed>;
+};
+
+type YouSayOptions = { readonly heard?: readonly string[]; readonly vocabulary?: readonly Term[] };
+
+const cannedAudioMs = 250;
 
 type Counters = Readonly<Record<IdPrefix, number>>;
 
@@ -317,7 +344,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstac]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacf]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -326,7 +353,15 @@ const toCounters = (log: readonly Event[]): Counters => {
   const ids = log.flatMap(idsIn);
   const highest = (prefix: IdPrefix): number =>
     ids.filter((id) => id.startsWith(`${prefix}_`)).reduce((max, id) => Math.max(max, Number(id.split("_", 2)[1])), 0);
-  return { e: highest("e"), m: highest("m"), t: highest("t"), s: highest("s"), a: highest("a"), c: highest("c") };
+  return {
+    e: highest("e"),
+    m: highest("m"),
+    t: highest("t"),
+    s: highest("s"),
+    a: highest("a"),
+    c: highest("c"),
+    f: highest("f"),
+  };
 };
 
 // A small model of the server's event log. Scenarios drive it the way the server and an app would,
@@ -334,7 +369,9 @@ const toCounters = (log: readonly Event[]): Counters => {
 export const createTranscript = (header: Header): Transcript => {
   const lines = createCell<readonly Line[]>([]);
   const log = createCell<readonly Event[]>([]);
-  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0 }, issued: new Set() });
+  const ids = createCell<Ids>({ boot: 1, counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0 }, issued: new Set() });
+  const callModel = createCell<CallModel | undefined>(undefined);
+  const observer = createCell<((type: string, fields: Fields) => void) | undefined>(undefined);
   const users = createCell(0);
   const now = createCell(0);
   const start = createCell<Start | undefined>(undefined);
@@ -398,11 +435,13 @@ export const createTranscript = (header: Header): Transcript => {
       addLine({ given: event });
       return;
     }
-    if (!isConnected.get()) return;
-    const until = stallUntil.get();
-    const deliveredAt = until !== undefined && now.get() < until ? until : now.get();
-    addStep({ event }, deliveredAt);
-    cursor.set(event.id);
+    if (isConnected.get()) {
+      const until = stallUntil.get();
+      const deliveredAt = until !== undefined && now.get() < until ? until : now.get();
+      addStep({ event }, deliveredAt);
+      cursor.set(event.id);
+    }
+    observer.get()?.(type, fields);
   };
 
   const time = (iso: string): void => {
@@ -495,6 +534,10 @@ export const createTranscript = (header: Header): Transcript => {
   const disconnect = (marker: string, fields: Fields = {}): void => {
     world(marker, fields);
     isConnected.set(false);
+    const model = callModel.get();
+    if (!model || !["offline", "app_closed"].includes(marker)) return;
+    const state = model.state === "speaking" ? (turn.get() ? "working" : "listening") : model.state;
+    callModel.set({ ...model, isAttached: false, unplayed: [], state });
   };
 
   const stall = (durationMs: number): void => {
@@ -714,22 +757,21 @@ export const createTranscript = (header: Header): Transcript => {
     return { user: userMessageId, agent: agentMessageId, turn: turnId };
   };
 
-  const attachmentById = (id: string): Attachment => {
-    const found = attachments.get().get(id);
-    if (!found) throw new Error(`unknown attachment ${id}`);
-    return found;
-  };
-
   const callById = (id: string): Call => {
     const found = project(log.get()).calls.get(id);
     if (!found) throw new Error(`unknown call ${id}`);
     return found;
   };
 
-  const endCallNow = (id: string): Call => {
+  const endCallNow = (id: string, reason?: string): Call => {
     const call = callById(id);
     if (call.ended_at) return call;
-    const ended: Call = { ...call, ended_at: timestamp(), duration_ms: now.get() - Date.parse(call.started_at) };
+    const ended: Call = {
+      ...call,
+      ended_at: timestamp(),
+      duration_ms: now.get() - Date.parse(call.started_at),
+      ...(reason !== undefined && { end_reason: reason }),
+    };
     emit("call.ended", { call: ended });
     return ended;
   };
@@ -750,6 +792,152 @@ export const createTranscript = (header: Header): Transcript => {
   const endCall = (id: string): void => {
     request("POST", `/v0/calls/${id}/end`);
     response(200, { call: endCallNow(id) });
+  };
+
+  const voiceStatus = (state: VoiceState, reason?: string): void => {
+    const fields = reason === undefined ? {} : { reason };
+    world(`voice_${state}`, fields);
+    emit("voice.status", { state, ...fields });
+  };
+
+  const currentModel = (): CallModel => {
+    const model = callModel.get();
+    if (!model) throw new Error("no call stream is open");
+    return model;
+  };
+
+  const serverFrame = (frame: Fields): void => {
+    if (callModel.get()?.isAttached) addStep({ socket: { from: "server", frame } });
+  };
+
+  const moveTo = (state: CallState): void => {
+    const model = currentModel();
+    if (model.state === state) return;
+    callModel.set({ ...model, state });
+    serverFrame({ type: "state", state });
+  };
+
+  const sayOne = (text: string): string | undefined => {
+    const model = callModel.get();
+    if (!model?.isAttached) return undefined;
+    const id = `s${String(model.sentences + 1)}`;
+    callModel.set({ ...model, sentences: model.sentences + 1, unplayed: [...model.unplayed, id] });
+    moveTo("speaking");
+    serverFrame({ type: "saying", id, text });
+    addStep({ socket: { from: "server", audio_ms: cannedAudioMs } });
+    return id;
+  };
+
+  const speak = (texts: readonly string[]): readonly string[] =>
+    texts.map((text) => sayOne(text)).filter((id) => id !== undefined);
+
+  const settleCall = (isWorking: boolean): void => {
+    const model = callModel.get();
+    if (!model || model.unplayed.length > 0 || model.state === "hearing") return;
+    moveTo(isWorking ? "working" : "listening");
+  };
+
+  const followCall = (type: string, fields: Fields): void => {
+    const model = callModel.get();
+    if (!model) return;
+    const message = fields.message as string | undefined | { readonly id: string; readonly role?: string };
+    if (type === "turn.started" && model.state !== "hearing" && model.unplayed.length === 0) moveTo("working");
+    if (type === "turn.ended") settleCall(false);
+    if (type === "message.started" && typeof message === "object" && message.role === "agent") {
+      callModel.set({ ...model, feeds: new Map([...model.feeds, [message.id, createSentenceFeed()]]) });
+    }
+    if (typeof message !== "string" || (type !== "message.delta" && type !== "message.ended")) return;
+    const feed = model.feeds.get(message);
+    if (feed) speak(feed(messageById(message).text, type === "message.ended"));
+  };
+  observer.set(followCall);
+
+  const openStream = (call: string): void => {
+    request("GET", `/v0/calls/${call}/stream`);
+    response(101, undefined);
+    const model = callModel.get();
+    const state = model?.call === call ? model.state : "listening";
+    callModel.set(
+      model?.call === call
+        ? { ...model, isAttached: true }
+        : { call, state, isAttached: true, unplayed: [], sentences: 0, feeds: new Map() },
+    );
+    serverFrame({ type: "state", state });
+  };
+
+  const appFrame = (frame: Fields): void => {
+    addStep({ socket: { from: "app", frame } });
+  };
+
+  const appAudio = (file: string): void => {
+    addStep({ socket: { from: "app", audio: file } });
+  };
+
+  const youSay = (file: string, raw: string, options: YouSayOptions = {}): string => {
+    const { heard = [], vocabulary = [] } = options;
+    const model = currentModel();
+    world("you_say", { text: raw, ...(heard.length > 0 && { heard }) });
+    appAudio(file);
+    if (model.state === "speaking") {
+      serverFrame({ type: "stop_playback" });
+      callModel.set({ ...currentModel(), unplayed: [] });
+    }
+    moveTo("hearing");
+    for (const text of heard) serverFrame({ type: "heard", text, final: false });
+    moveTo("turn_ended");
+    const { text, corrections } = correct(raw, vocabulary);
+    const audio: Attachment = {
+      id: newId("f"),
+      kind: "audio",
+      name: "turn.wav",
+      media_type: "audio/wav",
+      size: readFileSync(path.join(fixtureDirectory, file)).length + 44,
+    };
+    const id = newId("m");
+    emit("message.accepted", {
+      message: {
+        id,
+        role: "user",
+        text,
+        at: timestamp(),
+        position: nextPosition(),
+        spoken: { call: model.call, audio, ...(corrections.length > 0 && { corrections }) },
+      },
+    });
+    serverFrame({ type: "heard", text, final: true, message: id });
+    return id;
+  };
+
+  const played = (id: string, isCut = false): void => {
+    appFrame({ type: "played", id, ...(isCut && { cut: true }) });
+    if (isCut) return;
+    const model = currentModel();
+    callModel.set({ ...model, unplayed: model.unplayed.filter((sentence) => sentence !== id) });
+    settleCall(turn.get() !== undefined);
+  };
+
+  const unplayed = (): readonly string[] => callModel.get()?.unplayed ?? [];
+
+  const endStream = (code: number, reason: string, endReason?: string): void => {
+    const model = currentModel();
+    endCallNow(model.call, endReason);
+    if (model.isAttached) addStep({ socket: { from: "server", closed: code, reason } });
+    callModel.set(undefined);
+  };
+
+  const hangUp = (): void => {
+    appFrame({ type: "end" });
+    endStream(1000, "The call ended.");
+  };
+
+  const voiceFails = (reason: string): void => {
+    voiceStatus("failed", reason);
+    serverFrame({ type: "problem", reason });
+    endStream(1011, reason, reason);
+  };
+
+  const streamTimesOut = (): void => {
+    endStream(1000, "The connection dropped.", "The connection dropped.");
   };
 
   const deleteCallAudio = (id: string): void => {
@@ -800,14 +988,12 @@ export const createTranscript = (header: Header): Transcript => {
   const send = (text: string, options: SendOptions = {}): string => {
     const id = options.id ?? newUserId();
     const attached = options.attachments ?? [];
-    const { spoken } = options;
     request("POST", "/v0/messages", {
       body: {
         id,
         text,
         ...(options.answers && { answers: options.answers }),
         ...(attached.length > 0 && { attachments: attached }),
-        ...(spoken && { spoken }),
       },
     });
     const isKnown = project(log.get()).byId.has(id);
@@ -840,13 +1026,6 @@ export const createTranscript = (header: Header): Transcript => {
               if (!found) throw new Error(`unknown attachment ${attachment}`);
               return found;
             }),
-          }),
-          ...(spoken && {
-            spoken: {
-              call: spoken.call,
-              ...(spoken.audio !== undefined && { audio: attachmentById(spoken.audio) }),
-              ...(spoken.corrections && spoken.corrections.length > 0 && { corrections: spoken.corrections }),
-            },
           }),
         },
       });
@@ -1113,6 +1292,17 @@ export const createTranscript = (header: Header): Transcript => {
     startCall,
     endCall,
     deleteCallAudio,
+    voiceStatus,
+    openStream,
+    appFrame,
+    appAudio,
+    youSay,
+    speak,
+    played,
+    unplayed,
+    hangUp,
+    voiceFails,
+    streamTimesOut,
     request,
     response,
     connect,

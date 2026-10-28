@@ -6,9 +6,10 @@ import { pair } from "#cli/pair.ts";
 import { pushUsage, setUpPush } from "#cli/push.ts";
 import { serve } from "#cli/serve.ts";
 import { newToken } from "#cli/token.ts";
+import { checkVoice, voiceUsage } from "#cli/voice.ts";
 import { packageVersion } from "#version.ts";
 
-export const coreCommands: readonly string[] = ["serve", "token", "pair", "memory", "push", "login"];
+export const coreCommands: readonly string[] = ["serve", "token", "pair", "memory", "push", "login", "voice"];
 
 export const usage = [
   "Usage:",
@@ -17,6 +18,7 @@ export const usage = [
   "  ito pair [--address <https://machine.tailnet.ts.net:8443>]",
   `  ${memoryUsage}`,
   `  ${pushUsage}`,
+  `  ${voiceUsage}`,
   "  ito login [codex login options]",
   "  ito <capability> <operation> [--flag value]…   (inside Ari's agent sessions)",
   "  ito --version",
@@ -44,6 +46,9 @@ export const main = async (argv: readonly string[], io: Io): Promise<number> => 
     case "push": {
       const [subcommand, ...flags] = rest;
       return subcommand === "setup" ? setUpPush(flags, io) : usageError(io);
+    }
+    case "voice": {
+      return rest.length === 1 && rest[0] === "check" ? checkVoice(io) : usageError(io);
     }
     case "pair": {
       return pair(rest, io);

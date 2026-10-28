@@ -18,7 +18,7 @@ where the protocol has to make it possible, marked *App*.
 | G7 | **Text only grows.** Reply text streams as appended pieces and is never revised. A finished message's text is exactly what was streamed, or exactly what was on screen when you tapped Stop. Stop cuts only a message still being written; one that already finished keeps all its text. | 5, 7, 8, 11 |
 | G8 | **Every turn ends, with a reason.** Completed, stopped, interrupted by a restart, or failed with a typed error. Nothing is left "still writing", and live status never outlives its turn. A turn that fails or is cut off before writing a reply still leaves one, empty and carrying the reason, so the conversation itself shows what happened. | 4, 6, 14, 15 |
 | G9 | **Stop jumps every queue.** Stop is a command of its own, addressed to one turn, safe to repeat, and handled ahead of everything else on both sides: never behind a send, a steer or a reconnect. It is confirmed only once the agent has really stopped. | 7 |
-| G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17, 37 |
+| G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17, 37, 42, 43, 44, 49 |
 | G11 | **The token stays secret.** It travels only over HTTPS (loopback excepted, for development), is never logged and is never sent back. | 1, 31 |
 | G12 | **Versioned and tolerant.** The server states its protocol version before asking for the token. Both sides ignore what they don't recognise. A major mismatch says which side to update. | 1 |
 | G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2, 30, 41 |
@@ -31,7 +31,11 @@ where the protocol has to make it possible, marked *App*.
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
 | G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
 | G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36 |
-| G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. What you teach the vocabulary corrects how names are heard, never what they're called. | 38, 39, 40, 41 |
+| G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. What you teach the vocabulary corrects how names are heard, never what they're called. | 38, 40, 41 |
+| G24 | **Talk only when the server can talk.** The server says whether it can hold a call, meaning it can listen and speak with your names loaded, and when it can't, why in a line to show. It says so on the event stream as soon as that changes. There's no worse fallback: while the voice isn't ready, the app doesn't offer Talk. | 43, 44, 49 |
+| G25 | **The server hears your turns.** Each turn you finish becomes one spoken message, posted by the server with its recording and the words it corrected from what it has learnt, and shown live as you speak. Nothing you say while muted is heard. | 38, 39, 45, 48 |
+| G26 | **Ari's voice gives way to yours.** Ari speaks only what comes before a line holding `---`, a sentence at a time with its caption, and stops at once when you talk over it. Silence while it works is covered by the phone's tone; Ari says what it's doing only after a long quiet, once. | 38, 45, 50 |
+| G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
 
 ## Scenario by scenario
 
@@ -315,14 +319,17 @@ where the protocol has to make it possible, marked *App*.
 
 - A call has an id the app chose; starting and ending it are events with a place in the
   conversation, so the call shows as a block with its length. (G23)
-- A spoken message names its call, its recording and the words the phone corrected, by offset into
-  the corrected text. The agent gets the words, never the recording. (G23)
+- On the call's stream, the server says when it's hearing you, captions your words live, and posts
+  the finished turn as a spoken message with its recording. The agent gets the words, never the
+  recording. (G23, G25)
+- Ari's note and reply are spoken a sentence at a time up to the `---` line, each `saying` with
+  an id the phone answers with `played`. (G26)
 
 ### 39 · [Ari learns a name](transcripts/39-ari-learns-a-name.jsonl)
 
-- The vocabulary lists memory's titles and aliases with their kind, weight and phrases from real use.
-- A mishearing you undo joins the matching page's `heard` list, never its names; a word no page names
-  becomes a term of its own. (G23)
+- A mishearing you fix from the chat joins the matching page's `heard` list, never its names; a word
+  no page names becomes a term of its own. The server then corrects both in your turns, by offset
+  into the corrected text. (G25)
 
 ### 40 · [Delete a call's audio](transcripts/40-delete-a-call-s-audio.jsonl)
 
@@ -334,7 +341,52 @@ where the protocol has to make it possible, marked *App*.
 - A snapshot or history page carries every call after the message before its first one, so a call
   that opens the window comes with it, before the spoken message it opened. (G13, G23)
 
+### 42 · [Choose Ari's voice](transcripts/42-choose-ari-s-voice.jsonl)
+
+- The server lists Ari's voices and the one chosen, says a preview as a 24 kHz, mono, 16-bit WAV
+  in the voice asked for, and keeps one choice for the whole server, which a preview naming no
+  voice speaks in. A voice it doesn't have is an `invalid_request`. (G10)
+
+### 43 · [Before the voice is ready](transcripts/43-before-the-voice-is-ready.jsonl)
+
+- While the voice is loading, the voice list says so with the reason, and a preview is
+  `unavailable` with `Retry-After`. `voice.status` says when it's ready. (G10, G24)
+
+### 44 · [When the server can't talk](transcripts/44-when-the-server-can-t-talk.jsonl)
+
+- When the voice fails, `voice.status` carries the reason, the voice list repeats it, and a
+  preview is `unavailable` with it, without `Retry-After`. (G10, G24)
+
+### 45 · [Talking over Ari](transcripts/45-talking-over-ari.jsonl)
+
+- Speaking while Ari's voice plays stops it at once with `stop_playback`; the phone answers each
+  dropped sentence with `played` and `cut`, and your words become the next turn. (G25, G26)
+
+### 46 · [A blip in the signal](transcripts/46-a-blip-in-the-signal.jsonl)
+
+- A stream that drops and reconnects within 20 seconds carries on: the server sends the call's
+  state first, and the speech made while it was gone is dropped. (G27)
+
+### 47 · [The connection drops](transcripts/47-the-connection-drops.jsonl)
+
+- Past 20 seconds without the stream, the call ends with `end_reason` "The connection dropped.",
+  which the phone sees when it's back. (G27)
+
+### 48 · [Mute](transcripts/48-mute.jsonl)
+
+- While muted, the server hears nothing; after unmuting, the next words are an ordinary turn.
+  (G25)
+
+### 49 · [The voice fails mid-call](transcripts/49-the-voice-fails-mid-call.jsonl)
+
+- A voice failure mid-call sends `problem`, closes the stream and ends the call with the reason,
+  alongside `voice.status`; the ended call refuses a new stream. (G10, G24, G27)
+
+### 50 · [Ari says what it's doing](transcripts/50-ari-says-what-it-s-doing.jsonl)
+
+- While Ari works, the server stays quiet until about 9 seconds have passed, then speaks the
+  status once. (G26)
+
 ## Not in this version
 
-Voice, editing or deleting messages, more than one conversation, reactions, and model
-settings.
+Editing or deleting messages, more than one conversation, and reactions.

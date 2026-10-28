@@ -254,8 +254,36 @@ const summarisePush = (line: JsonObject): Summary => {
   };
 };
 
+const summariseSocket = (line: JsonObject): Summary => {
+  const socket = line.socket as {
+    readonly from: string;
+    readonly frame?: JsonObject;
+    readonly audio?: string;
+    readonly audio_ms?: number;
+    readonly closed?: number;
+    readonly reason?: string;
+  };
+  const who = `${socket.from} →`;
+  if (socket.frame) {
+    const fields = Object.entries(socket.frame)
+      .filter(([key]) => key !== "type")
+      .map(([key, value]) => `${key} ${JSON.stringify(value)}`)
+      .join(", ");
+    return {
+      who: "socket",
+      what: `${who} <code>${escapeHtml(String(socket.frame.type))}</code>${fields ? ` · ${escapeHtml(fields)}` : ""}`,
+    };
+  }
+  if (socket.audio !== undefined)
+    return { who: "socket", what: `${who} audio <code>${escapeHtml(socket.audio)}</code>` };
+  if (socket.audio_ms !== undefined)
+    return { who: "socket", what: `${who} ${String(socket.audio_ms)} ms of Ari's voice` };
+  return { who: "socket", what: `${who} closes ${String(socket.closed)} · ${escapeHtml(socket.reason ?? "")}` };
+};
+
 const summarise = (line: JsonObject): Summary => {
   if (line.push) return summarisePush(line);
+  if (line.socket) return summariseSocket(line);
   if (line.app) return summariseRequest(line.app as AppRequest);
   if (line.server) return summariseResponse(line.server as ServerResponse, Boolean(line.lost));
   return line.world ? summariseWorld(line) : summariseEvent(line.event as JsonObject);

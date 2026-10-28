@@ -1,8 +1,55 @@
-{"transcript":"39-ari-learns-a-name","start":"2026-10-26T08:10:00.000Z","scenario":39,"title":"Ari learns a name","summary":"The vocabulary comes from memory, with phrases from real use. You undo two corrections the phone made; the mishearing of a name joins that person's page, and a word no page names becomes a term of its own.","guarantees":["G23"],"app":{}}
+{"transcript":"39-ari-learns-a-name","start":"2026-10-26T08:10:00.000Z","scenario":39,"title":"Ari learns a name","summary":"On a call the server mishears a name and a word. You fix both from the chat: the name's mishearing joins that person's page and the word becomes a term of its own, so on your next turn the server corrects both and says what it changed.","guarantees":["G25"],"app":{}}
 {"at":0,"world":"memory_holds","pages":[{"address":"memory:people/bora","title":"Bora","aliases":["Bora K"],"links":["memory:projects/qrt-panel"],"markdown":"Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct).\n"},{"address":"memory:projects/qrt-panel","title":"QRT panel","aliases":[],"links":["memory:people/bora"],"markdown":"The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct).\n"}]}
-{"at":2000,"app":{"method":"GET","path":"/v0/vocabulary"}}
-{"at":2050,"server":{"status":200,"headers":{"Ito-Protocol":"0.8"},"body":{"terms":[{"text":"Bora","kind":"person","weight":1,"phrases":["Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct).","The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct)."],"heard":[],"address":"memory:people/bora"},{"text":"Bora K","kind":"person","weight":1,"phrases":[],"heard":[],"address":"memory:people/bora"},{"text":"QRT panel","kind":"project","weight":1,"phrases":["The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct).","Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct)."],"heard":[],"address":"memory:projects/qrt-panel"}]}}}
-{"at":32050,"app":{"method":"POST","path":"/v0/vocabulary/corrections","body":{"corrections":[{"heard":"Bara","meant":"Bora"},{"heard":"cutie","meant":"QRT"}]}}}
-{"at":32130,"server":{"status":200,"headers":{"Ito-Protocol":"0.8"},"body":{"corrections":[{"heard":"Bara","meant":"Bora","address":"memory:people/bora"},{"heard":"cutie","meant":"QRT"}]}}}
-{"at":37130,"app":{"method":"GET","path":"/v0/vocabulary"}}
-{"at":37180,"server":{"status":200,"headers":{"Ito-Protocol":"0.8"},"body":{"terms":[{"text":"Bora","kind":"person","weight":1,"phrases":["Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct).","The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct)."],"heard":["Bara"],"address":"memory:people/bora"},{"text":"Bora K","kind":"person","weight":1,"phrases":[],"heard":["Bara"],"address":"memory:people/bora"},{"text":"QRT panel","kind":"project","weight":1,"phrases":["The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct).","Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct)."],"heard":[],"address":"memory:projects/qrt-panel"},{"text":"QRT","kind":"term","weight":0.5,"phrases":["Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct).","The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct)."],"heard":["cutie"]}]}}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-26T08:10:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":2000,"app":{"method":"PUT","path":"/v0/calls/ec353bf7-0b41-4878-b1ca-f6108a4e9bb4"}}
+{"at":2000,"event":{"id":"e_0001_36865","type":"call.started","at":"2026-10-26T08:10:02.000Z","call":{"id":"ec353bf7-0b41-4878-b1ca-f6108a4e9bb4","started_at":"2026-10-26T08:10:02.000Z","position":1}}}
+{"at":2000,"server":{"status":201,"body":{"call":{"id":"ec353bf7-0b41-4878-b1ca-f6108a4e9bb4","started_at":"2026-10-26T08:10:02.000Z","position":1}}}}
+{"at":2300,"app":{"method":"GET","path":"/v0/calls/ec353bf7-0b41-4878-b1ca-f6108a4e9bb4/stream"}}
+{"at":2300,"server":{"status":101}}
+{"at":2300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":7300,"world":"you_say","text":"What did Bara say about the cutie panel?"}
+{"at":7300,"socket":{"from":"app","audio":"walk-question.pcm"}}
+{"at":7300,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":7300,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":7300,"event":{"id":"e_0002_85149","type":"message.accepted","at":"2026-10-26T08:10:07.300Z","message":{"id":"m_0001_77281","role":"user","text":"What did Bara say about the cutie panel?","at":"2026-10-26T08:10:07.300Z","position":2,"spoken":{"call":"ec353bf7-0b41-4878-b1ca-f6108a4e9bb4","audio":{"id":"f_0001_32898","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":7300,"socket":{"from":"server","frame":{"type":"heard","text":"What did Bara say about the cutie panel?","final":true,"message":"m_0001_77281"}}}
+{"at":7300,"event":{"id":"e_0003_09046","type":"turn.started","at":"2026-10-26T08:10:07.300Z","turn":"t_0001_79254","inputs":["m_0001_77281"]}}
+{"at":7300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":8200,"event":{"id":"e_0004_17048","type":"turn.status","at":"2026-10-26T08:10:08.200Z","turn":"t_0001_79254","kind":"writing","label":"Writing"}}
+{"at":8200,"event":{"id":"e_0005_31225","type":"message.started","at":"2026-10-26T08:10:08.200Z","message":{"id":"m_0002_58268","role":"agent","kind":"reply","turn":"t_0001_79254","text":"","at":"2026-10-26T08:10:08.200Z","position":5}}}
+{"at":8200,"event":{"id":"e_0006_20326","type":"message.delta","at":"2026-10-26T08:10:08.200Z","message":"m_0002_58268","offset":0,"text":"Did you mean Bora and the QRT panel? Tap a word to fix it."}}
+{"at":8200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":8200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Did you mean Bora and the QRT panel?"}}}
+{"at":8200,"socket":{"from":"server","audio_ms":250}}
+{"at":8200,"event":{"id":"e_0007_73182","type":"message.ended","at":"2026-10-26T08:10:08.200Z","message":"m_0002_58268","outcome":"completed","length":58}}
+{"at":8200,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Tap a word to fix it."}}}
+{"at":8200,"socket":{"from":"server","audio_ms":250}}
+{"at":8200,"event":{"id":"e_0008_98280","type":"turn.ended","at":"2026-10-26T08:10:08.200Z","turn":"t_0001_79254","outcome":"completed"}}
+{"at":11200,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
+{"at":13700,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
+{"at":13700,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":33700,"app":{"method":"POST","path":"/v0/vocabulary/corrections","body":{"corrections":[{"heard":"Bara","meant":"Bora"},{"heard":"cutie","meant":"QRT"}]}}}
+{"at":33780,"server":{"status":200,"headers":{"Ito-Protocol":"0.9"},"body":{"corrections":[{"heard":"Bara","meant":"Bora","address":"memory:people/bora"},{"heard":"cutie","meant":"QRT"}]}}}
+{"at":38780,"world":"you_say","text":"When does Bara want the cutie notes?"}
+{"at":38780,"socket":{"from":"app","audio":"walk-follow-up.pcm"}}
+{"at":38780,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":38780,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":38780,"event":{"id":"e_0009_78952","type":"message.accepted","at":"2026-10-26T08:10:38.780Z","message":{"id":"m_0003_74178","role":"user","text":"When does Bora want the QRT notes?","at":"2026-10-26T08:10:38.780Z","position":9,"spoken":{"call":"ec353bf7-0b41-4878-b1ca-f6108a4e9bb4","audio":{"id":"f_0002_79271","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044},"corrections":[{"offset":10,"length":4,"heard":"Bara"},{"offset":24,"length":3,"heard":"cutie"}]}}}}
+{"at":38780,"socket":{"from":"server","frame":{"type":"heard","text":"When does Bora want the QRT notes?","final":true,"message":"m_0003_74178"}}}
+{"at":38780,"event":{"id":"e_0010_07778","type":"turn.started","at":"2026-10-26T08:10:38.780Z","turn":"t_0002_37347","inputs":["m_0003_74178"]}}
+{"at":38780,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":39680,"event":{"id":"e_0011_22456","type":"turn.status","at":"2026-10-26T08:10:39.680Z","turn":"t_0002_37347","kind":"writing","label":"Writing"}}
+{"at":39680,"event":{"id":"e_0012_55039","type":"message.started","at":"2026-10-26T08:10:39.680Z","message":{"id":"m_0004_20681","role":"agent","kind":"reply","turn":"t_0002_37347","text":"","at":"2026-10-26T08:10:39.680Z","position":12}}}
+{"at":39680,"event":{"id":"e_0013_47017","type":"message.delta","at":"2026-10-26T08:10:39.680Z","message":"m_0004_20681","offset":0,"text":"Bora wants them by Friday."}}
+{"at":39680,"event":{"id":"e_0014_10811","type":"message.ended","at":"2026-10-26T08:10:39.680Z","message":"m_0004_20681","outcome":"completed","length":26}}
+{"at":39680,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":39680,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"Bora wants them by Friday."}}}
+{"at":39680,"socket":{"from":"server","audio_ms":250}}
+{"at":39680,"event":{"id":"e_0015_57155","type":"turn.ended","at":"2026-10-26T08:10:39.680Z","turn":"t_0002_37347","outcome":"completed"}}
+{"at":41680,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}
+{"at":41680,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":101680,"socket":{"from":"app","frame":{"type":"end"}}}
+{"at":101680,"event":{"id":"e_0016_74573","type":"call.ended","at":"2026-10-26T08:11:41.680Z","call":{"id":"ec353bf7-0b41-4878-b1ca-f6108a4e9bb4","started_at":"2026-10-26T08:10:02.000Z","position":1,"ended_at":"2026-10-26T08:11:41.680Z","duration_ms":99680}}}
+{"at":101680,"socket":{"from":"server","closed":1000,"reason":"The call ended."}}

@@ -18,12 +18,15 @@ import { registerMemory } from "#http/memory.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
+import type { VoiceLoop } from "#voice/loop.ts";
+import type { Calls } from "#voice/calls.ts";
+import { registerStream } from "#http/stream.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
 import type { Presence } from "#notifications/presence.ts";
 import type { Error as ErrorBody, Presence as PresenceBody, RegisterDevice, StopTurn } from "#protocol/types.ts";
-import type { SpokenInput, Store } from "#store/store.ts";
+import type { Store } from "#store/store.ts";
 import { toRetryFailure, type Turns } from "#turns/turns.ts";
 
 export type ServerInfo = { readonly name: string; readonly version: string; readonly agentName: string };
@@ -39,6 +42,8 @@ export type AppOptions = {
   readonly attachments: Attachments;
   readonly host: Host;
   readonly memory: Memory;
+  readonly voice: VoiceLoop;
+  readonly calls: Calls;
   readonly models: ListModels;
   readonly heartbeatMs: number;
   readonly logger: FastifyServerOptions["logger"];
@@ -61,7 +66,6 @@ type SendBody = {
   readonly text?: string;
   readonly answers?: string;
   readonly attachments?: readonly string[];
-  readonly spoken?: SpokenInput;
 };
 
 const maxReplay = 2000;
@@ -75,8 +79,23 @@ const isTooLong = (error: FastifyError): boolean =>
   error.validation?.some((issue) => issue.keyword === "maxLength" && issue.instancePath === "/text") ?? false;
 
 export const createApp = (options: AppOptions): FastifyInstance => {
-  const { store, turns, clock, schemas, info, gate, presence, attachments, host, memory, models, heartbeatMs, logger } =
-    options;
+  const {
+    store,
+    turns,
+    clock,
+    schemas,
+    info,
+    gate,
+    presence,
+    attachments,
+    host,
+    memory,
+    voice,
+    calls,
+    models,
+    heartbeatMs,
+    logger,
+  } = options;
   const protocol = protocolVersion(schemas.document);
   const routeSchemas = toRouteSchemas(schemas);
   const schemaFor = (operationId: string): RouteSchema => routeSchemas.get(operationId) ?? {};
@@ -109,7 +128,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error.statusCode === 413 && request.url.startsWith("/v0/attachments/"))
       return reply.code(413).send({ error: tooLargeAttachment });
-    if (isTooLong(error) || error.statusCode === 413)
+    if ((isTooLong(error) && request.url.startsWith("/v0/messages")) || error.statusCode === 413)
       return reply.code(413).send(toErrorResult("too_large", error.message));
     if (error.validation || (error.statusCode !== undefined && error.statusCode < 500)) {
       return reply.code(400).send(toErrorResult("invalid_request", error.message));
@@ -147,7 +166,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerCapabilities(app, host, schemaFor);
   registerMemory(app, memory, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
-  registerTalk(app, { store, attachments, memory, schemaFor });
+  registerTalk(app, { store, attachments, memory, voice, calls, schemaFor });
+  registerStream(app, { store, calls, voice, protocol });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);
@@ -167,13 +187,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   );
 
   app.post<{ Body: SendBody }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text = "", answers, attachments: attached = [], spoken } = request.body;
+    const { id, text = "", answers, attachments: attached = [] } = request.body;
     const accepted = store.acceptMessage(
       toMessageId(id),
       text,
       answers === undefined ? undefined : toAskId(answers),
       attached,
-      spoken,
     );
     if (!accepted.ok) {
       switch (accepted.failure) {
@@ -197,7 +216,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
           return reply.code(400).send(toErrorResult("invalid_request", "A secret answer can't carry attachments."));
         }
         case "call_not_on": {
-          return reply.code(400).send(toErrorResult("invalid_request", `No call ${String(spoken?.call)} is on.`));
+          return reply.code(400).send(toErrorResult("invalid_request", "That call isn't on."));
         }
         case "id_conflict": {
           return reply

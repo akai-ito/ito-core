@@ -1,6 +1,6 @@
 {
   "name": "ito-core",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -29,6 +29,7 @@
     "serve": "node bin/ito.ts serve"
   },
   "dependencies": {
+    "@fastify/websocket": "11.3.4",
     "@huggingface/transformers": "4.3.1",
     "@openai/codex": "0.164.0",
     "ajv": "8.20.0",
@@ -44,6 +45,7 @@
     "@redocly/openapi-core": "2.71.0",
     "@scalar/api-reference": "1.76.0",
     "@types/node": "24.19.2",
+    "@types/ws": "8.18.2",
     "eslint": "10.13.0",
     "eslint-plugin-functional": "10.0.1",
     "eslint-plugin-unicorn": "79.0.0",
@@ -52,7 +54,8 @@
     "prettier": "3.9.10",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.0",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "ws": "8.22.0"
   },
   "overrides": {
     "openapi-typescript": {

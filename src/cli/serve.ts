@@ -16,6 +16,7 @@ import { createToken, hashToken, tokenSetting } from "#http/auth.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { createServer, type EngineContext, type ServerOptions } from "#server.ts";
 import { createLocalEmbedder, wordEmbedder } from "#memory/embedder.ts";
+import { createSidecarVoice, voiceDirectory, voiceModels } from "#voice/sidecar.ts";
 
 export const defaultPort = 8787;
 
@@ -96,6 +97,8 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
   const paths = toPaths(io.environment);
   const server = createServer({
     embedder: engine === "demo" ? wordEmbedder : createLocalEmbedder(path.join(paths.home, "models")),
+    createVoice: (context) =>
+      createSidecarVoice({ ...context, directory: voiceDirectory, models: voiceModels(paths.home) }),
     dataDirectory: paths.home,
     createEngine: toEngineFactory(engine, paths),
     name,

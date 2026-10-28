@@ -31,7 +31,7 @@ import { openThread, type Thread } from "#memory/thread.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { MemoryStore } from "#store/memory.ts";
 import type { Settings } from "#store/store.ts";
-import type { Term } from "#protocol/types.ts";
+import type { Term } from "#memory/vocabulary.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 

@@ -27,6 +27,7 @@ import type {
   Status,
   Step,
   StepKind,
+  VoiceState,
 } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { AskFields, StepFacts } from "#engine/engine.ts";
@@ -111,8 +112,9 @@ export type Store = Settings & {
     spoken?: SpokenInput,
   ) => Result<Accepted, AcceptFailure>;
   readonly startCall: (id: string) => StartedCall;
-  readonly endCall: (id: string) => Call | undefined;
+  readonly endCall: (id: string, reason?: string) => Call | undefined;
   readonly deleteCallAudio: (id: string) => DeletedAudio | undefined;
+  readonly recordVoiceStatus: (state: VoiceState, reason?: string) => void;
   readonly latestCall: () => Call | undefined;
   readonly saveAttachment: (attachment: Attachment, sha256: string) => Result<SavedAttachment, "id_conflict">;
   readonly findAttachment: (id: string) => { readonly attachment: Attachment; readonly sha256: string } | undefined;
@@ -354,13 +356,14 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     database.prepare("SELECT body FROM calls WHERE ended = 0 ORDER BY position DESC LIMIT 1").get() as
       { readonly body: string } | undefined;
 
-  const endCallNow = (call: Call): Call => {
+  const endCallNow = (call: Call, reason?: string): Call => {
     if (call.ended_at !== undefined) return call;
     const at = now();
     const ended: Call = {
       ...call,
       ended_at: at,
       duration_ms: Math.max(0, Date.parse(at) - Date.parse(call.started_at)),
+      ...(reason !== undefined && { end_reason: reason }),
     };
     append({ id: identifiers.event(), type: "call.ended", at, call: ended });
     return ended;
@@ -519,11 +522,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         return { call, isNew: true };
       }),
 
-    endCall: (id) =>
+    endCall: (id, reason) =>
       transaction(() => {
         const row = callRow(id);
-        return row ? endCallNow(JSON.parse(row.body) as Call) : undefined;
+        return row ? endCallNow(JSON.parse(row.body) as Call, reason) : undefined;
       }),
+
+    recordVoiceStatus: (state, reason) => {
+      record((stamp) => ({ ...stamp, type: "voice.status", state, ...(reason !== undefined && { reason }) }));
+    },
 
     deleteCallAudio: (id) =>
       transaction(() => {

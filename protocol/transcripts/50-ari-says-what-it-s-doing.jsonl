@@ -1,0 +1,42 @@
+{"transcript":"50-ari-says-what-it-s-doing","start":"2026-10-27T10:00:00.000Z","scenario":50,"title":"Ari says what it's doing","summary":"After your turn the phone chimes, and the tone covers the silence while Ari works. Only after a long quiet does Ari say what it's doing, once, then it answers.","guarantees":["G26"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-27T10:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":1000,"app":{"method":"PUT","path":"/v0/calls/c4f4151d-d98e-40a6-8952-3dac9a2bec50"}}
+{"at":1000,"event":{"id":"e_0001_34058","type":"call.started","at":"2026-10-27T10:00:01.000Z","call":{"id":"c4f4151d-d98e-40a6-8952-3dac9a2bec50","started_at":"2026-10-27T10:00:01.000Z","position":1}}}
+{"at":1000,"server":{"status":201,"body":{"call":{"id":"c4f4151d-d98e-40a6-8952-3dac9a2bec50","started_at":"2026-10-27T10:00:01.000Z","position":1}}}}
+{"at":1300,"app":{"method":"GET","path":"/v0/calls/c4f4151d-d98e-40a6-8952-3dac9a2bec50/stream"}}
+{"at":1300,"server":{"status":101}}
+{"at":1300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":4300,"world":"you_say","text":"Find me a quiet café near Brighton station."}
+{"at":4300,"socket":{"from":"app","audio":"walk-question.pcm"}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":4300,"event":{"id":"e_0002_51934","type":"message.accepted","at":"2026-10-27T10:00:04.300Z","message":{"id":"m_0001_54439","role":"user","text":"Find me a quiet café near Brighton station.","at":"2026-10-27T10:00:04.300Z","position":2,"spoken":{"call":"c4f4151d-d98e-40a6-8952-3dac9a2bec50","audio":{"id":"f_0001_36931","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"heard","text":"Find me a quiet café near Brighton station.","final":true,"message":"m_0001_54439"}}}
+{"at":4300,"event":{"id":"e_0003_61028","type":"turn.started","at":"2026-10-27T10:00:04.300Z","turn":"t_0001_47648","inputs":["m_0001_54439"]}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":4800,"event":{"id":"e_0004_75472","type":"step.started","at":"2026-10-27T10:00:04.800Z","step":{"id":"s_0001_23656","turn":"t_0001_47648","kind":"web_search","title":"Searching the web for quiet cafés near Brighton station","at":"2026-10-27T10:00:04.800Z","position":4,"query":"quiet cafés near Brighton station"}}}
+{"at":4800,"event":{"id":"e_0005_04421","type":"turn.status","at":"2026-10-27T10:00:04.800Z","turn":"t_0001_47648","kind":"working","label":"Searching the web for quiet cafés near Brighton station"}}
+{"at":13300,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":13300,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Searching the web for quiet cafés near Brighton station"}}}
+{"at":13300,"socket":{"from":"server","audio_ms":250}}
+{"at":14800,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
+{"at":14800,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":20800,"event":{"id":"e_0006_66386","type":"step.ended","at":"2026-10-27T10:00:20.800Z","step":{"id":"s_0001_23656","turn":"t_0001_47648","kind":"web_search","title":"Searched the web for quiet cafés near Brighton station","at":"2026-10-27T10:00:04.800Z","position":4,"query":"quiet cafés near Brighton station","ended_at":"2026-10-27T10:00:20.800Z","outcome":"completed","duration_ms":16000}}}
+{"at":20800,"event":{"id":"e_0007_21564","type":"turn.status","at":"2026-10-27T10:00:20.800Z","turn":"t_0001_47648","kind":"writing","label":"Writing"}}
+{"at":20800,"event":{"id":"e_0008_30826","type":"message.started","at":"2026-10-27T10:00:20.800Z","message":{"id":"m_0002_32214","role":"agent","kind":"reply","turn":"t_0001_47648","text":"","at":"2026-10-27T10:00:20.800Z","position":8}}}
+{"at":20800,"event":{"id":"e_0009_42759","type":"message.delta","at":"2026-10-27T10:00:20.800Z","message":"m_0002_32214","offset":0,"text":"Try Small Batch on Queens Road. It's quiet before noon."}}
+{"at":20800,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":20800,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Try Small Batch on Queens Road."}}}
+{"at":20800,"socket":{"from":"server","audio_ms":250}}
+{"at":20800,"event":{"id":"e_0010_93138","type":"message.ended","at":"2026-10-27T10:00:20.800Z","message":"m_0002_32214","outcome":"completed","length":55}}
+{"at":20800,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"It's quiet before noon."}}}
+{"at":20800,"socket":{"from":"server","audio_ms":250}}
+{"at":20800,"event":{"id":"e_0011_44667","type":"turn.ended","at":"2026-10-27T10:00:20.800Z","turn":"t_0001_47648","outcome":"completed"}}
+{"at":23800,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
+{"at":23800,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}
+{"at":23800,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":33800,"socket":{"from":"app","frame":{"type":"end"}}}
+{"at":33800,"event":{"id":"e_0012_16307","type":"call.ended","at":"2026-10-27T10:00:33.800Z","call":{"id":"c4f4151d-d98e-40a6-8952-3dac9a2bec50","started_at":"2026-10-27T10:00:01.000Z","position":1,"ended_at":"2026-10-27T10:00:33.800Z","duration_ms":32800}}}
+{"at":33800,"socket":{"from":"server","closed":1000,"reason":"The call ended."}}

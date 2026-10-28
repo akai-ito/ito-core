@@ -1,0 +1,35 @@
+name: Voice
+
+on:
+  push:
+    branches: [main]
+    paths: ["voice/**", ".github/workflows/voice.yml"]
+  pull_request:
+    paths: ["voice/**", ".github/workflows/voice.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  sidecar:
+    name: Voice sidecar
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: voice
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: voice/uv.lock
+      - name: Install
+        run: uv sync --frozen
+      - name: Lint
+        run: uv run --frozen ruff check .
+      - name: Format
+        run: uv run --frozen ruff format --check .
+      - name: Types
+        run: uv run --frozen pyright
+      - name: Tests
+        run: uv run --frozen pytest

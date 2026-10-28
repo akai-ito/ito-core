@@ -61,6 +61,9 @@
         },
         {
           "$ref": "#/$defs/CallAudioDeleted"
+        },
+        {
+          "$ref": "#/$defs/VoiceStatus"
         }
       ]
     },
@@ -95,6 +98,12 @@
       "maxLength": 64
     },
     "AttachmentId": {
+      "description": "Opaque: the `UploadId` the app made for what it uploaded, or an id the server made for a recording it keeps, such as a spoken message's.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "UploadId": {
       "description": "A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.",
       "type": "string",
       "format": "uuid",
@@ -1113,11 +1122,16 @@
         "audio_deleted": {
           "description": "True once you've deleted the audio of its spoken messages.",
           "type": "boolean"
+        },
+        "end_reason": {
+          "description": "Why the server ended it, in a line to show, such as \"The connection dropped.\" Absent when you ended it.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },
     "Correction": {
-      "description": "A word the phone corrected in a spoken message: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard.",
+      "description": "A word the server corrected in a spoken message, from what it has learnt: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard.",
       "type": "object",
       "required": ["offset", "length", "heard"],
       "properties": {
@@ -1136,7 +1150,7 @@
       }
     },
     "Spoken": {
-      "description": "How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the phone corrected.",
+      "description": "How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the server corrected.",
       "type": "object",
       "required": ["call"],
       "properties": {
@@ -1212,6 +1226,38 @@
         },
         "call": {
           "$ref": "#/$defs/Call"
+        }
+      }
+    },
+    "VoiceState": {
+      "description": "Whether the server can hold a call: `ready` once it can both listen and speak, with memory's vocabulary loaded; `loading` while it starts; `failed` when it can't, until the server restarts.",
+      "enum": ["loading", "ready", "failed"]
+    },
+    "VoiceReason": {
+      "description": "Why the voice isn't `ready`, in a plain line to show, such as \"The GPU ran out of memory loading the voice.\"",
+      "type": "string",
+      "minLength": 1
+    },
+    "VoiceStatus": {
+      "title": "voice.status",
+      "description": "The server's voice changed. Offer Talk only while it's `ready`, and otherwise show the reason. It's sent on each change after the server starts; `GET /v0/voices` has the state at any time.",
+      "type": "object",
+      "required": ["id", "type", "at", "state"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "voice.status"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/VoiceState"
+        },
+        "reason": {
+          "$ref": "#/$defs/VoiceReason"
         }
       }
     }

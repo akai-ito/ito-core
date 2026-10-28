@@ -31,7 +31,17 @@ export type Step =
   | { readonly at: number; readonly server: ServerResponse; readonly lost?: boolean }
   | { readonly at: number; readonly event: Event }
   | { readonly at: number; readonly world: string; readonly until?: number; readonly to?: string }
-  | { readonly at: number; readonly push: TranscriptPush };
+  | { readonly at: number; readonly push: TranscriptPush }
+  | { readonly at: number; readonly socket: SocketLine };
+
+export type SocketLine = {
+  readonly from: "app" | "server";
+  readonly frame?: unknown;
+  readonly audio?: string;
+  readonly audio_ms?: number;
+  readonly closed?: number;
+  readonly reason?: string;
+};
 
 export type TranscriptPush = { readonly device: string; readonly level: string; readonly notification: unknown };
 
