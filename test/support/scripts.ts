@@ -44,7 +44,8 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "call.ended":
     case "call.audio_deleted":
     case "voice.status":
-    case "topic.started": {
+    case "topic.started":
+    case "plan.ticked": {
       return false;
     }
   }
@@ -108,7 +109,8 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
     case "call.ended":
     case "call.audio_deleted":
     case "voice.status":
-    case "topic.started": {
+    case "topic.started":
+    case "plan.ticked": {
       return;
     }
   }

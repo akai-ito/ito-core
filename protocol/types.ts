@@ -221,6 +221,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/messages/{message}/parts/{part}/items/{item}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Tick an item in a reply's plan, or untick it
+     * @description `part` is the plan's index among the reply's `ari:` blocks, from 0, and `item` the item's
+     *     `id` in it (see [the blocks schema](blocks.schema.json)). Every app hears `plan.ticked`,
+     *     the message keeps the item's latest state in `ticks`, and the agent learns of it with your
+     *     next message. Ticking an item to the state it's already in changes nothing.
+     */
+    put: operations["tickItem"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/asks/{ask}/cancel": {
     parameters: {
       query?: never;
@@ -1026,7 +1049,8 @@ export interface components {
       | components["schemas"]["CallEnded"]
       | components["schemas"]["CallAudioDeleted"]
       | components["schemas"]["VoiceStatus"]
-      | components["schemas"]["TopicStarted"];
+      | components["schemas"]["TopicStarted"]
+      | components["schemas"]["PlanTicked"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -1303,7 +1327,7 @@ export interface components {
       kind?: components["schemas"]["MessageKind"];
       /** @description Agent messages only: the turn that wrote it. */
       turn?: components["schemas"]["TurnId"];
-      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing. */
+      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing. A reply may hold `ari:` blocks, described in [the blocks schema](blocks.schema.json). */
       text: string;
       /** @description When the message began: when the server accepted it, or the agent's first word. */
       at: components["schemas"]["Timestamp"];
@@ -1325,6 +1349,8 @@ export interface components {
       outcome?: components["schemas"]["Outcome"];
       /** @description Present when the outcome is `failed`. */
       error?: components["schemas"]["Error"];
+      /** @description Replies only: the items you ticked or unticked in its plans, each at its latest. Absent until you tick one. An item without a tick is as Ari wrote it. */
+      ticks?: components["schemas"]["Tick"][];
     };
     /** @description One thing the agent did while working on a turn: thinking, a web search, a command, an edit, a tool, a plan, a wait. Its title is plain words written by the server, safe to show as it is. Its other fields carry the specifics exactly as the agent used them (commands, paths, queries, URLs, output); show what you choose. Fields beyond the common ones belong to particular kinds, and a step carries those its kind has. */
     Step: {
@@ -1526,6 +1552,12 @@ export interface components {
       /** @description Whether even older messages exist. */
       has_more: boolean;
     };
+    TickItem: {
+      done: boolean;
+    };
+    TickList: {
+      ticks: components["schemas"]["Tick"][];
+    };
     StopTurn: {
       /** @description Where the message still being written was on your screen when you tapped Stop. Without it, the server keeps everything written so far. A cut that names a message which already finished changes nothing; a finished message keeps all its text. */
       cut?: {
@@ -1650,6 +1682,14 @@ export interface components {
      * @enum {unknown}
      */
     Outcome: "completed" | "stopped" | "interrupted" | "failed";
+    /** @description An item in one of a reply's plans, ticked or not. */
+    Tick: {
+      /** @description The plan's index among the reply's `ari:` blocks, from 0. */
+      part: number;
+      /** @description The item's `id` in the plan. */
+      item: string;
+      done: boolean;
+    };
     /** @description Opaque. The server makes it when a step starts. */
     StepId: string;
     /**
@@ -1812,6 +1852,20 @@ export interface components {
       type: "topic.started";
       at: components["schemas"]["Timestamp"];
       topic: components["schemas"]["Topic"];
+    };
+    /**
+     * plan.ticked
+     * @description You ticked or unticked an item in a reply's plan, on any device. The agent hears about it with your next message.
+     */
+    PlanTicked: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "plan.ticked";
+      at: components["schemas"]["Timestamp"];
+      message: components["schemas"]["MessageId"];
+      part: number;
+      item: string;
+      done: boolean;
     };
     /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once.
@@ -2011,6 +2065,8 @@ export type ServerInfo = components["schemas"]["ServerInfo"];
 export type SendMessage = components["schemas"]["SendMessage"];
 export type MessageResult = components["schemas"]["MessageResult"];
 export type MessagePage = components["schemas"]["MessagePage"];
+export type TickItem = components["schemas"]["TickItem"];
+export type TickList = components["schemas"]["TickList"];
 export type StopTurn = components["schemas"]["StopTurn"];
 export type StopResult = components["schemas"]["StopResult"];
 export type RetryResult = components["schemas"]["RetryResult"];
@@ -2036,6 +2092,7 @@ export type CallId = components["schemas"]["CallId"];
 export type Correction = components["schemas"]["Correction"];
 export type Spoken = components["schemas"]["Spoken"];
 export type Outcome = components["schemas"]["Outcome"];
+export type Tick = components["schemas"]["Tick"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
 export type MemoryAddress = components["schemas"]["MemoryAddress"];
@@ -2059,6 +2116,7 @@ export type CallEnded = components["schemas"]["CallEnded"];
 export type CallAudioDeleted = components["schemas"]["CallAudioDeleted"];
 export type VoiceStatus = components["schemas"]["VoiceStatus"];
 export type TopicStarted = components["schemas"]["TopicStarted"];
+export type PlanTicked = components["schemas"]["PlanTicked"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -2499,6 +2557,38 @@ export interface operations {
       409: components["responses"]["IdConflict"];
       413: components["responses"]["TooLarge"];
       429: components["responses"]["SlowDown"];
+    };
+  };
+  tickItem: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        message: components["schemas"]["MessageId"];
+        part: number;
+        item: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TickItem"];
+      };
+    };
+    responses: {
+      /** @description The reply's ticks, each at its latest. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TickList"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
     };
   };
   cancelAsk: {

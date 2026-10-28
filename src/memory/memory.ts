@@ -29,6 +29,7 @@ import {
 import { toVocabulary, type Learned } from "#memory/vocabulary.ts";
 import { rank, toMessageChunk, toPageChunks, type Passage } from "#memory/recall.ts";
 import { openThread, type Thread } from "#memory/thread.ts";
+import { withoutBlocks } from "#replies/blocks.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { MemoryStore } from "#store/memory.ts";
 import type { Settings } from "#store/store.ts";
@@ -408,7 +409,9 @@ export const createMemory = ({
     void serially(async () => {
       const messages = store.unindexedMessages();
       if (messages.length === 0) return;
-      const chunks = messages.map(({ id, role, text, at }) => toMessageChunk(id, role === "user", text, at));
+      const chunks = messages.map(({ id, role, text, at }) =>
+        toMessageChunk(id, role === "user", withoutBlocks(text), at),
+      );
       try {
         const vectors = await embedder.passages(chunks.map((chunk) => chunk.text));
         store.addChunks(

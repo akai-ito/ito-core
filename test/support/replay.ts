@@ -129,9 +129,18 @@ export const replay = async (name: string): Promise<void> => {
   const youSay = createCell<readonly YouSay[]>([]);
   const callSocket = createCell<CallSocket | undefined>(undefined);
   const spokenPcm = new Uint8Array(fixture("spoken-sentence.wav")).slice(44);
+  const web = createCell<ReadonlyMap<string, string>>(new Map());
+
+  const fetchImage = (url: string): Promise<Response> => {
+    const file = web.get().get(url);
+    if (file === undefined) return Promise.resolve(new Response("Not found", { status: 404 }));
+    const bytes = new Uint8Array(fixture(file));
+    return Promise.resolve(new Response(bytes, { headers: { "Content-Type": "image/jpeg" } }));
+  };
 
   const createReplayServer = (): Server =>
     createServer({
+      fetchImage,
       embedder: wordEmbedder,
       dataDirectory: directory,
       createEngine: () => createScriptEngine(clock, scripts),
@@ -353,9 +362,20 @@ export const replay = async (name: string): Promise<void> => {
       }
       case "agent_calls": {
         await advance(time);
-        const { tool, input } = step as unknown as { readonly tool: string; readonly input: unknown };
+        const { tool, input, returns } = step as unknown as {
+          readonly tool: string;
+          readonly input: unknown;
+          readonly returns?: unknown;
+        };
         const called = await (live.get()?.server.callTool(tool, input) ?? Promise.resolve(undefined));
         check(called?.isError === true ? `${tool} failed: ${called.text}` : undefined, index);
+        if (returns !== undefined) check(ids.match(returns, called?.structured), index);
+        return;
+      }
+      case "web_has": {
+        await advance(time);
+        const { url, file } = step as unknown as { readonly url: string; readonly file: string };
+        web.update((current) => new Map([...current, [url, file]]));
         return;
       }
       case "pairing_code_shown": {

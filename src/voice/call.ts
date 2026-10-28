@@ -211,7 +211,8 @@ export const createCallStream = (options: CallOptions): CallStream => {
         case "call.ended":
         case "call.audio_deleted":
         case "voice.status":
-        case "topic.started": {
+        case "topic.started":
+        case "plan.ticked": {
           return;
         }
       }

@@ -10,6 +10,7 @@ import type { EngineEvent, EngineFailureCode, StepFacts } from "#engine/engine.t
 import { toMessageId } from "#conversation/ids.ts";
 import { askToolName } from "#asks/tool.ts";
 import { memoryToolNames } from "#memory/tool-names.ts";
+import { imageToolName } from "#replies/images.ts";
 import { topicToolName } from "#topics/tool.ts";
 import { toolServerName } from "#tools/mcp.ts";
 
@@ -173,8 +174,10 @@ const closing = (state: TurnState): readonly EngineEvent[] => (state.openMessage
 const isAskCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
   item.server === toolServerName && item.tool === askToolName;
 
+const quietToolNames: ReadonlySet<string> = new Set([...memoryToolNames, topicToolName, imageToolName]);
+
 const isQuietCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
-  item.server === toolServerName && (memoryToolNames.has(item.tool) || item.tool === topicToolName);
+  item.server === toolServerName && quietToolNames.has(item.tool);
 
 const startStep = (item: ThreadItem): EngineEvent | undefined => {
   switch (item.type) {

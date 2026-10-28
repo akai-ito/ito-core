@@ -98,9 +98,13 @@ const toSiteLink = (prefix: string, href: string): string => {
   if (href === "guarantees.md") return `${prefix}guarantees/`;
   const transcript = /^transcripts\/(?<name>\d\d-[\da-z-]+)\.jsonl$/u.exec(href)?.groups?.name;
   if (transcript) return `${prefix}transcripts/${transcript}/`;
-  const isSpecFile = ["openapi.yaml", "events.schema.json", "push.schema.json", "capability.schema.json"].includes(
-    href,
-  );
+  const isSpecFile = [
+    "openapi.yaml",
+    "events.schema.json",
+    "push.schema.json",
+    "blocks.schema.json",
+    "capability.schema.json",
+  ].includes(href);
   return isSpecFile
     ? `${prefix}protocol/v0/${href}`
     : `https://github.com/akai-ito/ito-core/blob/main/protocol/${href}`;
@@ -330,6 +334,7 @@ mkdirSync(specDirectory, { recursive: true });
 copyFileSync(path.join(protocolDirectory, "openapi.yaml"), path.join(specDirectory, "openapi.yaml"));
 copyFileSync(path.join(protocolDirectory, "events.schema.json"), path.join(specDirectory, "events.schema.json"));
 copyFileSync(path.join(protocolDirectory, "push.schema.json"), path.join(specDirectory, "push.schema.json"));
+copyFileSync(path.join(protocolDirectory, "blocks.schema.json"), path.join(specDirectory, "blocks.schema.json"));
 copyFileSync(
   path.join(protocolDirectory, "capability.schema.json"),
   path.join(specDirectory, "capability.schema.json"),

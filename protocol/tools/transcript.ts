@@ -4,12 +4,14 @@ import path from "node:path";
 import { isImage, readDimensions } from "#attachments/media.ts";
 import { createCell } from "#cell.ts";
 import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
+import { blocksIn, toPlan, withoutBlocks } from "#replies/blocks.ts";
 import type {
   Ask,
   AskKind,
   Attachment,
   AskOption,
   Call,
+  Tick,
   Topic,
   Correction,
   Error as ErrorBody,
@@ -152,6 +154,8 @@ export type Transcript = {
   readonly voiceFails: (reason: string) => void;
   readonly streamTimesOut: () => void;
   readonly topic: (label: string, message: string) => string;
+  readonly tick: (message: string, part: number, item: string, done: boolean) => void;
+  readonly keptImage: (file: string, name: string) => string;
   readonly change: () => string;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
@@ -247,6 +251,16 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
     case "call.ended": {
       const call = event.call as Call;
       return { ...projection, calls: new Map(projection.calls).set(call.id, call) };
+    }
+    case "plan.ticked": {
+      const message = byId.get(event.message as string);
+      if (!message) throw new Error(`a tick on unknown message ${String(event.message)}`);
+      const { part, item, done } = event as unknown as Tick;
+      const ticks = [
+        ...(message.ticks ?? []).filter((tick) => tick.part !== part || tick.item !== item),
+        { part, item, done },
+      ];
+      return { ...projection, byId: new Map(byId).set(message.id, { ...message, ticks }) };
     }
     case "topic.started": {
       const topic = event.topic as Topic;
@@ -726,7 +740,12 @@ export const createTranscript = (header: Header): Transcript => {
       .toArray()
       .at(-1);
     if (outcome === "completed" && !hasAsked && lastReply) {
-      push("active", { kind: "reply", text: toFirstLine(lastReply.text), turn: running.id, message: lastReply.id });
+      push("active", {
+        kind: "reply",
+        text: toFirstLine(withoutBlocks(lastReply.text)),
+        turn: running.id,
+        message: lastReply.id,
+      });
     }
     if (outcome === "failed" && error) {
       push("active", { kind: "failed", text: toFailedText(error.message), turn: running.id });
@@ -1356,6 +1375,18 @@ export const createTranscript = (header: Header): Transcript => {
     world,
     callExchange,
     topic: markTopic,
+    tick: (message, part, item, done) => {
+      request("PUT", `/v0/messages/${message}/parts/${String(part)}/items/${item}`, { body: { done } });
+      const ticked = messageById(message).ticks?.find((tick) => tick.part === part && tick.item === item)?.done;
+      const written = toPlan(blocksIn(messageById(message).text)[part])?.items.find(({ id }) => id === item)?.done;
+      if ((ticked ?? written) !== done) emit("plan.ticked", { message, part, item, done });
+      response(200, { ticks: messageById(message).ticks ?? [] });
+    },
+    keptImage: (file, name) => {
+      const attachment = describeAttachment(file, newId("f"), name);
+      attachments.update((current) => new Map([...current, [attachment.id, attachment]]));
+      return attachment.id;
+    },
     change: () => newId("c"),
     startCall,
     endCall,
