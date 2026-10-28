@@ -708,6 +708,27 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/voice/voiceprint": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Relearn your voice
+     * @description Forgets the voiceprint the server learnt from your calls, so it learns your voice again from
+     *     the next two minutes of you speaking, starting with a call in progress.
+     */
+    delete: operations["forgetVoiceprint"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/voice": {
     parameters: {
       query?: never;
@@ -744,7 +765,14 @@ export interface components {
       chosen: string;
       state: components["schemas"]["VoiceState"];
       reason?: components["schemas"]["VoiceReason"];
+      voiceprint: components["schemas"]["VoiceprintState"];
     };
+    /**
+     * @description `learnt` once the server knows your voice from your calls, so only a voice like yours holds a
+     *     turn open; `learning` until it has heard enough of you, about two minutes of a call.
+     * @enum {unknown}
+     */
+    VoiceprintState: "learning" | "learnt";
     VoiceChoice: {
       /** @description A voice's id from `GET /v0/voices`. */
       voice: string;
@@ -1871,6 +1899,7 @@ export interface components {
 }
 export type SpeechRequest = components["schemas"]["SpeechRequest"];
 export type VoiceList = components["schemas"]["VoiceList"];
+export type VoiceprintState = components["schemas"]["VoiceprintState"];
 export type VoiceChoice = components["schemas"]["VoiceChoice"];
 export type Voice = components["schemas"]["Voice"];
 export type CallResult = components["schemas"]["CallResult"];
@@ -3063,6 +3092,28 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description The voices and the voice's state. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VoiceList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  forgetVoiceprint: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The voices, with `voiceprint` now `learning`. */
       200: {
         headers: {
           "Ito-Protocol": components["headers"]["ItoProtocol"];

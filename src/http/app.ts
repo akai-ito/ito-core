@@ -20,6 +20,7 @@ import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
 import type { VoiceLoop } from "#voice/loop.ts";
 import type { Calls } from "#voice/calls.ts";
+import type { Voiceprints } from "#voice/voiceprints.ts";
 import { registerStream } from "#http/stream.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
@@ -44,6 +45,7 @@ export type AppOptions = {
   readonly memory: Memory;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
+  readonly voiceprints: Voiceprints;
   readonly models: ListModels;
   readonly heartbeatMs: number;
   readonly logger: FastifyServerOptions["logger"];
@@ -92,6 +94,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     memory,
     voice,
     calls,
+    voiceprints,
     models,
     heartbeatMs,
     logger,
@@ -166,7 +169,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerCapabilities(app, host, schemaFor);
   registerMemory(app, memory, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
-  registerTalk(app, { store, attachments, memory, voice, calls, schemaFor });
+  registerTalk(app, { store, attachments, memory, voice, calls, voiceprints, schemaFor });
   registerStream(app, { store, calls, voice, protocol });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {

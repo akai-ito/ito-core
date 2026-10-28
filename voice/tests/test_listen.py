@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ito_voice.audio import heard_rate
-from ito_voice.listen import Ears, Hearing, Listener, Turn, Voiceprint, sounds_unfinished
+from ito_voice.listen import Ears, Hearing, Listener, Turn, Voiceprint, ends_like_a_sentence, sounds_unfinished
 
 
 def tone(seconds: float, hertz: float = 200) -> np.ndarray:
@@ -67,16 +67,23 @@ def test_a_finished_thought_ends_the_turn_after_a_short_pause_with_captions_on_t
     assert 1.6 * heard_rate < heard.turns[0].audio.shape[0] < 2.3 * heard_rate
 
 
-def test_it_waits_after_and_or_when_smart_turn_hears_more_coming() -> None:
-    for listener_ears in [ears(text="I need milk, eggs and"), ears(finished=0.2)]:
-        heard = Heard()
-        listener = Listener(listener_ears, heard.hearing())
+def quiet_before_the_turn_ends(listener_ears: Ears) -> float:
+    heard = Heard()
+    listener = Listener(listener_ears, heard.hearing())
+    listener.feed(tone(1.0))
+    for step in range(1, 41):
+        listener.feed(quiet(0.1))
+        if heard.turns:
+            return step / 10
+    return float("inf")
 
-        listener.feed(np.concatenate([tone(1.0), quiet(2.5)]))
-        assert heard.turns == []
-        listener.feed(quiet(0.6))
 
-        assert len(heard.turns) == 1
+def test_words_that_trail_off_hold_the_turn_open_longer() -> None:
+    assert quiet_before_the_turn_ends(ears(text="Call the dentist tomorrow.")) < 0.5
+    assert quiet_before_the_turn_ends(ears(text="Call the dentist tomorrow.", finished=0.2)) == 1.6
+    assert quiet_before_the_turn_ends(ears(text="I'm writing a note")) == 1.6
+    assert quiet_before_the_turn_ends(ears(text="Exceptional work at")) == 3.1
+    assert quiet_before_the_turn_ends(ears(text="I need milk, eggs and")) == 3.1
 
 
 def test_speaking_again_within_the_pause_keeps_one_turn() -> None:
@@ -123,6 +130,19 @@ def test_it_learns_your_voiceprint_from_two_minutes_of_turns() -> None:
     assert listener.voiceprint == heard.voiceprints[0]
 
 
+def test_forgetting_the_voiceprint_lets_any_voice_through_until_it_relearns() -> None:
+    heard = Heard()
+    listener = Listener(ears(), heard.hearing(), voiceprint=Voiceprint(np.array([0.0, 1.0]), 0.6))
+
+    listener.feed(np.concatenate([tone(1.5), quiet(0.5)]))
+    assert heard.turns == []
+    listener.forget()
+    listener.feed(np.concatenate([tone(1.5), quiet(0.5)]))
+
+    assert len(heard.turns) == 1
+    assert listener.voiceprint is None
+
+
 def test_flushing_sends_a_turn_in_progress() -> None:
     heard = Heard()
     listener = Listener(ears(), heard.hearing())
@@ -137,5 +157,16 @@ def test_trailing_words_that_promise_more() -> None:
     assert sounds_unfinished("So I was thinking that maybe we could,")
     assert sounds_unfinished("I need to pick up milk, eggs and")
     assert sounds_unfinished("The thing about the proposal is, um")
+    assert sounds_unfinished("Writing for")
     assert not sounds_unfinished("Can you remind me to call the dentist tomorrow morning?")
     assert not sounds_unfinished("Let's go to Brighton.")
+
+
+def test_only_words_that_end_like_a_sentence_end_a_turn_quickly() -> None:
+    assert ends_like_a_sentence("Can you call him about that?")
+    assert ends_like_a_sentence("Let's go to Brighton.")
+    assert not ends_like_a_sentence("Exceptional work at")
+    assert not ends_like_a_sentence("I'm quite happy with the call of…")
+    assert not ends_like_a_sentence("So I was thinking that maybe we could,")
+    assert not ends_like_a_sentence("I went there and.")
+    assert not ends_like_a_sentence("Um.")

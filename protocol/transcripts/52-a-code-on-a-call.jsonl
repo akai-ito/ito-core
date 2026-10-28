@@ -1,0 +1,68 @@
+{"transcript":"52-a-code-on-a-call","start":"2026-10-28T08:30:00.000Z","scenario":52,"title":"A code on a call","summary":"Ari needs a code mid-call. The server never takes a secret by voice: it says to type it in the chat, a code said aloud stays an ordinary message, and the ask waits until you type the answer.","guarantees":["G25"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T08:30:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":1000,"app":{"method":"PUT","path":"/v0/calls/0f866ec1-92d3-4b75-9064-700dd314405b"}}
+{"at":1000,"event":{"id":"e_0001_81887","type":"call.started","at":"2026-10-28T08:30:01.000Z","call":{"id":"0f866ec1-92d3-4b75-9064-700dd314405b","started_at":"2026-10-28T08:30:01.000Z","position":1}}}
+{"at":1000,"server":{"status":201,"body":{"call":{"id":"0f866ec1-92d3-4b75-9064-700dd314405b","started_at":"2026-10-28T08:30:01.000Z","position":1}}}}
+{"at":1300,"app":{"method":"GET","path":"/v0/calls/0f866ec1-92d3-4b75-9064-700dd314405b/stream"}}
+{"at":1300,"server":{"status":101}}
+{"at":1300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":4300,"world":"you_say","text":"Confirm the Juno booking."}
+{"at":4300,"socket":{"from":"app","audio":"walk-question.pcm"}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":4300,"event":{"id":"e_0002_65658","type":"message.accepted","at":"2026-10-28T08:30:04.300Z","message":{"id":"m_0001_12051","role":"user","text":"Confirm the Juno booking.","at":"2026-10-28T08:30:04.300Z","position":2,"spoken":{"call":"0f866ec1-92d3-4b75-9064-700dd314405b","audio":{"id":"f_0001_91576","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"heard","text":"Confirm the Juno booking.","final":true,"message":"m_0001_12051"}}}
+{"at":4300,"event":{"id":"e_0003_17379","type":"turn.started","at":"2026-10-28T08:30:04.300Z","turn":"t_0001_24546","inputs":["m_0001_12051"]}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":5500,"event":{"id":"e_0004_27472","type":"ask.started","at":"2026-10-28T08:30:05.500Z","ask":{"id":"a_0001_85758","turn":"t_0001_24546","kind":"question","question":"Juno texted you a 6-digit code. What is it?","options":[],"allows_text":true,"secret":true,"at":"2026-10-28T08:30:05.500Z","position":4}}}
+{"at":5500,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":5500,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"There's something to type in the chat."}}}
+{"at":5500,"socket":{"from":"server","audio_ms":250}}
+{"at":5500,"event":{"id":"e_0005_45451","type":"turn.ended","at":"2026-10-28T08:30:05.500Z","turn":"t_0001_24546","outcome":"completed"}}
+{"at":8000,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
+{"at":8000,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":9500,"world":"you_say","text":"It's four eight one five one six."}
+{"at":9500,"socket":{"from":"app","audio":"walk-follow-up.pcm"}}
+{"at":9500,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":9500,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":9500,"event":{"id":"e_0006_66126","type":"message.accepted","at":"2026-10-28T08:30:09.500Z","message":{"id":"m_0002_45817","role":"user","text":"It's four eight one five one six.","at":"2026-10-28T08:30:09.500Z","position":6,"spoken":{"call":"0f866ec1-92d3-4b75-9064-700dd314405b","audio":{"id":"f_0002_86051","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":9500,"socket":{"from":"server","frame":{"type":"heard","text":"It's four eight one five one six.","final":true,"message":"m_0002_45817"}}}
+{"at":9500,"event":{"id":"e_0007_19980","type":"turn.started","at":"2026-10-28T08:30:09.500Z","turn":"t_0002_05335","inputs":["m_0002_45817"]}}
+{"at":9500,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":10400,"event":{"id":"e_0008_29050","type":"turn.status","at":"2026-10-28T08:30:10.400Z","turn":"t_0002_05335","kind":"writing","label":"Writing"}}
+{"at":10400,"event":{"id":"e_0009_08715","type":"message.started","at":"2026-10-28T08:30:10.400Z","message":{"id":"m_0003_75492","role":"agent","kind":"reply","turn":"t_0002_05335","text":"","at":"2026-10-28T08:30:10.400Z","position":9}}}
+{"at":10400,"event":{"id":"e_0010_83791","type":"message.delta","at":"2026-10-28T08:30:10.400Z","message":"m_0003_75492","offset":0,"text":"Type it in the chat, please. I won't take a code by voice."}}
+{"at":10400,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":10400,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Type it in the chat, please."}}}
+{"at":10400,"socket":{"from":"server","audio_ms":250}}
+{"at":10400,"event":{"id":"e_0011_68008","type":"message.ended","at":"2026-10-28T08:30:10.400Z","message":"m_0003_75492","outcome":"completed","length":58}}
+{"at":10400,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"I won't take a code by voice."}}}
+{"at":10400,"socket":{"from":"server","audio_ms":250}}
+{"at":10400,"event":{"id":"e_0012_71204","type":"turn.ended","at":"2026-10-28T08:30:10.400Z","turn":"t_0002_05335","outcome":"completed"}}
+{"at":12900,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
+{"at":12900,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}
+{"at":12900,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":20900,"app":{"method":"POST","path":"/v0/messages","body":{"id":"8df648e2-9813-4dc2-939f-92cbe710bcdf","text":"481516","answers":"a_0001_85758"}}}
+{"at":20900,"event":{"id":"e_0013_78504","type":"message.accepted","at":"2026-10-28T08:30:20.900Z","message":{"id":"8df648e2-9813-4dc2-939f-92cbe710bcdf","role":"user","text":"","at":"2026-10-28T08:30:20.900Z","position":13,"answers":"a_0001_85758","secret":true}}}
+{"at":20900,"event":{"id":"e_0014_25337","type":"ask.ended","at":"2026-10-28T08:30:20.900Z","ask":{"id":"a_0001_85758","turn":"t_0001_24546","kind":"question","question":"Juno texted you a 6-digit code. What is it?","options":[],"allows_text":true,"secret":true,"at":"2026-10-28T08:30:05.500Z","position":4,"ended_at":"2026-10-28T08:30:20.900Z","outcome":"answered","answer":"8df648e2-9813-4dc2-939f-92cbe710bcdf"}}}
+{"at":20900,"server":{"status":201,"body":{"message":{"id":"8df648e2-9813-4dc2-939f-92cbe710bcdf","role":"user","text":"","at":"2026-10-28T08:30:20.900Z","position":13,"answers":"a_0001_85758","secret":true}}}}
+{"at":20900,"event":{"id":"e_0015_32340","type":"turn.started","at":"2026-10-28T08:30:20.900Z","turn":"t_0003_39967","inputs":["8df648e2-9813-4dc2-939f-92cbe710bcdf"]}}
+{"at":20900,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":21800,"event":{"id":"e_0016_41521","type":"turn.status","at":"2026-10-28T08:30:21.800Z","turn":"t_0003_39967","kind":"writing","label":"Writing"}}
+{"at":21800,"event":{"id":"e_0017_46763","type":"message.started","at":"2026-10-28T08:30:21.800Z","message":{"id":"m_0004_36257","role":"agent","kind":"reply","turn":"t_0003_39967","text":"","at":"2026-10-28T08:30:21.800Z","position":17}}}
+{"at":21800,"event":{"id":"e_0018_46511","type":"message.delta","at":"2026-10-28T08:30:21.800Z","message":"m_0004_36257","offset":0,"text":"Confirmed. You're booked at Juno on Saturday."}}
+{"at":21800,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":21800,"socket":{"from":"server","frame":{"type":"saying","id":"s4","text":"Confirmed."}}}
+{"at":21800,"socket":{"from":"server","audio_ms":250}}
+{"at":21800,"event":{"id":"e_0019_68819","type":"message.ended","at":"2026-10-28T08:30:21.800Z","message":"m_0004_36257","outcome":"completed","length":45}}
+{"at":21800,"socket":{"from":"server","frame":{"type":"saying","id":"s5","text":"You're booked at Juno on Saturday."}}}
+{"at":21800,"socket":{"from":"server","audio_ms":250}}
+{"at":21800,"event":{"id":"e_0020_19476","type":"turn.ended","at":"2026-10-28T08:30:21.800Z","turn":"t_0003_39967","outcome":"completed"}}
+{"at":24300,"socket":{"from":"app","frame":{"type":"played","id":"s4"}}}
+{"at":24300,"socket":{"from":"app","frame":{"type":"played","id":"s5"}}}
+{"at":24300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":34300,"socket":{"from":"app","frame":{"type":"end"}}}
+{"at":34300,"event":{"id":"e_0021_26011","type":"call.ended","at":"2026-10-28T08:30:34.300Z","call":{"id":"0f866ec1-92d3-4b75-9064-700dd314405b","started_at":"2026-10-28T08:30:01.000Z","position":1,"ended_at":"2026-10-28T08:30:34.300Z","duration_ms":33300}}}
+{"at":34300,"socket":{"from":"server","closed":1000,"reason":"The call ended."}}

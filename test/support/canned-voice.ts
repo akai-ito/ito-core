@@ -53,6 +53,7 @@ export const createCannedVoice = (
       for (const onHeard of listening) onHeard({ kind: "problem", reason });
     },
     refreshVocabulary: () => Promise.resolve(),
+    forgetVoiceprint: () => Promise.resolve(),
     close: () => Promise.resolve(),
   };
 };

@@ -5,6 +5,7 @@ import type { EngineFailureCode } from "#engine/engine.ts";
 import type { ScriptSource, TimedEvent, TurnScript } from "#engine/scripted/script-engine.ts";
 import type { LoggedEvent } from "#store/projection.ts";
 import type { Transcript } from "./transcript-file.ts";
+import { isApprovalChoice } from "#turns/turns.ts";
 
 const loggedEvents = (transcript: Transcript): readonly LoggedEvent[] =>
   transcript.steps
@@ -52,14 +53,16 @@ const isCoreStep = (event: LoggedEvent): boolean =>
   (event.type === "step.started" || event.type === "step.updated" || event.type === "step.ended") &&
   event.step.kind === "memory";
 
-const toTimed = (event: LoggedEvent): TimedEvent | undefined => {
+const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent | undefined => {
   if (isCoreStep(event)) return undefined;
   const at = Date.parse(event.at);
   switch (event.type) {
     case "ask.started": {
-      const { kind, question, options, allows_text, preview, secret } = event.ask;
+      const { id, kind, question, options, allows_text, preview, secret } = event.ask;
       const fields = { kind, question, options, allows_text, ...(preview && { preview }), secret };
-      return { at, event: { type: "ask", fields } };
+      return approvals.has(id)
+        ? { at, event: { type: "approval", key: id, fields } }
+        : { at, event: { type: "ask", fields } };
     }
     case "turn.status":
     case "ask.ended": {
@@ -141,7 +144,11 @@ const isEndedByTheLoop = (event: LoggedEvent, turnEnd: LoggedEvent | undefined):
   return outcome === "stopped" || outcome === "interrupted" || isTurnsOwnEnd;
 };
 
-const toScript = (events: readonly LoggedEvent[]): TurnScript => {
+const toScript = (
+  events: readonly LoggedEvent[],
+  approvals: ReadonlySet<string>,
+  choices: ReadonlySet<string>,
+): TurnScript => {
   const reads = new Set(events.filter((event) => event.type === "message.read").map((event) => event.message));
   const stopped = events.find((event) => event.type === "turn.ended" && event.outcome === "stopped");
   const turnEnd = events.find((event) => event.type === "turn.ended");
@@ -149,15 +156,51 @@ const toScript = (events: readonly LoggedEvent[]): TurnScript => {
   return {
     events: events
       .filter((event) => !isAboutMessage(event, standIns) && !isEndedByTheLoop(event, turnEnd))
-      .map((event) => toTimed(event))
+      .filter((event) => !(event.type === "message.read" && choices.has(event.message)))
+      .map((event) => toTimed(event, approvals))
       .filter((timed) => timed !== undefined),
     steer: (input) => ({ outcome: reads.has(input.messageId) ? "taken" : "refused" }),
     stoppedAt: (requestedAt) => (stopped ? Date.parse(stopped.at) : requestedAt),
   };
 };
 
+const approvalsIn = (events: readonly LoggedEvent[]): ReadonlySet<string> => {
+  const turnEnds = new Map(
+    events
+      .map((event, index) => [event.type === "turn.ended" ? event.turn : "", index] as const)
+      .filter(([turn]) => turn),
+  );
+  return new Set(
+    events
+      .map((event, index) =>
+        event.type === "ask.ended" && index < (turnEnds.get(event.ask.turn) ?? Infinity) ? event.ask.id : "",
+      )
+      .filter(Boolean),
+  );
+};
+
+const choicesIn = (events: readonly LoggedEvent[], approvals: ReadonlySet<string>): ReadonlySet<string> => {
+  const texts = new Map(
+    events.flatMap((event) => (event.type === "message.accepted" ? [[event.message.id, event.message.text]] : [])),
+  );
+  return new Set(
+    events
+      .map((event) =>
+        event.type === "ask.ended" &&
+        approvals.has(event.ask.id) &&
+        event.ask.answer !== undefined &&
+        isApprovalChoice(texts.get(event.ask.answer) ?? "", event.ask)
+          ? event.ask.answer
+          : "",
+      )
+      .filter(Boolean),
+  );
+};
+
 export const deriveScripts = (transcript: Transcript): readonly TurnScript[] => {
   const events = loggedEvents(transcript);
+  const approvals = approvalsIn(events);
+  const choices = choicesIn(events, approvals);
   const messageTurns = new Map(
     events.flatMap((event) =>
       event.type === "message.started" ? [[event.message.id, event.message.turn ?? ""] as const] : [],
@@ -166,7 +209,13 @@ export const deriveScripts = (transcript: Transcript): readonly TurnScript[] => 
   return events
     .filter((event) => event.type === "turn.started")
     .map((event) => event.turn)
-    .map((turn) => toScript(events.filter((event) => isPartOf(event, turn, messageTurns))));
+    .map((turn) =>
+      toScript(
+        events.filter((event) => isPartOf(event, turn, messageTurns)),
+        approvals,
+        choices,
+      ),
+    );
 };
 
 export const createScriptQueue = (scripts: readonly TurnScript[]): ScriptSource => {

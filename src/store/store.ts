@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Clock } from "#clock.ts";
 import {
+  toAskId,
   toDeviceId,
   toMessageId,
   toTurnId,
@@ -130,6 +131,7 @@ export type Store = Settings & {
   readonly messageText: (message: MessageId) => string | undefined;
   readonly messageAttachments: (message: MessageId) => readonly Attachment[];
   readonly messageSpoken: (message: MessageId) => Spoken | undefined;
+  readonly answeredAsk: (message: MessageId) => AskId | undefined;
   readonly pendingWork: () => readonly PendingWork[];
   readonly runningTurn: () => StoredTurn | undefined;
   readonly findTurn: (turn: TurnId) => StoredTurn | undefined;
@@ -486,7 +488,8 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           return fail("attachment_taken");
         const attached = attachedRows.flatMap((row) => (row ? [JSON.parse(row.body) as Attachment] : []));
         const isSecret = named !== undefined && toAsk(named).secret;
-        const waiting = waitingRow();
+        const waitingAsk = waitingRow();
+        const waiting = waitingAsk && !(spoken && toAsk(waitingAsk).secret) ? waitingAsk : undefined;
         const at = now();
         const message: Message = {
           id,
@@ -576,6 +579,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     },
 
     messageText: (message) => messageRow(message)?.text,
+
+    answeredAsk: (message) => {
+      const answers = messageRow(message)?.answers;
+      return answers ? toAskId(answers) : undefined;
+    },
 
     messageSpoken: (message) => {
       const row = messageRow(message);

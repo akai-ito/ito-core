@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.9"
+  version: "0.10"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -958,6 +958,23 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/VoiceList" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/voice/voiceprint:
+    delete:
+      tags: [Talk]
+      operationId: forgetVoiceprint
+      summary: Relearn your voice
+      description: |
+        Forgets the voiceprint the server learnt from your calls, so it learns your voice again from
+        the next two minutes of you speaking, starting with a call in progress.
+      responses:
+        "200":
+          description: The voices, with `voiceprint` now `learning`.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/voice:
     put:
       tags: [Talk]
@@ -995,7 +1012,7 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.9"
+        example: "0.10"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
@@ -1135,7 +1152,7 @@ components:
           type: string
     VoiceList:
       type: object
-      required: [voices, chosen, state]
+      required: [voices, chosen, state, voiceprint]
       properties:
         voices:
           type: array
@@ -1145,6 +1162,12 @@ components:
           type: string
         state: { $ref: "events.schema.json#/$defs/VoiceState" }
         reason: { $ref: "events.schema.json#/$defs/VoiceReason" }
+        voiceprint: { $ref: "#/components/schemas/VoiceprintState" }
+    VoiceprintState:
+      description: |
+        `learnt` once the server knows your voice from your calls, so only a voice like yours holds a
+        turn open; `learning` until it has heard enough of you, about two minutes of a call.
+      enum: [learning, learnt]
     VoiceChoice:
       type: object
       required: [voice]

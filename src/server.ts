@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { createCell } from "#cell.ts";
@@ -11,7 +11,7 @@ import type { Embedder } from "#memory/embedder.ts";
 import { noVoice, type VoiceContext, type VoiceLoop } from "#voice/loop.ts";
 import { vocabularyFile } from "#voice/sidecar.ts";
 import { createCalls, type Calls } from "#voice/calls.ts";
-import type { Voiceprint } from "#voice/loop.ts";
+import { createVoiceprints } from "#voice/voiceprints.ts";
 import { chosenVoice } from "#voice/voices.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
 import { createMemoryStore } from "#store/memory.ts";
@@ -174,21 +174,14 @@ export const createServer = (options: ServerOptions): Server => {
     secrets,
     trail: createTrail(host, launcher),
   });
-  const voiceprintFile = path.join(options.dataDirectory, "voice", "voiceprint.json");
+  const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
     store,
     turns,
     attachments,
     voice,
     vocabulary: () => memory.vocabulary(),
-    voiceprints: {
-      load: () =>
-        existsSync(voiceprintFile) ? (JSON.parse(readFileSync(voiceprintFile, "utf8")) as Voiceprint) : undefined,
-      save: (voiceprint) => {
-        mkdirSync(path.dirname(voiceprintFile), { recursive: true });
-        writeFileSync(voiceprintFile, JSON.stringify(voiceprint));
-      },
-    },
+    voiceprints,
     chosenVoice: () => chosenVoice(store),
     identifiers,
     clock,
@@ -214,6 +207,7 @@ export const createServer = (options: ServerOptions): Server => {
     memory,
     voice,
     calls,
+    voiceprints,
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,

@@ -1,4 +1,5 @@
 import { createCell } from "#cell.ts";
+import type { Ask } from "#protocol/types.ts";
 
 const isDivider = (line: string): boolean => line.trim() === "---";
 
@@ -50,6 +51,25 @@ export const toClauses = (sentence: string): readonly string[] => {
     .filter((index) => index > 0);
   const cut = cuts.toSorted((left, right) => Math.abs(left - middle) - Math.abs(right - middle))[0] ?? Math.ceil(middle);
   return [...toClauses(words.slice(0, cut).join(" ")), ...toClauses(words.slice(cut).join(" "))];
+};
+
+export const secretAloud = "There's something to type in the chat.";
+
+type Asked = Pick<Ask, "kind" | "question" | "options" | "preview" | "secret">;
+
+const orList = (labels: readonly string[]): string =>
+  labels.length < 2 ? (labels[0] ?? "") : `${labels.slice(0, -1).join(", ")}, or ${labels.at(-1) ?? ""}`;
+
+export const askAloud = ({ kind, question, options, preview, secret }: Asked): readonly string[] => {
+  if (secret) return [secretAloud];
+  const labels = options.map(({ label }) => label);
+  const asked = spokenPart(question);
+  const isOffered = labels.every((label) => asked.toLowerCase().includes(label.toLowerCase()));
+  const briefly = preview && kind === "approval" ? toClauses(spokenPart(preview))[0] : undefined;
+  const choices = !isOffered && labels.length > 0 ? `${orList(labels)}?` : undefined;
+  return [briefly, asked, choices]
+    .filter((part): part is string => part !== undefined && part !== "")
+    .flatMap((part) => toClauses(part));
 };
 
 export type SentenceFeed = (text: string, isFinished: boolean) => readonly string[];

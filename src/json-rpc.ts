@@ -15,7 +15,7 @@ export type ConnectionOptions = {
   readonly input: Readable;
   readonly output: Writable;
   readonly onNotification: (notification: IncomingNotification) => void;
-  readonly onRequest: (request: IncomingRequest) => Result<unknown, RpcFailure>;
+  readonly onRequest: (request: IncomingRequest) => Result<unknown, RpcFailure> | Promise<Result<unknown, RpcFailure>>;
   readonly onMalformed: (line: string) => void;
   readonly closedMessage: string;
 };
@@ -80,8 +80,8 @@ export const createConnection = ({
     resolve?.(outcome);
   };
 
-  const answer = (request: IncomingRequest): void => {
-    const outcome = onRequest(request);
+  const answer = async (request: IncomingRequest): Promise<void> => {
+    const outcome = await onRequest(request);
     send(outcome.ok ? { id: request.id, result: outcome.value } : { id: request.id, error: outcome.failure });
   };
 
@@ -93,7 +93,7 @@ export const createConnection = ({
     }
     const { id, method, params: parameters } = message;
     if (typeof method === "string") {
-      if (isRequestId(id)) answer({ id, method, parameters });
+      if (isRequestId(id)) void answer({ id, method, parameters });
       else onNotification({ method, parameters });
       return;
     }

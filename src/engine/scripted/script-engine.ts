@@ -89,6 +89,9 @@ export const createScriptEngine = (
   };
 
   return {
+    approve: (turn) => {
+      emit(turn, { type: "progress" });
+    },
     start: (turn, inputs) => {
       const queue = createAsyncQueue<EngineEvent>();
       const script = scriptFor(turn, inputs, clock.now());

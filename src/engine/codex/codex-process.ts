@@ -8,6 +8,10 @@ import type { InitializeResponse } from "#engine/codex/bindings/InitializeRespon
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
 import type { GetAccountParams } from "#engine/codex/bindings/v2/GetAccountParams.ts";
 import type { GetAccountResponse } from "#engine/codex/bindings/v2/GetAccountResponse.ts";
+import type { CommandExecutionRequestApprovalParams } from "#engine/codex/bindings/v2/CommandExecutionRequestApprovalParams.ts";
+import type { FileChangeRequestApprovalParams } from "#engine/codex/bindings/v2/FileChangeRequestApprovalParams.ts";
+import type { McpServerElicitationRequestParams } from "#engine/codex/bindings/v2/McpServerElicitationRequestParams.ts";
+import type { McpServerElicitationRequestResponse } from "#engine/codex/bindings/v2/McpServerElicitationRequestResponse.ts";
 import type { ModelListParams } from "#engine/codex/bindings/v2/ModelListParams.ts";
 import type { ModelListResponse } from "#engine/codex/bindings/v2/ModelListResponse.ts";
 import type { ThreadInjectItemsParams } from "#engine/codex/bindings/v2/ThreadInjectItemsParams.ts";
@@ -57,18 +61,30 @@ export type CodexProcessOptions = {
   readonly workspace: string;
   readonly environment: Readonly<Record<string, string>>;
   readonly onNotification: (notification: ServerNotification) => void;
+  readonly onElicitation: (
+    parameters: McpServerElicitationRequestParams,
+  ) => Promise<McpServerElicitationRequestResponse>;
   readonly onExit: (description: string) => void;
 };
 
 const gracefulExitMs = 3000;
 const keptStderrLines = 20;
 
-const declinedApprovals = new Set(["item/commandExecution/requestApproval", "item/fileChange/requestApproval"]);
-
-const answerRequest = ({ method }: IncomingRequest): Result<unknown, RpcFailure> =>
-  declinedApprovals.has(method)
-    ? ok({ decision: "decline" })
-    : fail({ code: -32_601, message: `Ito doesn't handle ${method}.` });
+const toAnswerer =
+  (onElicitation: CodexProcessOptions["onElicitation"]) =>
+  async ({ method, parameters }: IncomingRequest): Promise<Result<unknown, RpcFailure>> => {
+    if (method === "item/commandExecution/requestApproval") {
+      const { reason, networkApprovalContext } = parameters as CommandExecutionRequestApprovalParams;
+      return ok({ decision: reason || networkApprovalContext ? "decline" : "accept" });
+    }
+    if (method === "item/fileChange/requestApproval") {
+      const { reason, grantRoot } = parameters as FileChangeRequestApprovalParams;
+      return ok({ decision: reason || grantRoot ? "decline" : "accept" });
+    }
+    return method === "mcpServer/elicitation/request"
+      ? ok(await onElicitation(parameters as McpServerElicitationRequestParams))
+      : fail({ code: -32_601, message: `Ito doesn't handle ${method}.` });
+  };
 
 const describeExit = (code: number | null, signal: NodeJS.Signals | null, stderr: readonly string[]): string => {
   const how = signal ? `was killed by ${signal}` : `exited with code ${String(code)}`;
@@ -106,7 +122,7 @@ export const startCodexProcess = async (options: CodexProcessOptions): Promise<R
     onNotification: ({ method, parameters }) => {
       options.onNotification({ method, params: parameters } as ServerNotification);
     },
-    onRequest: answerRequest,
+    onRequest: toAnswerer(options.onElicitation),
     onMalformed: (line) => {
       stderr.update((kept) => [...kept, `Unreadable output: ${line}`].slice(-keptStderrLines));
     },
@@ -125,7 +141,7 @@ export const startCodexProcess = async (options: CodexProcessOptions): Promise<R
 
   const initializeParameters: InitializeParams = {
     clientInfo: { name: "ito", title: "Ito", version: packageVersion() },
-    capabilities: { experimentalApi: false, requestAttestation: false },
+    capabilities: { experimentalApi: true, requestAttestation: false },
   };
   const initialized = await connection.request("initialize", initializeParameters);
   if (!initialized.ok) {

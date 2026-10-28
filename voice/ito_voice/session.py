@@ -112,6 +112,8 @@ class Session:
                     self._listener.ari_speaking = value
                 elif kind == "flush":
                     self._listener.flush()
+                elif kind == "forget":
+                    self._listener.forget()
             except Exception as error:
                 traceback.print_exc()
                 self._dead.set()
@@ -138,6 +140,9 @@ class Session:
 
     def flush(self) -> threading.Event:
         return self._ask("flush")
+
+    def forget(self) -> threading.Event:
+        return self._ask("forget")
 
     def stop(self) -> threading.Event:
         return self._ask("stop")

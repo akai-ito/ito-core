@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/promises";
@@ -282,6 +282,15 @@ export const replay = async (name: string): Promise<void> => {
         closeStream();
         await advance(time);
         await closeCallSocket();
+        return;
+      }
+      case "voiceprint_learnt": {
+        await advance(time);
+        mkdirSync(path.join(directory, "voice"), { recursive: true });
+        writeFileSync(
+          path.join(directory, "voice", "voiceprint.json"),
+          JSON.stringify({ vector: [1, 0], threshold: 0.6 }),
+        );
         return;
       }
       case "you_say": {

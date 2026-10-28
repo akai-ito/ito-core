@@ -1,0 +1,56 @@
+{"transcript":"51-asked-on-a-call","start":"2026-10-28T08:00:00.000Z","scenario":51,"title":"Asked on a call","summary":"On a call, Ari asks for approval: the server says the preview, the question and the choices aloud, and your next words answer it, so the reminder is added without looking at the phone.","guarantees":["G25","G26"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T08:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"turn":null,"next":[]}}
+{"at":1000,"app":{"method":"PUT","path":"/v0/calls/2b6b2969-78b4-40cb-93bb-62c352ce71df"}}
+{"at":1000,"event":{"id":"e_0001_93484","type":"call.started","at":"2026-10-28T08:00:01.000Z","call":{"id":"2b6b2969-78b4-40cb-93bb-62c352ce71df","started_at":"2026-10-28T08:00:01.000Z","position":1}}}
+{"at":1000,"server":{"status":201,"body":{"call":{"id":"2b6b2969-78b4-40cb-93bb-62c352ce71df","started_at":"2026-10-28T08:00:01.000Z","position":1}}}}
+{"at":1300,"app":{"method":"GET","path":"/v0/calls/2b6b2969-78b4-40cb-93bb-62c352ce71df/stream"}}
+{"at":1300,"server":{"status":101}}
+{"at":1300,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":4300,"world":"you_say","text":"Remind me to call Mum on Sunday at two."}
+{"at":4300,"socket":{"from":"app","audio":"walk-question.pcm"}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":4300,"event":{"id":"e_0002_91219","type":"message.accepted","at":"2026-10-28T08:00:04.300Z","message":{"id":"m_0001_27022","role":"user","text":"Remind me to call Mum on Sunday at two.","at":"2026-10-28T08:00:04.300Z","position":2,"spoken":{"call":"2b6b2969-78b4-40cb-93bb-62c352ce71df","audio":{"id":"f_0001_04206","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"heard","text":"Remind me to call Mum on Sunday at two.","final":true,"message":"m_0001_27022"}}}
+{"at":4300,"event":{"id":"e_0003_03247","type":"turn.started","at":"2026-10-28T08:00:04.300Z","turn":"t_0001_55604","inputs":["m_0001_27022"]}}
+{"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":5500,"event":{"id":"e_0004_10819","type":"ask.started","at":"2026-10-28T08:00:05.500Z","ask":{"id":"a_0001_90821","turn":"t_0001_55604","kind":"approval","question":"Shall I add it to your calendar?","options":[{"label":"Add it","acts":true},{"label":"Leave it"}],"allows_text":false,"preview":"Calendar: Call Mum, Sunday 1 November, 2pm","secret":false,"at":"2026-10-28T08:00:05.500Z","position":4}}}
+{"at":5500,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":5500,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Calendar: Call Mum, Sunday 1 November, 2pm."}}}
+{"at":5500,"socket":{"from":"server","audio_ms":250}}
+{"at":5500,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Shall I add it to your calendar?"}}}
+{"at":5500,"socket":{"from":"server","audio_ms":250}}
+{"at":5500,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"Add it, or Leave it?"}}}
+{"at":5500,"socket":{"from":"server","audio_ms":250}}
+{"at":5500,"event":{"id":"e_0005_04830","type":"turn.ended","at":"2026-10-28T08:00:05.500Z","turn":"t_0001_55604","outcome":"completed"}}
+{"at":9500,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
+{"at":9500,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
+{"at":9500,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}
+{"at":9500,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":11000,"world":"you_say","text":"Add it."}
+{"at":11000,"socket":{"from":"app","audio":"walk-follow-up.pcm"}}
+{"at":11000,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
+{"at":11000,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
+{"at":11000,"event":{"id":"e_0006_81417","type":"message.accepted","at":"2026-10-28T08:00:11.000Z","message":{"id":"m_0002_31819","role":"user","text":"Add it.","at":"2026-10-28T08:00:11.000Z","position":6,"answers":"a_0001_90821","spoken":{"call":"2b6b2969-78b4-40cb-93bb-62c352ce71df","audio":{"id":"f_0002_02124","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":11000,"event":{"id":"e_0007_03177","type":"ask.ended","at":"2026-10-28T08:00:11.000Z","ask":{"id":"a_0001_90821","turn":"t_0001_55604","kind":"approval","question":"Shall I add it to your calendar?","options":[{"label":"Add it","acts":true},{"label":"Leave it"}],"allows_text":false,"preview":"Calendar: Call Mum, Sunday 1 November, 2pm","secret":false,"at":"2026-10-28T08:00:05.500Z","position":4,"ended_at":"2026-10-28T08:00:11.000Z","outcome":"answered","answer":"m_0002_31819"}}}
+{"at":11000,"socket":{"from":"server","frame":{"type":"heard","text":"Add it.","final":true,"message":"m_0002_31819"}}}
+{"at":11000,"event":{"id":"e_0008_68704","type":"turn.started","at":"2026-10-28T08:00:11.000Z","turn":"t_0002_78935","inputs":["m_0002_31819"]}}
+{"at":11000,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
+{"at":11900,"event":{"id":"e_0009_27979","type":"turn.status","at":"2026-10-28T08:00:11.900Z","turn":"t_0002_78935","kind":"writing","label":"Writing"}}
+{"at":11900,"event":{"id":"e_0010_39212","type":"message.started","at":"2026-10-28T08:00:11.900Z","message":{"id":"m_0003_68062","role":"agent","kind":"reply","turn":"t_0002_78935","text":"","at":"2026-10-28T08:00:11.900Z","position":10}}}
+{"at":11900,"event":{"id":"e_0011_40479","type":"message.delta","at":"2026-10-28T08:00:11.900Z","message":"m_0003_68062","offset":0,"text":"Added. I'll remind you on Sunday."}}
+{"at":11900,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
+{"at":11900,"socket":{"from":"server","frame":{"type":"saying","id":"s4","text":"Added."}}}
+{"at":11900,"socket":{"from":"server","audio_ms":250}}
+{"at":11900,"event":{"id":"e_0012_68787","type":"message.ended","at":"2026-10-28T08:00:11.900Z","message":"m_0003_68062","outcome":"completed","length":33}}
+{"at":11900,"socket":{"from":"server","frame":{"type":"saying","id":"s5","text":"I'll remind you on Sunday."}}}
+{"at":11900,"socket":{"from":"server","audio_ms":250}}
+{"at":11900,"event":{"id":"e_0013_02772","type":"turn.ended","at":"2026-10-28T08:00:11.900Z","turn":"t_0002_78935","outcome":"completed"}}
+{"at":13900,"socket":{"from":"app","frame":{"type":"played","id":"s4"}}}
+{"at":13900,"socket":{"from":"app","frame":{"type":"played","id":"s5"}}}
+{"at":13900,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
+{"at":23900,"socket":{"from":"app","frame":{"type":"end"}}}
+{"at":23900,"event":{"id":"e_0014_98444","type":"call.ended","at":"2026-10-28T08:00:23.900Z","call":{"id":"2b6b2969-78b4-40cb-93bb-62c352ce71df","started_at":"2026-10-28T08:00:01.000Z","position":1,"ended_at":"2026-10-28T08:00:23.900Z","duration_ms":22900}}}
+{"at":23900,"socket":{"from":"server","closed":1000,"reason":"The call ended."}}

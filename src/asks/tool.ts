@@ -74,7 +74,8 @@ export const createAskTool = (turns: Asking): Tool => ({
     "Ask the person something only they can tell you: which of several things they meant, a choice, or a " +
     "detail. Before anything consequential, such as booking, buying, sending or deleting, ask for their " +
     "approval: kind approval, a preview of exactly what would happen, and acts: true on the option that goes " +
-    "ahead. For a code or a password, set secret: their answer reaches you and is never stored. Asking ends " +
+    "ahead. Apps that change things, such as a calendar or mail, ask for approval themselves when they run, so " +
+    "don't ask first for those. For a code or a password, set secret: their answer reaches you and is never stored. Asking ends " +
     "your turn, and their answer arrives as their next message. Don't ask what you can find out yourself.",
   inputSchema: {
     type: "object",
