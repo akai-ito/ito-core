@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { createCell } from "#cell.ts";
@@ -10,6 +10,9 @@ import { createTrail } from "#capabilities/trail.ts";
 import type { Embedder } from "#memory/embedder.ts";
 import { noVoice, type VoiceContext, type VoiceLoop } from "#voice/loop.ts";
 import { vocabularyFile } from "#voice/sidecar.ts";
+import { createCalls, type Calls } from "#voice/calls.ts";
+import type { Voiceprint } from "#voice/loop.ts";
+import { chosenVoice } from "#voice/voices.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
@@ -69,6 +72,7 @@ export type Server = {
   readonly host: Host;
   readonly memory: Memory;
   readonly voice: VoiceLoop;
+  readonly calls: Calls;
   readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
@@ -170,6 +174,27 @@ export const createServer = (options: ServerOptions): Server => {
     secrets,
     trail: createTrail(host, launcher),
   });
+  const voiceprintFile = path.join(options.dataDirectory, "voice", "voiceprint.json");
+  const calls = createCalls({
+    store,
+    turns,
+    attachments,
+    voice,
+    vocabulary: () => memory.vocabulary(),
+    voiceprints: {
+      load: () =>
+        existsSync(voiceprintFile) ? (JSON.parse(readFileSync(voiceprintFile, "utf8")) as Voiceprint) : undefined,
+      save: (voiceprint) => {
+        mkdirSync(path.dirname(voiceprintFile), { recursive: true });
+        writeFileSync(voiceprintFile, JSON.stringify(voiceprint));
+      },
+    },
+    chosenVoice: () => chosenVoice(store),
+    identifiers,
+    clock,
+    info,
+    log,
+  });
   const agentName = options.agentName ?? "Ari";
   const presence = createPresence();
   const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
@@ -188,6 +213,7 @@ export const createServer = (options: ServerOptions): Server => {
     host,
     memory,
     voice,
+    calls,
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
@@ -231,6 +257,7 @@ export const createServer = (options: ServerOptions): Server => {
     await turns.close();
     await engine.close();
     await host.close();
+    await calls.close();
     await voice.close();
     await memory.close();
     apns.close();
@@ -246,6 +273,7 @@ export const createServer = (options: ServerOptions): Server => {
     host,
     memory,
     voice,
+    calls,
     callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();

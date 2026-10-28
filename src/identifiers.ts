@@ -21,6 +21,7 @@ export type Identifiers = {
   readonly step: () => StepId;
   readonly ask: () => AskId;
   readonly change: () => ChangeId;
+  readonly attachment: () => string;
 };
 
 const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -36,4 +37,5 @@ export const randomIdentifiers: Identifiers = {
   step: () => toStepId(`s_${randomText()}`),
   ask: () => toAskId(`a_${randomText()}`),
   change: () => toChangeId(`c_${randomText()}`),
+  attachment: () => `f_${randomText()}`,
 };

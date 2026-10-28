@@ -19,6 +19,8 @@ import { registerModel, type ListModels } from "#http/model.ts";
 import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
 import type { VoiceLoop } from "#voice/loop.ts";
+import type { Calls } from "#voice/calls.ts";
+import { registerStream } from "#http/stream.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
@@ -41,6 +43,7 @@ export type AppOptions = {
   readonly host: Host;
   readonly memory: Memory;
   readonly voice: VoiceLoop;
+  readonly calls: Calls;
   readonly models: ListModels;
   readonly heartbeatMs: number;
   readonly logger: FastifyServerOptions["logger"];
@@ -89,6 +92,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     host,
     memory,
     voice,
+    calls,
     models,
     heartbeatMs,
     logger,
@@ -163,7 +167,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerCapabilities(app, host, schemaFor);
   registerMemory(app, memory, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
-  registerTalk(app, { store, attachments, memory, voice, schemaFor });
+  registerTalk(app, { store, attachments, memory, voice, calls, schemaFor });
+  registerStream(app, { store, calls, voice });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);

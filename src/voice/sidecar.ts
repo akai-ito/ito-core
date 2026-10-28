@@ -8,7 +8,7 @@ import { recentCrashes, toRestartDecision } from "#capabilities/restarts.ts";
 import type { Cancel } from "#clock.ts";
 import { createConnection, type Connection, type RpcFailure } from "#json-rpc.ts";
 import { fail, ok } from "#result.ts";
-import { toWav, type Readiness, type SpeechFailure, type VoiceContext, type VoiceLoop } from "#voice/loop.ts";
+import type { Heard, Readiness, SpeechFailure, VoiceContext, VoiceLoop, Voiceprint } from "#voice/loop.ts";
 
 export const voiceProtocol = "0.1";
 
@@ -85,10 +85,47 @@ const isReadiness = (value: unknown): value is Readiness => {
   );
 };
 
-const toSpeech = (value: unknown): { readonly audio: string; readonly rate: number } | undefined => {
+const toSpeech = (value: unknown): string | undefined => {
   if (typeof value !== "object" || value === null) return undefined;
-  const { audio, rate } = value as { readonly audio?: unknown; readonly rate?: unknown };
-  return typeof audio === "string" && typeof rate === "number" ? { audio, rate } : undefined;
+  const { audio } = value as { readonly audio?: unknown };
+  return typeof audio === "string" ? audio : undefined;
+};
+
+type Notice = Readonly<Record<string, unknown>>;
+
+const toVoiceprint = ({ vector, threshold }: Notice): Voiceprint | undefined =>
+  typeof threshold === "number" && Array.isArray(vector) && vector.every((value) => typeof value === "number")
+    ? { vector, threshold }
+    : undefined;
+
+const toHeard = (method: string, notice: Notice): Heard | undefined => {
+  const { text, audio, reason } = notice;
+  switch (method) {
+    case "hearing": {
+      return { kind: "hearing" };
+    }
+    case "heard": {
+      return typeof text === "string" ? { kind: "heard", text } : undefined;
+    }
+    case "turn": {
+      return typeof text === "string" && typeof audio === "string"
+        ? { kind: "turn", text, pcm: Buffer.from(audio, "base64") }
+        : undefined;
+    }
+    case "barge": {
+      return { kind: "barge" };
+    }
+    case "voiceprint": {
+      const voiceprint = toVoiceprint(notice);
+      return voiceprint && { kind: "voiceprint", voiceprint };
+    }
+    case "problem": {
+      return typeof reason === "string" ? { kind: "problem", reason } : undefined;
+    }
+    default: {
+      return undefined;
+    }
+  }
 };
 
 const toSpeechFailure = ({ code, message }: RpcFailure): SpeechFailure => ({
@@ -110,6 +147,19 @@ export const createSidecarVoice = ({
   const crashes = createCell<readonly number[]>([]);
   const restart = createCell<Cancel | undefined>(undefined);
   const isClosed = createCell(false);
+  const sessions = createCell<ReadonlyMap<string, (heard: Heard) => void>>(new Map());
+
+  const forget = (session: string): void => {
+    sessions.update((current) => new Map([...current].filter(([name]) => name !== session)));
+  };
+
+  const route = (method: string, parameters: unknown): void => {
+    if (typeof parameters !== "object" || parameters === null) return;
+    const notice = parameters as Notice;
+    const onHeard = typeof notice.session === "string" ? sessions.get().get(notice.session) : undefined;
+    const heard = toHeard(method, notice);
+    if (onHeard && heard) onHeard(heard);
+  };
 
   const report = (next: Readiness): void => {
     const previous = readiness.get();
@@ -124,6 +174,8 @@ export const createSidecarVoice = ({
 
   const afterExit = (why: string): void => {
     running.set(undefined);
+    for (const onHeard of sessions.get().values()) onHeard({ kind: "problem", reason: `The voice stopped: ${why}` });
+    sessions.set(new Map());
     if (isClosed.get()) return;
     const now = clock.now();
     const recent = [...recentCrashes(crashes.get(), now), now];
@@ -194,6 +246,7 @@ export const createSidecarVoice = ({
       output: child.stdin,
       onNotification: ({ method, parameters }) => {
         if (method === "status" && isReadiness(parameters)) report(parameters);
+        else route(method, parameters);
       },
       onRequest: ({ method }) => fail({ code: -32_601, message: `Ito doesn't handle ${method}.` }),
       onMalformed: (line) => {
@@ -231,8 +284,34 @@ export const createSidecarVoice = ({
       if (!spoken.ok) return fail(toSpeechFailure(spoken.failure));
       const speech = toSpeech(spoken.value);
       return speech
-        ? ok(toWav(Buffer.from(speech.audio, "base64"), speech.rate))
+        ? ok(Buffer.from(speech, "base64"))
         : fail({ code: "failed", detail: "The voice sent speech Ito can't read." });
+    },
+    listen: async (session, voiceprint, onHeard) => {
+      const current = running.get();
+      if (!current) return fail(readiness.get().reason ?? "The voice isn't running.");
+      sessions.update((existing) => new Map([...existing, [session, onHeard]]));
+      const started = await current.connection.request("listen", { session, ...(voiceprint && { voiceprint }) });
+      if (!started.ok) {
+        forget(session);
+        return fail(started.failure.message);
+      }
+      const { connection } = current;
+      return ok({
+        hear: (pcm) => {
+          connection.notify("audio", { session, pcm: Buffer.from(pcm).toString("base64") });
+        },
+        speaking: (isOn) => {
+          connection.notify("speaking", { session, on: isOn });
+        },
+        flush: async () => {
+          await connection.request("flush", { session });
+        },
+        stop: async () => {
+          forget(session);
+          await connection.request("stop", { session });
+        },
+      });
     },
     refreshVocabulary: async () => {
       const current = running.get();

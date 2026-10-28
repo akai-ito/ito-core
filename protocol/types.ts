@@ -1664,6 +1664,8 @@ export interface components {
       duration_ms?: number;
       /** @description True once you've deleted the audio of its spoken messages. */
       audio_deleted?: boolean;
+      /** @description Why the server ended it, in a line to show, such as "The connection dropped." Absent when you ended it. */
+      end_reason?: string;
     };
     /**
      * @description Whether the server can hold a call: `ready` once it can both listen and speak, with memory's vocabulary loaded; `loading` while it starts; `failed` when it can't, until the server restarts.

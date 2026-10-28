@@ -123,7 +123,7 @@ export const replay = async (name: string): Promise<void> => {
   const tokens = createCell<ReadonlyMap<string, string>>(new Map());
   const voiceReadiness = createCell<Readiness>({ state: "ready" });
   const voiceContext = createCell<VoiceContext | undefined>(undefined);
-  const spokenWav = new Uint8Array(fixture("spoken-sentence.wav"));
+  const spokenPcm = new Uint8Array(fixture("spoken-sentence.wav")).slice(44);
 
   const createReplayServer = (): Server =>
     createServer({
@@ -138,7 +138,7 @@ export const replay = async (name: string): Promise<void> => {
       timeZone: "UTC",
       createVoice: (context) => {
         voiceContext.set(context);
-        return createCannedVoice(spokenWav, () => voiceReadiness.get());
+        return createCannedVoice(spokenPcm, () => voiceReadiness.get());
       },
     });
 

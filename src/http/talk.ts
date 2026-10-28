@@ -4,7 +4,8 @@ import { toCommandError } from "#conversation/failures.ts";
 import type { RouteSchema } from "#http/validation.ts";
 import type { Memory } from "#memory/memory.ts";
 import type { Store } from "#store/store.ts";
-import type { VoiceLoop } from "#voice/loop.ts";
+import { spokenRate, toWav, type VoiceLoop } from "#voice/loop.ts";
+import type { Calls } from "#voice/calls.ts";
 import { chosenVoice, isKnownVoice, unknownVoice, voices, voiceSetting } from "#voice/voices.ts";
 
 type CallPath = { readonly call: string };
@@ -20,6 +21,7 @@ export type TalkOptions = {
   readonly attachments: Attachments;
   readonly memory: Memory;
   readonly voice: VoiceLoop;
+  readonly calls: Calls;
   readonly schemaFor: (operationId: string) => RouteSchema;
 };
 
@@ -29,15 +31,17 @@ const noCall = (call: string): { readonly error: ReturnType<typeof toCommandErro
 
 export const registerTalk = (
   app: FastifyInstance,
-  { store, attachments, memory, voice, schemaFor }: TalkOptions,
+  { store, attachments, memory, voice, calls, schemaFor }: TalkOptions,
 ): void => {
-  app.put<{ Params: CallPath }>("/v0/calls/:call", { schema: schemaFor("startCall") }, (request, reply) => {
+  app.put<{ Params: CallPath }>("/v0/calls/:call", { schema: schemaFor("startCall") }, async (request, reply) => {
     void voice.refreshVocabulary();
+    await calls.endAllBut(request.params.call);
     const { call, isNew } = store.startCall(request.params.call);
     return reply.code(isNew ? 201 : 200).send({ call });
   });
 
-  app.post<{ Params: CallPath }>("/v0/calls/:call/end", { schema: schemaFor("endCall") }, (request, reply) => {
+  app.post<{ Params: CallPath }>("/v0/calls/:call/end", { schema: schemaFor("endCall") }, async (request, reply) => {
+    await calls.end(request.params.call);
     const call = store.endCall(request.params.call);
     return call ? { call } : reply.code(404).send(noCall(request.params.call));
   });
@@ -52,8 +56,6 @@ export const registerTalk = (
       return { call: deleted.call };
     },
   );
-
-  app.get("/v0/vocabulary", async () => ({ terms: await memory.vocabulary() }));
 
   app.get("/v0/voices", () => ({ voices, chosen: chosenVoice(store), ...voice.readiness() }));
 
@@ -70,7 +72,7 @@ export const registerTalk = (
     if (!isKnownVoice(chosen))
       return reply.code(400).send({ error: toCommandError("invalid_request", unknownVoice(chosen)) });
     const spoken = await voice.speak(request.body.text, chosen);
-    if (spoken.ok) return reply.type("audio/wav").send(Buffer.from(spoken.value));
+    if (spoken.ok) return reply.type("audio/wav").send(Buffer.from(toWav(spoken.value, spokenRate)));
     const { code, detail } = spoken.failure;
     if (code === "failed") return reply.code(500).send({ error: toCommandError("internal", detail) });
     const unavailable = { error: toCommandError("unavailable", detail, "Ari's voice isn't ready.") };

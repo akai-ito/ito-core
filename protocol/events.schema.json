@@ -1116,6 +1116,11 @@
         "audio_deleted": {
           "description": "True once you've deleted the audio of its spoken messages.",
           "type": "boolean"
+        },
+        "end_reason": {
+          "description": "Why the server ended it, in a line to show, such as \"The connection dropped.\" Absent when you ended it.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },
