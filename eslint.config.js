@@ -14,7 +14,7 @@ const shapeRules = [
 ];
 
 export default defineConfig(
-  { ignores: ["node_modules/", "site/", "voice/", "protocol/types.ts", "src/engine/codex/bindings/"] },
+  { ignores: ["node_modules/", "voice/", "protocol/types.ts", "src/engine/codex/bindings/"] },
   js.configs.recommended,
   {
     files: ["**/*.ts"],

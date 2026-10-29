@@ -27,7 +27,6 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "docs": "node docs/build.ts",
     "serve": "node bin/ito.ts serve"
   },
   "dependencies": {
@@ -44,14 +43,11 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@redocly/cli": "2.71.0",
-    "@redocly/openapi-core": "2.71.0",
-    "@scalar/api-reference": "1.76.0",
     "@types/node": "24.19.2",
     "@types/ws": "8.18.2",
     "eslint": "10.13.0",
     "eslint-plugin-functional": "10.0.1",
     "eslint-plugin-unicorn": "79.0.0",
-    "marked": "18.1.1",
     "openapi-typescript": "7.13.0",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
@@ -66,7 +62,6 @@
   },
   "allowScripts": {
     "onnxruntime-node": false,
-    "protobufjs": false,
-    "vue-demi": false
+    "protobufjs": false
   }
 }

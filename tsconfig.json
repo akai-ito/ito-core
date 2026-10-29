@@ -20,7 +20,6 @@
     "src/**/*.ts",
     "capabilities/**/*.ts",
     "test/**/*.ts",
-    "protocol/**/*.ts",
-    "docs/**/*.ts"
+    "protocol/**/*.ts"
   ]
 }

@@ -15,14 +15,11 @@
 Commands in, one resumable event stream out. [protocol](protocol) holds the spec (OpenAPI for the
 commands, JSON Schema for the events), the [guarantees](protocol/guarantees.md) the server keeps,
 and a golden transcript of every scenario, which the server's tests replay through the real API.
-Read it rendered at [akai-ito.github.io/ito-core](https://akai-ito.github.io/ito-core/): the API
-reference, the guarantees, and a timeline of every transcript.
 
 ```sh
 npm ci
 npm test                    # every transcript through the server, a crash, Codex against a mock
 npm run check:transcripts   # every transcript against the spec
-npm run docs                # the API reference, built into site/
 ```
 
 ## Run the server
