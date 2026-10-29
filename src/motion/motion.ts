@@ -110,7 +110,8 @@ const nameOfItem = (item: Fields | undefined, id: string): string =>
 
 const commitsOf = async (thread: Thread, id: string): Promise<readonly string[]> => {
   const history = await thread.history(folderOf(id));
-  return history.map(({ commit }) => commit).toReversed();
+  const forgotten = history.findIndex(({ isDeleted }) => isDeleted);
+  return (forgotten === -1 ? history : history.slice(0, forgotten)).map(({ commit }) => commit).toReversed();
 };
 
 const versionOf = async (thread: Thread, id: string): Promise<number> => {

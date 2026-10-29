@@ -255,6 +255,11 @@ describe("things in motion", () => {
     expect(asked()[0]).toMatchObject({ kind: "approval", question: "Forget Florence with Janki?" });
     expect(motions.list()).toEqual([]);
     expect(existsSync(path.join(thread, "motion", florenceId))).toBe(false);
+
+    await startFlorence(motions);
+    const changed = await call(motions, "change_motion", bookUffizi);
+
+    expect(changed).toEqual({ text: "Saved Florence with Janki, now at version 2." });
   });
 
   it("keeps a training block, with ticks on sessions in any week", async () => {
