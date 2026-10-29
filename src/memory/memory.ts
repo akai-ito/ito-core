@@ -1324,6 +1324,7 @@ export const createMemory = ({
     withThread: async (work) => {
       await ready;
       return serially(async () => {
+        if (isClosed.get()) throw new Error("Memory is closing.");
         const before = await opened().head();
         const isCaughtUp = settings.setting(indexedSetting) === before;
         const value = await work(opened());

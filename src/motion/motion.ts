@@ -571,13 +571,16 @@ export const createMotions = ({
 
   const ready = (async (): Promise<void> => {
     await memory.ready;
-    await memory.withThread(async (thread) => {
-      for (const motion of store.listMotions()) {
-        const thing = readNow(thread, motion.id);
-        remember(motion.id, thing);
-        await index(motion.id, thing);
-      }
-    });
+    try {
+      await memory.withThread((thread) => {
+        for (const motion of store.listMotions()) remember(motion.id, readNow(thread, motion.id));
+        return Promise.resolve();
+      });
+    } catch (error) {
+      info("Things in motion couldn't be read as the server started", { error: String(error) });
+      return;
+    }
+    for (const [id, thing] of saved.get()) await index(id, thing);
   })();
 
   return {
