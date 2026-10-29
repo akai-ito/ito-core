@@ -118,6 +118,12 @@ export type Store = Settings & {
     attachments?: readonly string[],
     spoken?: SpokenInput,
   ) => Result<Accepted, AcceptFailure>;
+  readonly amendMessage: (
+    id: MessageId,
+    text: string,
+    audio: string,
+    corrections: readonly Correction[],
+  ) => Result<{ readonly message: Message; readonly replaced?: string }, "not_spoken" | "unknown_attachment">;
   readonly startCall: (id: string) => StartedCall;
   readonly endCall: (id: string, reason?: string) => Call | undefined;
   readonly deleteCallAudio: (id: string) => DeletedAudio | undefined;
@@ -533,6 +539,26 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         append({ id: identifiers.event(), type: "message.accepted", at, message });
         if (waiting) endAsk(toAsk(waiting), "answered", id);
         return ok({ message, isNew: true });
+      }),
+
+    amendMessage: (id, text, audio, corrections) =>
+      transaction(() => {
+        const row = messageRow(id);
+        const before = row ? toMessage(row) : undefined;
+        if (before?.role !== "user" || !before.spoken) return fail("not_spoken");
+        const audioRow = attachmentRow(audio);
+        if (audioRow?.message !== null) return fail("unknown_attachment");
+        const message: Message = {
+          ...before,
+          text,
+          spoken: {
+            call: before.spoken.call,
+            audio: JSON.parse(audioRow.body) as Attachment,
+            ...(corrections.length > 0 && { corrections: [...corrections] }),
+          },
+        };
+        append({ id: identifiers.event(), type: "message.amended", at: now(), message });
+        return ok({ message, ...(before.spoken.audio && { replaced: before.spoken.audio.id }) });
       }),
 
     startCall: (id) =>

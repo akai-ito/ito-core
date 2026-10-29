@@ -193,8 +193,9 @@ class Voice:
         if isinstance(pcm, str):
             self._session(params).hear(from_pcm(base64.b64decode(pcm)))
 
-    def speaking(self, params: Mapping[str, Any]) -> None:
-        self._session(params).speaking(on=params.get("on") is True)
+    def saying(self, params: Mapping[str, Any]) -> None:
+        text = params.get("text")
+        self._session(params).saying(text if isinstance(text, str) else None)
 
 
 async def run() -> None:
@@ -210,7 +211,7 @@ async def run() -> None:
         "stop": voice.stop,
         "forget": voice.forget,
     }
-    await link.run(handlers, {"audio": voice.hear, "speaking": voice.speaking})
+    await link.run(handlers, {"audio": voice.hear, "saying": voice.saying})
     loading.cancel()
 
 

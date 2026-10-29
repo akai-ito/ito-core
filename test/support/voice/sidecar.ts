@@ -33,7 +33,7 @@ const receive = ({ id, method = "", params: parameters = {} }: Message): void =>
   if (id === undefined) return;
   switch (method) {
     case "initialize": {
-      send({ id, result: { protocol: behaviour === "old" ? "0.0" : "0.1" } });
+      send({ id, result: { protocol: behaviour === "old" ? "0.0" : "0.2" } });
       return;
     }
     case "vocabulary": {

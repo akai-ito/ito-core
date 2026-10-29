@@ -304,8 +304,14 @@ export const replay = async (name: string): Promise<void> => {
       }
       case "you_say": {
         await advance(time);
-        const { text, heard = [] } = step as unknown as { readonly text: string; readonly heard?: readonly string[] };
-        youSay.update((current) => [...current, { text, heard }]);
+        const {
+          text,
+          heard = [],
+          held,
+        } = step as unknown as Omit<YouSay, "heard"> & {
+          readonly heard?: readonly string[];
+        };
+        youSay.update((current) => [...current, { text, heard, ...(held === true && { held }) }]);
         return;
       }
       case "server_restarted": {

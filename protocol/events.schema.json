@@ -15,6 +15,9 @@
           "$ref": "#/$defs/MessageAccepted"
         },
         {
+          "$ref": "#/$defs/MessageAmended"
+        },
+        {
           "$ref": "#/$defs/MessageQueued"
         },
         {
@@ -824,6 +827,26 @@
         },
         "type": {
           "const": "message.accepted"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/Message"
+        }
+      }
+    },
+    "MessageAmended": {
+      "title": "message.amended",
+      "description": "On a call you carried on speaking before Ari began to answer, so your words joined the message you'd just spoken. It carries the whole message as it is now: the text with your new words, the corrections for all of it, and one recording of both parts, in place of the earlier recording, which is gone. Replace the message you have with it.",
+      "type": "object",
+      "required": ["id", "type", "at", "message"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.amended"
         },
         "at": {
           "$ref": "#/$defs/Timestamp"

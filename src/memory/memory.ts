@@ -26,7 +26,7 @@ import {
   type Page,
   type Shelf,
 } from "#memory/pages.ts";
-import { toVocabulary, type Learned } from "#memory/vocabulary.ts";
+import { mentions, toBoosted, toVocabulary, type Learned } from "#memory/vocabulary.ts";
 import { rank, toMessageChunk, toPageChunks, type Passage } from "#memory/recall.ts";
 import { openThread, type Thread } from "#memory/thread.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
@@ -103,6 +103,7 @@ export type Memory = {
   readonly indexConversation: () => void;
   readonly sync: () => Promise<void>;
   readonly vocabulary: () => Promise<readonly Term[]>;
+  readonly boosted: (terms: readonly Term[]) => readonly string[];
   readonly learn: (corrections: readonly Correction[]) => Promise<readonly Learnt[]>;
   readonly close: () => Promise<void>;
 };
@@ -134,6 +135,8 @@ const dayMs = 24 * 60 * 60 * 1000;
 const longestPushDelayMs = 60 * 60 * 1000;
 const passagesPerRecall = 6;
 const recentChanges = 20;
+const boostDays = 28;
+const boostMessages = 200;
 
 const fieldOf = (value: unknown, field: string): unknown =>
   value && typeof value === "object" ? Reflect.get(value, field) : undefined;
@@ -767,20 +770,22 @@ export const createMemory = ({
         changed_at,
       }));
 
+  const inMindText = (): string => {
+    const pages = inMind();
+    return pages.length === 0
+      ? ""
+      : [
+          "<in_mind>",
+          "These pages from your memory are in your mind on every turn, as they are now.",
+          ...pages.map(({ title, address, markdown }) => `\n## ${title} (${address})\n\n${markdown.trim()}`),
+          "</in_mind>",
+        ].join("\n");
+  };
+
   return {
     ready,
     tools,
-    inMindText: () => {
-      const pages = inMind();
-      return pages.length === 0
-        ? ""
-        : [
-            "<in_mind>",
-            "These pages from your memory are in your mind on every turn, as they are now.",
-            ...pages.map(({ title, address, markdown }) => `\n## ${title} (${address})\n\n${markdown.trim()}`),
-            "</in_mind>",
-          ].join("\n");
-    },
+    inMindText,
     inMind,
     shelves: () => {
       const files = thread.get()?.files() ?? [];
@@ -836,6 +841,7 @@ export const createMemory = ({
     sync,
     vocabulary: async () => {
       await sync();
+      if (isClosed.get()) return [];
       const pages = shelvedPages().map(({ address, shelf, title, aliases, heard = [], markdown }) => ({
         address,
         shelf,
@@ -845,6 +851,21 @@ export const createMemory = ({
         markdown,
       }));
       return toVocabulary(pages, store.yourMessages(), learnedTerms());
+    },
+    boosted: (terms) => {
+      if (isClosed.get()) return [];
+      const since = clock.now() - boostDays * dayMs;
+      const written = new Set(
+        store
+          .recentChanges(boostMessages)
+          .filter(({ note, at }) => note !== undefined && Date.parse(at) >= since)
+          .map(({ address }) => address),
+      );
+      const lately = [inMindText(), ...store.yourMessages().slice(0, boostMessages)].join("\n");
+      return toBoosted(
+        terms,
+        (term) => term.address === undefined || written.has(term.address) || mentions(term.text).test(lately),
+      );
     },
     learn: async (corrections) => {
       await sync();

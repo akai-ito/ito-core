@@ -107,7 +107,7 @@ describe("Ari's voice, from its sidecar", () => {
     expect(statuses()).toEqual([{ state: "ready" }]);
     expect(readLines(path.join(voice, "vocabulary.log"))).toEqual([[]]);
     const environment = readJson(path.join(voice, "environment"));
-    expect(readJson(vocabularyFile(data))).toEqual({ terms: [] });
+    expect(readJson(vocabularyFile(data))).toEqual({ terms: [], boosted: [] });
     expect(environment).toContain("HF_HOME");
     expect(environment).not.toContain("ITO_HOME");
     await expect(listVoices(server)).resolves.toMatchObject({
@@ -198,7 +198,7 @@ describe("Ari's voice, from its sidecar", () => {
     await vi.waitFor(() => {
       expect(server.voice.readiness()).toEqual({
         state: "failed",
-        reason: "The voice speaks protocol 0.0, and ito-core speaks 0.1: run ito voice check.",
+        reason: "The voice speaks protocol 0.0, and ito-core speaks 0.2: run ito voice check.",
       });
     });
   });

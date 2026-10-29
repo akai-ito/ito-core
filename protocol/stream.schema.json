@@ -53,7 +53,7 @@
     },
     "Mute": {
       "title": "mute",
-      "description": "Mutes your microphone: the server pauses your turn, neither ending nor dropping it, and you can stop sending audio.",
+      "description": "Mutes your microphone: a turn you're in the middle of ends at once, as said so far, and Ari answers it. You can stop sending audio.",
       "type": "object",
       "required": ["type"],
       "properties": {
@@ -64,7 +64,7 @@
     },
     "Unmute": {
       "title": "unmute",
-      "description": "Unmutes your microphone; a paused turn carries on.",
+      "description": "Unmutes your microphone.",
       "type": "object",
       "required": ["type"],
       "properties": {

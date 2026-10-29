@@ -46,6 +46,7 @@ export type Info = (message: string, details: Readonly<Record<string, unknown>>)
 
 export type Turns = {
   readonly route: (message: MessageId, text: string, isSecret?: boolean) => void;
+  readonly amend: (message: MessageId, text: string, added: string) => void;
   readonly stop: (turn: TurnId, cut: Cut | undefined) => StopState | undefined;
   readonly retry: (failed: TurnId) => Result<RetryStarted, "not_found" | "not_failed">;
   readonly ask: (fields: AskFields) => Result<Ask, "no_turn">;
@@ -136,6 +137,7 @@ export const createTurns = (
   const actor = createCell<Promise<void>>(Promise.resolve());
   const received = createCell<ReadonlyMap<MessageId, string>>(new Map());
   const notes = createCell<readonly string[]>([]);
+  const amending = createCell<ReadonlySet<MessageId>>(new Set());
 
   const enqueue = (job: () => Promise<void> | void): Promise<void> =>
     actor.update(async (previous) => {
@@ -422,6 +424,10 @@ export const createTurns = (
         return;
       }
       case "input.read": {
+        if (amending.get().has(event.messageId)) {
+          amending.update((current) => new Set([...current].filter((message) => message !== event.messageId)));
+          return;
+        }
         store.markRead(turn, event.messageId);
         change(turn, (latest) => ({
           ...latest,
@@ -630,6 +636,22 @@ export const createTurns = (
   };
 
   return {
+    amend: (message, text, added) => {
+      received.update((texts) => (texts.has(message) ? new Map([...texts, [message, text]]) : texts));
+      void enqueue(async () => {
+        const state = running.get();
+        if (state?.phase !== "running") return;
+        const isHeard =
+          state.awaitingRead.includes(message) || store.findTurn(state.id)?.inputs.includes(message) === true;
+        if (!isHeard) return;
+        amending.update((current) => new Set([...current, message]));
+        const outcome = await engine.steer(state.id, { messageId: message, text: added });
+        if (outcome !== "taken") {
+          amending.update((current) => new Set([...current].filter((waiting) => waiting !== message)));
+        }
+      });
+    },
+
     route: (message, text, isSecret = false) => {
       if (isSecret) secrets.add(text);
       received.update((texts) => new Map([...texts, [message, text]]));

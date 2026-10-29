@@ -1032,6 +1032,7 @@ export interface components {
     Event:
       | components["schemas"]["Snapshot"]
       | components["schemas"]["MessageAccepted"]
+      | components["schemas"]["MessageAmended"]
       | components["schemas"]["MessageQueued"]
       | components["schemas"]["MessageRead"]
       | components["schemas"]["TurnStarted"]
@@ -1798,6 +1799,17 @@ export interface components {
       status: components["schemas"]["Status"] | null;
     };
     /**
+     * message.amended
+     * @description On a call you carried on speaking before Ari began to answer, so your words joined the message you'd just spoken. It carries the whole message as it is now: the text with your new words, the corrections for all of it, and one recording of both parts, in place of the earlier recording, which is gone. Replace the message you have with it.
+     */
+    MessageAmended: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "message.amended";
+      at: components["schemas"]["Timestamp"];
+      message: components["schemas"]["Message"];
+    };
+    /**
      * call.started
      * @description You started a call with Ari. While it's on, Ari speaks.
      */
@@ -2111,6 +2123,7 @@ export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
 export type StatusDetail = components["schemas"]["StatusDetail"];
 export type LiveTurn = components["schemas"]["LiveTurn"];
+export type MessageAmended = components["schemas"]["MessageAmended"];
 export type CallStarted = components["schemas"]["CallStarted"];
 export type CallEnded = components["schemas"]["CallEnded"];
 export type CallAudioDeleted = components["schemas"]["CallAudioDeleted"];

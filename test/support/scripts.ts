@@ -38,6 +38,7 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
       return false;
     }
     case "message.accepted":
+    case "message.amended":
     case "message.queued":
     case "turn.started":
     case "call.started":
@@ -103,6 +104,7 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
       };
     }
     case "message.accepted":
+    case "message.amended":
     case "message.queued":
     case "turn.started":
     case "call.started":

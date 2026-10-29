@@ -166,8 +166,9 @@ export const createServer = (options: ServerOptions): Server => {
         const terms = await memory.vocabulary();
         const file = vocabularyFile(options.dataDirectory);
         mkdirSync(path.dirname(file), { recursive: true });
-        writeFileSync(file, JSON.stringify({ terms }));
-        return [...new Set(terms.map(({ text }) => text))];
+        const boosted = memory.boosted(terms);
+        writeFileSync(file, JSON.stringify({ terms, boosted }));
+        return boosted;
       },
       clock,
       info,

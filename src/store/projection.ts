@@ -32,6 +32,16 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       }
       return;
     }
+    case "message.amended": {
+      const { message } = event;
+      database
+        .prepare("UPDATE messages SET text = ?, spoken = ? WHERE id = ?")
+        .run(message.text, message.spoken ? toJson(message.spoken) : null, message.id);
+      if (message.spoken?.audio) {
+        database.prepare("UPDATE attachments SET message = ? WHERE id = ?").run(message.id, message.spoken.audio.id);
+      }
+      return;
+    }
     case "message.started": {
       const { message } = event;
       database

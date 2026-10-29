@@ -285,6 +285,22 @@ describe("memory", () => {
     });
   });
 
+  it("boosts only names Ari wrote about lately, or that are in mind or in your recent messages", async () => {
+    const { memory, directory } = await openMemory();
+    const thread = path.join(directory, "thread");
+    mkdirSync(path.join(thread, "people"), { recursive: true });
+    mkdirSync(path.join(thread, "places"), { recursive: true });
+    writeFileSync(path.join(thread, "people", "ivona.md"), "---\ntitle: Ivona\n---\n\nA friend from Zagreb.\n");
+    writeFileSync(path.join(thread, "places", "ljubljana.md"), "---\ntitle: Ljubljana\n---\n\nWhere you run.\n");
+    git(thread, "add", "people", "places");
+    git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
+    await write(memory, { address: "memory:people/bora", title: "Bora", body: "You run with Bora." });
+    await write(memory, { address: "memory:projects/job-search", title: "Job search", body: "QRT next." });
+    await write(memory, { address: "memory:now", body: "Back from Ljubljana (as of 27 Oct)." });
+
+    expect(memory.boosted(await memory.vocabulary())).toEqual(["Bora", "Ljubljana"]);
+  });
+
   it("learns how a name is misheard, and keeps it when Ari rewrites the page", async () => {
     const { memory } = await openMemory();
     await write(memory, { address: "memory:people/bora", title: "Bora", body: "You run with Bora." });
