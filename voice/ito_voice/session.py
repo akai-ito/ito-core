@@ -79,7 +79,7 @@ class Session:
             transcriber.reset()
 
         ears = Ears(speech, reset, tools.finished, transcriber.words, tools.voiceprint)
-        hearing = Hearing(self._hearing, self._heard, self._turn, self._barge, self._voiceprint)
+        hearing = Hearing(self._hearing, self._heard, self._turn, self._barge, self._voiceprint, self._dropped)
         self._listener = Listener(ears, hearing, voiceprint)
         self._thread = threading.Thread(target=self._run, name=f"session-{name}", daemon=True)
         self._thread.start()
@@ -99,6 +99,9 @@ class Session:
     def _barge(self) -> None:
         self._say("barge", {})
 
+    def _dropped(self) -> None:
+        self._say("dropped", {})
+
     def _voiceprint(self, voiceprint: Voiceprint) -> None:
         self._say("voiceprint", {"vector": voiceprint.vector.tolist(), "threshold": voiceprint.threshold})
 
@@ -108,8 +111,8 @@ class Session:
             try:
                 if kind == "audio":
                     self._listener.feed(value)
-                elif kind == "speaking":
-                    self._listener.ari_speaking = value
+                elif kind == "saying":
+                    self._listener.saying(value)
                 elif kind == "flush":
                     self._listener.flush()
                 elif kind == "forget":
@@ -128,8 +131,8 @@ class Session:
     def hear(self, samples: np.ndarray) -> None:
         self._commands.put(("audio", samples))
 
-    def speaking(self, *, on: bool) -> None:
-        self._commands.put(("speaking", on))
+    def saying(self, text: str | None) -> None:
+        self._commands.put(("saying", text))
 
     def _ask(self, kind: str) -> threading.Event:
         if self._dead.is_set() or not self._thread.is_alive():

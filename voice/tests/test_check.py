@@ -41,5 +41,5 @@ def test_turns_that_end_early_or_wait_are_counted_apart() -> None:
     ]
     unfinished = [Turn("quiet", 0.1, 3050.0, (30.0,)), Turn("smart_turn", 0.7, 300.0, (30.0,))]
 
-    assert describe_finished(finished) == ("1/4 in 420 ms, **1 cut off mid-sentence**, 1 waited 3 s, **1 never ended**")
+    assert describe_finished(finished) == ("1/4 in 420 ms, **1 cut off mid-sentence**, 1 waited 4 s, **1 never ended**")
     assert describe_unfinished(unfinished) == "1/2 waited, **1 ended too soon**"

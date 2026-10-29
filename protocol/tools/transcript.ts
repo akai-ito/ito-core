@@ -175,7 +175,11 @@ type CallModel = {
   readonly feeds: ReadonlyMap<string, SentenceFeed>;
 };
 
-type YouSayOptions = { readonly heard?: readonly string[]; readonly vocabulary?: readonly Term[] };
+type YouSayOptions = {
+  readonly heard?: readonly string[];
+  readonly vocabulary?: readonly Term[];
+  readonly mutedMidway?: boolean;
+};
 
 const cannedAudioMs = 250;
 
@@ -921,9 +925,9 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const youSay = (file: string, raw: string, options: YouSayOptions = {}): string => {
-    const { heard = [], vocabulary = [] } = options;
+    const { heard = [], vocabulary = [], mutedMidway = false } = options;
     const model = currentModel();
-    world("you_say", { text: raw, ...(heard.length > 0 && { heard }) });
+    world("you_say", { text: raw, ...(heard.length > 0 && { heard }), ...(mutedMidway && { held: true }) });
     appAudio(file);
     if (model.state === "speaking") {
       serverFrame({ type: "stop_playback" });
@@ -931,6 +935,7 @@ export const createTranscript = (header: Header): Transcript => {
     }
     moveTo("hearing");
     for (const text of heard) serverFrame({ type: "heard", text, final: false });
+    if (mutedMidway) appFrame({ type: "mute" });
     moveTo("turn_ended");
     const { text, corrections } = correct(raw, vocabulary);
     const audio: Attachment = {

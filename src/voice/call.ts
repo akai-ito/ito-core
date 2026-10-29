@@ -81,7 +81,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
   const feeds = createCell<ReadonlyMap<string, SentenceFeed>>(new Map());
   const queue = createCell<readonly Sentence[]>([]);
   const isSaying = createCell(false);
-  const unplayed = createCell<ReadonlySet<string>>(new Set());
+  const playing = createCell<ReadonlyMap<string, string>>(new Map());
   const generation = createCell(0);
   const sentences = createCell(0);
   const isAgentWorking = createCell(false);
@@ -99,11 +99,16 @@ export const createCallStream = (options: CallOptions): CallStream => {
     send({ type: "state", state: next });
   };
 
-  const isQuiet = (): boolean => !isSaying.get() && queue.get().length === 0 && unplayed.get().size === 0;
+  const isQuiet = (): boolean => !isSaying.get() && queue.get().length === 0 && playing.get().size === 0;
+
+  const tellSaying = (): void => {
+    const texts = playing.get().values().toArray();
+    listening.get()?.saying(texts.length === 0 ? undefined : texts.join(" "));
+  };
 
   const settle = (): void => {
     if (!isQuiet() || state.get() === "hearing") return;
-    listening.get()?.speaking(false);
+    tellSaying();
     moveTo(isAgentWorking.get() ? "working" : "listening");
     if (isAgentWorking.get()) scheduleNarration();
   };
@@ -132,8 +137,8 @@ export const createCallStream = (options: CallOptions): CallStream => {
     isSaying.set(false);
     if (generation.get() !== started || isEnded.get()) return;
     if (spoken.ok) {
-      unplayed.set(new Set([...unplayed.get(), next.id]));
-      listening.get()?.speaking(true);
+      playing.set(new Map([...playing.get(), [next.id, next.text]]));
+      tellSaying();
       moveTo("speaking");
       send({ type: "saying", id: next.id, text: next.text });
       socket.get()?.sendAudio(spoken.value);
@@ -157,8 +162,8 @@ export const createCallStream = (options: CallOptions): CallStream => {
   const stopSpeaking = (): void => {
     generation.set(generation.get() + 1);
     queue.set([]);
-    unplayed.set(new Set());
-    listening.get()?.speaking(false);
+    playing.set(new Map());
+    tellSaying();
     send({ type: "stop_playback" });
   };
 
@@ -261,6 +266,11 @@ export const createCallStream = (options: CallOptions): CallStream => {
         void post(heard.text, heard.pcm);
         return;
       }
+      case "dropped": {
+        if (state.get() === "hearing") moveTo(isAgentWorking.get() ? "working" : "listening");
+        settle();
+        return;
+      }
       case "barge": {
         if (state.get() !== "speaking") return;
         stopSpeaking();
@@ -336,6 +346,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
       switch (frame.type) {
         case "mute": {
           isMuted.set(true);
+          void listening.get()?.flush();
           return;
         }
         case "unmute": {
@@ -348,7 +359,8 @@ export const createCallStream = (options: CallOptions): CallStream => {
         }
         case "played": {
           if (frame.cut === true) return;
-          unplayed.set(new Set([...unplayed.get()].filter((id) => id !== frame.id)));
+          playing.set(new Map([...playing.get()].filter(([id]) => id !== frame.id)));
+          tellSaying();
           settle();
           return;
         }

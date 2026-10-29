@@ -8,10 +8,11 @@ import numpy as np
 from ito_voice.audio import heard_rate
 
 frame = 512
-pause_ms = 300
-trail_ms = 1500
-hold_ms = 3000
-barge_ms = 200
+pause_ms = 1200
+trail_ms = 2500
+hold_ms = 4000
+barge_ms = 600
+gap_ms = 500
 caption_every_ms = 500
 lead_ms = 300
 tail_ms = 200
@@ -19,6 +20,7 @@ gate_window = heard_rate
 gate_every = 8
 learn_seconds = 120
 lowest_threshold = 0.45
+echo_share = 0.6
 
 joining_words = (
     "and|but|or|so|because|um+|uh+|er+m?|hmm+|like|the|a|an|to|of|with|that|if|when|then|at|for|in|on|by|"
@@ -29,6 +31,8 @@ joining_words = (
 unfinished_endings = re.compile(rf"(,|\.\.\.|…|\b({joining_words}))\W*$", re.IGNORECASE)
 
 sentence_end = re.compile(r"[^.][.?!][\"')\]]*$")
+
+word = re.compile(r"[\w']+")
 
 
 @dataclass(frozen=True)
@@ -59,6 +63,7 @@ class Hearing:
     on_turn: Callable[[Turn], None]
     on_barge: Callable[[], None]
     on_voiceprint: Callable[[Voiceprint], None]
+    on_dropped: Callable[[], None]
 
 
 def sounds_unfinished(text: str) -> bool:
@@ -70,6 +75,20 @@ def ends_like_a_sentence(text: str) -> bool:
     if not sentence_end.search(stripped):
         return False
     return stripped.endswith(("?", "!")) or not sounds_unfinished(stripped)
+
+
+def words_of(text: str) -> list[str]:
+    return word.findall(text.lower())
+
+
+joining_word = re.compile(rf"^({joining_words})$")
+
+
+def echoes(text: str, saying: str) -> bool:
+    every = words_of(text)
+    telling = [each for each in every if not joining_word.match(each)] or every
+    said = set(words_of(saying))
+    return bool(telling) and sum(each in said for each in telling) >= echo_share * len(telling)
 
 
 def hold_for(text: str) -> int:
@@ -99,12 +118,12 @@ class Listener:
     ears: Ears
     hearing: Hearing
     voiceprint: Voiceprint | None = None
-    ari_speaking: bool = False
+    ari_saying: str | None = None
     _pending: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
     _recent: list[np.ndarray] = field(default_factory=list)
     _turn: list[np.ndarray] = field(default_factory=list)
     _quiet: int = 0
-    _voiced: int = 0
+    _over_ari: int = 0
     _asked: bool = False
     _hold_ms: int = hold_ms
     _frames: int = 0
@@ -112,6 +131,9 @@ class Listener:
     _caption_cost_ms: float = 0.0
     _you: bool = False
     _barged: bool = False
+    _began_over_ari: bool = False
+    _overlapped: bool = False
+    _ari_said: str = ""
     _learning: list[np.ndarray] = field(default_factory=list)
 
     def feed(self, samples: np.ndarray) -> None:
@@ -120,6 +142,11 @@ class Listener:
         for start in range(0, whole, frame):
             self._step(pending[start : start + frame])
         self._pending = pending[whole:]
+
+    def saying(self, text: str | None) -> None:
+        self.ari_saying = text
+        if text is not None:
+            self._ari_said = text
 
     def forget(self) -> None:
         self.voiceprint = None
@@ -135,7 +162,7 @@ class Listener:
 
     def _gate(self, chunk: np.ndarray) -> bool:
         if self.voiceprint is None:
-            return True
+            return self.ari_saying is None
         if self._frames % gate_every == 0:
             window = np.concatenate([*self._recent, chunk])[-gate_window:]
             self._you = float(self.voiceprint.vector @ self.ears.voiceprint(window)) >= self.voiceprint.threshold
@@ -146,6 +173,8 @@ class Listener:
         is_speech = self.ears.speech(chunk) >= 0.5
         is_you = self._gate(chunk)
         self._recent = [*self._recent, chunk][-(gate_window // frame) :]
+        if self._in_turn() and self.ari_saying is not None:
+            self._overlapped = True
         if is_speech and is_you:
             self._hear(chunk)
             return
@@ -153,8 +182,10 @@ class Listener:
             return
         self._turn.append(chunk)
         self._quiet += frame
-        self._voiced = 0
         quiet_ms = self._quiet * 1000 / heard_rate
+        if self._is_candidate() and self.ari_saying is not None and quiet_ms >= gap_ms:
+            self._drop()
+            return
         if quiet_ms >= pause_ms and not self._asked:
             self._asked = True
             audio = np.concatenate(self._turn)
@@ -167,20 +198,28 @@ class Listener:
         if quiet_ms >= self._hold_ms:
             self._end_turn()
 
+    def _is_candidate(self) -> bool:
+        return self._began_over_ari and not self._barged
+
     def _hear(self, chunk: np.ndarray) -> None:
         if not self._in_turn():
             lead = lead_ms * heard_rate // 1000 // frame
             self._turn = self._recent[-lead - 1 : -1] if lead else []
             self._since_caption = 0
             self._barged = False
+            self._began_over_ari = self._overlapped = self.ari_saying is not None
             self.hearing.on_hearing()
         self._turn.append(chunk)
         self._quiet, self._asked, self._hold_ms = 0, False, hold_ms
-        self._voiced += frame
         self._since_caption += frame
-        if self.ari_speaking and not self._barged and self._voiced * 1000 / heard_rate >= barge_ms:
-            self._barged = True
-            self.hearing.on_barge()
+        if self.ari_saying is not None and not self._barged:
+            self._over_ari += frame
+            if self._over_ari * 1000 / heard_rate >= barge_ms:
+                if echoes(self.ears.words(np.concatenate(self._turn)), self.ari_saying):
+                    self._drop()
+                    return
+                self._barged = True
+                self.hearing.on_barge()
         if self._since_caption * 1000 / heard_rate >= max(caption_every_ms, 2 * self._caption_cost_ms):
             self._since_caption = 0
             started = time.perf_counter()
@@ -188,17 +227,30 @@ class Listener:
             self._caption_cost_ms = (time.perf_counter() - started) * 1000
             self.hearing.on_heard(text)
 
+    def _reset(self) -> None:
+        self._turn, self._quiet, self._over_ari, self._asked = [], 0, 0, False
+        self._began_over_ari = self._overlapped = False
+        self.ears.reset()
+
+    def _drop(self) -> None:
+        self._reset()
+        self.hearing.on_dropped()
+
     def _end_turn(self, text: str | None = None) -> None:
         whole = np.concatenate(self._turn)
         audio = whole[: max(whole.shape[0] - self._quiet + tail_ms * heard_rate // 1000, 0)]
         voiced = whole[: whole.shape[0] - self._quiet]
-        self._turn, self._quiet, self._voiced, self._asked = [], 0, 0, False
-        self.ears.reset()
+        is_candidate, overlapped = self._is_candidate(), self._overlapped
+        self._reset()
         words = text if text is not None else self.ears.words(audio)
+        if is_candidate and (self.ari_saying is not None or echoes(words, self._ari_said)):
+            self.hearing.on_dropped()
+            return
         if not words.strip():
+            self.hearing.on_dropped()
             return
         self.hearing.on_turn(Turn(words, audio))
-        if self.voiceprint is None and voiced.shape[0] > 0:
+        if self.voiceprint is None and not overlapped and voiced.shape[0] > 0:
             self._learn(voiced)
 
     def _learn(self, audio: np.ndarray) -> None:

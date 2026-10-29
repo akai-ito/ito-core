@@ -2,7 +2,7 @@ import { createCell } from "#cell.ts";
 import { fail, ok } from "#result.ts";
 import type { Heard, Readiness, VoiceLoop } from "#voice/loop.ts";
 
-export type YouSay = { readonly text: string; readonly heard: readonly string[] };
+export type YouSay = { readonly text: string; readonly heard: readonly string[]; readonly held?: boolean };
 
 export type CannedVoice = VoiceLoop & { readonly fail: (reason: string) => void };
 
@@ -25,6 +25,7 @@ export const createCannedVoice = (
     },
     listen: (session, _voiceprint, onHeard) => {
       const isSpeaking = createCell(false);
+      const held = createCell<{ readonly text: string; readonly pcm: Uint8Array } | undefined>(undefined);
       sessions.update((current) => new Map([...current, [session, onHeard]]));
       return Promise.resolve(
         ok({
@@ -34,12 +35,18 @@ export const createCannedVoice = (
             if (isSpeaking.get()) onHeard({ kind: "barge" });
             onHeard({ kind: "hearing" });
             for (const text of script.heard) onHeard({ kind: "heard", text });
-            onHeard({ kind: "turn", text: script.text, pcm: audio });
+            if (script.held === true) held.set({ text: script.text, pcm: audio });
+            else onHeard({ kind: "turn", text: script.text, pcm: audio });
           },
-          speaking: (isOn) => {
-            isSpeaking.set(isOn);
+          saying: (text) => {
+            isSpeaking.set(text !== undefined);
           },
-          flush: () => Promise.resolve(),
+          flush: () => {
+            const turn = held.get();
+            held.set(undefined);
+            if (turn) onHeard({ kind: "turn", ...turn });
+            return Promise.resolve();
+          },
           stop: () => {
             forget(session);
             return Promise.resolve();

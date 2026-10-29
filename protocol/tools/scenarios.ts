@@ -2430,8 +2430,9 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 48,
       title: "Mute",
       summary:
-        "You mute to cough. The server hears nothing while you're muted, and when you unmute your next words are " +
-        "an ordinary turn.",
+        "You ask something and mute to cough before the pause that would end your turn. Muting ends it at once, " +
+        "so Ari answers while you cough. The server hears nothing while you're muted, and when you unmute your " +
+        "next words are an ordinary turn.",
       guarantees: ["G25"],
     });
     transcript.begin("2026-10-27T09:05:00.000Z");
@@ -2441,19 +2442,28 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(300);
     transcript.openStream(call);
     transcript.wait(3000);
-    transcript.appFrame({ type: "mute" });
+    const asked = transcript.youSay("walk-question.pcm", "What time is it in Lisbon?", {
+      heard: ["What time is it"],
+      mutedMidway: true,
+    });
+    transcript.startTurn([asked]);
     transcript.wait(100);
     transcript.appAudio("cough.pcm");
-    transcript.wait(1500);
-    transcript.appFrame({ type: "unmute" });
     transcript.wait(800);
-    const asked = transcript.youSay("walk-question.pcm", "Sorry. What time is it in Lisbon?");
-    transcript.startTurn([asked]);
-    transcript.wait(900);
     writeWhole(transcript, "It's just after nine there.", 1);
     transcript.endTurn("completed");
-    transcript.wait(1500);
+    transcript.wait(700);
+    transcript.appFrame({ type: "unmute" });
+    transcript.wait(800);
     transcript.played("s1");
+    transcript.wait(2000);
+    const thanks = transcript.youSay("walk-follow-up.pcm", "Thanks.");
+    transcript.startTurn([thanks]);
+    transcript.wait(900);
+    writeWhole(transcript, "Any time.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(1500);
+    transcript.played("s2");
     transcript.wait(10_000);
     transcript.hangUp();
     return transcript;

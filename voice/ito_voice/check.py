@@ -22,6 +22,7 @@ import torch
 from ito_voice import models
 from ito_voice.audio import heard_rate, mix, resample, spoken_rate
 from ito_voice.espeak import use_working_espeak
+from ito_voice.listen import hold_ms, pause_ms
 
 short_sentence = "Sure, I can do that."
 medium_sentence = "She wants one more round on your design before the panel meets again in November."
@@ -60,12 +61,10 @@ background_sentences = [
 ]
 test_voices = ["af_heart", "bf_emma", "am_michael", "bm_george"]
 strengths = [1.0, 2.0, 3.0]
-pauses_ms = [100, 200, 300]
-default_pause_ms = 300
+pauses_ms = [300, 600, pause_ms]
 gate_window = heard_rate
 gate_every = 8
 enrolled_voice = "af_heart"
-hold_ms = 3000
 around_db = 12
 vocabulary_sample = 40
 long_call_rounds = 20
@@ -728,7 +727,7 @@ def check_turns(report: Report, loaded: Models) -> dict[str, float]:
                     f"| {pause} ms | {label} | {describe_finished(done)} | {describe_unfinished(held)} | {scores} |"
                 )
                 on_time = on_time_ms(done)
-                if pause == default_pause_ms and label == "Quiet" and on_time:
+                if pause == pause_ms and label == "Quiet" and on_time:
                     found["turn"] = statistics.median(on_time)
                     found["turn_cut"] = sum(one.after_ms is not None and one.after_ms < 0 for one in done)
     lines.append("")
@@ -825,17 +824,15 @@ def check_voiceprints(report: Report, loaded: Models) -> dict[str, float]:
         unfinished_clips = [render(speaker, text, enrolled_voice) for text in unfinished]
         lines.append("")
         lines.append(
-            f"Turns in {enrolled_voice}'s voice beside another voice, with a {default_pause_ms} ms pause before Smart "
+            f"Turns in {enrolled_voice}'s voice beside another voice, with a {pause_ms} ms pause before Smart "
             "Turn, without and with the gate: a sound holds the turn open only while the last second sounds like you."
         )
         lines.append("")
         lines.append("| Beside another voice | 6 finished turns: ended | 6 unfinished turns |")
         lines.append("| --- | --- | --- |")
         for label, gate in [("Without the gate", None), ("With the gate", is_you)]:
-            done = [follow_turn(vad, turn, clip, default_pause_ms, background, is_you=gate) for clip in finished_clips]
-            held = [
-                follow_turn(vad, turn, clip, default_pause_ms, background, is_you=gate) for clip in unfinished_clips
-            ]
+            done = [follow_turn(vad, turn, clip, pause_ms, background, is_you=gate) for clip in finished_clips]
+            held = [follow_turn(vad, turn, clip, pause_ms, background, is_you=gate) for clip in unfinished_clips]
             lines.append(f"| {label} | {describe_finished(done)} | {describe_unfinished(held)} |")
             on_time = on_time_ms(done)
             if on_time:
@@ -906,7 +903,7 @@ def stream_like_a_call(session: Any, clips: Sequence[np.ndarray]) -> list[float]
     for clip in clips:
         feed_paced(session, clip)
         ends.append(time.perf_counter())
-        feed_paced(session, np.zeros(heard_rate * 2, dtype=np.float32))
+        feed_paced(session, np.zeros((hold_ms + 500) * heard_rate // 1000, dtype=np.float32))
     return ends
 
 
@@ -945,6 +942,13 @@ def check_call(report: Report, loaded: Models) -> dict[str, float]:
         session = Session("check", tools, notify, None)
         turns = [render(speaker, text, "af_heart") for text in everyday[:3]]
         ends = [end - start for end in stream_like_a_call(session, turns)]
+        before_echo = len(heard)
+        session.saying(long_sentence)
+        feed_paced(session, 0.3 * render(speaker, long_sentence, "bf_emma"))
+        session.saying(None)
+        feed_paced(session, np.zeros((hold_ms + 500) * heard_rate // 1000, dtype=np.float32))
+        echoed = [method for _, method, _ in heard[before_echo:] if method in ("turn", "barge")]
+        del heard[before_echo:]
         session.stop().wait(timeout=30)
         finished = [(at, params.get("text", "")) for at, method, params in heard if method == "turn"]
         problems = [params.get("reason") for _, method, params in heard if method == "problem"]
@@ -954,6 +958,11 @@ def check_call(report: Report, loaded: Models) -> dict[str, float]:
         lines.append(f"- End of speech to the turn's words, as heard: {spread(delays)}")
         for (_, text), expected in zip(finished, everyday, strict=False):
             lines.append(f'  - "{text}" (said: "{expected}")')
+        lines.append(
+            f"- Ari's own voice played back into the microphone: {'**heard as you**' if echoed else 'ignored'}"
+        )
+        if echoed:
+            report.problems.append("Ari's echo came through a call as a turn or a barge-in.")
         if problems:
             lines.append(f"- **The session failed: {problems[0]}**")
             report.problems.append(f"The listening session failed: {problems[0]}")

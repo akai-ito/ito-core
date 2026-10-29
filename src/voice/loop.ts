@@ -14,12 +14,13 @@ export type Heard =
   | { readonly kind: "heard"; readonly text: string }
   | { readonly kind: "turn"; readonly text: string; readonly pcm: Uint8Array }
   | { readonly kind: "barge" }
+  | { readonly kind: "dropped" }
   | { readonly kind: "voiceprint"; readonly voiceprint: Voiceprint }
   | { readonly kind: "problem"; readonly reason: string };
 
 export type Listening = {
   readonly hear: (pcm: Uint8Array) => void;
-  readonly speaking: (isOn: boolean) => void;
+  readonly saying: (text: string | undefined) => void;
   readonly flush: () => Promise<void>;
   readonly stop: () => Promise<void>;
 };

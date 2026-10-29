@@ -10,7 +10,7 @@ import { createConnection, type Connection, type RpcFailure } from "#json-rpc.ts
 import { fail, ok } from "#result.ts";
 import type { Heard, Readiness, SpeechFailure, VoiceContext, VoiceLoop, Voiceprint } from "#voice/loop.ts";
 
-export const voiceProtocol = "0.1";
+export const voiceProtocol = "0.2";
 
 export const voiceDirectory = fileURLToPath(new URL("../../voice", import.meta.url));
 
@@ -114,6 +114,9 @@ const toHeard = (method: string, notice: Notice): Heard | undefined => {
     }
     case "barge": {
       return { kind: "barge" };
+    }
+    case "dropped": {
+      return { kind: "dropped" };
     }
     case "voiceprint": {
       const voiceprint = toVoiceprint(notice);
@@ -301,8 +304,8 @@ export const createSidecarVoice = ({
         hear: (pcm) => {
           connection.notify("audio", { session, pcm: Buffer.from(pcm).toString("base64") });
         },
-        speaking: (isOn) => {
-          connection.notify("speaking", { session, on: isOn });
+        saying: (text) => {
+          connection.notify("saying", { session, ...(text !== undefined && { text }) });
         },
         flush: async () => {
           await connection.request("flush", { session });
