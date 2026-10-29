@@ -1,7 +1,7 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -22,8 +22,6 @@ const headers = { authorization: `Bearer ${token}` };
 const binary = path.join(import.meta.dirname, "..", "bin", "ito.ts");
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-crash-"));
 const eventWaitMs = 5000;
-
-const capabilities = path.join(import.meta.dirname, "support", "capabilities");
 
 const seedSettings = (settings: readonly (readonly [string, string])[]): void => {
   const store = createStore(openDatabase(databaseFile(home)), systemClock, randomIdentifiers);
@@ -55,7 +53,7 @@ const isAnswering = async (url: string): Promise<boolean> => {
 
 const startIto = async (port: number): Promise<ChildProcess> => {
   const child = spawn(process.execPath, [binary, "serve", "--engine", "demo", "--port", String(port)], {
-    env: { ...process.env, ITO_HOME: home, ITO_CAPABILITIES: capabilities },
+    env: { ...process.env, ITO_HOME: home },
     stdio: "ignore",
   });
   const waitUntilReady = async (attempt: number): Promise<void> => {
@@ -172,15 +170,19 @@ describe("a crash mid-reply", () => {
 
   it("leaves no capability running behind it", async () => {
     seedSettings([
-      [onSetting("echo"), "true"],
-      [valuesSetting("echo"), JSON.stringify({ token: "secret-1" })],
+      [onSetting("reports"), "true"],
+      [valuesSetting("reports"), JSON.stringify({ token: "github_pat_crash_test" })],
     ]);
-    const pidFile = path.join(home, "capabilities", "echo", "pid");
     const server = await startIto(await findFreePort());
+    const reportsChild = (): number | undefined => {
+      const children = execFileSync("ps", ["-o", "pid=,args=", "--ppid", String(server.pid)], { encoding: "utf8" });
+      const line = children.split("\n").find((child) => child.includes(path.join("capabilities", "reports")));
+      return line === undefined ? undefined : Number(line.trim().split(" ", 1)[0]);
+    };
     await vi.waitFor(() => {
-      expect(existsSync(pidFile)).toBe(true);
+      expect(reportsChild()).toBeDefined();
     });
-    const pid = Number(readFileSync(pidFile, "utf8"));
+    const pid = reportsChild() ?? 0;
 
     server.kill("SIGKILL");
     await once(server, "exit");

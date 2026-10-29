@@ -45,6 +45,7 @@ export default defineConfig(
     },
   },
   { files: ["src/cell.ts", "src/http/stream.ts"], rules: { "functional/immutable-data": "off" } },
+  { files: ["capabilities/sdk/runtime.ts"], rules: { "unicorn/no-process-exit": "off" } },
   {
     files: ["test/support/capabilities/*.ts", "test/support/voice/*.ts"],
     rules: { "functional/immutable-data": "off", "unicorn/no-process-exit": "off" },

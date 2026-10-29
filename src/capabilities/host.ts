@@ -6,6 +6,7 @@ import {
   toValues,
   type CallResult,
   type Manifest,
+  type Server,
   type Status,
   type Values,
 } from "#capabilities/manifest.ts";
@@ -16,8 +17,6 @@ import type { Settings } from "#store/store.ts";
 import type { Info } from "#turns/turns.ts";
 
 export type Installed = { readonly id: string; readonly entry: string };
-
-export type Server = { readonly version: string; readonly engine: string };
 
 export type CapabilityState = "off" | "setup" | "on" | "needs_you";
 

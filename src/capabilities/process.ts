@@ -2,23 +2,13 @@ import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
-import {
-  capabilityProtocol,
-  toMessage,
-  type CallResult,
-  type Manifest,
-  type Status,
-  type Values,
-} from "#capabilities/manifest.ts";
+import type { CallResult, Manifest, Server, Status, Values } from "#capabilities/manifest.ts";
 import { createConnection, type RpcFailure } from "#json-rpc.ts";
 import { fail, ok, type Result } from "#result.ts";
 
 export type CapabilityProcess = {
   readonly manifest: Manifest;
-  readonly start: (
-    values: Values,
-    server: { readonly version: string; readonly engine: string },
-  ) => Promise<Result<undefined, string>>;
+  readonly start: (values: Values, server: Server) => Promise<Result<undefined, string>>;
   readonly check: (values: Values) => Promise<Result<string | undefined, string>>;
   readonly call: (
     operation: string,
@@ -77,12 +67,8 @@ const failureText = (failure: RpcFailure): string => failure.message;
 
 const toManifest = (id: string, initialized: Result<unknown, RpcFailure>): Result<Manifest, string> => {
   if (!initialized.ok) return fail(failureText(initialized.failure));
-  const answer = toMessage("InitializeResult", initialized.value);
-  if (!answer.ok) return fail(`${id} sent a manifest Ito can't read: ${answer.failure}`);
-  const { protocol, manifest } = answer.value;
-  if (protocol !== capabilityProtocol)
-    return fail(`${id} speaks capability protocol ${protocol}, and this server speaks ${capabilityProtocol}.`);
-  return manifest.id === id ? ok(manifest) : fail(`${id} calls itself ${manifest.id}.`);
+  const { manifest } = initialized.value as { readonly manifest?: Manifest };
+  return manifest?.id === id ? ok(manifest) : fail(`${id} calls itself ${String(manifest?.id)}.`);
 };
 
 export const startCapabilityProcess = async ({
@@ -123,10 +109,7 @@ export const startCapabilityProcess = async ({
     input: child.stdout,
     output: child.stdin,
     onNotification: ({ method, parameters }) => {
-      if (method !== "status") return;
-      const status = toMessage("StatusParams", parameters);
-      if (status.ok) onStatus(status.value);
-      else onLog(`Unreadable status: ${status.failure}`);
+      if (method === "status") onStatus(parameters as Status);
     },
     onRequest: ({ method }) => fail({ code: -32_601, message: `Ito doesn't handle ${method}.` }),
     onMalformed: (line) => {
@@ -153,7 +136,7 @@ export const startCapabilityProcess = async ({
   };
 
   const notAnswered = fail({ code: -32_000, message: `${id} didn't answer in time.` });
-  const initialized = await withinTime(connection.request("initialize", { protocol: capabilityProtocol }), notAnswered);
+  const initialized = await withinTime(connection.request("initialize", {}), notAnswered);
   const manifest = toManifest(id, initialized);
   if (!manifest.ok) {
     await killGroup();
@@ -170,9 +153,9 @@ export const startCapabilityProcess = async ({
     },
     check: async (values) => {
       const checked = await withinTime(connection.request("check", { values }), notAnswered);
-      if (!checked.ok) return fail(failureText(checked.failure));
-      const result = toMessage("CheckResult", checked.value);
-      return result.ok ? ok(result.value.problem) : fail(result.failure);
+      return checked.ok
+        ? ok((checked.value as { readonly problem?: string }).problem)
+        : fail(failureText(checked.failure));
     },
     call: async (operation, input, turn, signal) => {
       const called = await connection.request(
@@ -180,7 +163,7 @@ export const startCapabilityProcess = async ({
         { operation, input, ...(turn !== undefined && { turn }) },
         signal && { signal, method: "cancel" },
       );
-      return called.ok ? toMessage("CallResult", called.value) : fail(failureText(called.failure));
+      return called.ok ? ok(called.value as CallResult) : fail(failureText(called.failure));
     },
   });
 };

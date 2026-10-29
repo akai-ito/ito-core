@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
-import { findInstalled } from "#capabilities/installed.ts";
 import { createCannedVoice, type CannedVoice, type YouSay } from "./canned-voice.ts";
 import { openCallSocket, type Arrived, type CallSocket } from "./call-socket.ts";
 import { createScriptEngine, type Complete } from "#engine/scripted/script-engine.ts";
@@ -24,6 +23,7 @@ import { openEventStream, type EventStream } from "./event-stream.ts";
 import { startFakeApns, type Pushed } from "./fake-apns.ts";
 import { createIdMatcher } from "./matching.ts";
 import { createScriptQueue, deriveScripts } from "./scripts.ts";
+import { testCapability } from "./test-capabilities.ts";
 import {
   readTranscript,
   type Transcript,
@@ -38,7 +38,7 @@ import { wordEmbedder } from "#memory/embedder.ts";
 
 export const transcriptToken = "ito_example_not_a_real_token_00000000000000000000";
 
-const capabilities = findInstalled(path.join(import.meta.dirname, "capabilities")).filter(({ id }) => id === "reports");
+const capabilities = [testCapability("reports")];
 const waitMs = 4000;
 const quietMs = 300;
 const afterwardsMs = 70_000;

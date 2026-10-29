@@ -89,17 +89,16 @@ The agent's instructions, Ari's voice and how it works, are in
 [agent/instructions.md](agent/instructions.md). Change them and restart: the next message picks
 them up, in the same conversation.
 
-Capabilities, such as Reports, install with the server from
-[ito-capabilities](https://github.com/akai-ito/ito-capabilities) and start switched off; switch
+Capabilities, such as Reports, live in [capabilities](capabilities) and start switched off; switch
 them on and set them up in Ari's Settings › Capabilities. Each runs as its own process with only its
-own setup values. Reports files the gaps Ari hits, such as a page it couldn't load or a mistake you
-corrected, as public
+own setup values, and each is one definition written with the SDK in
+[capabilities/sdk](capabilities/sdk). Reports files the gaps Ari hits, such as a page it couldn't
+load or a mistake you corrected, as public
 [issues labelled `gap`](https://github.com/akai-ito/ito-core/issues?q=label%3Agap) on ito-core,
 never with anything from your conversation: give it a
 [fine-grained GitHub token](https://github.com/settings/personal-access-tokens/new) for
 akai-ito/ito-core with *Issues: read and write*. Up to 20 reports a day are filed; any more go to
-Ito's log. To work on a capability, point the server at a working copy with
-`ITO_CAPABILITIES=/path/to/ito-capabilities`.
+Ito's log.
 
 Ari remembers you in the Thread, a git repository of Markdown pages in `~/.ito/thread` that you can
 read without Ito: your portrait, what's going on now, how you like to be helped, pages on people,

@@ -6,14 +6,12 @@ import { createCell } from "#cell.ts";
 import { splitCommand } from "#capabilities/commands.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, onSetting, valuesSetting, type Host } from "#capabilities/host.ts";
-import { findInstalled } from "#capabilities/installed.ts";
 import type { Settings } from "#store/store.ts";
+import { testCapability } from "./support/test-capabilities.ts";
 import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-capabilities-"));
-const installed = findInstalled(path.join(import.meta.dirname, "support", "capabilities")).filter(
-  ({ id }) => id === "echo",
-);
+const installed = [testCapability("echo")];
 const hosts = createCell<readonly Host[]>([]);
 const logged = createCell<readonly string[]>([]);
 

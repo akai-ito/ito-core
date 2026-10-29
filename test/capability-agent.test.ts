@@ -5,7 +5,6 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
 import { onSetting, valuesSetting } from "#capabilities/host.ts";
-import { findInstalled } from "#capabilities/installed.ts";
 import { systemClock } from "#clock.ts";
 import { createCodexEngine } from "#engine/codex/codex-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
@@ -14,6 +13,7 @@ import type { Step } from "#protocol/types.ts";
 import { createServer, databaseFile, type Server } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore } from "#store/store.ts";
+import { testCapability } from "./support/test-capabilities.ts";
 import { startMockModel, type MockModel } from "./support/mock-model.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 
@@ -93,9 +93,7 @@ describe("capabilities, through the pinned Codex", () => {
       embedder: wordEmbedder,
       dataDirectory: home,
       name: "test",
-      capabilities: findInstalled(path.join(import.meta.dirname, "support", "capabilities")).filter(
-        ({ id }) => id === "echo",
-      ),
+      capabilities: [testCapability("echo")],
       createEngine: ({ settings, log, info, tools, skills, inMind }) =>
         createCodexEngine({
           codexHome,

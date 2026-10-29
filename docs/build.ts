@@ -104,7 +104,6 @@ const toSiteLink = (prefix: string, href: string): string => {
     "push.schema.json",
     "blocks.schema.json",
     "motion.schema.json",
-    "capability.schema.json",
   ].includes(href);
   return isSpecFile
     ? `${prefix}protocol/v0/${href}`
@@ -337,10 +336,6 @@ copyFileSync(path.join(protocolDirectory, "events.schema.json"), path.join(specD
 copyFileSync(path.join(protocolDirectory, "push.schema.json"), path.join(specDirectory, "push.schema.json"));
 copyFileSync(path.join(protocolDirectory, "blocks.schema.json"), path.join(specDirectory, "blocks.schema.json"));
 copyFileSync(path.join(protocolDirectory, "motion.schema.json"), path.join(specDirectory, "motion.schema.json"));
-copyFileSync(
-  path.join(protocolDirectory, "capability.schema.json"),
-  path.join(specDirectory, "capability.schema.json"),
-);
 const bundled = await bundle({ ref: path.join(protocolDirectory, "openapi.yaml"), config: await createConfig({}) });
 const openapi = bundled.bundle.parsed as { readonly info: { readonly version: string } };
 write(path.join(specDirectory, "openapi.json"), JSON.stringify(openapi, null, 2) + "\n");

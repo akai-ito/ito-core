@@ -12,6 +12,8 @@
   },
   "imports": {
     "#protocol/*": "./protocol/*",
+    "#sdk/*": "./capabilities/sdk/*",
+    "#reports/*": "./capabilities/reports/*",
     "#*": "./src/*"
   },
   "scripts": {
@@ -35,9 +37,9 @@
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "fastify": "5.12.7",
-    "ito-capabilities": "github:akai-ito/ito-capabilities#be636bc",
     "uqr": "0.1.3",
-    "yaml": "2.9.1"
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -65,7 +67,6 @@
   "allowScripts": {
     "onnxruntime-node": false,
     "protobufjs": false,
-    "vue-demi": false,
-    "github:akai-ito/ito-capabilities#be636bc97a6401564084caca8ab5e81b65cbd346": true
+    "vue-demi": false
   }
 }

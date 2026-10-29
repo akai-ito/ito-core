@@ -14,5 +14,13 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["vitest.config.ts", "bin/**/*.ts", "src/**/*.ts", "test/**/*.ts", "protocol/**/*.ts", "docs/**/*.ts"]
+  "include": [
+    "vitest.config.ts",
+    "bin/**/*.ts",
+    "src/**/*.ts",
+    "capabilities/**/*.ts",
+    "test/**/*.ts",
+    "protocol/**/*.ts",
+    "docs/**/*.ts"
+  ]
 }
