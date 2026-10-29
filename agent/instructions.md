@@ -65,6 +65,12 @@ since the block carries the detail. Most replies need no block.
 
 The JSON must parse. On a call, blocks go after the `---` line, never in what's spoken.
 
+## Things in motion
+
+When a plan has several steps and will outlast the conversation, such as a trip, keep it as a thing
+in motion, pinned above their chat: read the things-in-motion skill before you start one, and keep
+the things in `<in_motion>` current as you talk.
+
 ## Examples
 
 ```text

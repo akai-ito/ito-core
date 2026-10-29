@@ -23,6 +23,8 @@ import type {
   Spoken,
   LiveTurn,
   Message,
+  Motion,
+  MotionChange,
   Outcome,
   Snapshot,
   Status,
@@ -145,6 +147,18 @@ export type Store = Settings & {
   readonly findMessage: (message: MessageId) => Message | undefined;
   readonly tickItem: (message: MessageId, tick: Tick) => readonly Tick[];
   readonly ticksSinceLastTurn: () => readonly PlanTicked[];
+  readonly recordMotion: (
+    type: "motion.started" | "motion.changed" | "motion.finished",
+    motion: Omit<Motion, "position"> & { readonly position?: number },
+    note: string,
+  ) => { readonly motion: Motion; readonly change: MotionChange };
+  readonly setMotionState: (motion: string, state: Readonly<Record<string, unknown>>) => void;
+  readonly removeMotion: (motion: string) => void;
+  readonly findMotion: (motion: string) => Motion | undefined;
+  readonly listMotions: () => readonly Motion[];
+  readonly motionChanges: (motion: string, limit: number) => readonly MotionChange[];
+  readonly motionState: (motion: string) => Readonly<Record<string, unknown>>;
+  readonly motionsTickedSinceLastTurn: () => readonly string[];
   readonly keepAttachment: (id: string) => void;
   readonly messageAttachments: (message: MessageId) => readonly Attachment[];
   readonly messageSpoken: (message: MessageId) => Spoken | undefined;
@@ -667,6 +681,62 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           )
           .all() as unknown as readonly { readonly body: string }[]
       ).map((row) => JSON.parse(row.body) as PlanTicked),
+
+    recordMotion: (type, given, note) =>
+      transaction(() => {
+        const latest = database.prepare("SELECT MAX(position) AS position FROM messages WHERE role = 'user'").get() as {
+          readonly position: number | null;
+        };
+        const position = latest.position ?? nextSeq();
+        const motion: Motion = { ...given, position: given.position ?? position };
+        const change: MotionChange = { version: motion.version, at: motion.changed_at, note, position };
+        append({ id: identifiers.event(), type, at: now(), motion, change });
+        return { motion, change };
+      }),
+
+    setMotionState: (motion, state) => {
+      record((stamp) => ({ ...stamp, type: "motion.state", motion, state }));
+    },
+
+    removeMotion: (motion) => {
+      record((stamp) => ({ ...stamp, type: "motion.removed", motion }));
+    },
+
+    findMotion: (motion) => {
+      const row = database.prepare("SELECT body FROM motions WHERE id = ?").get(motion) as
+        { readonly body: string } | undefined;
+      return row ? (JSON.parse(row.body) as Motion) : undefined;
+    },
+
+    listMotions: () =>
+      (
+        database
+          .prepare("SELECT body FROM motions ORDER BY status = 'done', changed_at DESC")
+          .all() as unknown as readonly { readonly body: string }[]
+      ).map((row) => JSON.parse(row.body) as Motion),
+
+    motionChanges: (motion, limit) =>
+      (
+        database
+          .prepare("SELECT body FROM motion_changes WHERE motion = ? ORDER BY version DESC LIMIT ?")
+          .all(motion, limit) as unknown as readonly { readonly body: string }[]
+      ).map((row) => JSON.parse(row.body) as MotionChange),
+
+    motionState: (motion) => {
+      const row = database.prepare("SELECT state FROM motion_states WHERE motion = ?").get(motion) as
+        { readonly state: string } | undefined;
+      return row ? (JSON.parse(row.state) as Readonly<Record<string, unknown>>) : {};
+    },
+
+    motionsTickedSinceLastTurn: () =>
+      (
+        database
+          .prepare(
+            `SELECT DISTINCT json_extract(body, '$.motion') AS motion FROM events WHERE type = 'motion.state'
+             AND seq > COALESCE((SELECT MAX(seq) FROM events WHERE type = 'turn.started'), 0) ORDER BY seq`,
+          )
+          .all() as unknown as readonly { readonly motion: string }[]
+      ).map((row) => row.motion),
 
     keepAttachment: (id) => {
       database.prepare("UPDATE attachments SET kept = 1 WHERE id = ?").run(id);

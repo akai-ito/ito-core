@@ -6,10 +6,11 @@ import { transcriptDirectory } from "./transcript-files.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import { defaultVoice, voices } from "#voice/voices.ts";
 import type { Term } from "#memory/vocabulary.ts";
+import { florenceId, florenceTrip } from "./florence.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.12";
-const serverVersion = "0.12.0";
+const protocol = "0.13";
+const serverVersion = "0.13.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -243,6 +244,66 @@ const memoryStep = (
 ): void => {
   transcript.step("memory", { ...titles, fields: { action, pages, ...(change !== undefined && { change }) } });
   transcript.endStep();
+};
+
+const florenceCard = {
+  id: florenceId,
+  kind: "trip",
+  title: "Florence with Janki",
+  summary: "6–9 Nov · 4 to book",
+  status: "active" as const,
+  pinned: true,
+};
+
+const motionStep = (
+  transcript: Transcript,
+  action: string,
+  motion: { readonly id: string; readonly title: string; readonly version: number },
+  titles: { readonly title: string; readonly endedTitle: string },
+  note?: string,
+): void => {
+  transcript.step("motion", {
+    ...titles,
+    fields: {
+      action,
+      motion: motion.id,
+      version: motion.version,
+      ...(note !== undefined && { note }),
+      pages: [{ address: `motion:${motion.id}`, title: motion.title }],
+    },
+  });
+  transcript.endStep();
+};
+
+const motionLine = (id: string, version: number): string =>
+  ["```ari:motion", JSON.stringify({ motion: id, change: version }), "```"].join("\n");
+
+const startFlorence = (transcript: Transcript, cover: string): ReturnType<Transcript["motion"]> => {
+  agentCalls(transcript, "start_motion", {
+    id: florenceId,
+    kind: florenceCard.kind,
+    title: florenceCard.title,
+    summary: florenceCard.summary,
+    content: florenceTrip(cover),
+    note: "Started the trip",
+  });
+  const started = transcript.motion("started", { ...florenceCard, cover, version: 1 }, "Started the trip");
+  motionStep(transcript, "started", started.motion, {
+    title: "Starting Florence with Janki",
+    endedTitle: "Started Florence with Janki",
+  });
+  return started;
+};
+
+const findFlorenceCover = (transcript: Transcript): string => {
+  transcript.step("web_search", searching("Florence Duomo photograph"));
+  transcript.wait(1500);
+  transcript.endStep();
+  const url = "https://upload.wikimedia.org/wikipedia/commons/florence-duomo-dusk.jpg";
+  transcript.world("web_has", { url, file: "riverside.jpg" });
+  const cover = transcript.keptImage("riverside.jpg", "florence-duomo-dusk.jpg");
+  agentCalls(transcript, "keep_image", { url }, { attachment: cover });
+  return cover;
 };
 
 const boraPage = {
@@ -3057,6 +3118,148 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.played("s2");
     transcript.wait(5000);
     transcript.hangUp();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "62-a-trip-in-motion",
+      scenario: 62,
+      title: "A trip in motion",
+      summary:
+        "You ask Ari to plan a weekend. Ari finds a cover photo, starts the trip as a thing in motion with its days, " +
+        "places, travel, stay and to-do list, and answers in a line with a compact line under it. The trip is " +
+        "pinned; the app lists it, opens it, and fetches its photo from the server.",
+      guarantees: ["G32"],
+    });
+    transcript.begin("2026-10-29T09:00:00.000Z");
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(
+      transcript,
+      "Can you plan Florence with Janki? 6 to 9 November. Good food, the Uffizi, maybe Pisa for a day.",
+    );
+    transcript.wait(800);
+    const cover = findFlorenceCover(transcript);
+    transcript.wait(2500);
+    const { motion, change } = startFlorence(transcript, cover);
+    transcript.wait(400);
+    writeWhole(
+      transcript,
+      [
+        "Here's a first shape: the Duomo when you land, the Uffizi first thing Saturday, Pisa on Sunday. I've " +
+          "started it in In motion, so it's always to hand.",
+        "",
+        motionLine(florenceId, 1),
+      ].join("\n"),
+    );
+    transcript.endTurn("completed");
+    transcript.wait(3000);
+    memoryCall(transcript, "/v0/motion", { motions: [motion] });
+    transcript.wait(1500);
+    memoryCall(transcript, `/v0/motion/${florenceId}`, {
+      motion,
+      content: florenceTrip(cover),
+      state: {},
+      changes: [change],
+    });
+    transcript.wait(300);
+    transcript.fetchAttachment(cover);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "63-keeping-it-current",
+      scenario: 63,
+      title: "Keeping it current",
+      summary:
+        "You tell Ari you booked the Uffizi. Ari reads the trip and changes it by id, citing the version it read: " +
+        "the to-do is ticked, the stop is booked and the pinned line counts one fewer. You tick the Pisa train " +
+        "yourself, every app hears it, and Ari learns of it with your next message. The trip shows what changed.",
+      guarantees: ["G32"],
+    });
+    transcript.begin("2026-10-29T09:00:00.000Z");
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "Can you plan Florence with Janki? 6 to 9 November.");
+    transcript.wait(800);
+    const cover = findFlorenceCover(transcript);
+    transcript.wait(2000);
+    const started = startFlorence(transcript, cover);
+    transcript.wait(400);
+    writeWhole(transcript, `Here's a first shape, in In motion.\n\n${motionLine(florenceId, 1)}`);
+    transcript.endTurn("completed");
+    transcript.wait(60 * 60 * 1000);
+    sendAndStart(transcript, "Booked the Uffizi for 8:15 Saturday.");
+    transcript.wait(600);
+    agentCalls(transcript, "read_motion", { id: florenceId });
+    transcript.wait(900);
+    const note = "Booked the Uffizi, 8:15 Saturday";
+    agentCalls(transcript, "change_motion", {
+      id: florenceId,
+      version: 1,
+      changes: [
+        { set: "book-uffizi", fields: { done: true } },
+        { set: "uffizi", fields: { booking: { status: "booked", ref: "UF-2291" } } },
+        { set: "uffizi-place", fields: { status: "booked" } },
+      ],
+      summary: "6–9 Nov · 3 to book",
+      note,
+    });
+    const changed = transcript.motion(
+      "changed",
+      { ...florenceCard, cover, version: 2, summary: "6–9 Nov · 3 to book" },
+      note,
+    );
+    motionStep(
+      transcript,
+      "updated",
+      changed.motion,
+      {
+        title: "Updating Florence with Janki: booked the Uffizi, 8:15 Saturday",
+        endedTitle: "Updated Florence with Janki: booked the Uffizi, 8:15 Saturday",
+      },
+      note,
+    );
+    transcript.wait(400);
+    writeWhole(
+      transcript,
+      `Lovely, that's in. Three to go: the Duomo climb, the Pisa train and the Accademia.\n\n${motionLine(florenceId, 2)}`,
+    );
+    transcript.endTurn("completed");
+    transcript.wait(5 * 60 * 1000);
+    const state = transcript.patchMotion(florenceId, { todo: { "book-pisa": { done: true } } });
+    transcript.wait(3000);
+    memoryCall(transcript, `/v0/motion/${florenceId}`, {
+      motion: changed.motion,
+      content: {
+        ...florenceTrip(cover),
+        days: (florenceTrip(cover).days as readonly Readonly<Record<string, unknown>>[]).map((day) =>
+          day.id === "sat"
+            ? {
+                ...day,
+                stops: (day.stops as readonly Readonly<Record<string, unknown>>[]).map((stop) =>
+                  stop.id === "uffizi" ? { ...stop, booking: { status: "booked", ref: "UF-2291" } } : stop,
+                ),
+              }
+            : day,
+        ),
+        places: (florenceTrip(cover).places as readonly Readonly<Record<string, unknown>>[]).map((place) =>
+          place.id === "uffizi-place" ? { ...place, status: "booked" } : place,
+        ),
+        todo: (florenceTrip(cover).todo as readonly Readonly<Record<string, unknown>>[]).map((item) =>
+          item.id === "book-uffizi" ? { ...item, done: true } : item,
+        ),
+      },
+      state,
+      changes: [changed.change, started.change],
+    });
+    transcript.wait(2000);
+    sendAndStart(transcript, "Thanks! What's left?");
+    transcript.wait(900);
+    writeWhole(transcript, "The Duomo climb and the Accademia. The Pisa train's ticked off.");
+    transcript.endTurn("completed");
     return transcript;
   },
 ];

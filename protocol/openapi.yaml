@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.12"
+  version: "0.13"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -74,6 +74,10 @@ tags:
     description: Switch capabilities on and off, and set them up.
   - name: Memory
     description: Read what Ari remembers. Ari writes it; apps only read.
+  - name: Motion
+    description: |
+      Things in motion that Ari keeps for you, such as a trip being planned. Ari writes them; apps
+      read them and tick their items.
   - name: Model
     description: Choose the model the agent runs on.
   - name: Talk
@@ -793,6 +797,78 @@ paths:
               schema: { $ref: "#/components/schemas/MemoryChange" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/motion:
+    get:
+      tags: [Motion]
+      operationId: listMotion
+      summary: Everything in motion, then what's done
+      description: Active things first, then done ones, each group newest first.
+      responses:
+        "200":
+          description: The things.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MotionList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/motion/{motion}:
+    get:
+      tags: [Motion]
+      operationId: getMotion
+      summary: One thing, with its content, state and what changed
+      description: |
+        The content is as its kind in [the motion schema](motion.schema.json) describes. With
+        `version`, the content is as it was then, to read only; the state and changes always
+        belong to the latest.
+      parameters:
+        - $ref: "#/components/parameters/Motion"
+        - name: version
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The thing.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MotionDetail" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/motion/{motion}/state:
+    patch:
+      tags: [Motion]
+      operationId: patchMotionState
+      summary: Tick items in a thing
+      description: |
+        A JSON Merge Patch (RFC 7386) on the state, keyed by item ids, such as
+        `{"todo": {"book-uffizi": {"done": true}}}`, sent as `application/merge-patch+json` or
+        `application/json`. Its kind in [the motion schema](motion.schema.json) says which keys the
+        state has. Every app hears `motion.state`, and Ari learns of it with your next message.
+        Sending the same patch twice changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/Motion"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { type: object, additionalProperties: true }
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: The whole state, after the patch.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MotionState" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/models:
     get:
       tags: [Model]
@@ -1056,13 +1132,19 @@ components:
       schema:
         type: string
         pattern: ^\d+\.\d+$
-        example: "0.12"
+        example: "0.13"
     RetryAfter:
       description: Seconds to wait before trying again.
       schema:
         type: integer
         minimum: 0
   parameters:
+    Motion:
+      name: motion
+      in: path
+      required: true
+      description: The thing's id, from its `Motion`.
+      schema: { $ref: "events.schema.json#/$defs/MotionId" }
     Turn:
       name: turn
       in: path
@@ -1716,6 +1798,35 @@ components:
       required: [done]
       properties:
         done: { type: boolean }
+    MotionList:
+      type: object
+      required: [motions]
+      properties:
+        motions:
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Motion" }
+    MotionDetail:
+      type: object
+      required: [motion, content, state, changes]
+      properties:
+        motion: { $ref: "events.schema.json#/$defs/Motion" }
+        content:
+          description: The thing's content, as its kind describes, with every item's id.
+          type: object
+          additionalProperties: true
+        state:
+          description: Your ticks, as its kind describes. `{}` until you tick something.
+          type: object
+          additionalProperties: true
+        changes:
+          description: The 20 newest entries of "What changed", newest first.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/MotionChange" }
+    MotionState:
+      type: object
+      required: [state]
+      properties:
+        state: { type: object, additionalProperties: true }
     TickList:
       type: object
       required: [ticks]

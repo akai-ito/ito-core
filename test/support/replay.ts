@@ -385,7 +385,8 @@ export const replay = async (name: string): Promise<void> => {
           readonly input: unknown;
           readonly returns?: unknown;
         };
-        const called = await (live.get()?.server.callTool(tool, withLiveVersion(input)) ?? Promise.resolve(undefined));
+        const called = await (live.get()?.server.callTool(tool, ids.translate(withLiveVersion(input))) ??
+          Promise.resolve(undefined));
         check(called?.isError === true ? `${tool} failed: ${called.text}` : undefined, index);
         if (returns !== undefined) check(ids.match(returns, called?.structured), index);
         return;

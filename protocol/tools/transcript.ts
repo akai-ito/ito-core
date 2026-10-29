@@ -4,6 +4,7 @@ import path from "node:path";
 import { isImage, readDimensions } from "#attachments/media.ts";
 import { createCell } from "#cell.ts";
 import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
+import { mergePatch } from "#motion/changes.ts";
 import { blocksIn, toPlan, withoutBlocks } from "#replies/blocks.ts";
 import type {
   Ask,
@@ -18,6 +19,8 @@ import type {
   LiveTurn,
   Message,
   MessageKind,
+  Motion,
+  MotionChange,
   Notification,
   Outcome,
   Status,
@@ -156,6 +159,12 @@ export type Transcript = {
   readonly topic: (label: string, message: string) => string;
   readonly tick: (message: string, part: number, item: string, done: boolean) => void;
   readonly keptImage: (file: string, name: string) => string;
+  readonly motion: (
+    type: "started" | "changed" | "finished",
+    motion: Omit<Motion, "position" | "started_at" | "changed_at" | "done_at">,
+    note: string,
+  ) => { readonly motion: Motion; readonly change: MotionChange };
+  readonly patchMotion: (id: string, patch: Fields) => Fields;
   readonly change: () => string;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
@@ -805,6 +814,49 @@ export const createTranscript = (header: Header): Transcript => {
     return { user: userMessageId, agent: agentMessageId, turn: turnId };
   };
 
+  const motions = createCell<ReadonlyMap<string, Motion>>(new Map());
+  const motionStates = createCell<ReadonlyMap<string, Fields>>(new Map());
+
+  const recordMotion = (
+    type: "started" | "changed" | "finished",
+    given: Omit<Motion, "position" | "started_at" | "changed_at" | "done_at">,
+    note: string,
+  ): { readonly motion: Motion; readonly change: MotionChange } => {
+    const { order, byId } = project(log.get());
+    const position =
+      order
+        .map((id) => byId.get(id))
+        .findLast((message) => message?.role === "user")?.position ?? nextPosition();
+    const before = motions.get().get(given.id);
+    const at = timestamp();
+    const motion: Motion = {
+      ...given,
+      started_at: before?.started_at ?? at,
+      changed_at: at,
+      ...(given.status === "done" && { done_at: before?.done_at ?? at }),
+      position: before?.position ?? position,
+    };
+    motions.update((current) => new Map([...current, [motion.id, motion]]));
+    const change: MotionChange = { version: motion.version, at, note, position };
+    emit(`motion.${type}`, { motion, change });
+    return { motion, change };
+  };
+
+  const patchMotion = (id: string, patch: Fields): Fields => {
+    request("PATCH", `/v0/motion/${id}/state`, {
+      body: patch,
+      headers: { "Content-Type": "application/merge-patch+json" },
+    });
+    const before = motionStates.get().get(id) ?? {};
+    const after = mergePatch(before, patch) as Fields;
+    if (JSON.stringify(after) !== JSON.stringify(before)) {
+      motionStates.update((current) => new Map([...current, [id, after]]));
+      emit("motion.state", { motion: id, state: after });
+    }
+    response(200, { state: after });
+    return after;
+  };
+
   const markTopic = (label: string, message: string): string => {
     const position = project(log.get()).byId.get(message)?.position;
     if (position === undefined) throw new Error(`a topic on unknown message ${message}`);
@@ -1415,6 +1467,8 @@ export const createTranscript = (header: Header): Transcript => {
       attachments.update((current) => new Map([...current, [attachment.id, attachment]]));
       return attachment.id;
     },
+    motion: recordMotion,
+    patchMotion,
     change: () => newId("c"),
     startCall,
     endCall,

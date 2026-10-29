@@ -169,8 +169,40 @@ const memoryTitle = ({ action, pages = [] }: StepFacts): Title => {
       return title("Adding to today's journal", "Added to today's journal");
     }
     case "used":
+    case "started":
+    case "finished":
+    case "restored":
+    case "forgotten":
     case undefined: {
       return title(`Using ${names}`, `Used ${names}`);
+    }
+  }
+};
+
+const lowerFirst = (text: string): string =>
+  /^\p{Lu}\p{Ll}/u.test(text) ? `${text.charAt(0).toLowerCase()}${text.slice(1)}` : text;
+
+const motionTitle = ({ action, pages = [], note }: StepFacts): Title => {
+  const name = pages[0]?.title ?? "a thing in motion";
+  switch (action) {
+    case "started": {
+      return title(`Starting ${name}`, `Started ${name}`);
+    }
+    case "finished": {
+      return title(`Finishing ${name}`, `Finished ${name}`);
+    }
+    case "restored": {
+      return title(`Bringing back an earlier ${name}`, `Brought back an earlier ${name}`);
+    }
+    case "forgotten": {
+      return title(`Forgetting ${name}`, `Forgot ${name}`);
+    }
+    case "updated":
+    case "used":
+    case "journaled":
+    case undefined: {
+      const what = note === undefined ? "" : `: ${lowerFirst(note)}`;
+      return title(`Updating ${name}${what}`, `Updated ${name}${what}`);
     }
   }
 };
@@ -212,6 +244,9 @@ const titleOf = (kind: StepKind, facts: StepFacts, trail: Trail | undefined): Ti
     }
     case "memory": {
       return memoryTitle(facts);
+    }
+    case "motion": {
+      return motionTitle(facts);
     }
   }
 };

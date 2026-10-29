@@ -46,7 +46,12 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "call.audio_deleted":
     case "voice.status":
     case "topic.started":
-    case "plan.ticked": {
+    case "plan.ticked":
+    case "motion.started":
+    case "motion.changed":
+    case "motion.finished":
+    case "motion.state":
+    case "motion.removed": {
       return false;
     }
   }
@@ -54,7 +59,7 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
 
 const isCoreStep = (event: LoggedEvent): boolean =>
   (event.type === "step.started" || event.type === "step.updated" || event.type === "step.ended") &&
-  event.step.kind === "memory";
+  (event.step.kind === "memory" || event.step.kind === "motion");
 
 const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent | undefined => {
   if (isCoreStep(event)) return undefined;
@@ -112,7 +117,12 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
     case "call.audio_deleted":
     case "voice.status":
     case "topic.started":
-    case "plan.ticked": {
+    case "plan.ticked":
+    case "motion.started":
+    case "motion.changed":
+    case "motion.finished":
+    case "motion.state":
+    case "motion.removed": {
       return;
     }
   }

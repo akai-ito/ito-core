@@ -72,6 +72,21 @@
           "$ref": "#/$defs/TopicStarted"
         },
         {
+          "$ref": "#/$defs/MotionStarted"
+        },
+        {
+          "$ref": "#/$defs/MotionChanged"
+        },
+        {
+          "$ref": "#/$defs/MotionFinished"
+        },
+        {
+          "$ref": "#/$defs/MotionStateChanged"
+        },
+        {
+          "$ref": "#/$defs/MotionRemoved"
+        },
+        {
           "$ref": "#/$defs/PlanTicked"
         }
       ]
@@ -366,7 +381,8 @@
         "wait",
         "image_view",
         "compacting",
-        "memory"
+        "memory",
+        "motion"
       ]
     },
     "Step": {
@@ -531,8 +547,8 @@
           "type": "string"
         },
         "action": {
-          "description": "`memory`: `used` for the pages Ari drew on in this turn (one step, growing as it reads), `updated` for a page it wrote, `journaled` for an addition to today's journal.",
-          "enum": ["used", "updated", "journaled"]
+          "description": "`memory`: `used` for the pages Ari drew on in this turn (one step, growing as it reads), `updated` for a page it wrote, `journaled` for an addition to today's journal. `motion`: `started`, `updated`, `finished`, `restored` or `forgotten`, for what Ari did to the thing.",
+          "enum": ["used", "updated", "journaled", "started", "finished", "restored", "forgotten"]
         },
         "pages": {
           "description": "`memory`: the pages, by address and title, never their content. Past conversations show as one entry with the address `conversation:past`.",
@@ -544,6 +560,19 @@
         "change": {
           "$ref": "#/$defs/ChangeId",
           "description": "`memory` with `updated`: the change to fetch from `GET /v0/memory/changes/{change}` when someone taps it."
+        },
+        "motion": {
+          "$ref": "#/$defs/MotionId",
+          "description": "`motion`: the thing Ari started or changed. Open it with `GET /v0/motion/{motion}`."
+        },
+        "version": {
+          "description": "`motion`: the thing's version after the change.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "note": {
+          "description": "`motion`: Ari's note on the change, such as \"Booked the Uffizi, 8:15 Saturday\".",
+          "type": "string"
         },
         "explanation": {
           "description": "`plan`: why the plan is what it is.",
@@ -1186,9 +1215,9 @@
       }
     },
     "MemoryAddress": {
-      "description": "Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, or `conversation:past`.",
+      "description": "Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, a thing in motion such as `motion:florence-with-janki`, or `conversation:past`.",
       "type": "string",
-      "pattern": "^(memory:[a-z0-9-]+(/[a-z0-9-]+)?|conversation:past)$"
+      "pattern": "^(memory:[a-z0-9-]+(/[a-z0-9-]+)?|motion:[a-z0-9-]+|conversation:past)$"
     },
     "ChangeId": {
       "description": "An opaque id the server chooses for one change to memory.",
@@ -1400,6 +1429,217 @@
         },
         "reason": {
           "$ref": "#/$defs/VoiceReason"
+        }
+      }
+    },
+    "MotionId": {
+      "description": "A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-janki`.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "Motion": {
+      "description": "A thing in motion: something going on that Ari keeps for you, such as a trip being planned. Its content and state come from `GET /v0/motion/{id}`.",
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "summary",
+        "status",
+        "pinned",
+        "version",
+        "started_at",
+        "changed_at",
+        "position"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/MotionId"
+        },
+        "kind": {
+          "description": "Which widget draws it. Show a plain card, with its title and summary, for a kind you don't recognise.",
+          "type": "string",
+          "examples": ["trip"]
+        },
+        "title": {
+          "description": "Such as \"Florence with Janki\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "description": "Where it stands, in one line, for the pinned line and the In motion tab, such as \"6–9 Nov · 3 to book\". Ari keeps it current with every change.",
+          "type": "string"
+        },
+        "status": {
+          "enum": ["active", "done"]
+        },
+        "pinned": {
+          "description": "Whether it's pinned above the composer. Ari pins a thing it starts, unpins it when it's done or when you ask, and pins it again when you ask.",
+          "type": "boolean"
+        },
+        "cover": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "The content's cover photo, for the card. Absent when it has none."
+        },
+        "version": {
+          "description": "How many times it has changed, counting its start as 1.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "started_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "changed_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "done_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it was finished. Absent while it's active."
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "The position of your message Ari was answering when it started the thing."
+        }
+      }
+    },
+    "MotionChange": {
+      "description": "One entry of \"What changed\".",
+      "type": "object",
+      "required": ["version", "at", "note", "position"],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "note": {
+          "description": "Ari's note, such as \"Booked the Uffizi, 8:15 Saturday\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "The position of your message Ari was answering when it made the change: link back to it."
+        }
+      }
+    },
+    "MotionStarted": {
+      "title": "motion.started",
+      "description": "Ari started a thing in motion. Its `change` is the first entry of \"What changed\".",
+      "type": "object",
+      "required": ["id", "type", "at", "motion", "change"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "motion.started"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "motion": {
+          "$ref": "#/$defs/Motion"
+        },
+        "change": {
+          "$ref": "#/$defs/MotionChange",
+          "description": "This change, as it appears in \"What changed\"."
+        }
+      }
+    },
+    "MotionChanged": {
+      "title": "motion.changed",
+      "description": "Ari changed a thing, or brought back an earlier version of it. Fetch its content again.",
+      "type": "object",
+      "required": ["id", "type", "at", "motion", "change"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "motion.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "motion": {
+          "$ref": "#/$defs/Motion"
+        },
+        "change": {
+          "$ref": "#/$defs/MotionChange",
+          "description": "This change, as it appears in \"What changed\"."
+        }
+      }
+    },
+    "MotionFinished": {
+      "title": "motion.finished",
+      "description": "Ari finished a thing: it moves to Done.",
+      "type": "object",
+      "required": ["id", "type", "at", "motion", "change"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "motion.finished"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "motion": {
+          "$ref": "#/$defs/Motion"
+        },
+        "change": {
+          "$ref": "#/$defs/MotionChange",
+          "description": "This change, as it appears in \"What changed\"."
+        }
+      }
+    },
+    "MotionStateChanged": {
+      "title": "motion.state",
+      "description": "A thing's state changed, from a tap on any device, or because a change removed an item it named. It carries the whole state.",
+      "type": "object",
+      "required": ["id", "type", "at", "motion", "state"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "motion.state"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "motion": {
+          "$ref": "#/$defs/MotionId"
+        },
+        "state": {
+          "description": "The whole state, as `motion.schema.json` describes for its kind.",
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "MotionRemoved": {
+      "title": "motion.removed",
+      "description": "You allowed Ari to forget a thing, so it's gone.",
+      "type": "object",
+      "required": ["id", "type", "at", "motion"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "motion.removed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "motion": {
+          "$ref": "#/$defs/MotionId"
         }
       }
     }

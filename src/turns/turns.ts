@@ -40,6 +40,7 @@ export type TurnsOptions = {
   readonly attachmentPath?: (id: string) => string;
   readonly secrets?: Secrets;
   readonly trail?: Trail;
+  readonly moreNotes?: () => string;
 };
 
 export type Info = (message: string, details: Readonly<Record<string, unknown>>) => void;
@@ -132,7 +133,13 @@ export const createTurns = (
   clock: Clock,
   identifiers: Identifiers,
   log: Log,
-  { limits = defaultLimits, attachmentPath = (id: string) => id, secrets = createSecrets(), trail }: TurnsOptions = {},
+  {
+    limits = defaultLimits,
+    attachmentPath = (id: string) => id,
+    secrets = createSecrets(),
+    trail,
+    moreNotes = () => "",
+  }: TurnsOptions = {},
 ): Turns => {
   const running = createCell<Running | undefined>(undefined);
   const actor = createCell<Promise<void>>(Promise.resolve());
@@ -549,7 +556,7 @@ export const createTurns = (
     retry?: { readonly turn: TurnId; readonly retryOf: TurnId },
   ): void => {
     const turn = retry?.turn ?? identifiers.turn();
-    const ticked = tickNote();
+    const ticked = [tickNote(), moreNotes()].filter(Boolean).join("\n\n");
     store.startTurn(turn, inputs, retry?.retryOf);
     running.set({
       id: turn,

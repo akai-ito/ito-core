@@ -126,6 +126,8 @@ export type Memory = {
   readonly vocabulary: () => Promise<readonly Term[]>;
   readonly boosted: (terms: readonly Term[]) => readonly string[];
   readonly learn: (corrections: readonly Correction[]) => Promise<readonly Learnt[]>;
+  readonly withThread: <Value>(work: (thread: Thread) => Promise<Value>) => Promise<Value>;
+  readonly indexText: (address: string, title: string, text: string | undefined) => Promise<void>;
   readonly close: () => Promise<void>;
 };
 
@@ -1318,6 +1320,34 @@ export const createMemory = ({
           Promise.resolve(learnt),
         );
       });
+    },
+    withThread: async (work) => {
+      await ready;
+      return serially(async () => {
+        const before = await opened().head();
+        const isCaughtUp = settings.setting(indexedSetting) === before;
+        const value = await work(opened());
+        const after = await opened().head();
+        if (after !== before) {
+          if (isCaughtUp) settings.setSetting(indexedSetting, after);
+          schedulePush();
+        }
+        return value;
+      });
+    },
+    indexText: async (address, title, text) => {
+      if (isClosed.get()) return;
+      if (text === undefined) {
+        store.replaceChunks(address, []);
+        return;
+      }
+      const chunks = toPageChunks(address, title, text, toTimestamp(clock.now()));
+      const vectors = await embedder.passages(chunks.map((chunk) => chunk.text));
+      if (isClosed.get()) return;
+      store.replaceChunks(
+        address,
+        chunks.map((chunk, index) => ({ ...chunk, ...(vectors[index] && { vector: vectors[index] }) })),
+      );
     },
     close: async () => {
       isClosed.set(true);

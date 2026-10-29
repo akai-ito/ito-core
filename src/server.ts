@@ -5,7 +5,9 @@ import { createCell } from "#cell.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, type Host, type Installed } from "#capabilities/host.ts";
 import { writeLauncher } from "#capabilities/launcher.ts";
-import { writeSkills } from "#capabilities/skills.ts";
+import { writeOwnSkills, writeSkills, type OwnSkill } from "#capabilities/skills.ts";
+import { createKinds } from "#motion/kinds.ts";
+import { createMotions, type Motions } from "#motion/motion.ts";
 import { createTrail } from "#capabilities/trail.ts";
 import type { Embedder } from "#memory/embedder.ts";
 import { noVoice, type VoiceContext, type VoiceLoop } from "#voice/loop.ts";
@@ -74,6 +76,7 @@ export type Server = {
   readonly attachments: Attachments;
   readonly host: Host;
   readonly memory: Memory;
+  readonly motions: Motions;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
   readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
@@ -81,6 +84,12 @@ export type Server = {
 };
 
 const talkRules = readFileSync(new URL("../agent/talk.md", import.meta.url), "utf8").trim();
+
+const motionSkill: OwnSkill = {
+  id: "things-in-motion",
+  summary: "starting and keeping things in motion, such as a trip being planned, and finding their photos",
+  text: readFileSync(new URL("../agent/motion.md", import.meta.url), "utf8"),
+};
 
 const dayMs = 24 * 60 * 60 * 1000;
 const textRetentionMs = 30 * dayMs;
@@ -122,7 +131,9 @@ export const createServer = (options: ServerOptions): Server => {
     info,
   });
   const launcher = writeLauncher(path.join(options.dataDirectory, "bin", "ito"));
-  const skills = (): string => writeSkills(path.join(options.dataDirectory, "skills"), host.offered(), launcher);
+  const skills = (): string =>
+    writeOwnSkills(path.join(options.dataDirectory, "skills"), [motionSkill]) +
+    writeSkills(path.join(options.dataDirectory, "skills"), host.offered(), launcher);
   const memory = createMemory({
     directory: path.join(options.dataDirectory, "thread"),
     store: createMemoryStore(database),
@@ -153,7 +164,7 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     tools: toolServer,
     skills,
-    inMind: () => [memory.inMindText(), callContext()].filter(Boolean).join("\n\n"),
+    inMind: () => [memory.inMindText(), motions.inMindText(), callContext()].filter(Boolean).join("\n\n"),
     callTool: (name, input) => callTool(name, input),
   });
   host.subscribe(() => {
@@ -183,6 +194,18 @@ export const createServer = (options: ServerOptions): Server => {
     attachmentPath: attachments.pathOf,
     secrets,
     trail: createTrail(host, launcher),
+    moreNotes: () => motions.tickNote(),
+  });
+  const schemas = loadSchemas();
+  const motions = createMotions({
+    memory,
+    store,
+    kinds: createKinds(schemas),
+    clock,
+    picturePath: attachments.pathOf,
+    approve: (fields) => turns.approve(fields),
+    recordStep: (facts) => turns.recordStep("motion", facts),
+    info,
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
@@ -208,13 +231,14 @@ export const createServer = (options: ServerOptions): Server => {
     store,
     turns,
     clock,
-    schemas: loadSchemas(),
+    schemas,
     info: { name: options.name, version: packageVersion(), agentName },
     gate: createGate(() => [store.setting(tokenSetting) ?? "", ...store.pairedTokenHashes()].filter(Boolean), clock),
     presence,
     attachments,
     host,
     memory,
+    motions,
     voice,
     calls,
     voiceprints,
@@ -243,7 +267,13 @@ export const createServer = (options: ServerOptions): Server => {
     newId: () => identifiers.attachment(),
     fetchImage: options.fetchImage ?? (async (url, signal) => fetch(url, { signal })),
   });
-  const coreTools: readonly Tool[] = [createAskTool(turns), createTopicTool(store), imageTool, ...memory.tools];
+  const coreTools: readonly Tool[] = [
+    createAskTool(turns),
+    createTopicTool(store),
+    imageTool,
+    ...memory.tools,
+    ...motions.tools,
+  ];
   const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()];
   const callTool = async (name: string, input: unknown): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
@@ -290,6 +320,7 @@ export const createServer = (options: ServerOptions): Server => {
     attachments,
     host,
     memory,
+    motions,
     voice,
     calls,
     callTool,
