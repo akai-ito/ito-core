@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
 import type { AskFields, StepFacts } from "#engine/engine.ts";
 import { randomIdentifiers } from "#identifiers.ts";
@@ -13,10 +13,11 @@ import { createMotions, type Motions } from "#motion/motion.ts";
 import { florenceId, florenceTrip } from "#protocol/tools/florence.ts";
 import { sub20Id, sub20Training } from "#protocol/tools/sub20.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
+import { ok, type Result } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import { createStore, type Store } from "#store/store.ts";
-import { createVirtualClock } from "./support/virtual-clock.ts";
+import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-motion-"));
 const memories = createCell<readonly Memory[]>([]);
@@ -30,9 +31,13 @@ type Opened = {
   readonly thread: string;
   readonly steps: () => readonly StepFacts[];
   readonly asked: () => readonly AskFields[];
+  readonly clock: VirtualClock;
 };
 
-const openMotions = async (answers: readonly boolean[] = []): Promise<Opened> => {
+const openMotions = async (
+  answers: readonly boolean[] = [],
+  complete?: (prompt: string) => Promise<Result<unknown, string>>,
+): Promise<Opened> => {
   const directory = mkdtempSync(path.join(home, "home-"));
   const database = openDatabase(path.join(directory, "ito.db"));
   const clock = createVirtualClock(Date.parse("2026-10-29T12:00:00.000Z"));
@@ -72,6 +77,7 @@ const openMotions = async (answers: readonly boolean[] = []): Promise<Opened> =>
       return true;
     },
     info: () => true,
+    ...(complete && { complete: (prompt: string) => complete(prompt) }),
   });
   await motions.ready;
   return {
@@ -81,6 +87,7 @@ const openMotions = async (answers: readonly boolean[] = []): Promise<Opened> =>
     thread: path.join(directory, "thread"),
     steps: () => steps.get(),
     asked: () => asked.get(),
+    clock,
   };
 };
 
@@ -302,6 +309,67 @@ describe("things in motion", () => {
     expect(started.isError).toBeUndefined();
     expect(ticked).toEqual({ ok: true, value: { sessions: { "wed-intervals": { done: true } } } });
     expect(motions.tickNote()).toBe("(Since your last reply: in Sub-20 5K, you ticked Intervals.)");
+  });
+
+  it("keeps the thing up with your ticks at once, quietly, gathering ticks in quick succession", async () => {
+    const prompts = createCell<readonly string[]>([]);
+    const { motions, clock } = await openMotions([], (prompt) => {
+      prompts.update((current) => [...current, prompt]);
+      return Promise.resolve(
+        ok({
+          changes_json: JSON.stringify([
+            { set: "pisa-train", fields: { booking: { status: "booked" } } },
+            { set: "pisa-day", fields: { booking: { status: "booked" } } },
+          ]),
+          summary: "6–9 Nov · 2 to book",
+          note: "Pisa train booked",
+        }),
+      );
+    });
+    await startFlorence(motions);
+
+    motions.patchState(florenceId, { todo: { "book-pisa": { done: true } } });
+    clock.moveTo(clock.now() + 1000);
+    motions.patchState(florenceId, { todo: { "book-duomo": { done: true } } });
+    clock.runNext(clock.now() + 3000);
+
+    await vi.waitFor(() => {
+      expect(motions.list()[0]).toMatchObject({ version: 2, summary: "6–9 Nov · 2 to book" });
+    });
+    const detail = await motions.detail(florenceId);
+    expect(prompts.get()).toHaveLength(1);
+    expect(prompts.get()[0]).toContain("They just ticked Pisa train tickets, ticked Book the Duomo climb in it");
+    expect(detail.ok && detail.value.changes[0]).toMatchObject({ version: 2, note: "Pisa train booked" });
+    expect(JSON.stringify(detail.ok && detail.value.content)).toContain('"booking":{"status":"booked"}');
+  });
+
+  it("drops a reaction to a tick when the thing changed while Ari was thinking", async () => {
+    const answer = createCell<((value: Result<unknown, string>) => void) | undefined>(undefined);
+    const { motions, clock } = await openMotions(
+      [],
+      () =>
+        new Promise((resolve) => {
+          answer.set(resolve);
+        }),
+    );
+    await startFlorence(motions);
+    motions.patchState(florenceId, { todo: { "book-pisa": { done: true } } });
+    clock.runNext(clock.now() + 3000);
+    await vi.waitFor(() => {
+      expect(answer.get()).toBeDefined();
+    });
+
+    await call(motions, "change_motion", bookUffizi);
+    answer.get()?.(
+      ok({
+        changes_json: JSON.stringify([{ set: "pisa-day", fields: { booking: { status: "booked" } } }]),
+        summary: "6–9 Nov · 2 to book",
+        note: "Pisa train booked",
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(motions.list()[0]).toMatchObject({ version: 2, summary: "6–9 Nov · 3 to book" });
   });
 
   it("lets recall find a trip by what's in it", async () => {

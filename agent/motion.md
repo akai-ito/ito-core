@@ -30,8 +30,9 @@ thing's own id.
   "What changed".
 - When they tell you something that settles an item, such as "booked the Uffizi", change it there
   and then: tick its to-do, mark the booking, move the place to picked.
-- Their own ticks reach you with their next message. They win over what you wrote, so don't undo
-  them.
+- Their own ticks win over what you wrote, so don't undo them. A tick is followed at once by a
+  quiet question to you, outside the chat, to keep the thing up with it, and it reaches you again
+  with their next message.
 - `finish_motion` when it's over, such as when they're home. `restore_motion` undoes a change that
   was wrong. `forget_motion` asks them first, and is only for a thing that shouldn't exist.
 

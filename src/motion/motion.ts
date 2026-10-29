@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createCell } from "#cell.ts";
-import { toTimestamp, type Clock } from "#clock.ts";
-import type { AskFields, StepFacts } from "#engine/engine.ts";
+import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
+import type { AskFields, JsonSchema, StepFacts } from "#engine/engine.ts";
+import { reactionSchema, toReaction, toReactionPrompt } from "#motion/reactions.ts";
 import type { Memory } from "#memory/memory.ts";
 import type { Thread } from "#memory/thread.ts";
 import {
@@ -41,6 +42,7 @@ export type Motions = {
   readonly patchState: (id: string, patch: unknown) => Result<Fields, MotionFailure>;
   readonly inMindText: () => string;
   readonly tickNote: () => string;
+  readonly close: () => void;
 };
 
 export type MotionOptions = {
@@ -52,6 +54,8 @@ export type MotionOptions = {
   readonly approve: (fields: AskFields) => Promise<boolean>;
   readonly recordStep: (facts: StepFacts) => boolean;
   readonly info: Info;
+  readonly complete?: (prompt: string, schema: JsonSchema) => Promise<Result<unknown, string>>;
+  readonly reactAfterMs?: number;
 };
 
 type Saved = { readonly kind: Kind; readonly card: Card; readonly status: "active" | "done"; readonly content: Fields };
@@ -151,9 +155,13 @@ export const createMotions = ({
   approve,
   recordStep,
   info,
+  complete,
+  reactAfterMs = 3000,
 }: MotionOptions): Motions => {
   const saved = createCell<ReadonlyMap<string, Saved>>(new Map());
   const indexing = createCell<Promise<void>>(Promise.resolve());
+  const waiting = createCell<ReadonlyMap<string, { readonly cancel: Cancel; readonly before: Fields }>>(new Map());
+  const isClosed = createCell(false);
 
   const remember = (id: string, thing: Saved | undefined): void => {
     saved.update(
@@ -595,6 +603,63 @@ export const createMotions = ({
     },
   ];
 
+  const react = async (id: string, before: Fields): Promise<void> => {
+    const thing = saved.get().get(id);
+    const motion = store.findMotion(id);
+    if (!complete || !thing || !motion || isClosed.get()) return;
+    const state = store.motionState(id);
+    const ticked = tickedIn(thing.content, before, state);
+    if (ticked.length === 0) return;
+    const prompt = toReactionPrompt({
+      id,
+      kind: thing.kind,
+      title: thing.card.title,
+      summary: thing.card.summary,
+      version: motion.version,
+      content: thing.content,
+      state,
+      ticked,
+    });
+    const answered = await complete(prompt, reactionSchema);
+    const reaction = answered.ok ? toReaction(answered.value) : undefined;
+    if (!reaction || isClosed.get()) {
+      info("Ari couldn't keep a thing in motion up with a tick", {
+        motion: id,
+        error: answered.ok ? "Its answer wasn't a change." : answered.failure,
+      });
+      return;
+    }
+    const changes = Array.isArray(reaction.changes) ? (reaction.changes as readonly unknown[]) : [];
+    const summary = reaction.summary || thing.card.summary;
+    if (changes.length === 0 && summary === thing.card.summary) return;
+    const changed = await change({
+      id,
+      version: motion.version,
+      changes: changes.length > 0 ? changes : [{ set: id, fields: { summary } }],
+      summary,
+      note: reaction.note || "Kept up with your tick",
+    });
+    if (!changed.ok)
+      info("A thing in motion couldn't take Ari's change after a tick", { motion: id, error: changed.failure });
+  };
+
+  const reactLater = (id: string, before: Fields): void => {
+    if (!complete || isClosed.get()) return;
+    const earlier = waiting.get().get(id);
+    earlier?.cancel();
+    const cancel = clock.after(reactAfterMs, () => {
+      waiting.update((current) => new Map([...current].filter(([other]) => other !== id)));
+      void (async (): Promise<void> => {
+        try {
+          await react(id, earlier?.before ?? before);
+        } catch (error) {
+          info("Ari couldn't keep a thing in motion up with a tick", { motion: id, error: String(error) });
+        }
+      })();
+    });
+    waiting.update((current) => new Map([...current, [id, { cancel, before: earlier?.before ?? before }]]));
+  };
+
   const ready = (async (): Promise<void> => {
     await memory.ready;
     try {
@@ -636,7 +701,11 @@ export const createMotions = ({
       if (stray.length > 0) {
         return fail({ code: "not_found", detail: `${thing.card.title} has no item ${stray.join(", ")}.` });
       }
-      if (JSON.stringify(fields) !== JSON.stringify(store.motionState(id))) store.setMotionState(id, fields);
+      const before = store.motionState(id);
+      if (JSON.stringify(fields) !== JSON.stringify(before)) {
+        store.setMotionState(id, fields);
+        reactLater(id, before);
+      }
       return ok(fields);
     },
     inMindText: () => {
@@ -649,6 +718,11 @@ export const createMotions = ({
             ...active.map(({ id, title, kind, summary }) => `- ${title} (${id}, ${kind}): ${summary}`),
             "</in_motion>",
           ].join("\n");
+    },
+    close: () => {
+      isClosed.set(true);
+      for (const { cancel } of waiting.get().values()) cancel();
+      waiting.set(new Map());
     },
     tickNote: () => {
       const ticks = store

@@ -206,6 +206,10 @@ export const createServer = (options: ServerOptions): Server => {
     approve: (fields) => turns.approve(fields),
     recordStep: (facts) => turns.recordStep("motion", facts),
     info,
+    complete: async (prompt, schema) => {
+      await listening;
+      return engine.complete(prompt, schema);
+    },
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
@@ -300,6 +304,7 @@ export const createServer = (options: ServerOptions): Server => {
 
   const shutdown = async (): Promise<void> => {
     compaction.get()?.();
+    motions.close();
     notifier.close();
     await app.close();
     await turns.close();
