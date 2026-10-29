@@ -20,10 +20,13 @@
 {"at":5500,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":5500,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Calendar: Call Mum, Sunday 1 November, 2pm."}}}
 {"at":5500,"socket":{"from":"server","audio_ms":250}}
+{"at":5500,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":5500,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Shall I add it to your calendar?"}}}
 {"at":5500,"socket":{"from":"server","audio_ms":250}}
+{"at":5500,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
 {"at":5500,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"Add it, or Leave it?"}}}
 {"at":5500,"socket":{"from":"server","audio_ms":250}}
+{"at":5500,"socket":{"from":"server","frame":{"type":"said","id":"s3"}}}
 {"at":5500,"event":{"id":"e_0005_04830","type":"turn.ended","at":"2026-10-28T08:00:05.500Z","turn":"t_0001_55604","outcome":"completed"}}
 {"at":9500,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
 {"at":9500,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
@@ -44,9 +47,11 @@
 {"at":11900,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":11900,"socket":{"from":"server","frame":{"type":"saying","id":"s4","text":"Added."}}}
 {"at":11900,"socket":{"from":"server","audio_ms":250}}
+{"at":11900,"socket":{"from":"server","frame":{"type":"said","id":"s4"}}}
 {"at":11900,"event":{"id":"e_0012_68787","type":"message.ended","at":"2026-10-28T08:00:11.900Z","message":"m_0003_68062","outcome":"completed","length":33}}
 {"at":11900,"socket":{"from":"server","frame":{"type":"saying","id":"s5","text":"I'll remind you on Sunday."}}}
 {"at":11900,"socket":{"from":"server","audio_ms":250}}
+{"at":11900,"socket":{"from":"server","frame":{"type":"said","id":"s5"}}}
 {"at":11900,"event":{"id":"e_0013_02772","type":"turn.ended","at":"2026-10-28T08:00:11.900Z","turn":"t_0002_78935","outcome":"completed"}}
 {"at":13900,"socket":{"from":"app","frame":{"type":"played","id":"s4"}}}
 {"at":13900,"socket":{"from":"app","frame":{"type":"played","id":"s5"}}}

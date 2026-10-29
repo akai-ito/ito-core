@@ -23,6 +23,7 @@
 {"at":6200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Added."}}}
 {"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":6200,"event":{"id":"e_0008_52486","type":"turn.ended","at":"2026-10-27T08:40:06.200Z","turn":"t_0001_37813","outcome":"completed"}}
 {"at":6800,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
 {"at":6800,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}

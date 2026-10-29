@@ -21,6 +21,7 @@
 {"at":13300,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":13300,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Searching the web for quiet cafés near Brighton station"}}}
 {"at":13300,"socket":{"from":"server","audio_ms":250}}
+{"at":13300,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":14800,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
 {"at":14800,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
 {"at":20800,"event":{"id":"e_0006_66386","type":"step.ended","at":"2026-10-27T10:00:20.800Z","step":{"id":"s_0001_23656","turn":"t_0001_47648","kind":"web_search","title":"Searched the web for quiet cafés near Brighton station","at":"2026-10-27T10:00:04.800Z","position":4,"query":"quiet cafés near Brighton station","ended_at":"2026-10-27T10:00:20.800Z","outcome":"completed","duration_ms":16000}}}
@@ -30,9 +31,11 @@
 {"at":20800,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":20800,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Try Small Batch on Queens Road."}}}
 {"at":20800,"socket":{"from":"server","audio_ms":250}}
+{"at":20800,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
 {"at":20800,"event":{"id":"e_0010_93138","type":"message.ended","at":"2026-10-27T10:00:20.800Z","message":"m_0002_32214","outcome":"completed","length":55}}
 {"at":20800,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"It's quiet before noon."}}}
 {"at":20800,"socket":{"from":"server","audio_ms":250}}
+{"at":20800,"socket":{"from":"server","frame":{"type":"said","id":"s3"}}}
 {"at":20800,"event":{"id":"e_0011_44667","type":"turn.ended","at":"2026-10-27T10:00:20.800Z","turn":"t_0001_47648","outcome":"completed"}}
 {"at":23800,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
 {"at":23800,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}

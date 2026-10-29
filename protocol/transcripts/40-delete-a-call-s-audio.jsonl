@@ -22,9 +22,11 @@
 {"at":7200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":7200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"That's a lovely one to end on."}}}
 {"at":7200,"socket":{"from":"server","audio_ms":250}}
+{"at":7200,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":7200,"event":{"id":"e_0007_57854","type":"message.ended","at":"2026-10-26T19:00:07.200Z","message":"m_0002_64513","outcome":"completed","length":64}}
 {"at":7200,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"I've added it to today's journal."}}}
 {"at":7200,"socket":{"from":"server","audio_ms":250}}
+{"at":7200,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
 {"at":7200,"event":{"id":"e_0008_02468","type":"turn.ended","at":"2026-10-26T19:00:07.200Z","turn":"t_0001_56656","outcome":"completed"}}
 {"at":10200,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
 {"at":12700,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}

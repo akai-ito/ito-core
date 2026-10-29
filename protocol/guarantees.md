@@ -317,8 +317,9 @@ where the protocol has to make it possible, marked *App*.
 - On the call's stream, the server says when it's hearing you, captions your words live, and posts
   the finished turn as a spoken message with its recording. The agent gets the words, never the
   recording. (G23, G25)
-- Ari's note and reply are spoken a sentence at a time up to the `---` line, each `saying` with
-  an id the phone answers with `played`. (G26)
+- Ari's note and reply are spoken a sentence at a time up to the `---` line: each `saying` with an
+  id, then its audio, then `said`, which the phone answers with `played` once the audio has played.
+  When the last line is played, the call goes back to listening. (G26)
 
 ### 40 · [Delete a call's audio](transcripts/40-delete-a-call-s-audio.jsonl)
 

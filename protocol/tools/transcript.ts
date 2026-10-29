@@ -907,6 +907,7 @@ export const createTranscript = (header: Header): Transcript => {
     moveTo("speaking");
     serverFrame({ type: "saying", id, text });
     addStep({ socket: { from: "server", audio_ms: cannedAudioMs } });
+    serverFrame({ type: "said", id });
     return id;
   };
 

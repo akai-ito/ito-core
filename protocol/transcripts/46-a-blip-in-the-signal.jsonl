@@ -22,9 +22,11 @@
 {"at":6200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Pasta with the leftover pesto."}}}
 {"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":6200,"event":{"id":"e_0007_74300","type":"message.ended","at":"2026-10-27T08:15:06.200Z","message":"m_0002_64292","outcome":"completed","length":58}}
 {"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"You bought basil yesterday."}}}
 {"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
 {"at":6200,"event":{"id":"e_0008_14520","type":"turn.ended","at":"2026-10-27T08:15:06.200Z","turn":"t_0001_35837","outcome":"completed"}}
 {"at":6600,"world":"offline"}
 {"at":12600,"world":"online"}
@@ -48,6 +50,7 @@
 {"at":16700,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":16700,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"Pasta with the leftover pesto."}}}
 {"at":16700,"socket":{"from":"server","audio_ms":250}}
+{"at":16700,"socket":{"from":"server","frame":{"type":"said","id":"s3"}}}
 {"at":16700,"event":{"id":"e_0015_39458","type":"turn.ended","at":"2026-10-27T08:15:16.700Z","turn":"t_0002_29811","outcome":"completed"}}
 {"at":18700,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}
 {"at":18700,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
