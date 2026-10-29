@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { installed } from "#capabilities/installed.ts";
+import { demoInstalled, installed } from "#capabilities/installed.ts";
 import type { Io } from "#cli/io.ts";
 import { toPaths, type Paths } from "#cli/paths.ts";
 import { tokenMessage } from "#cli/token.ts";
@@ -102,7 +102,7 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
     dataDirectory: paths.home,
     createEngine: toEngineFactory(engine, paths),
     name,
-    capabilities: installed,
+    capabilities: engine === "demo" ? demoInstalled : installed,
     logger: { level: "info", redact: ["req.headers.authorization"] },
   });
   await server.app.listen({
