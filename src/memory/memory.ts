@@ -2,9 +2,10 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
-import type { JsonSchema, StepFacts } from "#engine/engine.ts";
+import type { AskFields, JsonSchema, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type { Embedder } from "#memory/embedder.ts";
+import { applyEdit, isSameVersion, isSharplyShorter, numberLines, toVersion, type BodyEdit } from "#memory/edits.ts";
 import { gistGuide, gistSchema, gistsPerRequest, toGistPrompt, toGists, toOneLine } from "#memory/gists.ts";
 import {
   appendEntry,
@@ -120,6 +121,7 @@ export type MemoryOptions = {
   readonly identifiers: Identifiers;
   readonly embedder: Embedder;
   readonly recordStep: (facts: StepFacts) => boolean;
+  readonly approve: (fields: AskFields) => Promise<boolean>;
   readonly info: Info;
   readonly timeZone: string;
   readonly complete?: (prompt: string, schema: JsonSchema) => Promise<Result<unknown, string>>;
@@ -174,6 +176,10 @@ const toMissing = (input: unknown, fields: readonly string[]): string | undefine
   return missing.length === 0 ? undefined : missing.join(" ");
 };
 
+const tooLong = (title: string, length: number): string =>
+  `${title} is ${String(length)} characters, over the ${String(inMindLimit)} it can hold. Keep it to what matters ` +
+  "on every turn, and move the detail to a page on a shelf.";
+
 const formatPassage = (passage: Passage, index: number): string =>
   `${String(index + 1)}. ${passage.title} (${passage.address}, ${passage.at.slice(0, 10)})\n${passage.text}`;
 
@@ -192,6 +198,7 @@ export const createMemory = ({
   identifiers,
   embedder,
   recordStep,
+  approve,
   info,
   timeZone,
   complete,
@@ -322,7 +329,7 @@ export const createMemory = ({
     message: string,
     note: string | undefined,
   ): Promise<Result<string, string>> => {
-    const committed = await opened().write(location.path, text, message);
+    const committed = await opened().write(location.path, text, note ? `${message}\n\n${note}` : message);
     if (!committed.ok) return committed;
     const id = identifiers.change();
     const at = toTimestamp(clock.now());
@@ -352,12 +359,7 @@ export const createMemory = ({
         ? fallbackTitle(location.value)
         : textOf(input, "title").trim() || (existing?.title ?? fallbackTitle(location.value));
       const markdown = toMarkdown(textOf(input, "body"));
-      if (isFixed && markdown.length > inMindLimit) {
-        return fail(
-          `${title} is ${String(markdown.length)} characters, over the ${String(inMindLimit)} it can hold. ` +
-            "Keep it to what matters on every turn, and move the detail to a page on a shelf.",
-        );
-      }
+      if (isFixed && markdown.length > inMindLimit) return fail(tooLong(title, markdown.length));
       const gist = toOneLine(textOf(input, "gist")) || existing?.gist;
       const note = toOneLine(textOf(input, "note")) || undefined;
       const text =
@@ -398,6 +400,123 @@ export const createMemory = ({
       });
       const committed = await commit(location.value, title, text, `Journal ${day}`, toOneLine(textOf(input, "note")));
       return committed.ok ? ok({ address: location.value.address, title }) : committed;
+    });
+
+  const currentVersion = async (location: Location): Promise<string | undefined> => {
+    const [latest] = await opened().history(location.path, 1);
+    return latest && !latest.isDeleted ? toVersion(latest.commit) : undefined;
+  };
+
+  const toBodyEdit = (input: unknown): Result<BodyEdit | undefined, string> => {
+    const old = fieldOf(input, "old_text");
+    const start = fieldOf(input, "start_line");
+    const end = fieldOf(input, "end_line");
+    if (typeof old === "string" && (start !== undefined || end !== undefined)) {
+      return fail("Give either old_text or start_line and end_line, not both.");
+    }
+    const replacement = textOf(input, "new_text");
+    if (typeof old === "string") return ok({ kind: "passage", old, new: replacement });
+    if (typeof start === "number" && typeof end === "number")
+      return ok({ kind: "lines", start, end, new: replacement });
+    if (start !== undefined || end !== undefined) return fail("Give both start_line and end_line.");
+    return ok(undefined);
+  };
+
+  const editPage = (
+    input: unknown,
+  ): Promise<Result<{ readonly title: string; readonly change: string; readonly version: string }, string>> =>
+    serially(async () => {
+      const location = toLocation(textOf(input, "address").trim());
+      if (!location.ok) return location;
+      const existing = readParsed(location.value);
+      const version = await currentVersion(location.value);
+      if (!existing || version === undefined) {
+        return fail(`There's no page at ${location.value.address}. Make a new page with write_page.`);
+      }
+      if (!isSameVersion(textOf(input, "version").trim(), version)) {
+        return fail(
+          `${existing.title} has changed since you read it: it's at version ${version} now. Read it again, then edit.`,
+        );
+      }
+      const bodyEdit = toBodyEdit(input);
+      if (!bodyEdit.ok) return bodyEdit;
+      const markdown = bodyEdit.value ? applyEdit(existing.markdown, bodyEdit.value) : ok(existing.markdown);
+      if (!markdown.ok) return markdown;
+      if (isSharplyShorter(existing.markdown, markdown.value)) {
+        return fail(
+          `That would remove more than half of ${existing.title}. Edit it a part at a time, or forget the page ` +
+            "with forget_page if it should go.",
+        );
+      }
+      const isFixed = isInMindPage(location.value.shelf);
+      const title = isFixed ? existing.title : textOf(input, "title").trim() || existing.title;
+      if (isFixed && markdown.value.length > inMindLimit) return fail(tooLong(title, markdown.value.length));
+      const gist = toOneLine(textOf(input, "gist")) || existing.gist;
+      const listOr = (field: string, fallback: readonly string[]): readonly string[] =>
+        Array.isArray(fieldOf(input, field)) ? stringsOf(input, field) : fallback;
+      const text = formatPage({
+        ...existing,
+        title,
+        ...(gist !== undefined && { gist }),
+        aliases: listOr("aliases", existing.aliases),
+        links: listOr("links", existing.links),
+        markdown: markdown.value,
+      });
+      if (text === opened().read(location.value.path)) return fail(`${title} already says exactly that.`);
+      const committed = await commit(location.value, title, text, `Update ${title}`, toOneLine(textOf(input, "note")));
+      return committed.ok
+        ? ok({ title, change: committed.value, version: (await currentVersion(location.value)) ?? "" })
+        : committed;
+    });
+
+  const writeNewPage = (
+    input: unknown,
+  ): Promise<Result<{ readonly title: string; readonly change: string; readonly version: string }, string>> =>
+    serially(async () => {
+      const location = toLocation(textOf(input, "address").trim());
+      if (!location.ok) return location;
+      const existing = readParsed(location.value);
+      if (existing) {
+        return fail(`${existing.title} is already a page. Read it with read_page, then change it with edit_page.`);
+      }
+      const markdown = toMarkdown(textOf(input, "body"));
+      if (markdown === "") return fail("A new page needs a body.");
+      const title = isInMindPage(location.value.shelf)
+        ? fallbackTitle(location.value)
+        : textOf(input, "title").trim() || fallbackTitle(location.value);
+      if (isInMindPage(location.value.shelf) && markdown.length > inMindLimit) {
+        return fail(tooLong(title, markdown.length));
+      }
+      const text = formatPage({
+        title,
+        gist: toOneLine(textOf(input, "gist")),
+        aliases: stringsOf(input, "aliases"),
+        links: stringsOf(input, "links"),
+        markdown,
+      });
+      const committed = await commit(location.value, title, text, `Add ${title}`, toOneLine(textOf(input, "note")));
+      return committed.ok
+        ? ok({ title, change: committed.value, version: (await currentVersion(location.value)) ?? "" })
+        : committed;
+    });
+
+  const forgetPage = (location: Location, title: string, reason: string): Promise<Result<string, string>> =>
+    serially(() => commit(location, title, undefined, `Forget ${title}`, reason));
+
+  const restorePage = (
+    location: Location,
+    version: string,
+    note: string,
+  ): Promise<Result<{ readonly title: string; readonly change: string; readonly version: string }, string>> =>
+    serially(async () => {
+      const text = await opened().readAt(version, location.path);
+      if (text === undefined) return fail(`${location.address} has no version ${version}. See page_history.`);
+      if (text === opened().read(location.path)) return fail("The page already says exactly that.");
+      const { title } = parsePage(text, fallbackTitle(location));
+      const committed = await commit(location, title, text, `Restore ${title}`, note);
+      return committed.ok
+        ? ok({ title, change: committed.value, version: (await currentVersion(location)) ?? "" })
+        : committed;
     });
 
   const recall = async (query: string): Promise<readonly Passage[]> => {
@@ -588,46 +707,110 @@ export const createMemory = ({
       name: "read_page",
       title: "Read a page from memory",
       description:
-        "Read one whole page from your memory by its address, such as memory:people/alex or " +
-        "memory:journal/2026-10-25. Read a page before you rewrite it with remember.",
+        "Read one page from your memory by its address, such as memory:people/alex or memory:journal/2026-10-25: " +
+        "its front matter, its body with line numbers, and its version. Read a page before you edit it. Give a " +
+        "version from page_history to read the page as it was then.",
       inputSchema: {
         type: "object",
-        properties: { address: { type: "string", description: "The page's address." } },
+        properties: {
+          address: { type: "string", description: "The page's address." },
+          version: { type: "string", description: "An earlier version, from page_history." },
+        },
         required: ["address"],
         additionalProperties: false,
       },
       call: (input) =>
-        whenReady(() => {
+        whenReady(async () => {
           const location = toLocation(textOf(input, "address").trim());
-          if (!location.ok) return Promise.resolve(failed(location.failure));
-          const page = readPage(location.value);
-          if (!page) return Promise.resolve(failed(`There's no page at ${location.value.address} yet.`));
-          recordStep({ action: "used", pages: toPageReference(page) });
-          return Promise.resolve({ text: opened().read(location.value.path) ?? "" });
+          if (!location.ok) return failed(location.failure);
+          const asked = textOf(input, "version").trim();
+          const version = asked || (await currentVersion(location.value));
+          const text =
+            asked === "" ? opened().read(location.value.path) : await opened().readAt(asked, location.value.path);
+          if (text === undefined || version === undefined) {
+            return failed(
+              asked === ""
+                ? `There's no page at ${location.value.address}. If it was forgotten, page_history shows its versions.`
+                : `${location.value.address} has no version ${asked}. See page_history.`,
+            );
+          }
+          const page = parsePage(text, fallbackTitle(location.value));
+          recordStep({
+            action: "used",
+            pages: toPageReference({ address: location.value.address, title: page.title }),
+          });
+          const frontMatter = text.slice(0, text.length - page.markdown.length).trim();
+          return {
+            text: [
+              `${location.value.address}, version ${version}${asked === "" ? "" : " (an earlier version)"}`,
+              frontMatter,
+              numberLines(page.markdown),
+            ].join("\n"),
+          };
         }),
     },
     {
-      name: "remember",
-      title: "Write a page in memory",
+      name: "edit_page",
+      title: "Edit a page in memory",
       description:
-        "Write or rewrite a page in your memory: memory:portrait, memory:now, memory:helping-you, or a page on a " +
-        "shelf, memory:people/…, memory:goals/…, memory:projects/…, memory:places/… or memory:topics/…, named " +
-        "with lowercase words and dashes. Give the whole page each time: the present first, in the present " +
-        "tense with an (as of <date>) note, then an ## Earlier section of dated lines for what used to be true. " +
-        "The newest thing the person said wins: rewrite the present and move the old state to Earlier. " +
-        "An empty body deletes the page. Portrait, Now and How to help you hold 2,000 characters each. " +
-        "Never store passwords or tokens.",
+        "Change a page you've read, citing the version read_page gave you; if the page has changed since, read it " +
+        "again. Replace a passage, old_text copied exactly from the page and there only once, with new_text; or " +
+        "replace lines start_line to end_line, as read_page numbers them, with new_text. An empty new_text removes " +
+        "them. Keep the present first, in the present tense with an (as of <date>) note, and move what used to be " +
+        "true to the ## Earlier section as a dated line. Give title, gist, aliases or links to change those too. " +
+        "Portrait, Now and How to help you hold 2,000 characters each. Never store passwords or tokens.",
       inputSchema: {
         type: "object",
         properties: {
-          address: { type: "string", description: "The page's address, such as memory:people/alex." },
-          title: { type: "string", description: "The page's title, such as Alex." },
+          address: { type: "string", description: "The page's address." },
+          version: { type: "string", description: "The version you read." },
+          old_text: { type: "string", description: "The passage to replace, exactly as it is on the page." },
+          start_line: { type: "integer", description: "The first line to replace." },
+          end_line: { type: "integer", description: "The last line to replace." },
+          new_text: { type: "string", description: "What goes in its place, as Markdown." },
           gist: { type: "string", description: `${gistGuide} Keep it current with every change.` },
           note: {
             type: "string",
             description:
               "What this change does, in a few words, such as “Florence together 6–9 Nov” or “Forgot the first date”.",
           },
+          title: { type: "string", description: "A new title." },
+          aliases: { type: "array", items: { type: "string" }, description: "Other names for it, all of them." },
+          links: { type: "array", items: { type: "string" }, description: "Addresses of related pages, all of them." },
+        },
+        required: ["address", "version", "note"],
+        additionalProperties: false,
+      },
+      call: (input) =>
+        whenReady(async () => {
+          const missing = toMissing(input, ["note"]);
+          if (missing) return failed(missing);
+          const edited = await editPage(input);
+          if (!edited.ok) return failed(edited.failure);
+          recordStep({
+            action: "updated",
+            pages: toPageReference({ address: textOf(input, "address").trim(), title: edited.value.title }),
+            change: edited.value.change,
+          });
+          return { text: `Saved ${edited.value.title}, now at version ${edited.value.version}.` };
+        }),
+    },
+    {
+      name: "write_page",
+      title: "Write a new page in memory",
+      description:
+        "Write a page that doesn't exist yet: memory:portrait, memory:now, memory:helping-you, or a page on a " +
+        "shelf, memory:people/…, memory:goals/…, memory:projects/…, memory:places/… or memory:topics/…, named " +
+        "with lowercase words and dashes. The present first, in the present tense with an (as of <date>) note, " +
+        "then an ## Earlier section of dated lines for what used to be true. To change a page that exists, read " +
+        "it and use edit_page. Never store passwords or tokens.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          address: { type: "string", description: "The page's address, such as memory:people/alex." },
+          title: { type: "string", description: "The page's title, such as Alex." },
+          gist: { type: "string", description: gistGuide },
+          note: { type: "string", description: "What this page is for, in a few words." },
           aliases: { type: "array", items: { type: "string" }, description: "Other names for it." },
           links: {
             type: "array",
@@ -641,17 +824,123 @@ export const createMemory = ({
       },
       call: (input) =>
         whenReady(async () => {
-          const missing = toMissing(input, textOf(input, "body").trim() === "" ? ["note"] : ["gist", "note"]);
+          const missing = toMissing(input, ["gist", "note"]);
           if (missing) return failed(missing);
-          const written = await writePage(input);
+          const written = await writeNewPage(input);
           if (!written.ok) return failed(written.failure);
-          const address = textOf(input, "address").trim();
           recordStep({
             action: "updated",
-            pages: toPageReference({ address, title: written.value.title }),
+            pages: toPageReference({ address: textOf(input, "address").trim(), title: written.value.title }),
             change: written.value.change,
           });
-          return { text: `Saved ${written.value.title}.` };
+          return { text: `Saved ${written.value.title}, at version ${written.value.version}.` };
+        }),
+    },
+    {
+      name: "forget_page",
+      title: "Forget a page",
+      description:
+        "Forget a whole page, after asking the person: this asks them for approval and waits for their answer. " +
+        "Use it only when a page shouldn't exist at all; its history stays, so restore_page can bring it back.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          address: { type: "string", description: "The page's address." },
+          reason: { type: "string", description: "Why it should go, in a few words, said to the person." },
+        },
+        required: ["address", "reason"],
+        additionalProperties: false,
+      },
+      call: (input) =>
+        whenReady(async () => {
+          const location = toLocation(textOf(input, "address").trim());
+          if (!location.ok) return failed(location.failure);
+          const page = readParsed(location.value);
+          if (!page) return failed(`There's no page at ${location.value.address}.`);
+          const reason = toOneLine(textOf(input, "reason"));
+          if (reason === "") return failed("Say why it should go.");
+          const isAllowed = await approve({
+            kind: "approval",
+            question: `Forget ${page.title}?`,
+            options: [{ label: "Forget it", acts: true }, { label: "Keep it" }],
+            allows_text: true,
+            preview: `${page.title} (${location.value.address}): ${reason}`,
+            secret: false,
+          });
+          if (!isAllowed) return { text: `They kept ${page.title}, so nothing was forgotten.` };
+          const forgotten = await forgetPage(location.value, page.title, reason);
+          if (!forgotten.ok) return failed(forgotten.failure);
+          recordStep({
+            action: "updated",
+            pages: toPageReference({ address: location.value.address, title: page.title }),
+            change: forgotten.value,
+          });
+          return { text: `Forgot ${page.title}.` };
+        }),
+    },
+    {
+      name: "page_history",
+      title: "See a page's history",
+      description:
+        "List a page's versions, newest first, with when and what changed, even for a page that was forgotten. " +
+        "Read one with read_page and its version, or bring it back with restore_page.",
+      inputSchema: {
+        type: "object",
+        properties: { address: { type: "string", description: "The page's address." } },
+        required: ["address"],
+        additionalProperties: false,
+      },
+      call: (input) =>
+        whenReady(async () => {
+          const location = toLocation(textOf(input, "address").trim());
+          if (!location.ok) return failed(location.failure);
+          const history = await opened().history(location.value.path);
+          if (history.length === 0) return failed(`${location.value.address} has no history.`);
+          return {
+            text: history
+              .map(
+                ({ commit: version, at, subject, body, isDeleted }) =>
+                  `${toVersion(version)}  ${at.slice(0, 16).replace("T", " ")}  ${subject}${body ? `: ${body}` : ""}` +
+                  (isDeleted ? " (gone after this)" : ""),
+              )
+              .join("\n"),
+          };
+        }),
+    },
+    {
+      name: "restore_page",
+      title: "Restore a page",
+      description:
+        "Bring a page back as it was at an earlier version from page_history, forgotten pages included. It " +
+        "becomes the page's newest version; the versions in between stay in its history.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          address: { type: "string", description: "The page's address." },
+          version: { type: "string", description: "The version to bring back." },
+          note: { type: "string", description: "Why, in a few words." },
+        },
+        required: ["address", "version", "note"],
+        additionalProperties: false,
+      },
+      call: (input) =>
+        whenReady(async () => {
+          const location = toLocation(textOf(input, "address").trim());
+          if (!location.ok) return failed(location.failure);
+          const missing = toMissing(input, ["note"]);
+          if (missing) return failed(missing);
+          const restored = await restorePage(
+            location.value,
+            textOf(input, "version").trim(),
+            toOneLine(textOf(input, "note")),
+          );
+          if (!restored.ok) return failed(restored.failure);
+          recordStep({
+            action: "updated",
+            pages: toPageReference({ address: location.value.address, title: restored.value.title }),
+            change: restored.value.change,
+          });
+          return { text: `Restored ${restored.value.title}, now at version ${restored.value.version}.` };
         }),
     },
     {

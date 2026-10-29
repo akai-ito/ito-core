@@ -131,6 +131,7 @@ export const createServer = (options: ServerOptions): Server => {
     identifiers,
     embedder: options.embedder,
     recordStep: (facts) => turns.recordStep("memory", facts),
+    approve: (fields) => turns.approve(fields),
     info,
     timeZone: options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
     complete: async (prompt, schema) => {

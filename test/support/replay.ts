@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -116,6 +117,17 @@ export const replay = async (name: string): Promise<void> => {
   const scripts = createScriptQueue(deriveScripts(transcript));
   const directory = mkdtempSync(path.join(os.tmpdir(), `ito-${name}-`));
   const backupFile = path.join(directory, "backup.db");
+
+  const withLiveVersion = (input: unknown): unknown => {
+    const fields = input as Readonly<Record<string, unknown>>;
+    const { address, version } = fields;
+    if (typeof address !== "string" || typeof version !== "string") return input;
+    const file = `${address.replace(/^memory:/u, "")}.md`;
+    const latest = execFileSync("git", ["-C", path.join(directory, "thread"), "log", "-1", "--format=%H", "--", file], {
+      encoding: "utf8",
+    });
+    return { ...fields, version: latest.trim() };
+  };
   const ids = createIdMatcher(transcript.given.flatMap((event) => idsIn(event)));
   const live = createCell<Live | undefined>(undefined);
   const stream = createCell<EventStream | undefined>(undefined);
@@ -373,7 +385,7 @@ export const replay = async (name: string): Promise<void> => {
           readonly input: unknown;
           readonly returns?: unknown;
         };
-        const called = await (live.get()?.server.callTool(tool, input) ?? Promise.resolve(undefined));
+        const called = await (live.get()?.server.callTool(tool, withLiveVersion(input)) ?? Promise.resolve(undefined));
         check(called?.isError === true ? `${tool} failed: ${called.text}` : undefined, index);
         if (returns !== undefined) check(ids.match(returns, called?.structured), index);
         return;

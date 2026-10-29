@@ -10,7 +10,7 @@ const shortReply = [
   "- It streams a reply in small pieces, the way a real model does.",
   "- Send a message while it writes to try **steering**.",
   "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, *approve* for an approval, or *secret* for a secret question.",
-  "- *remember* writes Alex's page in memory (again, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
+  "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
 ].join("\n");
 
 const longReply = Array.from(
@@ -160,17 +160,24 @@ const rememberAlex =
     const existing = await callTool("read_page", { address: alex });
     const today = dayOf(now);
     const isNew = existing.isError === true;
-    const body = isNew
-      ? `Taking things slow; you've been on two dates (as of ${today}).`
-      : `Seeing each other a lot, and it's going really well (as of ${today}).\n\n## Earlier\n\n- ${today}: taking things slow.`;
-    await callTool("remember", {
-      address: alex,
-      title: "Alex",
-      gist: isNew ? "Someone you're seeing; taking it slow" : "Someone you're seeing a lot; going really well",
-      note: isNew ? "Two dates so far" : "Seeing each other a lot now",
-      aliases: ["Alex R"],
-      body,
-    });
+    await (isNew
+      ? callTool("write_page", {
+          address: alex,
+          title: "Alex",
+          gist: "Someone you're seeing; taking it slow",
+          note: "Two dates so far",
+          aliases: ["Alex R"],
+          body: `Taking things slow; you've been on two dates (as of ${today}).`,
+        })
+      : callTool("edit_page", {
+          address: alex,
+          version: /version (?<version>\w+)/u.exec(existing.text)?.groups?.version ?? "",
+          start_line: 1,
+          end_line: 1,
+          new_text: `Seeing each other a lot, and it's going really well (as of ${today}).\n\n## Earlier\n\n- ${today}: taking things slow.`,
+          gist: "Someone you're seeing a lot; going really well",
+          note: "Seeing each other a lot now",
+        }));
     await callTool("journal", {
       text: "Talked about Alex; things are going well.",
       gist: "Things going well with Alex",
