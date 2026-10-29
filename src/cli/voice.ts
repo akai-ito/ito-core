@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
-import { createWriteStream, existsSync } from "node:fs";
+import { createWriteStream } from "node:fs";
 import path from "node:path";
 import type { Io } from "#cli/io.ts";
 import { toPaths } from "#cli/paths.ts";
-import { toVoiceEnvironment, vocabularyFile, voiceDirectory, voiceModels, voicePython } from "#voice/sidecar.ts";
+import { toVoiceEnvironment, voiceDirectory, voiceModels, voicePython } from "#voice/sidecar.ts";
 
 export const voiceUsage = "ito voice check";
 
@@ -54,26 +54,15 @@ export const checkVoice = async (io: Io, directory = voiceDirectory): Promise<nu
   const report = path.join(home, "voice-check.md");
   const details = path.join(home, "voice-check-details.md");
   const log = path.join(home, "voice-check.log");
-  const vocabulary = vocabularyFile(home);
-  io.print("Checking the voice. The first time, it downloads the models (about 3 GB); then it measures everything.");
+  io.print("Checking the voice. The first time, it downloads the models (about 3 GB); then it measures it.");
   const checked = await run(
     voicePython(directory),
-    [
-      "-m",
-      "ito_voice",
-      "check",
-      "--report",
-      report,
-      "--details",
-      details,
-      ...(existsSync(vocabulary) ? ["--vocabulary", vocabulary] : []),
-    ],
+    ["-m", "ito_voice", "check", "--report", report, "--details", details],
     { cwd: directory, env: toVoiceEnvironment(io.environment, voiceModels(home)), log },
   );
   io.print(
-    `\nThe report is in ${report}: post it on akai-ito/plans#21. ` +
-      `The details, with words from your memory, are in ${details} and stay on this box; ` +
-      `everything the check printed along the way is in ${log}.`,
+    `\nThe report is in ${report}, the details of any problem in ${details}, ` +
+      `and everything the check printed along the way in ${log}.`,
   );
   return checked;
 };

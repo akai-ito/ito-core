@@ -44,14 +44,13 @@ import {
   type Page,
   type Shelf,
 } from "#memory/pages.ts";
-import { mentions, toBoosted, toVocabulary } from "#memory/vocabulary.ts";
+import { mentions, toBoosted, toNames } from "#memory/vocabulary.ts";
 import { rank, toMessageChunk, toPageChunks, type Passage } from "#memory/recall.ts";
 import { openThread, type Thread } from "#memory/thread.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { MemoryStore } from "#store/memory.ts";
 import type { Settings } from "#store/store.ts";
-import type { Term } from "#memory/vocabulary.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 
@@ -123,8 +122,7 @@ export type Memory = {
   readonly isBackedUp: () => boolean;
   readonly indexConversation: () => void;
   readonly sync: () => Promise<void>;
-  readonly vocabulary: () => Promise<readonly Term[]>;
-  readonly boosted: (terms: readonly Term[]) => readonly string[];
+  readonly boostedNames: () => Promise<readonly string[]>;
   readonly withThread: <Value>(work: (thread: Thread) => Promise<Value>) => Promise<Value>;
   readonly indexText: (address: string, title: string, text: string | undefined) => Promise<void>;
   readonly close: () => Promise<void>;
@@ -1234,19 +1232,8 @@ export const createMemory = ({
     isBackedUp,
     indexConversation,
     sync,
-    vocabulary: async () => {
+    boostedNames: async () => {
       await sync();
-      if (isClosed.get()) return [];
-      const pages = shelvedPages().map(({ address, shelf, title, aliases, markdown }) => ({
-        address,
-        shelf,
-        title,
-        aliases,
-        markdown,
-      }));
-      return toVocabulary(pages, store.yourMessages());
-    },
-    boosted: (terms) => {
       if (isClosed.get()) return [];
       const since = clock.now() - boostDays * dayMs;
       const written = new Set(
@@ -1257,8 +1244,8 @@ export const createMemory = ({
       );
       const lately = [inMindText(), ...store.yourMessages().slice(0, boostMessages)].join("\n");
       return toBoosted(
-        terms,
-        (term) => term.address === undefined || written.has(term.address) || mentions(term.text).test(lately),
+        toNames(shelvedPages()),
+        (name) => written.has(name.address) || mentions(name.text).test(lately),
       );
     },
     withThread: async (work) => {

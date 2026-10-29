@@ -18,8 +18,6 @@ export const voicePython = (directory: string): string => path.join(directory, "
 
 export const voiceModels = (home: string): string => path.join(home, "models", "huggingface");
 
-export const vocabularyFile = (home: string): string => path.join(home, "voice", "vocabulary.json");
-
 export type SidecarOptions = VoiceContext & { readonly directory: string; readonly models: string };
 
 type Running = {

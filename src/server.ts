@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { createCell } from "#cell.ts";
@@ -11,7 +11,6 @@ import { createMotions, type Motions } from "#motion/motion.ts";
 import { createTrail } from "#capabilities/trail.ts";
 import type { Embedder } from "#memory/embedder.ts";
 import { noVoice, type VoiceContext, type VoiceLoop } from "#voice/loop.ts";
-import { vocabularyFile } from "#voice/sidecar.ts";
 import { createCalls, type Calls } from "#voice/calls.ts";
 import { createVoiceprints } from "#voice/voiceprints.ts";
 import { chosenVoice } from "#voice/voices.ts";
@@ -177,14 +176,7 @@ export const createServer = (options: ServerOptions): Server => {
       onReadiness: ({ state, reason }) => {
         store.recordVoiceStatus(state, reason);
       },
-      vocabulary: async () => {
-        const terms = await memory.vocabulary();
-        const file = vocabularyFile(options.dataDirectory);
-        mkdirSync(path.dirname(file), { recursive: true });
-        const boosted = memory.boosted(terms);
-        writeFileSync(file, JSON.stringify({ terms, boosted }));
-        return boosted;
-      },
+      vocabulary: () => memory.boostedNames(),
       clock,
       info,
       log,

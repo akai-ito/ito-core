@@ -519,6 +519,6 @@ describe("memory", () => {
     await write(memory, { address: "memory:projects/job-search", title: "Job search", body: "QRT next." });
     await write(memory, { address: "memory:now", body: "Back from Ljubljana (as of 27 Oct)." });
 
-    expect(memory.boosted(await memory.vocabulary())).toEqual(["Bora", "Ljubljana"]);
+    expect(await memory.boostedNames()).toEqual(["Bora", "Ljubljana"]);
   });
 });
