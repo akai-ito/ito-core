@@ -1,12 +1,11 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { createCell } from "#cell.ts";
 import { recentCrashes, toRestartDecision } from "#capabilities/restarts.ts";
+import { passedEnvironment, startChild, type Child } from "#child.ts";
 import type { Cancel } from "#clock.ts";
-import { createConnection, type Connection, type RpcFailure } from "#json-rpc.ts";
+import type { Connection, RpcFailure } from "#json-rpc.ts";
 import { fail, ok } from "#result.ts";
 import type { Heard, Readiness, SpeechFailure, VoiceContext, VoiceLoop, Voiceprint } from "#voice/loop.ts";
 
@@ -20,45 +19,13 @@ export const voiceModels = (home: string): string => path.join(home, "models", "
 
 export type SidecarOptions = VoiceContext & { readonly directory: string; readonly models: string };
 
-type Running = {
-  readonly child: ChildProcessWithoutNullStreams;
-  readonly connection: Connection;
-  readonly exited: Promise<string>;
-};
-
-const gracefulExitMs = 3000;
-
 const unavailableCodes: ReadonlySet<number> = new Set([-32_001, -32_002, -32_099]);
-
-const passedVariables = [
-  "PATH",
-  "HOME",
-  "LANG",
-  "LC_ALL",
-  "TZ",
-  "TMPDIR",
-  "LD_LIBRARY_PATH",
-  "CUDA_VISIBLE_DEVICES",
-  "ITO_VOICE_DEVICE",
-  "HF_TOKEN",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-];
 
 export const toVoiceEnvironment = (
   environment: NodeJS.ProcessEnv,
   models: string,
 ): Readonly<Record<string, string>> => ({
-  ...Object.fromEntries(
-    passedVariables.flatMap((name) => {
-      const value = environment[name];
-      return value === undefined ? [] : [[name, value]];
-    }),
-  ),
+  ...passedEnvironment(["LD_LIBRARY_PATH", "CUDA_VISIBLE_DEVICES", "ITO_VOICE_DEVICE", "HF_TOKEN"], environment),
   HF_HOME: models,
   PYTHONUNBUFFERED: "1",
 });
@@ -144,7 +111,7 @@ export const createSidecarVoice = ({
   log,
 }: SidecarOptions): VoiceLoop => {
   const readiness = createCell<Readiness>({ state: "loading", reason: "The voice is starting." });
-  const running = createCell<Running | undefined>(undefined);
+  const running = createCell<Child | undefined>(undefined);
   const crashes = createCell<readonly number[]>([]);
   const restart = createCell<Cancel | undefined>(undefined);
   const isClosed = createCell(false);
@@ -215,63 +182,26 @@ export const createSidecarVoice = ({
       report(notInstalled);
       return;
     }
-    const child = spawn(python, ["-m", "ito_voice", "serve"], {
+    const child = startChild({
+      command: python,
+      arguments: ["-m", "ito_voice", "serve"],
       cwd: directory,
-      env: toVoiceEnvironment(process.env, models),
-      stdio: ["pipe", "pipe", "pipe"],
-      detached: true,
-    });
-    const lastLine = createCell<string | undefined>(undefined);
-    child.stdin.on("error", (error) => {
-      log("Couldn't write to the voice", error);
-    });
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
-      for (const line of chunk.split("\n")) {
-        if (line.trim() === "") continue;
-        lastLine.set(line);
-        info("Voice", { line });
-      }
-    });
-    const exited = new Promise<string>((resolve) => {
-      child.once("error", (error) => {
-        resolve(`it couldn't start: ${error.message}`);
-      });
-      child.once("exit", (code, signal) => {
-        const how = signal ? `killed by ${signal}` : `exit code ${String(code)}`;
-        const last = lastLine.get();
-        resolve(last ? `${last} (${how})` : how);
-      });
-    });
-    const connection = createConnection({
-      input: child.stdout,
-      output: child.stdin,
+      environment: toVoiceEnvironment(process.env, models),
       onNotification: ({ method, parameters }) => {
         if (method === "status" && isReadiness(parameters)) report(parameters);
         else route(method, parameters);
       },
-      onRequest: ({ method }) => fail({ code: -32_601, message: `Ito doesn't handle ${method}.` }),
-      onMalformed: (line) => {
+      onLine: (line) => {
         info("Voice", { line });
       },
       closedMessage: "The voice stopped.",
     });
-    running.set({ child, connection, exited });
+    running.set(child);
     void (async () => {
-      afterExit(await exited);
+      const { how, lastLine } = await child.exited;
+      afterExit(lastLine === undefined ? how : `${lastLine} (${how})`);
     })();
-    void greet(connection);
-  };
-
-  const stop = async ({ child, exited }: Running): Promise<void> => {
-    child.stdin.end();
-    const didExit = async (): Promise<boolean> => {
-      await exited;
-      return true;
-    };
-    const hasExited = await Promise.race([didExit(), delay(gracefulExitMs, false)]);
-    if (hasExited || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
-    process.kill(-child.pid, "SIGKILL");
-    await exited;
+    void greet(child.connection);
   };
 
   start();
@@ -325,8 +255,7 @@ export const createSidecarVoice = ({
     close: async () => {
       isClosed.set(true);
       restart.get()?.();
-      const current = running.get();
-      if (current) await stop(current);
+      await running.get()?.stop();
     },
   };
 };

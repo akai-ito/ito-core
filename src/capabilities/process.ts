@@ -1,9 +1,8 @@
-import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
-import { createCell } from "#cell.ts";
 import type { CallResult, Manifest, Server, Status, Values } from "#capabilities/manifest.ts";
-import { createConnection, type RpcFailure } from "#json-rpc.ts";
+import { describeExit, passedEnvironment, startChild } from "#child.ts";
+import type { RpcFailure } from "#json-rpc.ts";
 import { fail, ok, type Result } from "#result.ts";
 
 export type CapabilityProcess = {
@@ -28,37 +27,7 @@ export type CapabilityProcessOptions = {
   readonly onLog: (line: string) => void;
 };
 
-const gracefulExitMs = 3000;
 const answerMs = 30_000;
-
-const passedVariables = [
-  "PATH",
-  "HOME",
-  "LANG",
-  "LC_ALL",
-  "TZ",
-  "TMPDIR",
-  "NODE_EXTRA_CA_CERTS",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-];
-
-const toEnvironment = (environment: NodeJS.ProcessEnv): Readonly<Record<string, string>> =>
-  Object.fromEntries(
-    passedVariables.flatMap((name) => {
-      const value = environment[name];
-      return value === undefined ? [] : [[name, value]];
-    }),
-  );
-
-const describeExit = (id: string, code: number | null, signal: NodeJS.Signals | null, lastLine?: string): string => {
-  const how = signal ? `was killed by ${signal}` : `exited with code ${String(code)}`;
-  return lastLine ? `${id} ${how}: ${lastLine}` : `${id} ${how}.`;
-};
 
 const withinTime = async <Value>(answer: Promise<Value>, timedOut: Value): Promise<Value> =>
   Promise.race([answer, delay(answerMs, timedOut, { ref: false })]);
@@ -79,73 +48,29 @@ export const startCapabilityProcess = async ({
   onLog,
 }: CapabilityProcessOptions): Promise<Result<CapabilityProcess, string>> => {
   mkdirSync(folder, { recursive: true });
-  const child = spawn(process.execPath, [entry], {
+  const { connection, exited, stop, kill } = startChild({
+    command: process.execPath,
+    arguments: [entry],
     cwd: folder,
-    env: toEnvironment(process.env),
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: true,
-  });
-  const lastLine = createCell<string | undefined>(undefined);
-  child.stdin.on("error", (error) => {
-    onLog(`Couldn't write to it: ${error.message}`);
-  });
-  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
-    for (const line of chunk.split("\n")) {
-      if (line.trim() === "") continue;
-      lastLine.set(line);
-      onLog(line);
-    }
-  });
-  const exited = new Promise<string>((resolve) => {
-    child.once("error", (error) => {
-      resolve(`${id} couldn't start: ${error.message}`);
-    });
-    child.once("exit", (code, signal) => {
-      resolve(describeExit(id, code, signal, lastLine.get()));
-    });
-  });
-
-  const connection = createConnection({
-    input: child.stdout,
-    output: child.stdin,
+    environment: passedEnvironment(["NODE_EXTRA_CA_CERTS"]),
     onNotification: ({ method, parameters }) => {
       if (method === "status") onStatus(parameters as Status);
     },
-    onRequest: ({ method }) => fail({ code: -32_601, message: `Ito doesn't handle ${method}.` }),
-    onMalformed: (line) => {
-      onLog(`Unreadable output: ${line}`);
-    },
+    onLine: onLog,
     closedMessage: `${id} stopped.`,
   });
-
-  const killGroup = async (): Promise<void> => {
-    if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
-      process.kill(-child.pid, "SIGKILL");
-    }
-    await exited;
-  };
-
-  const stop = async (): Promise<void> => {
-    child.stdin.end();
-    const didExit = async (): Promise<boolean> => {
-      await exited;
-      return true;
-    };
-    const hasExited = await Promise.race([didExit(), delay(gracefulExitMs, false)]);
-    if (!hasExited) await killGroup();
-  };
 
   const notAnswered = fail({ code: -32_000, message: `${id} didn't answer in time.` });
   const initialized = await withinTime(connection.request("initialize", {}), notAnswered);
   const manifest = toManifest(id, initialized);
   if (!manifest.ok) {
-    await killGroup();
+    await kill();
     return manifest;
   }
 
   return ok({
     manifest: manifest.value,
-    exited,
+    exited: (async () => describeExit(id, await exited))(),
     stop,
     start: async (values, server) => {
       const started = await withinTime(connection.request("start", { values, folder, server }), notAnswered);
