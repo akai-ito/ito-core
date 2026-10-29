@@ -42,3 +42,24 @@ export const writeSkills = (directory: string, offered: readonly Offered[], comm
         "",
       ].join("\n");
 };
+
+export type OwnSkill = { readonly id: string; readonly summary: string; readonly text: string };
+
+export const writeOwnSkills = (directory: string, skills: readonly OwnSkill[]): string => {
+  for (const { id, text } of skills) {
+    const file = skillFile(directory, id);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, text);
+  }
+  return skills.length === 0
+    ? ""
+    : [
+        "",
+        "## Skills",
+        "",
+        "Read a skill's file before you first do what it's for.",
+        "",
+        ...skills.map(({ id, summary }) => `- ${id}: ${summary} (file: ${skillFile(directory, id)})`),
+        "",
+      ].join("\n");
+};

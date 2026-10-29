@@ -40,6 +40,7 @@ where the protocol has to make it possible, marked *App*.
 | G29 | **Topics mark where the subject changed.** When you change the subject, Ari puts a label of a few plain words on the message that changed it, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
 | G30 | **Ticks are kept.** A tick on an item in a reply's plan is kept on the server, reaches every app, and comes with the message in snapshots and history. The agent hears of it with your next message. Ticking an item to the state it's already in changes nothing. | 59 |
 | G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
+| G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Forgetting a thing asks you first. | 62, 63 |
 
 ## Scenario by scenario
 

@@ -1,0 +1,645 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akai-ito.github.io/ito-core/protocol/v0/motion.schema.json",
+  "title": "Things in motion",
+  "description": "What a thing in motion holds, kind by kind: its content, which Ari writes, and its state, which your taps write. Every item in a list has an `id`, unique within the thing, and Ari changes a thing one item at a time with `Changes`. A list is named by its field, such as `todo`, or for a list inside an item, such as a day's stops, by that item's id. Your ticks are keyed by the field their items sit in, such as `todo` or `sessions`, wherever in the thing they are. The server validates every start and change against its kind here.",
+  "$defs": {
+    "ItemId": {
+      "description": "Readable and unique within the thing, such as `book-uffizi` or `sat`.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "Day": {
+      "description": "A date, such as `2026-11-06`.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "LocalTime": {
+      "description": "A local time, such as `08:15`.",
+      "type": "string",
+      "pattern": "^\\d{2}:\\d{2}$"
+    },
+    "LocalDateTime": {
+      "description": "A local date and time, such as `2026-11-08T09:12`, in the trip's time zone.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$"
+    },
+    "Photo": {
+      "description": "A picture Ari found and kept with `keep_image`. The app shows its credit when you tap it.",
+      "type": "object",
+      "required": ["attachment", "alt", "source_url", "credit"],
+      "additionalProperties": false,
+      "properties": {
+        "attachment": {
+          "description": "Fetch it with `GET /v0/attachments/{attachment}`.",
+          "$ref": "events.schema.json#/$defs/AttachmentId"
+        },
+        "alt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_url": {
+          "description": "The page the picture came from.",
+          "type": "string",
+          "format": "uri"
+        },
+        "credit": {
+          "description": "Who made it, as its source asks.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Location": {
+      "description": "Where it is, for the map.",
+      "type": "object",
+      "required": ["lat", "lon"],
+      "additionalProperties": false,
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        }
+      }
+    },
+    "Booking": {
+      "description": "Whether it needs booking, and where that stands.",
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": ["to_book", "booked", "not_needed"]
+        },
+        "ref": {
+          "description": "The booking reference, such as `ABC123`.",
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "Mode": {
+      "description": "How you get there.",
+      "enum": ["walk", "train", "tram", "bus", "metro", "car", "taxi", "bike", "ferry", "flight"]
+    },
+    "Move": {
+      "description": "Getting from one stop to the next, such as a 12 minute walk.",
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/Mode"
+        },
+        "minutes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "detail": {
+          "description": "Such as `Firenze SMN → Pisa Centrale`.",
+          "type": "string"
+        }
+      }
+    },
+    "Stop": {
+      "description": "One stop in a day: a visit, a meal, a train.",
+      "type": "object",
+      "required": ["id", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "time": {
+          "$ref": "#/$defs/LocalTime"
+        },
+        "place": {
+          "description": "The id of its place in `places`, when it has one.",
+          "$ref": "#/$defs/ItemId"
+        },
+        "note": {
+          "type": "string"
+        },
+        "booking": {
+          "$ref": "#/$defs/Booking"
+        },
+        "next": {
+          "description": "Getting to the next stop.",
+          "$ref": "#/$defs/Move"
+        }
+      }
+    },
+    "TripDay": {
+      "description": "One day of the trip, its stops in order. Its id names the list of its stops.",
+      "type": "object",
+      "required": ["id", "date", "stops"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "date": {
+          "$ref": "#/$defs/Day"
+        },
+        "title": {
+          "description": "Such as `Pisa`.",
+          "type": "string"
+        },
+        "stops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Stop"
+          }
+        }
+      }
+    },
+    "TripPlace": {
+      "description": "A place Ari found: a restaurant, a museum, a sight.",
+      "type": "object",
+      "required": ["id", "name", "category", "why", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "category": {
+          "enum": ["restaurant", "cafe", "bar", "museum", "sight", "park", "shop", "activity", "other"]
+        },
+        "why": {
+          "description": "Why Ari chose it, in a line.",
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": ["shortlisted", "picked", "booked"]
+        },
+        "hours": {
+          "description": "Such as `8:15–18:30`.",
+          "type": "string"
+        },
+        "price": {
+          "description": "Such as `€25` or `€€`.",
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "photo": {
+          "$ref": "#/$defs/Photo"
+        },
+        "booking": {
+          "$ref": "#/$defs/Booking"
+        }
+      }
+    },
+    "TripLeg": {
+      "description": "Getting there and around: a flight, a train, a transfer.",
+      "type": "object",
+      "required": ["id", "mode", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "mode": {
+          "$ref": "#/$defs/Mode"
+        },
+        "title": {
+          "description": "Such as `Train to Pisa`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "depart": {
+          "$ref": "#/$defs/LocalDateTime"
+        },
+        "arrive": {
+          "$ref": "#/$defs/LocalDateTime"
+        },
+        "booking": {
+          "$ref": "#/$defs/Booking"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "TripStay": {
+      "description": "Where you're staying.",
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "check_in": {
+          "$ref": "#/$defs/LocalDateTime"
+        },
+        "check_out": {
+          "$ref": "#/$defs/LocalDateTime"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "photo": {
+          "$ref": "#/$defs/Photo"
+        },
+        "booking": {
+          "$ref": "#/$defs/Booking"
+        }
+      }
+    },
+    "Todo": {
+      "description": "Something left to do. `done` is how Ari wrote it; your tick, in the state, wins. `about` names the items it books, so the app can show them booked the moment you tick it.",
+      "type": "object",
+      "required": ["id", "text", "done"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "about": {
+          "description": "The ids of the stops, legs, stays or places it's about.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ItemId"
+          }
+        }
+      }
+    },
+    "Trip": {
+      "title": "trip",
+      "description": "A day, a weekend or a longer trip: its days, places, travel, stay and what's left to do.",
+      "type": "object",
+      "required": ["destination", "dates", "timezone", "who", "days", "places", "travel", "stays", "todo"],
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "description": "Such as `Florence`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "dates": {
+          "type": "object",
+          "required": ["start", "end"],
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/Day"
+            },
+            "end": {
+              "$ref": "#/$defs/Day"
+            }
+          }
+        },
+        "timezone": {
+          "description": "An IANA time zone, such as `Europe/Rome`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "who": {
+          "description": "Who's going besides you, such as `Janki`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cover": {
+          "description": "A big photo of the place, for the header and the card.",
+          "$ref": "#/$defs/Photo"
+        },
+        "days": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TripDay"
+          }
+        },
+        "places": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TripPlace"
+          }
+        },
+        "travel": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TripLeg"
+          }
+        },
+        "stays": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TripStay"
+          }
+        },
+        "todo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Todo"
+          }
+        }
+      }
+    },
+    "Tick": {
+      "type": "object",
+      "required": ["done"],
+      "additionalProperties": false,
+      "properties": {
+        "done": {
+          "type": "boolean"
+        }
+      }
+    },
+    "TripState": {
+      "description": "Your ticks on the to-do list, by item id.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "todo": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ItemId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Tick"
+          }
+        }
+      }
+    },
+    "Session": {
+      "description": "One session in a week.",
+      "type": "object",
+      "required": ["id", "date", "kind", "title", "done"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "date": {
+          "$ref": "#/$defs/Day"
+        },
+        "kind": {
+          "enum": ["easy", "intervals", "tempo", "long", "strength", "race", "rest"]
+        },
+        "title": {
+          "description": "Such as `Intervals`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "detail": {
+          "description": "Such as `6 × 800 m at 3:50/km · 90 s jog · 2 km warm-up`.",
+          "type": "string"
+        },
+        "done": {
+          "description": "How Ari wrote it; your tick, in the state, wins.",
+          "type": "boolean"
+        },
+        "how": {
+          "description": "How it went, as you told Ari.",
+          "type": "string"
+        }
+      }
+    },
+    "TrainingWeek": {
+      "description": "One week of the block, its sessions in order. Its id names the list of its sessions.",
+      "type": "object",
+      "required": ["id", "start", "sessions"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "start": {
+          "description": "The week's first day.",
+          "$ref": "#/$defs/Day"
+        },
+        "focus": {
+          "description": "Such as `Speed`.",
+          "type": "string"
+        },
+        "note": {
+          "description": "A line from Ari on the week.",
+          "type": "string"
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Session"
+          }
+        }
+      }
+    },
+    "Result": {
+      "description": "A result towards the goal, such as a timed 5K, for the best so far and the trend.",
+      "type": "object",
+      "required": ["id", "date", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "date": {
+          "$ref": "#/$defs/Day"
+        },
+        "result": {
+          "description": "Such as `20:41`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "Training": {
+      "title": "training",
+      "description": "A training block towards a goal, such as a sub-20 5K: the goal, results so far, and every week's sessions.",
+      "type": "object",
+      "required": ["goal", "weeks", "results"],
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "type": "object",
+          "required": ["title", "target"],
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "description": "Such as `Sub-20 5K`.",
+              "type": "string",
+              "minLength": 1
+            },
+            "target": {
+              "description": "Such as `19:59`.",
+              "type": "string",
+              "minLength": 1
+            },
+            "by": {
+              "$ref": "#/$defs/Day"
+            }
+          }
+        },
+        "weeks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TrainingWeek"
+          }
+        },
+        "results": {
+          "description": "Oldest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Result"
+          }
+        }
+      }
+    },
+    "TrainingState": {
+      "description": "Your ticks on sessions, by session id, in any week.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessions": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ItemId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Tick"
+          }
+        }
+      }
+    },
+    "Change": {
+      "description": "One change to one item, or to the thing itself by its own id.",
+      "oneOf": [
+        {
+          "title": "set",
+          "description": "Set fields of one item; `null` removes a field. With the thing's own id, it sets `title`, `summary`, `pinned` or the content's own fields, such as `dates`. Lists change only by add, move and remove.",
+          "type": "object",
+          "required": ["set", "fields"],
+          "additionalProperties": false,
+          "properties": {
+            "set": {
+              "$ref": "#/$defs/ItemId"
+            },
+            "fields": {
+              "type": "object",
+              "minProperties": 1
+            }
+          }
+        },
+        {
+          "title": "add",
+          "description": "Add an item, with its own new id, to a list: after the item named by `after`, or first.",
+          "type": "object",
+          "required": ["add", "to"],
+          "additionalProperties": false,
+          "properties": {
+            "add": {
+              "type": "object",
+              "required": ["id"],
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/ItemId"
+                }
+              }
+            },
+            "to": {
+              "$ref": "#/$defs/ItemId"
+            },
+            "after": {
+              "$ref": "#/$defs/ItemId"
+            }
+          }
+        },
+        {
+          "title": "move",
+          "description": "Move an item after another, or first, in its list or to the list named by `to`.",
+          "type": "object",
+          "required": ["move"],
+          "additionalProperties": false,
+          "properties": {
+            "move": {
+              "$ref": "#/$defs/ItemId"
+            },
+            "to": {
+              "$ref": "#/$defs/ItemId"
+            },
+            "after": {
+              "$ref": "#/$defs/ItemId"
+            }
+          }
+        },
+        {
+          "title": "remove",
+          "description": "Remove an item, and anything listed inside it.",
+          "type": "object",
+          "required": ["remove"],
+          "additionalProperties": false,
+          "properties": {
+            "remove": {
+              "$ref": "#/$defs/ItemId"
+            }
+          }
+        }
+      ]
+    },
+    "Changes": {
+      "description": "One change Ari makes: all of it applies, or none of it does.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Change"
+      }
+    }
+  }
+}

@@ -102,6 +102,16 @@
         }
       }
     },
+    "Motion": {
+      "title": "ari:motion",
+      "description": "A compact line under a reply when Ari starts or changes a thing in motion, such as \"Florence trip: booked the Uffizi\". Tapping it opens the thing. Draw the line from the `MotionChange` with that version, or from the thing's title when there's none.",
+      "type": "object",
+      "required": ["motion"],
+      "properties": {
+        "motion": { "$ref": "events.schema.json#/$defs/MotionId" },
+        "change": { "description": "The thing's version the line is about.", "type": "integer", "minimum": 1 }
+      }
+    },
     "Images": {
       "title": "ari:images",
       "description": "Pictures Ari found on the web, kept on the server as attachments so the app never contacts their hosts. Never generated.",

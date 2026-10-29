@@ -15,6 +15,8 @@ import { toAskId, toDeviceId, toMessageId, toTurnId } from "#conversation/ids.ts
 import { createToken, hashToken, type Gate } from "#http/auth.ts";
 import { registerCapabilities } from "#http/capabilities.ts";
 import { registerMemory } from "#http/memory.ts";
+import { registerMotion } from "#http/motion.ts";
+import type { Motions } from "#motion/motion.ts";
 import { registerReplies } from "#http/replies.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { registerTalk } from "#http/talk.ts";
@@ -44,6 +46,7 @@ export type AppOptions = {
   readonly attachments: Attachments;
   readonly host: Host;
   readonly memory: Memory;
+  readonly motions: Motions;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
   readonly voiceprints: Voiceprints;
@@ -93,6 +96,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     attachments,
     host,
     memory,
+    motions,
     voice,
     calls,
     voiceprints,
@@ -169,6 +173,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   registerCapabilities(app, host, schemaFor);
   registerMemory(app, memory, schemaFor);
+  registerMotion(app, motions, schemaFor);
   registerReplies(app, store, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
   registerTalk(app, { store, attachments, memory, voice, calls, voiceprints, schemaFor });

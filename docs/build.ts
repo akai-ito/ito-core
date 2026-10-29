@@ -103,6 +103,7 @@ const toSiteLink = (prefix: string, href: string): string => {
     "events.schema.json",
     "push.schema.json",
     "blocks.schema.json",
+    "motion.schema.json",
     "capability.schema.json",
   ].includes(href);
   return isSpecFile
@@ -335,6 +336,7 @@ copyFileSync(path.join(protocolDirectory, "openapi.yaml"), path.join(specDirecto
 copyFileSync(path.join(protocolDirectory, "events.schema.json"), path.join(specDirectory, "events.schema.json"));
 copyFileSync(path.join(protocolDirectory, "push.schema.json"), path.join(specDirectory, "push.schema.json"));
 copyFileSync(path.join(protocolDirectory, "blocks.schema.json"), path.join(specDirectory, "blocks.schema.json"));
+copyFileSync(path.join(protocolDirectory, "motion.schema.json"), path.join(specDirectory, "motion.schema.json"));
 copyFileSync(
   path.join(protocolDirectory, "capability.schema.json"),
   path.join(specDirectory, "capability.schema.json"),

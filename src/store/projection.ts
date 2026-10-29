@@ -42,6 +42,33 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       }
       return;
     }
+    case "motion.started":
+    case "motion.changed":
+    case "motion.finished": {
+      const { motion, change } = event;
+      database
+        .prepare(
+          `INSERT INTO motions (id, position, status, changed_at, body) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET status = excluded.status, changed_at = excluded.changed_at, body = excluded.body`,
+        )
+        .run(motion.id, motion.position, motion.status, motion.changed_at, toJson(motion));
+      database
+        .prepare("INSERT OR REPLACE INTO motion_changes (motion, version, body) VALUES (?, ?, ?)")
+        .run(motion.id, change.version, toJson(change));
+      return;
+    }
+    case "motion.state": {
+      database
+        .prepare("INSERT OR REPLACE INTO motion_states (motion, state) VALUES (?, ?)")
+        .run(event.motion, toJson(event.state));
+      return;
+    }
+    case "motion.removed": {
+      for (const table of ["motions", "motion_changes", "motion_states"]) {
+        database.prepare(`DELETE FROM ${table} WHERE ${table === "motions" ? "id" : "motion"} = ?`).run(event.motion);
+      }
+      return;
+    }
     case "message.started": {
       const { message } = event;
       database

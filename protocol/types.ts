@@ -524,6 +524,75 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/motion": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Everything in motion, then what's done
+     * @description Active things first, then done ones, each group newest first.
+     */
+    get: operations["listMotion"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/motion/{motion}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * One thing, with its content, state and what changed
+     * @description The content is as its kind in [the motion schema](motion.schema.json) describes. With
+     *     `version`, the content is as it was then, to read only; the state and changes always
+     *     belong to the latest.
+     */
+    get: operations["getMotion"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/motion/{motion}/state": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Tick items in a thing
+     * @description A JSON Merge Patch (RFC 7386) on the state, keyed by item ids, such as
+     *     `{"todo": {"book-uffizi": {"done": true}}}`, sent as `application/merge-patch+json` or
+     *     `application/json`. Its kind in [the motion schema](motion.schema.json) says which keys the
+     *     state has. Every app hears `motion.state`. A few seconds later, gathering ticks made in
+     *     quick succession, Ari keeps the thing up with them, such as marking what a to-do books as
+     *     booked or writing the week's line: that's an ordinary `motion.changed`, with no chat
+     *     message. Ari also hears of the ticks with your next message. Sending the same patch twice
+     *     changes nothing.
+     */
+    patch: operations["patchMotionState"];
+    trace?: never;
+  };
   "/v0/models": {
     parameters: {
       query?: never;
@@ -1069,6 +1138,11 @@ export interface components {
       | components["schemas"]["CallAudioDeleted"]
       | components["schemas"]["VoiceStatus"]
       | components["schemas"]["TopicStarted"]
+      | components["schemas"]["MotionStarted"]
+      | components["schemas"]["MotionChanged"]
+      | components["schemas"]["MotionFinished"]
+      | components["schemas"]["MotionStateChanged"]
+      | components["schemas"]["MotionRemoved"]
       | components["schemas"]["PlanTicked"];
     /**
      * snapshot
@@ -1439,14 +1513,20 @@ export interface components {
       /** @description What went wrong, in the tool's or command's own words, when the step failed. */
       detail?: string;
       /**
-       * @description `memory`: `used` for the pages Ari drew on in this turn (one step, growing as it reads), `updated` for a page it wrote, `journaled` for an addition to today's journal.
+       * @description `memory`: `used` for the pages Ari drew on in this turn (one step, growing as it reads), `updated` for a page it wrote, `journaled` for an addition to today's journal. `motion`: `started`, `updated`, `finished`, `restored` or `forgotten`, for what Ari did to the thing.
        * @enum {unknown}
        */
-      action?: "used" | "updated" | "journaled";
+      action?: "used" | "updated" | "journaled" | "started" | "finished" | "restored" | "forgotten";
       /** @description `memory`: the pages, by address and title, never their content. Past conversations show as one entry with the address `conversation:past`. */
       pages?: components["schemas"]["MemoryPageRef"][];
       /** @description `memory` with `updated`: the change to fetch from `GET /v0/memory/changes/{change}` when someone taps it. */
       change?: components["schemas"]["ChangeId"];
+      /** @description `motion`: the thing Ari started or changed. Open it with `GET /v0/motion/{motion}`. */
+      motion?: components["schemas"]["MotionId"];
+      /** @description `motion`: the thing's version after the change. */
+      version?: number;
+      /** @description `motion`: Ari's note on the change, such as "Booked the Uffizi, 8:15 Saturday". */
+      note?: string;
       /** @description `plan`: why the plan is what it is. */
       explanation?: string;
       /** @description `plan`: its items, in order, each with its state. */
@@ -1573,6 +1653,27 @@ export interface components {
     };
     TickItem: {
       done: boolean;
+    };
+    MotionList: {
+      motions: components["schemas"]["Motion"][];
+    };
+    MotionDetail: {
+      motion: components["schemas"]["Motion"];
+      /** @description The thing's content, as its kind describes, with every item's id. */
+      content: {
+        [key: string]: unknown;
+      };
+      /** @description Your ticks, as its kind describes. `{}` until you tick something. */
+      state: {
+        [key: string]: unknown;
+      };
+      /** @description The 20 newest entries of "What changed", newest first. */
+      changes: components["schemas"]["MotionChange"][];
+    };
+    MotionState: {
+      state: {
+        [key: string]: unknown;
+      };
     };
     TickList: {
       ticks: components["schemas"]["Tick"][];
@@ -1725,8 +1826,9 @@ export interface components {
       | "wait"
       | "image_view"
       | "compacting"
-      | "memory";
-    /** @description Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, or `conversation:past`. */
+      | "memory"
+      | "motion";
+    /** @description Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, a thing in motion such as `motion:florence-with-janki`, or `conversation:past`. */
     MemoryAddress: string;
     /** @description A page in memory, named but not shown. */
     MemoryPageRef: {
@@ -1735,6 +1837,8 @@ export interface components {
     };
     /** @description An opaque id the server chooses for one change to memory. */
     ChangeId: string;
+    /** @description A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-janki`. */
+    MotionId: string;
     /**
      * @description `question` asks for information or a choice. `approval` asks before the agent does something consequential, and shows a `preview` of what would happen. Treat a kind you don't recognise as a question.
      * @enum {unknown}
@@ -1788,6 +1892,42 @@ export interface components {
      * @description A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.
      */
     UploadId: string;
+    /** @description A thing in motion: something going on that Ari keeps for you, such as a trip being planned. Its content and state come from `GET /v0/motion/{id}`. */
+    Motion: {
+      id: components["schemas"]["MotionId"];
+      /**
+       * @description Which widget draws it. Show a plain card, with its title and summary, for a kind you don't recognise.
+       * @example trip
+       */
+      kind: string;
+      /** @description Such as "Florence with Janki". */
+      title: string;
+      /** @description Where it stands, in one line, for the pinned line and the In motion tab, such as "6–9 Nov · 3 to book". Ari keeps it current with every change. */
+      summary: string;
+      /** @enum {unknown} */
+      status: "active" | "done";
+      /** @description Whether it's pinned above the composer. Ari pins a thing it starts, unpins it when it's done or when you ask, and pins it again when you ask. */
+      pinned: boolean;
+      /** @description The content's cover photo, for the card. Absent when it has none. */
+      cover?: components["schemas"]["AttachmentId"];
+      /** @description How many times it has changed, counting its start as 1. */
+      version: number;
+      started_at: components["schemas"]["Timestamp"];
+      changed_at: components["schemas"]["Timestamp"];
+      /** @description When it was finished. Absent while it's active. */
+      done_at?: components["schemas"]["Timestamp"];
+      /** @description The position of your message Ari was answering when it started the thing. */
+      position: components["schemas"]["Position"];
+    };
+    /** @description One entry of "What changed". */
+    MotionChange: {
+      version: number;
+      at: components["schemas"]["Timestamp"];
+      /** @description Ari's note, such as "Booked the Uffizi, 8:15 Saturday". */
+      note: string;
+      /** @description The position of your message Ari was answering when it made the change: link back to it. */
+      position: components["schemas"]["Position"];
+    };
     /**
      * @description Whether the server can hold a call: `ready` once it can both listen and speak, with memory's vocabulary loaded; `loading` while it starts; `failed` when it can't, until the server restarts.
      * @enum {unknown}
@@ -1882,6 +2022,71 @@ export interface components {
       type: "topic.started";
       at: components["schemas"]["Timestamp"];
       topic: components["schemas"]["Topic"];
+    };
+    /**
+     * motion.started
+     * @description Ari started a thing in motion. Its `change` is the first entry of "What changed".
+     */
+    MotionStarted: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "motion.started";
+      at: components["schemas"]["Timestamp"];
+      motion: components["schemas"]["Motion"];
+      /** @description This change, as it appears in "What changed". */
+      change: components["schemas"]["MotionChange"];
+    };
+    /**
+     * motion.changed
+     * @description Ari changed a thing, or brought back an earlier version of it. Fetch its content again.
+     */
+    MotionChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "motion.changed";
+      at: components["schemas"]["Timestamp"];
+      motion: components["schemas"]["Motion"];
+      /** @description This change, as it appears in "What changed". */
+      change: components["schemas"]["MotionChange"];
+    };
+    /**
+     * motion.finished
+     * @description Ari finished a thing: it moves to Done.
+     */
+    MotionFinished: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "motion.finished";
+      at: components["schemas"]["Timestamp"];
+      motion: components["schemas"]["Motion"];
+      /** @description This change, as it appears in "What changed". */
+      change: components["schemas"]["MotionChange"];
+    };
+    /**
+     * motion.state
+     * @description A thing's state changed, from a tap on any device, or because a change removed an item it named. It carries the whole state.
+     */
+    MotionStateChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "motion.state";
+      at: components["schemas"]["Timestamp"];
+      motion: components["schemas"]["MotionId"];
+      /** @description The whole state, as `motion.schema.json` describes for its kind. */
+      state: {
+        [key: string]: unknown;
+      };
+    };
+    /**
+     * motion.removed
+     * @description You allowed Ari to forget a thing, so it's gone.
+     */
+    MotionRemoved: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "motion.removed";
+      at: components["schemas"]["Timestamp"];
+      motion: components["schemas"]["MotionId"];
     };
     /**
      * plan.ticked
@@ -2015,6 +2220,8 @@ export interface components {
     };
   };
   parameters: {
+    /** @description The thing's id, from its `Motion`. */
+    Motion: components["schemas"]["MotionId"];
     /** @description The turn's id, from `turn.started`. */
     Turn: components["schemas"]["TurnId"];
     /** @description The id the app made for what it's uploading. */
@@ -2097,6 +2304,9 @@ export type SendMessage = components["schemas"]["SendMessage"];
 export type MessageResult = components["schemas"]["MessageResult"];
 export type MessagePage = components["schemas"]["MessagePage"];
 export type TickItem = components["schemas"]["TickItem"];
+export type MotionList = components["schemas"]["MotionList"];
+export type MotionDetail = components["schemas"]["MotionDetail"];
+export type MotionState = components["schemas"]["MotionState"];
 export type TickList = components["schemas"]["TickList"];
 export type StopTurn = components["schemas"]["StopTurn"];
 export type StopResult = components["schemas"]["StopResult"];
@@ -2129,6 +2339,7 @@ export type StepKind = components["schemas"]["StepKind"];
 export type MemoryAddress = components["schemas"]["MemoryAddress"];
 export type MemoryPageRef = components["schemas"]["MemoryPageRef"];
 export type ChangeId = components["schemas"]["ChangeId"];
+export type MotionId = components["schemas"]["MotionId"];
 export type AskKind = components["schemas"]["AskKind"];
 export type AskOption = components["schemas"]["AskOption"];
 export type AskOutcome = components["schemas"]["AskOutcome"];
@@ -2136,6 +2347,8 @@ export type Call = components["schemas"]["Call"];
 export type TopicId = components["schemas"]["TopicId"];
 export type Topic = components["schemas"]["Topic"];
 export type UploadId = components["schemas"]["UploadId"];
+export type Motion = components["schemas"]["Motion"];
+export type MotionChange = components["schemas"]["MotionChange"];
 export type VoiceState = components["schemas"]["VoiceState"];
 export type VoiceReason = components["schemas"]["VoiceReason"];
 export type StatusKind = components["schemas"]["StatusKind"];
@@ -2148,6 +2361,11 @@ export type CallEnded = components["schemas"]["CallEnded"];
 export type CallAudioDeleted = components["schemas"]["CallAudioDeleted"];
 export type VoiceStatus = components["schemas"]["VoiceStatus"];
 export type TopicStarted = components["schemas"]["TopicStarted"];
+export type MotionStarted = components["schemas"]["MotionStarted"];
+export type MotionChanged = components["schemas"]["MotionChanged"];
+export type MotionFinished = components["schemas"]["MotionFinished"];
+export type MotionStateChanged = components["schemas"]["MotionStateChanged"];
+export type MotionRemoved = components["schemas"]["MotionRemoved"];
 export type PlanTicked = components["schemas"]["PlanTicked"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
@@ -2158,6 +2376,7 @@ export type ResponseIdConflict = components["responses"]["IdConflict"];
 export type ResponseTooLarge = components["responses"]["TooLarge"];
 export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
+export type ParameterMotion = components["parameters"]["Motion"];
 export type ParameterTurn = components["parameters"]["Turn"];
 export type ParameterUpload = components["parameters"]["Upload"];
 export type ParameterAttachment = components["parameters"]["Attachment"];
@@ -3025,6 +3244,93 @@ export interface operations {
           "application/json": components["schemas"]["MemoryChange"];
         };
       };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  listMotion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The things. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MotionList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getMotion: {
+    parameters: {
+      query?: {
+        version?: number;
+      };
+      header?: never;
+      path: {
+        /** @description The thing's id, from its `Motion`. */
+        motion: components["parameters"]["Motion"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The thing. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MotionDetail"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  patchMotionState: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The thing's id, from its `Motion`. */
+        motion: components["parameters"]["Motion"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/merge-patch+json": {
+          [key: string]: unknown;
+        };
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description The whole state, after the patch. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MotionState"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
     };

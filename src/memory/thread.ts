@@ -21,7 +21,7 @@ export type Thread = {
   readonly read: (file: string) => string | undefined;
   readonly write: (file: string, text: string | undefined, message: string) => Promise<Result<string, string>>;
   readonly writeFiles: (
-    files: readonly { readonly file: string; readonly text: string }[],
+    files: readonly { readonly file: string; readonly text: string | Uint8Array }[],
     message: string,
     removed?: readonly string[],
   ) => Promise<Result<string, string>>;
@@ -98,7 +98,7 @@ export const openThread = async (directory: string): Promise<Thread> => {
           mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
           writeFileSync(path.join(directory, file), text);
         }
-        for (const file of removed) rmSync(path.join(directory, file), { force: true });
+        for (const file of removed) rmSync(path.join(directory, file), { force: true, recursive: true });
         await git("add", "--all", "--", ...files.map(({ file }) => file), ...removed);
         await git("commit", "--quiet", "--message", message);
         const head = await git("rev-parse", "HEAD");
@@ -129,7 +129,12 @@ export const openThread = async (directory: string): Promise<Thread> => {
         .filter((entry) => entry.trim() !== "")
         .map((entry) => {
           const [commit = "", at = "", subject = "", body = "", status = ""] = entry.split("\u{1F}", 5);
-          return { commit, at, subject, body: body.trim(), isDeleted: status.trimStart().startsWith("D") };
+          const statuses = status
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+          const isDeleted = statuses.length > 0 && statuses.every((line) => line.startsWith("D"));
+          return { commit, at, subject, body: body.trim(), isDeleted };
         });
     },
     files: () => listFiles(directory),

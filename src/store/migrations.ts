@@ -127,4 +127,21 @@ export const migrations: readonly string[] = [
   );`,
   `ALTER TABLE messages ADD COLUMN ticks TEXT;
   ALTER TABLE attachments ADD COLUMN kept INTEGER NOT NULL DEFAULT 0;`,
+  `CREATE TABLE motions (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    changed_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE TABLE motion_changes (
+    motion TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    PRIMARY KEY (motion, version)
+  );
+  CREATE TABLE motion_states (
+    motion TEXT PRIMARY KEY,
+    state TEXT NOT NULL
+  );`,
 ];
