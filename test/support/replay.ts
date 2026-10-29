@@ -8,7 +8,9 @@ import { createCell } from "#cell.ts";
 import { findInstalled } from "#capabilities/installed.ts";
 import { createCannedVoice, type CannedVoice, type YouSay } from "./canned-voice.ts";
 import { openCallSocket, type Arrived, type CallSocket } from "./call-socket.ts";
-import { createScriptEngine } from "#engine/scripted/script-engine.ts";
+import { createScriptEngine, type Complete } from "#engine/scripted/script-engine.ts";
+import { demoModels } from "#engine/scripted/models.ts";
+import { fail as failed, ok } from "#result.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
 import type { Attachment } from "#protocol/types.ts";
@@ -142,6 +144,13 @@ export const replay = async (name: string): Promise<void> => {
   const callSocket = createCell<CallSocket | undefined>(undefined);
   const spokenPcm = new Uint8Array(fixture("spoken-sentence.wav")).slice(44);
   const web = createCell<ReadonlyMap<string, string>>(new Map());
+  const asides = createCell<readonly unknown[]>([]);
+
+  const complete: Complete = () => {
+    const [next, ...rest] = asides.get();
+    asides.set(rest);
+    return Promise.resolve(next === undefined ? failed("The transcript has Ari answer nothing aside here.") : ok(next));
+  };
 
   const fetchImage = (url: string): Promise<Response> => {
     const file = web.get().get(url);
@@ -155,7 +164,7 @@ export const replay = async (name: string): Promise<void> => {
       fetchImage,
       embedder: wordEmbedder,
       dataDirectory: directory,
-      createEngine: () => createScriptEngine(clock, scripts),
+      createEngine: () => createScriptEngine(clock, scripts, undefined, demoModels, complete),
       name: "studio",
       agentName: "Ari",
       clock,
@@ -389,6 +398,16 @@ export const replay = async (name: string): Promise<void> => {
           Promise.resolve(undefined));
         check(called?.isError === true ? `${tool} failed: ${called.text}` : undefined, index);
         if (returns !== undefined) check(ids.match(returns, called?.structured), index);
+        return;
+      }
+      case "ari_keeps_up": {
+        const { changes, summary, note } = step as unknown as {
+          readonly changes: unknown;
+          readonly summary: string;
+          readonly note: string;
+        };
+        asides.update((current) => [...current, { changes_json: JSON.stringify(changes), summary, note }]);
+        await advance(time);
         return;
       }
       case "web_has": {

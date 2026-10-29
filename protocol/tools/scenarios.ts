@@ -7,6 +7,7 @@ import { demoModels } from "#engine/scripted/models.ts";
 import { defaultVoice, voices } from "#voice/voices.ts";
 import type { Term } from "#memory/vocabulary.ts";
 import { florenceId, florenceTrip } from "./florence.ts";
+import { sub20Id, sub20Training } from "./sub20.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
 const protocol = "0.13";
@@ -294,6 +295,22 @@ const startFlorence = (transcript: Transcript, cover: string): ReturnType<Transc
   });
   return started;
 };
+
+const sub20Card = {
+  id: sub20Id,
+  kind: "training",
+  title: "Sub-20 5K",
+  summary: "Week 6 of 10 · intervals today",
+  status: "active" as const,
+  pinned: true,
+};
+
+type TrainingWeek = { readonly id: string; readonly note?: string };
+
+const withWeekNote = (week: string, note: string): Readonly<Record<string, unknown>> => ({
+  ...sub20Training,
+  weeks: (sub20Training.weeks as readonly TrainingWeek[]).map((each) => (each.id === week ? { ...each, note } : each)),
+});
 
 const findFlorenceCover = (transcript: Transcript): string => {
   transcript.step("web_search", searching("Florence Duomo photograph"));
@@ -3261,6 +3278,107 @@ const scenarios: readonly (() => Transcript)[] = [
     sendAndStart(transcript, "Thanks! What's left?");
     transcript.wait(900);
     writeWhole(transcript, "The Duomo climb and the Pitti Palace. The Pisa train's ticked off.");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "64-a-training-block",
+      scenario: 64,
+      title: "A training block",
+      summary:
+        "You ask Ari to keep your sub-20 5K plan. Ari starts the whole block as a thing in motion, every week " +
+        "from the first to the last. That evening you tick today's intervals; a few seconds later Ari quietly " +
+        "rewrites the week's note, with no chat message and no turn. On Saturday you tell Ari a parkrun time, " +
+        "and Ari adds it to the results.",
+      guarantees: ["G32"],
+    });
+    transcript.begin("2026-10-28T07:30:00.000Z");
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(
+      transcript,
+      "I'm five weeks into a sub-20 5K block, ten weeks to the end of November. Can you keep the plan? Intervals today.",
+    );
+    transcript.wait(1200);
+    agentCalls(transcript, "start_motion", {
+      id: sub20Id,
+      kind: sub20Card.kind,
+      title: sub20Card.title,
+      summary: sub20Card.summary,
+      content: sub20Training,
+      note: "Started the block",
+    });
+    const started = transcript.motion("started", { ...sub20Card, version: 1 }, "Started the block");
+    motionStep(transcript, "started", started.motion, {
+      title: "Starting Sub-20 5K",
+      endedTitle: "Started Sub-20 5K",
+    });
+    transcript.wait(400);
+    writeWhole(
+      transcript,
+      `All ten weeks are in In motion. Today's the 6 × 800 m; keep the jogs honest.\n\n${motionLine(sub20Id, 1)}`,
+    );
+    transcript.endTurn("completed");
+    transcript.wait(10 * 60 * 60 * 1000);
+    const state = transcript.patchMotion(sub20Id, { sessions: { "w6-wed": { done: true } } });
+    const weekNote = "Intervals done. Keep tomorrow easy; Friday's tempo is next.";
+    const keptUp = "Week 6: intervals done";
+    transcript.world("ari_keeps_up", {
+      changes: [{ set: "week-6", fields: { note: weekNote } }],
+      summary: "Week 6 of 10 · tempo Friday",
+      note: keptUp,
+    });
+    transcript.wait(3000);
+    const changed = transcript.motion(
+      "changed",
+      { ...sub20Card, summary: "Week 6 of 10 · tempo Friday", version: 2 },
+      keptUp,
+    );
+    transcript.wait(2000);
+    memoryCall(transcript, `/v0/motion/${sub20Id}`, {
+      motion: changed.motion,
+      content: withWeekNote("week-6", weekNote),
+      state,
+      changes: [changed.change, started.change],
+    });
+    transcript.wait(2.5 * 24 * 60 * 60 * 1000);
+    sendAndStart(transcript, "Did parkrun this morning: 20:12!");
+    transcript.wait(600);
+    agentCalls(transcript, "read_motion", { id: sub20Id });
+    transcript.wait(900);
+    const resultNote = "Parkrun 20:12, a best";
+    agentCalls(transcript, "change_motion", {
+      id: sub20Id,
+      version: 2,
+      changes: [
+        {
+          add: { id: "parkrun-oct-31", date: "2026-10-31", result: "20:12", note: "29 s faster than last time" },
+          to: "results",
+          after: "parkrun-oct-24",
+        },
+      ],
+      summary: "Week 6 of 10 · long run Sunday",
+      note: resultNote,
+    });
+    const added = transcript.motion(
+      "changed",
+      { ...sub20Card, summary: "Week 6 of 10 · long run Sunday", version: 3 },
+      resultNote,
+    );
+    motionStep(
+      transcript,
+      "updated",
+      added.motion,
+      { title: "Updating Sub-20 5K: parkrun 20:12, a best", endedTitle: "Updated Sub-20 5K: parkrun 20:12, a best" },
+      resultNote,
+    );
+    transcript.wait(400);
+    writeWhole(
+      transcript,
+      `20:12, 29 seconds off in four weeks. Sunday's long run stays easy.\n\n${motionLine(sub20Id, 3)}`,
+    );
     transcript.endTurn("completed");
     return transcript;
   },
