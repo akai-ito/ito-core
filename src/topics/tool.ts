@@ -1,4 +1,5 @@
 import type { Store } from "#store/store.ts";
+import { textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 
 export const topicToolName = "mark_topic";
@@ -7,10 +8,7 @@ const mostWords = 4;
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
-const labelOf = (input: unknown): string => {
-  const label: unknown = input && typeof input === "object" ? Reflect.get(input, "label") : undefined;
-  return typeof label === "string" ? label.replaceAll(/\s+/gu, " ").trim() : "";
-};
+const labelOf = (input: unknown): string => textOf(input, "label").replaceAll(/\s+/gu, " ").trim();
 
 export const createTopicTool = (store: Pick<Store, "markTopic">): Tool => ({
   name: topicToolName,

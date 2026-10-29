@@ -2,6 +2,7 @@ import path from "node:path";
 import { maxAttachmentBytes, toMediaType, type Attachments } from "#attachments/attachments.ts";
 import { isImage } from "#attachments/media.ts";
 import { fail, ok, type Result } from "#result.ts";
+import { textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 
 export const imageToolName = "keep_image";
@@ -20,9 +21,9 @@ const fetchMs = 30_000;
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
 const toUrl = (input: unknown): URL | undefined => {
-  const given: unknown = input && typeof input === "object" ? Reflect.get(input, "url") : undefined;
-  if (typeof given !== "string" || !URL.canParse(given.trim())) return undefined;
-  const url = new URL(given.trim());
+  const given = textOf(input, "url").trim();
+  if (!URL.canParse(given)) return undefined;
+  const url = new URL(given);
   return url.protocol === "https:" || url.protocol === "http:" ? url : undefined;
 };
 

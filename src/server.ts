@@ -20,6 +20,7 @@ import type { Fetch } from "#capabilities/connect.ts";
 import { createTopicTool } from "#topics/tool.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
+import { withCheckedInput } from "#tools/input.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
 import type { Engine, ToolServer } from "#engine/engine.ts";
@@ -256,7 +257,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...memory.tools,
     ...motions.tools,
   ];
-  const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()];
+  const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()].map((tool) => withCheckedInput(tool));
   const callTool = async (name: string, input: unknown): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
     return tool ? tool.call(input) : { text: `Ito has no tool ${name}.`, isError: true };

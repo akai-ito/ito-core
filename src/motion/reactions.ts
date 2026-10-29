@@ -1,5 +1,6 @@
 import type { JsonSchema } from "#engine/engine.ts";
 import type { Fields } from "#motion/changes.ts";
+import { fieldOf } from "#tools/input.ts";
 
 export type Reaction = { readonly changes: unknown; readonly summary: string; readonly note: string };
 
@@ -46,9 +47,6 @@ export const toReactionPrompt = ({ id, kind, title, summary, version, content, s
     `Their ticks, which win over the content's own: ${JSON.stringify(state)}`,
     `Its summary now: ${summary}`,
   ].join("\n");
-
-const fieldOf = (value: unknown, field: string): unknown =>
-  value && typeof value === "object" ? Reflect.get(value, field) : undefined;
 
 export const toReaction = (answer: unknown): Reaction | undefined => {
   const changes = fieldOf(answer, "changes_json");

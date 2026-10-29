@@ -92,4 +92,16 @@ describe("Ito's tools over MCP", () => {
     expect(await statusOf(fetch(url))).toBe(405);
     expect(await rpc("resources/list")).toMatchObject({ error: { code: -32_601 } });
   });
+
+  it("checks a call's input against the tool's schema before the tool sees it", async () => {
+    expect(await rpc("tools/call", { name: "mark_topic", arguments: { label: 3 } })).toMatchObject({
+      result: { content: [{ type: "text", text: "label must be string." }], isError: true },
+    });
+    expect(await rpc("tools/call", { name: "read_motion", arguments: { id: "trip", colour: "red" } })).toMatchObject({
+      result: { content: [{ type: "text", text: "There's no colour here." }], isError: true },
+    });
+    expect(await rpc("tools/call", { name: "recall" })).toMatchObject({
+      result: { content: [{ type: "text", text: "Give query." }], isError: true },
+    });
+  });
 });
