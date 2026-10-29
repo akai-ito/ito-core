@@ -292,7 +292,7 @@
       }
     },
     "Todo": {
-      "description": "Something left to do. `done` is how Ari wrote it; your tick, in the state, wins.",
+      "description": "Something left to do. `done` is how Ari wrote it; your tick, in the state, wins. `about` names the items it books, so the app can show them booked the moment you tick it.",
       "type": "object",
       "required": ["id", "text", "done"],
       "additionalProperties": false,
@@ -306,6 +306,13 @@
         },
         "done": {
           "type": "boolean"
+        },
+        "about": {
+          "description": "The ids of the stops, legs, stays or places it's about.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ItemId"
+          }
         }
       }
     },

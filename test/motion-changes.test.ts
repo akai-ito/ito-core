@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { loadSchemas } from "#protocol/schemas.ts";
 import { createKinds } from "#motion/kinds.ts";
-import { applyChanges, mergePatch, pruneState, strayIds, type Applied, type Fields } from "#motion/changes.ts";
+import {
+  applyChanges,
+  danglingIds,
+  mergePatch,
+  pruneState,
+  strayIds,
+  type Applied,
+  type Fields,
+} from "#motion/changes.ts";
 
 const trip: Fields = {
   destination: "Florence",
@@ -130,5 +138,16 @@ describe("a trip's shape", () => {
     });
     expect(kinds.checkState("trip", { todo: { "book-uffizi": { done: "yes" } } }).ok).toBe(false);
     expect(kinds.checkChanges([{ remove: "fri", extra: true }]).ok).toBe(false);
+  });
+});
+
+describe("what a thing's items name", () => {
+  it("lists the ids a stop's place or a to-do's about names that aren't in the thing", () => {
+    expect(
+      danglingIds({
+        days: [{ id: "fri", stops: [{ id: "dinner", place: "mario" }] }],
+        todo: [{ id: "book", text: "Book", done: false, about: ["dinner", "train"] }],
+      }),
+    ).toEqual(["mario", "train"]);
   });
 });

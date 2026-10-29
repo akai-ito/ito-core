@@ -6,6 +6,7 @@ import type { Memory } from "#memory/memory.ts";
 import type { Thread } from "#memory/thread.ts";
 import {
   applyChanges,
+  danglingIds,
   itemsByField,
   listsOf,
   mergePatch,
@@ -275,7 +276,11 @@ export const createMotions = ({
     const shape = kinds.checkContent(kind, content);
     if (!shape.ok) return shape;
     const twice = duplicateOf(id, content);
-    return twice === undefined ? ok(undefined) : fail(`${twice} is used twice: every id in a thing is its own.`);
+    if (twice !== undefined) return fail(`${twice} is used twice: every id in a thing is its own.`);
+    const dangling = danglingIds(content);
+    return dangling.length === 0
+      ? ok(undefined)
+      : fail(`It names ${dangling.join(", ")}, which isn't in this thing: add it, or name one that is.`);
   };
 
   const start = (input: unknown): Promise<Result<Motion, string>> =>

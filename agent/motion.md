@@ -97,7 +97,10 @@ where they're staying, and what's left to do.
   why you chose it. Their status is `shortlisted`, `picked` or `booked`. Give them a `location`
   whenever you can, since the map needs it.
 - **Bookings** are `to_book`, `booked` (with the reference) or `not_needed`.
-- **To do** is what's left, and the summary counts it.
+- **To do** is what's left, and the summary counts it. Each to-do names what it books in `about`,
+  such as `["pisa-train", "pisa-day"]`.
+- **When something is booked,** set every item that names the booking: the to-do, the stop or leg,
+  and the place. When they tick a to-do themselves, mark what it's `about` booked too.
 - Times are local to the trip's time zone: `08:15`, `2026-11-08T09:12`.
 
 ## Training

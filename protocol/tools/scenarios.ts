@@ -3202,7 +3202,7 @@ const scenarios: readonly (() => Transcript)[] = [
       changes: [
         { set: "book-uffizi", fields: { done: true } },
         { set: "uffizi", fields: { booking: { status: "booked", ref: "UF-2291" } } },
-        { set: "uffizi-place", fields: { status: "booked" } },
+        { set: "uffizi-place", fields: { status: "booked", booking: { status: "booked", ref: "UF-2291" } } },
       ],
       summary: "6–9 Nov · 3 to book",
       note,
@@ -3246,7 +3246,9 @@ const scenarios: readonly (() => Transcript)[] = [
             : day,
         ),
         places: (florenceTrip(cover).places as readonly Readonly<Record<string, unknown>>[]).map((place) =>
-          place.id === "uffizi-place" ? { ...place, status: "booked" } : place,
+          place.id === "uffizi-place"
+            ? { ...place, status: "booked", booking: { status: "booked", ref: "UF-2291" } }
+            : place,
         ),
         todo: (florenceTrip(cover).todo as readonly Readonly<Record<string, unknown>>[]).map((item) =>
           item.id === "book-uffizi" ? { ...item, done: true } : item,

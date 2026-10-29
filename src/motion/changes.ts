@@ -239,3 +239,17 @@ export const pruneState = (state: Fields, content: Fields): Fields => {
       .filter(([, entries]) => Object.keys(entries).length > 0),
   );
 };
+
+const references = (item: Item): readonly string[] => [
+  ...(typeof item.place === "string" ? [item.place] : []),
+  ...(Array.isArray(item.about) ? item.about.filter((id): id is string => typeof id === "string") : []),
+];
+
+export const danglingIds = (content: Fields): readonly string[] => {
+  const items = listsOf(content)
+    .values()
+    .flatMap((list) => list)
+    .toArray();
+  const ids = new Set(items.map((item) => item.id));
+  return [...new Set(items.flatMap((item) => references(item)).filter((id) => !ids.has(id)))];
+};

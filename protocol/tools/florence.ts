@@ -131,9 +131,9 @@ export const florenceTrip = (cover: string): Readonly<Record<string, unknown>> =
     },
   ],
   todo: [
-    { id: "book-uffizi", text: "Book the Uffizi, 8:15 Saturday", done: false },
-    { id: "book-duomo", text: "Book the Duomo climb", done: false },
-    { id: "book-pisa", text: "Pisa train tickets", done: false },
-    { id: "book-pitti", text: "Book the Pitti Palace", done: false },
+    { id: "book-uffizi", text: "Book the Uffizi, 8:15 Saturday", done: false, about: ["uffizi", "uffizi-place"] },
+    { id: "book-duomo", text: "Book the Duomo climb", done: false, about: ["duomo"] },
+    { id: "book-pisa", text: "Pisa train tickets", done: false, about: ["pisa-train", "pisa-day"] },
+    { id: "book-pitti", text: "Book the Pitti Palace", done: false, about: ["pitti"] },
   ],
 });
