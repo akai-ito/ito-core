@@ -179,6 +179,7 @@ type YouSayOptions = {
   readonly heard?: readonly string[];
   readonly vocabulary?: readonly Term[];
   readonly mutedMidway?: boolean;
+  readonly carriesOn?: string;
 };
 
 const cannedAudioMs = 250;
@@ -239,6 +240,10 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
     case "message.started": {
       const message = event.message as Message;
       return { ...projection, order: [...order, message.id], byId: new Map(byId).set(message.id, message) };
+    }
+    case "message.amended": {
+      const message = event.message as Message;
+      return { ...projection, byId: new Map(byId).set(message.id, message) };
     }
     case "step.started":
     case "step.updated":
@@ -403,6 +408,7 @@ export const createTranscript = (header: Header): Transcript => {
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
+  const spokenRaw = createCell<ReadonlyMap<string, string>>(new Map());
   const approvals = createCell<ReadonlySet<string>>(new Set());
   const observer = createCell<((type: string, fields: Fields) => void) | undefined>(undefined);
   const users = createCell(0);
@@ -925,7 +931,7 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const youSay = (file: string, raw: string, options: YouSayOptions = {}): string => {
-    const { heard = [], vocabulary = [], mutedMidway = false } = options;
+    const { heard = [], vocabulary = [], mutedMidway = false, carriesOn } = options;
     const model = currentModel();
     world("you_say", { text: raw, ...(heard.length > 0 && { heard }), ...(mutedMidway && { held: true }) });
     appAudio(file);
@@ -937,15 +943,32 @@ export const createTranscript = (header: Header): Transcript => {
     for (const text of heard) serverFrame({ type: "heard", text, final: false });
     if (mutedMidway) appFrame({ type: "mute" });
     moveTo("turn_ended");
-    const { text, corrections } = correct(raw, vocabulary);
+    const earlier = carriesOn === undefined ? undefined : messageById(carriesOn);
+    const earlierRaw = earlier === undefined ? "" : (spokenRaw.get().get(earlier.id) ?? earlier.text);
+    const whole = earlier === undefined ? raw : `${earlierRaw} ${raw}`;
+    const { text, corrections } = correct(whole, vocabulary);
     const audio: Attachment = {
       id: newId("f"),
       kind: "audio",
       name: "turn.wav",
       media_type: "audio/wav",
-      size: readFileSync(path.join(fixtureDirectory, file)).length + 44,
+      size: readFileSync(path.join(fixtureDirectory, file)).length + (earlier?.spoken?.audio?.size ?? 44),
     };
+    if (earlier) {
+      spokenRaw.update((current) => new Map([...current, [earlier.id, whole]]));
+      emit("message.amended", {
+        message: {
+          ...earlier,
+          text,
+          spoken: { call: model.call, audio, ...(corrections.length > 0 && { corrections }) },
+        },
+      });
+      serverFrame({ type: "heard", text, final: true, message: earlier.id });
+      if (turn.get()) moveTo("working");
+      return earlier.id;
+    }
     const id = newId("m");
+    spokenRaw.update((current) => new Map([...current, [id, raw]]));
     const asked = waiting.get();
     const answering = asked === undefined || askById(asked).secret ? undefined : asked;
     emit("message.accepted", {

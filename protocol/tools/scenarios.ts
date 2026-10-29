@@ -8,8 +8,8 @@ import { defaultVoice, voices } from "#voice/voices.ts";
 import type { Term } from "#memory/vocabulary.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.11";
-const serverVersion = "0.11.0";
+const protocol = "0.12";
+const serverVersion = "0.12.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -3011,6 +3011,40 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.endTurn("completed");
     transcript.wait(1500);
     transcript.fetchAttachment(picture);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "61-you-carry-on",
+      scenario: 61,
+      title: "You carry on",
+      summary:
+        "You pause mid-thought long enough for your turn to end, then carry on before Ari has begun to answer. " +
+        "Your new words join the message you'd just spoken, with one recording of both parts, and Ari answers " +
+        "the whole thought once.",
+      guarantees: ["G25"],
+    });
+    transcript.begin("2026-10-29T08:00:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const call = transcript.startCall();
+    transcript.wait(300);
+    transcript.openStream(call);
+    transcript.wait(4000);
+    const thought = transcript.youSay("walk-question.pcm", "I keep thinking about Florence.");
+    transcript.startTurn([thought]);
+    transcript.wait(700);
+    transcript.youSay("walk-follow-up.pcm", "Should we take a day for Pisa, or stay put?", { carriesOn: thought });
+    transcript.wait(1200);
+    writeWhole(transcript, "Stay put, I'd say: four days is short. Pisa's an easy morning if you want it.", 1);
+    transcript.endTurn("completed");
+    transcript.wait(4000);
+    transcript.played("s1");
+    transcript.wait(2000);
+    transcript.played("s2");
+    transcript.wait(5000);
+    transcript.hangUp();
     return transcript;
   },
 ];

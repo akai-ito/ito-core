@@ -68,6 +68,8 @@ const failedCode = 1011;
 
 type Sentence = { readonly id: string; readonly text: string };
 
+type Joinable = { readonly message: MessageId; readonly raw: string; readonly pcm: Uint8Array };
+
 export const createCallStream = (options: CallOptions): CallStream => {
   const { call, store, turns, attachments, voice, identifiers, clock, info, log } = options;
   const socket = createCell<CallSocket | undefined>(undefined);
@@ -88,6 +90,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
   const status = createCell<{ readonly kind: string; readonly label: string } | undefined>(undefined);
   const narrated = createCell<ReadonlySet<string>>(new Set());
   const unsubscribe = createCell<(() => void) | undefined>(undefined);
+  const joinable = createCell<Joinable | undefined>(undefined);
 
   const send = (frame: ToApp): void => {
     socket.get()?.send(frame);
@@ -182,6 +185,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
           return;
         }
         case "turn.ended": {
+          joinable.set(undefined);
           isAgentWorking.set(false);
           status.set(undefined);
           settle();
@@ -189,6 +193,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
         }
         case "message.started": {
           if (event.message.role === "agent") {
+            joinable.set(undefined);
             feeds.set(new Map([...feeds.get(), [event.message.id, createSentenceFeed()]]));
           }
           return;
@@ -202,10 +207,12 @@ export const createCallStream = (options: CallOptions): CallStream => {
           return;
         }
         case "ask.started": {
+          joinable.set(undefined);
           enqueue(askAloud(event.ask));
           return;
         }
         case "message.accepted":
+        case "message.amended":
         case "message.queued":
         case "message.read":
         case "step.started":
@@ -223,7 +230,30 @@ export const createCallStream = (options: CallOptions): CallStream => {
       }
     });
 
+  const join = async (earlier: Joinable, text: string, pcm: Uint8Array): Promise<MessageId | undefined> => {
+    const raw = `${earlier.raw} ${text}`;
+    const whole = Buffer.concat([earlier.pcm, pcm]);
+    const vocabulary = await options.vocabulary();
+    const corrected = correct(raw, vocabulary);
+    const recording = identifiers.attachment();
+    const saved = attachments.save(recording, "turn.wav", "audio/wav", Buffer.from(toWav(whole, heardRate)));
+    if (!saved.ok) return undefined;
+    const amended = store.amendMessage(earlier.message, corrected.text, recording, corrected.corrections);
+    if (!amended.ok) {
+      log("A spoken turn couldn't join the one before it", amended.failure);
+      return undefined;
+    }
+    if (amended.value.replaced !== undefined) attachments.remove(amended.value.replaced);
+    joinable.set({ message: earlier.message, raw, pcm: whole });
+    turns.amend(earlier.message, corrected.text, correct(text, vocabulary).text);
+    send({ type: "heard", text: corrected.text, final: true, message: earlier.message });
+    if (isAgentWorking.get() && state.get() === "turn_ended") moveTo("working");
+    return earlier.message;
+  };
+
   const post = async (text: string, pcm: Uint8Array): Promise<MessageId | undefined> => {
+    const earlier = joinable.get();
+    if (earlier) return join(earlier, text, pcm);
     const corrected = correct(text, await options.vocabulary());
     const recording = identifiers.attachment();
     const saved = attachments.save(recording, "turn.wav", "audio/wav", Buffer.from(toWav(pcm, heardRate)));
@@ -239,6 +269,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
       return undefined;
     }
     turns.route(message, corrected.text);
+    joinable.set({ message, raw: text, pcm });
     send({ type: "heard", text: corrected.text, final: true, message });
     return message;
   };
