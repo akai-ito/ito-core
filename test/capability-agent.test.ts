@@ -174,7 +174,7 @@ describe("capabilities, through the pinned Codex", () => {
     const after = currentModel().developerTexts().join("\n");
 
     expect(during).toContain("You're on a call.");
-    expect(after.slice(after.lastIndexOf("<call>"))).toContain("The call has ended.");
+    expect(after.slice(after.lastIndexOf("<call>"))).toContain("The call has ended, so they're reading the chat.");
   });
 
   it("shows the agent which words were corrected in a spoken message", async () => {
