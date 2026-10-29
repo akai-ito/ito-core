@@ -841,6 +841,7 @@ export const createMemory = ({
     sync,
     vocabulary: async () => {
       await sync();
+      if (isClosed.get()) return [];
       const pages = shelvedPages().map(({ address, shelf, title, aliases, heard = [], markdown }) => ({
         address,
         shelf,
@@ -852,6 +853,7 @@ export const createMemory = ({
       return toVocabulary(pages, store.yourMessages(), learnedTerms());
     },
     boosted: (terms) => {
+      if (isClosed.get()) return [];
       const since = clock.now() - boostDays * dayMs;
       const written = new Set(
         store
