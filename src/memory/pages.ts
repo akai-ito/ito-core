@@ -1,7 +1,7 @@
 import { parse as parseYaml, stringify as toYaml } from "yaml";
 import { fail, ok, type Result } from "#result.ts";
 
-export const shelves = ["people", "goals", "projects", "places", "topics", "journal"] as const;
+export const shelves = ["people", "groups", "goals", "projects", "places", "topics", "journal"] as const;
 
 export type Shelf = (typeof shelves)[number];
 
@@ -18,6 +18,7 @@ export type Location = {
 export type Page = {
   readonly title: string;
   readonly gist?: string;
+  readonly circle?: string;
   readonly aliases: readonly string[];
   readonly links: readonly string[];
   readonly heard?: readonly string[];
@@ -71,10 +72,12 @@ export const parsePage = (text: string, fallbackTitle: string): Page => {
   const fields = (yaml === undefined ? {} : parseYaml(yaml)) as Readonly<Record<string, unknown>> | null;
   const title = fields?.title;
   const gist = fields?.gist;
+  const circle = fields?.circle;
   const heard = strings(fields?.heard);
   return {
     title: typeof title === "string" ? title : fallbackTitle,
     ...(typeof gist === "string" && gist.trim() !== "" && { gist: gist.trim() }),
+    ...(typeof circle === "string" && circle.trim() !== "" && { circle: circle.trim() }),
     aliases: strings(fields?.aliases),
     links: strings(fields?.links),
     ...(heard.length > 0 && { heard }),
@@ -82,10 +85,11 @@ export const parsePage = (text: string, fallbackTitle: string): Page => {
   };
 };
 
-export const formatPage = ({ title, gist, aliases, links, heard = [], markdown }: Page): string => {
+export const formatPage = ({ title, gist, circle, aliases, links, heard = [], markdown }: Page): string => {
   const fields = {
     title,
     ...(gist !== undefined && { gist }),
+    ...(circle !== undefined && { circle }),
     ...(aliases.length > 0 && { aliases }),
     ...(links.length > 0 && { links }),
     ...(heard.length > 0 && { heard }),

@@ -23,6 +23,7 @@ export type Thread = {
   readonly writeFiles: (
     files: readonly { readonly file: string; readonly text: string }[],
     message: string,
+    removed?: readonly string[],
   ) => Promise<Result<string, string>>;
   readonly readAt: (commit: string, file: string) => Promise<string | undefined>;
   readonly history: (file: string, limit?: number) => Promise<readonly FileCommit[]>;
@@ -91,10 +92,14 @@ export const openThread = async (directory: string): Promise<Thread> => {
         return fail(describe(error));
       }
     },
-    writeFiles: async (files, message) => {
+    writeFiles: async (files, message, removed = []) => {
       try {
-        for (const { file, text } of files) writeFileSync(path.join(directory, file), text);
-        await git("add", "--", ...files.map(({ file }) => file));
+        for (const { file, text } of files) {
+          mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
+          writeFileSync(path.join(directory, file), text);
+        }
+        for (const file of removed) rmSync(path.join(directory, file), { force: true });
+        await git("add", "--all", "--", ...files.map(({ file }) => file), ...removed);
         await git("commit", "--quiet", "--message", message);
         const head = await git("rev-parse", "HEAD");
         return ok(head.trim());
