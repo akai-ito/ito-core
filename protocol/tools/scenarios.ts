@@ -3225,7 +3225,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(400);
     writeWhole(
       transcript,
-      `Lovely, that's in. Three to go: the Duomo climb, the Pisa train and the Accademia.\n\n${motionLine(florenceId, 2)}`,
+      `Lovely, that's in. Three to go: the Duomo climb, the Pisa train and the Pitti Palace.\n\n${motionLine(florenceId, 2)}`,
     );
     transcript.endTurn("completed");
     transcript.wait(5 * 60 * 1000);
@@ -3258,7 +3258,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, "Thanks! What's left?");
     transcript.wait(900);
-    writeWhole(transcript, "The Duomo climb and the Accademia. The Pisa train's ticked off.");
+    writeWhole(transcript, "The Duomo climb and the Pitti Palace. The Pisa train's ticked off.");
     transcript.endTurn("completed");
     return transcript;
   },

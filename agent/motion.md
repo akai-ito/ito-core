@@ -133,6 +133,7 @@ sessions.
 ## Photos
 
 Real photos, chosen well, used freely: this is what the person would do themselves.
+
 - Find strong, beautiful pictures: a cover for the trip, and a photo for each place where a good one
   exists. Look at official and tourism-board photography, Wikimedia Commons, and the place's own
   site, and prefer quality over the first result.
