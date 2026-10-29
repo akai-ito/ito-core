@@ -2,28 +2,11 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
-import type { AskFields, JsonSchema, StepFacts } from "#engine/engine.ts";
+import type { AskFields, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type { Embedder } from "#memory/embedder.ts";
 import { applyEdit, isSameVersion, isSharplyShorter, numberLines, toVersion, type BodyEdit } from "#memory/edits.ts";
-import {
-  circleSchema,
-  circlesPerRequest,
-  toCirclePrompt,
-  toGroupAddress,
-  toSorted,
-  type CirclePage,
-  type Sorted,
-} from "#memory/circles.ts";
-import {
-  gistGuide,
-  gistSchema,
-  gistsPerRequest,
-  toGistPrompt,
-  toGists,
-  toOneLine,
-  type GistPage,
-} from "#memory/gists.ts";
+import { gistGuide, toOneLine } from "#memory/gists.ts";
 import {
   appendEntry,
   dayTitle,
@@ -139,7 +122,6 @@ export type MemoryOptions = {
   readonly approve: (fields: AskFields) => Promise<boolean>;
   readonly info: Info;
   readonly timeZone: string;
-  readonly complete?: (prompt: string, schema: JsonSchema) => Promise<Result<unknown, string>>;
   readonly pushDelayMs?: number;
 };
 
@@ -153,11 +135,6 @@ const passagesPerRecall = 6;
 const recentChanges = 20;
 const boostDays = 28;
 const boostMessages = 200;
-
-type Complete = NonNullable<MemoryOptions["complete"]>;
-
-const batchesOf = <Item>(items: readonly Item[], size: number): readonly (readonly Item[])[] =>
-  Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
 
 const fieldOf = (value: unknown, field: string): unknown =>
   value && typeof value === "object" ? Reflect.get(value, field) : undefined;
@@ -227,7 +204,6 @@ export const createMemory = ({
   approve,
   info,
   timeZone,
-  complete,
   pushDelayMs = 30_000,
 }: MemoryOptions): Memory => {
   const thread = createCell<Thread | undefined>(undefined);
@@ -236,8 +212,6 @@ export const createMemory = ({
   const pushAttempts = createCell(0);
   const hasRemote = createCell(false);
   const isClosed = createCell(false);
-  const tidying = createCell<Promise<void> | undefined>(undefined);
-  const isUntidy = createCell(false);
 
   const opened = (): Thread => {
     const current = thread.get();
@@ -374,7 +348,6 @@ export const createMemory = ({
     changedAt.update((current) => new Map([...current, [location.address, at]]));
     await indexPage(location, title, text === undefined ? undefined : parsePage(text, title).markdown);
     schedulePush();
-    if (isUntidy.get()) startTidying();
     return ok(id);
   };
 
@@ -627,173 +600,6 @@ export const createMemory = ({
       await reindex();
     }
     settings.setSetting(indexedSetting, head);
-    startTidying();
-  };
-
-  const writeGists = (gists: ReadonlyMap<string, string>): Promise<void> =>
-    serially(async () => {
-      if (isClosed.get()) return;
-      await catchUp();
-      const files = [...gists]
-        .map(([address, gist]) => {
-          const location = toLocation(address);
-          if (!location.ok) return;
-          const page = readParsed(location.value);
-          return page && page.gist === undefined
-            ? { file: location.value.path, text: formatPage({ ...page, gist }) }
-            : undefined;
-        })
-        .filter((file) => file !== undefined);
-      if (files.length === 0) return;
-      const committed = await opened().writeFiles(files, "Write gists");
-      if (!committed.ok) {
-        info("Ari's gists couldn't be saved", { error: committed.failure });
-        return;
-      }
-      settings.setSetting(indexedSetting, committed.value);
-      schedulePush();
-    });
-
-  const allPages = (): readonly ReadPage[] =>
-    opened()
-      .files()
-      .map((file) => toLocation(toAddress(file)))
-      .filter((location) => location.ok)
-      .map(({ value }) => readPage(value))
-      .filter((page) => page !== undefined);
-
-  const withoutGists = (): readonly GistPage[] =>
-    allPages()
-      .filter((page) => page.gist === undefined)
-      .map(({ address, title, markdown }) => ({ address, title, markdown }));
-
-  const withoutCircles = (): readonly CirclePage[] =>
-    allPages()
-      .filter((page) => page.shelf === "people" && page.circle === undefined)
-      .map(({ address, title, gist, markdown }) => ({ address, title, ...(gist !== undefined && { gist }), markdown }));
-
-  const askGists = async (ask: Complete, pages: readonly GistPage[]): Promise<void> => {
-    const answered = await ask(toGistPrompt(pages), gistSchema);
-    if (!answered.ok) {
-      info("Ari couldn't write gists for some pages yet", {
-        pages: pages.map(({ address }) => address),
-        error: answered.failure,
-      });
-      return;
-    }
-    await writeGists(toGists(answered.value, pages));
-  };
-
-  const fillGists = async (ask: Complete): Promise<void> => {
-    for (const batch of batchesOf(withoutGists(), gistsPerRequest)) {
-      if (isClosed.get()) return;
-      await askGists(ask, batch);
-    }
-    for (const page of withoutGists()) {
-      if (isClosed.get()) return;
-      await askGists(ask, [page]);
-    }
-  };
-
-  const toCircleChoice = (
-    address: string,
-    { circle, isGroup }: Sorted,
-  ):
-    | { readonly location: Location; readonly page: Page; readonly circle: string; readonly to?: Location }
-    | undefined => {
-    const location = toLocation(address);
-    const page = location.ok ? readParsed(location.value) : undefined;
-    if (!page || !location.ok || page.circle !== undefined) return undefined;
-    const group = toLocation(toGroupAddress(address));
-    if (isGroup && group.ok && opened().read(group.value.path) === undefined) {
-      return { location: location.value, page, circle, to: group.value };
-    }
-    return circle === "" ? undefined : { location: location.value, page, circle };
-  };
-
-  const writeCircles = (sorted: ReadonlyMap<string, Sorted>): Promise<void> =>
-    serially(async () => {
-      if (isClosed.get()) return;
-      await catchUp();
-      const choices = [...sorted]
-        .map(([address, choice]) => toCircleChoice(address, choice))
-        .filter((choice) => choice !== undefined);
-      if (choices.length === 0) return;
-      const moves = choices.filter((choice) => choice.to !== undefined);
-      const moved = new Map(moves.map(({ location, to }) => [location.address, to?.address ?? location.address]));
-      const relink = (links: readonly string[]): readonly string[] => links.map((link) => moved.get(link) ?? link);
-      const chosen = new Set(choices.map(({ location }) => location.path));
-      const relinked = opened()
-        .files()
-        .filter((file) => !chosen.has(file))
-        .map((file) => {
-          const location = toLocation(toAddress(file));
-          return { file, page: location.ok ? readParsed(location.value) : undefined };
-        })
-        .filter(
-          (entry): entry is { readonly file: string; readonly page: Page } =>
-            entry.page?.links.some((link) => moved.has(link)) === true,
-        )
-        .map(({ file, page }) => ({ file, text: formatPage({ ...page, links: relink(page.links) }) }));
-      const written = choices.map(({ location, page, circle, to }) =>
-        to
-          ? { file: to.path, text: formatPage({ ...page, links: relink(page.links) }) }
-          : { file: location.path, text: formatPage({ ...page, circle, links: relink(page.links) }) },
-      );
-      const committed = await opened().writeFiles(
-        [...written, ...relinked],
-        moved.size > 0 ? "Sort people into circles, and move groups to their shelf" : "Sort people into circles",
-        moves.map(({ location }) => location.path),
-      );
-      if (!committed.ok) {
-        info("Ari's circles couldn't be saved", { error: committed.failure });
-        return;
-      }
-      settings.setSetting(indexedSetting, committed.value);
-      for (const { location, page, to } of choices) {
-        if (!to) continue;
-        await indexPage(location, page.title, undefined);
-        await indexPage(to, page.title, page.markdown);
-      }
-      schedulePush();
-    });
-
-  const fillCircles = async (ask: Complete): Promise<void> => {
-    for (const batch of batchesOf(withoutCircles(), circlesPerRequest)) {
-      if (isClosed.get()) return;
-      const circles = [
-        ...new Set(
-          allPages()
-            .map(({ circle }) => circle)
-            .filter((circle) => circle !== undefined),
-        ),
-      ];
-      const answered = await ask(toCirclePrompt(batch, circles), circleSchema);
-      if (!answered.ok) {
-        info("Ari couldn't sort some people into circles yet", { error: answered.failure });
-        continue;
-      }
-      await writeCircles(toSorted(answered.value, batch));
-    }
-  };
-
-  const startTidying = (): void => {
-    if (!complete || tidying.get() || isClosed.get()) return;
-    const run = async (): Promise<void> => {
-      try {
-        await fillGists(complete);
-        await fillCircles(complete);
-      } catch (error) {
-        info("Ari's tidying of its pages stopped partway", { error: String(error) });
-      } finally {
-        tidying.set(undefined);
-        const left = isClosed.get() ? [] : [...withoutGists(), ...withoutCircles()];
-        isUntidy.set(left.length > 0);
-        if (left.length > 0)
-          info("Some pages still need a gist or a circle", { pages: left.map((page) => page.address) });
-      }
-    };
-    tidying.set(run());
   };
 
   const ready = (async (): Promise<void> => {
@@ -803,7 +609,6 @@ export const createMemory = ({
     await serially(catchUp);
     indexConversation();
     schedulePush();
-    startTidying();
   })();
 
   const sync = async (): Promise<void> => {

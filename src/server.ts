@@ -146,10 +146,6 @@ export const createServer = (options: ServerOptions): Server => {
     approve: (fields) => turns.approve(fields),
     info,
     timeZone: options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
-    complete: async (prompt, schema) => {
-      await listening;
-      return engine.complete(prompt, schema);
-    },
   });
   const callContext = (): string => {
     const latest = store.latestCall();
@@ -198,10 +194,7 @@ export const createServer = (options: ServerOptions): Server => {
     approve: (fields) => turns.approve(fields),
     recordStep: (facts) => turns.recordStep("motion", facts),
     info,
-    complete: async (prompt, schema) => {
-      await listening;
-      return engine.complete(prompt, schema);
-    },
+    complete: (prompt, schema) => engine.complete(prompt, schema),
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
@@ -240,12 +233,6 @@ export const createServer = (options: ServerOptions): Server => {
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
-  });
-  const listening = new Promise<void>((resolve) => {
-    app.addHook("onListen", (done) => {
-      resolve();
-      done();
-    });
   });
   logError.set((message, error) => {
     app.log.error({ err: error }, message);

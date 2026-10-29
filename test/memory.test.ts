@@ -5,19 +5,13 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
-import { systemClock } from "#clock.ts";
-import { demoScripts } from "#engine/scripted/demo.ts";
-import { demoModels } from "#engine/scripted/models.ts";
-import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import type { StepFacts } from "#engine/engine.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import { createMemory, type Memory, type MemoryOptions } from "#memory/memory.ts";
 import { openThread } from "#memory/thread.ts";
-import { fail, ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createMemoryStore } from "#store/memory.ts";
-import { createServer } from "#server.ts";
 import { createStore } from "#store/store.ts";
 import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
@@ -31,10 +25,7 @@ type Opened = {
   readonly steps: () => readonly StepFacts[];
 };
 
-const openMemory = async (
-  complete?: MemoryOptions["complete"],
-  approve: MemoryOptions["approve"] = () => Promise.resolve(true),
-): Promise<Opened> => {
+const openMemory = async (approve: MemoryOptions["approve"] = () => Promise.resolve(true)): Promise<Opened> => {
   const directory = mkdtempSync(path.join(home, "home-"));
   const database = openDatabase(path.join(directory, "ito.db"));
   const clock = createVirtualClock(Date.parse("2026-10-26T19:00:00.000Z"));
@@ -53,7 +44,6 @@ const openMemory = async (
     approve,
     info: () => true,
     timeZone: "UTC",
-    ...(complete && { complete }),
   });
   memories.update((current) => [...current, memory]);
   await memory.ready;
@@ -215,7 +205,7 @@ describe("memory", () => {
   it("forgets a page only when the person allows it, and restores it from its history", async () => {
     const asked = createCell<readonly string[]>([]);
     const answers = createCell<readonly boolean[]>([false, true]);
-    const { memory, steps } = await openMemory(undefined, (fields) => {
+    const { memory, steps } = await openMemory((fields) => {
       asked.update((current) => [...current, `${fields.question} ${fields.preview ?? ""}`]);
       const [answer = false, ...rest] = answers.get();
       answers.set(rest);
@@ -325,155 +315,6 @@ describe("memory", () => {
     expect(bare).toEqual({ text: `${gist} ${circle} ${note}`, isError: true });
     expect(unnoted).toEqual({ text: note, isError: true });
     expect(journal).toEqual({ text: `${gist} ${note}`, isError: true });
-  });
-
-  it("writes a gist for each page that arrives without one, in a commit that isn't a change", async () => {
-    const prompts = createCell<readonly string[]>([]);
-    const { memory, directory } = await openMemory((prompt) => {
-      if (!prompt.includes("no gist")) return Promise.resolve(ok({ people: [] }));
-      prompts.update((current) => [...current, prompt]);
-      return Promise.resolve(
-        ok({
-          gists: [
-            { address: "memory:people/sam", gist: "Your Sunday\nrunning friend" },
-            { address: "memory:people/nobody", gist: "Never asked for" },
-          ],
-        }),
-      );
-    });
-    const thread = path.join(directory, "thread");
-    await write(memory, { address: "memory:places/dishoom", title: "Dishoom", body: "Our first date." });
-    mkdirSync(path.join(thread, "people"), { recursive: true });
-    writeFileSync(path.join(thread, "people", "sam.md"), "---\ntitle: Sam\n---\n\nYou run with Sam on Sundays.\n");
-    git(thread, "add", "people/sam.md");
-    git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
-
-    await memory.sync();
-    await vi.waitFor(() => {
-      expect(memory.page("memory:people/sam")).toMatchObject({
-        ok: true,
-        value: { gist: "Your Sunday running friend" },
-      });
-    });
-    await memory.sync();
-
-    expect(prompts.get()).toHaveLength(1);
-    expect(prompts.get()[0]).toContain("## Sam (memory:people/sam)\n\nYou run with Sam on Sundays.");
-    expect(prompts.get()[0]).not.toContain("Dishoom");
-    expect(git(thread, "log", "-1", "--format=%s")).toBe("Write gists\n");
-    expect(memory.page("memory:people/nobody")).toMatchObject({ ok: false });
-    expect(memory.recent().map(({ address }) => address)).toEqual(["memory:people/sam", "memory:places/dishoom"]);
-  });
-
-  it("carries on past a gist request that fails, and asks again for each page left", async () => {
-    const asked = createCell<readonly string[]>([]);
-    const { memory, directory } = await openMemory((prompt) => {
-      if (!prompt.includes("no gist")) return Promise.resolve(ok({ people: [] }));
-      asked.update((current) => [...current, prompt]);
-      if (asked.get().length === 1) return Promise.resolve(fail("The model timed out."));
-      const addresses = prompt
-        .matchAll(/\((?<address>memory:[^)]+)\)/gu)
-        .map((match) => match.groups?.address)
-        .toArray();
-      return Promise.resolve(
-        ok({ gists: addresses.map((address) => ({ address, gist: `About ${String(address)}` })) }),
-      );
-    });
-    const thread = path.join(directory, "thread");
-    mkdirSync(path.join(thread, "topics"), { recursive: true });
-    for (const name of ["diving", "poems"]) {
-      writeFileSync(path.join(thread, "topics", `${name}.md`), `---\ntitle: ${name}\n---\n\nAll about ${name}.\n`);
-    }
-    git(thread, "add", "topics");
-    git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
-
-    await memory.sync();
-
-    await vi.waitFor(() => {
-      expect(memory.pages("topics").map(({ gist }) => gist)).toEqual([
-        "About memory:topics/diving",
-        "About memory:topics/poems",
-      ]);
-    });
-    expect(asked.get()).toHaveLength(3);
-  });
-
-  it("sorts people into circles once, and moves groups to their shelf with links that follow", async () => {
-    const asked = createCell<readonly string[]>([]);
-    const { memory, directory } = await openMemory((prompt) => {
-      if (prompt.includes("no gist")) return Promise.resolve(ok({ gists: [] }));
-      asked.update((current) => [...current, prompt]);
-      return Promise.resolve(
-        ok({
-          people: [
-            { address: "memory:people/bora", circle: "running club", is_group: false },
-            { address: "memory:people/ljubljana-running-group", circle: "", is_group: true },
-          ],
-        }),
-      );
-    });
-    const thread = path.join(directory, "thread");
-    mkdirSync(path.join(thread, "people"), { recursive: true });
-    mkdirSync(path.join(thread, "journal"), { recursive: true });
-    const files: Readonly<Record<string, string>> = {
-      "people/bora.md": "---\ntitle: Bora\ngist: Runs with you\n---\n\nYou run with Bora.\n",
-      "people/ljubljana-running-group.md":
-        "---\ntitle: The Ljubljana running group\ngist: Saturday runs\n---\n\nRuns.\n",
-      "journal/2026-10-17.md":
-        "---\ntitle: 17 October 2026\ngist: A run\nlinks: [memory:people/ljubljana-running-group]\n---\n\nRan.\n",
-    };
-    for (const [file, text] of Object.entries(files)) writeFileSync(path.join(thread, file), text);
-    git(thread, "add", "people", "journal");
-    git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
-
-    await memory.sync();
-
-    await vi.waitFor(() => {
-      expect(memory.pages("groups")).toMatchObject([
-        { address: "memory:groups/ljubljana-running-group", title: "The Ljubljana running group" },
-      ]);
-    });
-    expect(memory.pages("people")).toMatchObject([{ address: "memory:people/bora", circle: "running club" }]);
-    expect(memory.page("memory:journal/2026-10-17")).toMatchObject({
-      ok: true,
-      value: { links: [{ address: "memory:groups/ljubljana-running-group" }] },
-    });
-    expect(git(thread, "log", "-1", "--format=%s")).toBe("Sort people into circles, and move groups to their shelf\n");
-    expect(asked.get()).toHaveLength(1);
-    expect(asked.get()[0]).toContain("## Bora (memory:people/bora)\n\nRuns with you\n\nYou run with Bora.");
-    const recalled = await call(memory, "recall", { query: "Ljubljana running group" });
-    expect(recalled.text).toContain("(memory:groups/ljubljana-running-group,");
-  });
-
-  it("asks the engine for gists only once the server is listening, so Codex starts with Ito's tools", async () => {
-    const directory = mkdtempSync(path.join(home, "server-"));
-    const thread = await openThread(path.join(directory, "thread"));
-    await thread.write("people/sam.md", "---\ntitle: Sam\n---\n\nYou run with Sam.\n", "Imported from Ariadne");
-    const asked = createCell(0);
-    const server = createServer({
-      dataDirectory: directory,
-      name: "gists",
-      embedder: wordEmbedder,
-      timeZone: "UTC",
-      createEngine: ({ callTool }) =>
-        createScriptEngine(systemClock, demoScripts, callTool, demoModels, (prompt) => {
-          if (!prompt.includes("no gist")) return Promise.resolve(ok({ people: [] }));
-          asked.update((count) => count + 1);
-          return Promise.resolve(ok({ gists: [{ address: "memory:people/sam", gist: "Runs with you" }] }));
-        }),
-    });
-    await server.memory.ready;
-    await delay(200);
-    const askedBeforeListening = asked.get();
-
-    await server.app.listen({ host: "127.0.0.1", port: 0 });
-    await vi.waitFor(() => {
-      expect(server.memory.page("memory:people/sam")).toMatchObject({ ok: true, value: { gist: "Runs with you" } });
-    });
-    await server.close();
-
-    expect(askedBeforeListening).toBe(0);
-    expect(asked.get()).toBe(1);
   });
 
   it("pulls only when it can fast-forward, and refuses when both sides changed", async () => {
