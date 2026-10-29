@@ -362,4 +362,14 @@ describe("memory", () => {
 
     expect(await memory.boostedNames()).toEqual(["Bora", "Ljubljana"]);
   });
+
+  it("closes cleanly when a last write was refused because memory was closing", async () => {
+    const { memory } = await openMemory();
+
+    const refused = memory.withThread(() => Promise.resolve("written"));
+    const closing = memory.close();
+
+    await expect(refused).rejects.toThrow("Memory is closing.");
+    await expect(closing).resolves.toBeUndefined();
+  });
 });
