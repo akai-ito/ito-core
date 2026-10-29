@@ -5,16 +5,14 @@ import { isImage, readDimensions } from "#attachments/media.ts";
 import { createCell } from "#cell.ts";
 import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
 import { mergePatch } from "#motion/changes.ts";
-import { blocksIn, toPlan, withoutBlocks } from "#replies/blocks.ts";
+import { withoutBlocks } from "#replies/blocks.ts";
 import type {
   Ask,
   AskKind,
   Attachment,
   AskOption,
   Call,
-  Tick,
   Topic,
-  Correction,
   Error as ErrorBody,
   LiveTurn,
   Message,
@@ -31,8 +29,6 @@ import type {
 } from "#protocol/types.ts";
 import type { Event, Line } from "./spec.ts";
 import { fixtureDirectory } from "./transcript-files.ts";
-import type { Term } from "#memory/vocabulary.ts";
-import { correct } from "#voice/corrector.ts";
 import { askAloud, createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
 
 export type Header = {
@@ -61,7 +57,6 @@ type ResponseOptions = { readonly headers?: HttpHeaders; readonly isLost?: boole
 type SendOptions = {
   readonly id?: string;
   readonly isLost?: boolean;
-  readonly answers?: string;
   readonly attachments?: readonly string[];
 };
 
@@ -73,7 +68,6 @@ type AskFields = {
   readonly options?: readonly AskOption[];
   readonly allowsText?: boolean;
   readonly preview?: string;
-  readonly secret?: boolean;
 };
 
 type Device = { readonly id: string; readonly isLooking: boolean };
@@ -81,8 +75,6 @@ type Device = { readonly id: string; readonly isLooking: boolean };
 type WriteOptions = { readonly pieces?: number; readonly everyMs?: number };
 
 type EndOptions = { readonly length?: number; readonly error?: ErrorBody };
-
-type Cut = { readonly message: string; readonly offset: number };
 
 type Exchange = { readonly user: string; readonly agent: string; readonly turn: string };
 
@@ -114,7 +106,7 @@ export type Transcript = {
   readonly disconnect: (marker: string, fields?: Fields) => void;
   readonly stall: (durationMs: number) => void;
   readonly exchange: (user: string, agent: string, files?: readonly string[], topic?: string) => Exchange;
-  readonly callExchange: (user: string, agent: string, corrections: readonly Correction[], recording: string) => string;
+  readonly callExchange: (user: string, agent: string, recording: string) => string;
   readonly send: (text: string, options?: SendOptions) => string;
   readonly startTurn: (inputs: readonly string[], options?: { readonly retryOf?: string }) => string;
   readonly status: (kind: StatusKind, label: string, detail?: string) => void;
@@ -127,7 +119,7 @@ export type Transcript = {
   readonly write: (text: string, options?: WriteOptions) => void;
   readonly endMessage: (outcome: Outcome, options?: EndOptions) => void;
   readonly endTurn: (outcome: Outcome, error?: ErrorBody) => string;
-  readonly stop: (turn: string, cut?: Cut) => void;
+  readonly stop: (turn: string) => void;
   readonly retry: (failed: string) => string;
   readonly ask: (fields: AskFields) => string;
   readonly cancelAsk: (ask: string) => void;
@@ -151,13 +143,12 @@ export type Transcript = {
   readonly appAudio: (file: string) => void;
   readonly youSay: (file: string, raw: string, options?: YouSayOptions) => string;
   readonly speak: (texts: readonly string[]) => readonly string[];
-  readonly played: (id: string, isCut?: boolean) => void;
+  readonly played: (id: string, wasDropped?: boolean) => void;
   readonly unplayed: () => readonly string[];
   readonly hangUp: () => void;
   readonly voiceFails: (reason: string) => void;
   readonly streamTimesOut: () => void;
   readonly topic: (label: string, message: string) => string;
-  readonly tick: (message: string, part: number, item: string, done: boolean) => void;
   readonly keptImage: (file: string, name: string) => string;
   readonly motion: (
     type: "started" | "changed" | "finished",
@@ -186,7 +177,6 @@ type CallModel = {
 
 type YouSayOptions = {
   readonly heard?: readonly string[];
-  readonly vocabulary?: readonly Term[];
   readonly mutedMidway?: boolean;
   readonly carriesOn?: string;
 };
@@ -270,16 +260,6 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
       const call = event.call as Call;
       return { ...projection, calls: new Map(projection.calls).set(call.id, call) };
     }
-    case "plan.ticked": {
-      const message = byId.get(event.message as string);
-      if (!message) throw new Error(`a tick on unknown message ${String(event.message)}`);
-      const { part, item, done } = event as unknown as Tick;
-      const ticks = [
-        ...(message.ticks ?? []).filter((tick) => tick.part !== part || tick.item !== item),
-        { part, item, done },
-      ];
-      return { ...projection, byId: new Map(byId).set(message.id, { ...message, ticks }) };
-    }
     case "topic.started": {
       const topic = event.topic as Topic;
       return { ...projection, topics: new Map(projection.topics).set(topic.id, topic) };
@@ -289,11 +269,7 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
       const silenced = byId
         .values()
         .filter((message) => message.spoken?.call === call.id && message.spoken.audio)
-        .map((message) => {
-          const corrections = message.spoken?.corrections;
-          const spoken = { call: call.id, ...(corrections && { corrections }) };
-          return [message.id, { ...message, spoken }] as const;
-        })
+        .map((message) => [message.id, { ...message, spoken: { call: call.id } }] as const)
         .toArray();
       return {
         ...projection,
@@ -981,7 +957,7 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const youSay = (file: string, raw: string, options: YouSayOptions = {}): string => {
-    const { heard = [], vocabulary = [], mutedMidway = false, carriesOn } = options;
+    const { heard = [], mutedMidway = false, carriesOn } = options;
     const model = currentModel();
     world("you_say", { text: raw, ...(heard.length > 0 && { heard }), ...(mutedMidway && { held: true }) });
     appAudio(file);
@@ -996,7 +972,7 @@ export const createTranscript = (header: Header): Transcript => {
     const earlier = carriesOn === undefined ? undefined : messageById(carriesOn);
     const earlierRaw = earlier === undefined ? "" : (spokenRaw.get().get(earlier.id) ?? earlier.text);
     const whole = earlier === undefined ? raw : `${earlierRaw} ${raw}`;
-    const { text, corrections } = correct(whole, vocabulary);
+    const text = whole;
     const audio: Attachment = {
       id: newId("f"),
       kind: "audio",
@@ -1010,7 +986,7 @@ export const createTranscript = (header: Header): Transcript => {
         message: {
           ...earlier,
           text,
-          spoken: { call: model.call, audio, ...(corrections.length > 0 && { corrections }) },
+          spoken: { call: model.call, audio },
         },
       });
       serverFrame({ type: "heard", text, final: true, message: earlier.id });
@@ -1020,7 +996,7 @@ export const createTranscript = (header: Header): Transcript => {
     const id = newId("m");
     spokenRaw.update((current) => new Map([...current, [id, raw]]));
     const asked = waiting.get();
-    const answering = asked === undefined || askById(asked).secret ? undefined : asked;
+    const answering = asked;
     emit("message.accepted", {
       message: {
         id,
@@ -1029,7 +1005,7 @@ export const createTranscript = (header: Header): Transcript => {
         at: timestamp(),
         position: nextPosition(),
         ...(answering && { answers: answering }),
-        spoken: { call: model.call, audio, ...(corrections.length > 0 && { corrections }) },
+        spoken: { call: model.call, audio },
       },
     });
     if (answering) endAsk(answering, "answered", id);
@@ -1037,9 +1013,9 @@ export const createTranscript = (header: Header): Transcript => {
     return id;
   };
 
-  const played = (id: string, isCut = false): void => {
-    appFrame({ type: "played", id, ...(isCut && { cut: true }) });
-    if (isCut) return;
+  const played = (id: string, wasDropped = false): void => {
+    appFrame({ type: "played", id });
+    if (wasDropped) return;
     const model = currentModel();
     callModel.set({ ...model, unplayed: model.unplayed.filter((sentence) => sentence !== id) });
     settleCall(turn.get() !== undefined);
@@ -1081,7 +1057,7 @@ export const createTranscript = (header: Header): Transcript => {
     response(200, { call: deleted });
   };
 
-  const callExchange = (user: string, agent: string, corrections: readonly Correction[], recording: string): string => {
+  const callExchange = (user: string, agent: string, recording: string): string => {
     const call: Call = { id: newUserId(), started_at: timestamp(), position: nextPosition() };
     emit("call.started", { call });
     wait(6000);
@@ -1093,11 +1069,7 @@ export const createTranscript = (header: Header): Transcript => {
         text: user,
         at: timestamp(),
         position: nextPosition(),
-        spoken: {
-          call: call.id,
-          audio: describeAttachment(recording, newUserId()),
-          ...(corrections.length > 0 && { corrections }),
-        },
+        spoken: { call: call.id, audio: describeAttachment(recording, newUserId()) },
       },
     });
     wait(1);
@@ -1121,7 +1093,6 @@ export const createTranscript = (header: Header): Transcript => {
       body: {
         id,
         text,
-        ...(options.answers && { answers: options.answers }),
         ...(attached.length > 0 && { attachments: attached }),
       },
     });
@@ -1138,17 +1109,15 @@ export const createTranscript = (header: Header): Transcript => {
       return id;
     }
     if (!isKnown) {
-      const isSecret = options.answers !== undefined && askById(options.answers).secret;
       const answering = waiting.get();
       emit("message.accepted", {
         message: {
           id,
           role: "user",
-          text: isSecret ? "" : text,
+          text,
           at: timestamp(),
           position: nextPosition(),
           ...(answering && { answers: answering }),
-          ...(isSecret && { secret: true }),
           ...(attached.length > 0 && {
             attachments: attached.map((attachment) => {
               const found = attachments.get().get(attachment);
@@ -1178,7 +1147,6 @@ export const createTranscript = (header: Header): Transcript => {
       options: [...options],
       allows_text: options.length === 0 || (fields.allowsText ?? true),
       ...(fields.preview && { preview: fields.preview }),
-      secret: fields.secret ?? false,
       at: timestamp(),
       position: nextPosition(),
     };
@@ -1193,7 +1161,6 @@ export const createTranscript = (header: Header): Transcript => {
         id: asked.id,
         options: options.map((option) => option.label),
         allows_text: asked.allows_text,
-        secret: asked.secret,
       },
     });
     return asked.id;
@@ -1210,7 +1177,6 @@ export const createTranscript = (header: Header): Transcript => {
       options: [...options],
       allows_text: fields.allowsText ?? true,
       ...(fields.preview && { preview: fields.preview }),
-      secret: false,
       at: timestamp(),
       position: nextPosition(),
     };
@@ -1226,7 +1192,6 @@ export const createTranscript = (header: Header): Transcript => {
         id: asked.id,
         options: options.map((option) => option.label),
         allows_text: asked.allows_text,
-        secret: false,
       },
     });
     setStatus("waiting", "Waiting for your approval");
@@ -1348,13 +1313,12 @@ export const createTranscript = (header: Header): Transcript => {
         id,
         options: asked.options.map((option) => option.label),
         allows_text: asked.allows_text,
-        secret: asked.secret,
       },
     });
   };
 
-  const stop = (turnId: string, cut?: Cut): void => {
-    request("POST", `/v0/turns/${turnId}/stop`, { body: cut ? { cut } : {} });
+  const stop = (turnId: string): void => {
+    request("POST", `/v0/turns/${turnId}/stop`);
     if (turn.get()?.id === turnId) {
       response(202, { turn: turnId, state: "stopping" });
       return;
@@ -1453,13 +1417,6 @@ export const createTranscript = (header: Header): Transcript => {
     world,
     callExchange,
     topic: markTopic,
-    tick: (message, part, item, done) => {
-      request("PUT", `/v0/messages/${message}/parts/${String(part)}/items/${item}`, { body: { done } });
-      const ticked = messageById(message).ticks?.find((tick) => tick.part === part && tick.item === item)?.done;
-      const written = toPlan(blocksIn(messageById(message).text)[part])?.items.find(({ id }) => id === item)?.done;
-      if ((ticked ?? written) !== done) emit("plan.ticked", { message, part, item, done });
-      response(200, { ticks: messageById(message).ticks ?? [] });
-    },
     keptImage: (file, name) => {
       const attachment = describeAttachment(file, newId("f"), name);
       attachments.update((current) => new Map([...current, [attachment.id, attachment]]));

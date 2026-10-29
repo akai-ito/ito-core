@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Capability, Host, HostFailure } from "#capabilities/host.ts";
 import type { Field, Values } from "#capabilities/manifest.ts";
+import { toTimestamp } from "#clock.ts";
 import { toCommandError } from "#conversation/failures.ts";
 import type { RouteSchema } from "#http/validation.ts";
 import type {
@@ -23,6 +24,13 @@ const toField = (field: Field, values: Values): CapabilityField => {
     ...(field.optional === true && { optional: true }),
     ...(field.options && { options: field.options.map(({ value: option, label }) => ({ value: option, label })) }),
     ...(field.kind === "secret" ? { set: isSet } : isSet && { value }),
+    ...(field.connect && {
+      connect: {
+        kind: field.connect.kind,
+        title: field.connect.title,
+        ...(field.connect.kind === "link" && { url: field.connect.url }),
+      },
+    }),
   };
 };
 
@@ -39,10 +47,19 @@ export const toCapabilityBody = ({ id, manifest, state, detail, values }: Capabi
   uses: { hosts: [...(manifest?.uses.hosts ?? [])], folders: [...(manifest?.uses.folders ?? [])] },
 });
 
-const refuse = (reply: FastifyReply, { code, detail }: HostFailure): FastifyReply =>
-  code === "not_found"
-    ? reply.code(404).send({ error: toCommandError("not_found", detail) })
-    : reply.code(400).send({ error: toCommandError("invalid_request", detail, "Ito can't save that setup.") });
+const refuse = (reply: FastifyReply, { code, detail }: HostFailure): FastifyReply => {
+  switch (code) {
+    case "not_found": {
+      return reply.code(404).send({ error: toCommandError("not_found", detail) });
+    }
+    case "invalid_values": {
+      return reply.code(400).send({ error: toCommandError("invalid_request", detail, "Ito can't save that setup.") });
+    }
+    case "unavailable": {
+      return reply.code(503).send({ error: toCommandError("unavailable", detail, "The provider can't be reached.") });
+    }
+  }
+};
 
 export const registerCapabilities = (
   app: FastifyInstance,
@@ -66,6 +83,17 @@ export const registerCapabilities = (
     async (request, reply) => {
       const saved = await host.setUp(request.params.capability, request.body.values);
       return saved.ok ? toCapabilityBody(saved.value) : refuse(reply, saved.failure);
+    },
+  );
+
+  app.post<{ Params: CapabilityPath }>(
+    "/v0/capabilities/:capability/connect",
+    { schema: schemaFor("connectCapability") },
+    async (request, reply) => {
+      const connected = await host.connect(request.params.capability);
+      if (!connected.ok) return refuse(reply, connected.failure);
+      const { code, url, expiresAt } = connected.value;
+      return { code, url, expires_at: toTimestamp(expiresAt) };
     },
   );
 

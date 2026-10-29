@@ -11,7 +11,7 @@ import { hashToken, tokenSetting } from "#http/auth.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import { createServer, type Server } from "#server.ts";
 import { toWav } from "#voice/loop.ts";
-import { createSidecarVoice, vocabularyFile, voicePython } from "#voice/sidecar.ts";
+import { createSidecarVoice, voicePython } from "#voice/sidecar.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-voice-"));
 const token = "ito_voice_test_token_000000000000000000000000000000";
@@ -98,7 +98,7 @@ describe("Ari's voice, from its sidecar", () => {
   });
 
   it("is ready once the sidecar has memory's vocabulary, and says so once on the event stream", async () => {
-    const { server, voice, data, statuses } = start(installVoice("ready"));
+    const { server, voice, statuses } = start(installVoice("ready"));
 
     await vi.waitFor(() => {
       expect(server.voice.readiness()).toEqual({ state: "ready" });
@@ -107,7 +107,6 @@ describe("Ari's voice, from its sidecar", () => {
     expect(statuses()).toEqual([{ state: "ready" }]);
     expect(readLines(path.join(voice, "vocabulary.log"))).toEqual([[]]);
     const environment = readJson(path.join(voice, "environment"));
-    expect(readJson(vocabularyFile(data))).toEqual({ terms: [], boosted: [] });
     expect(environment).toContain("HF_HOME");
     expect(environment).not.toContain("ITO_HOME");
     await expect(listVoices(server)).resolves.toMatchObject({

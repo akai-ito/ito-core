@@ -1,16 +1,16 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Correction, Error as ErrorBody } from "#protocol/types.ts";
+import type { Error as ErrorBody } from "#protocol/types.ts";
 import { loadSpec } from "./spec.ts";
 import { transcriptDirectory } from "./transcript-files.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import { defaultVoice, voices } from "#voice/voices.ts";
-import type { Term } from "#memory/vocabulary.ts";
 import { florenceId, florenceTrip } from "./florence.ts";
+import { sub20Id, sub20Training } from "./sub20.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.13";
-const serverVersion = "0.13.0";
+const protocol = "0.14";
+const serverVersion = "0.14.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -126,7 +126,8 @@ const reportsTokenField = {
   name: "token",
   kind: "secret",
   title: "GitHub token",
-  description: "A fine-grained token for akai-ito/ito-core, with Issues set to read and write.",
+  description: "Connect GitHub, so Reports files issues on akai-ito/ito-core as you.",
+  connect: { kind: "oauth_device", title: "Connect GitHub" },
 };
 
 const reports = (state: string, isTokenSet: boolean, detail?: string): Readonly<Record<string, unknown>> => ({
@@ -139,7 +140,7 @@ const reports = (state: string, isTokenSet: boolean, detail?: string): Readonly<
   state,
   ...(detail !== undefined && { detail }),
   fields: [{ ...reportsTokenField, set: isTokenSet }],
-  uses: { hosts: ["api.github.com"], folders: [] },
+  uses: { hosts: ["api.github.com", "github.com"], folders: [] },
 });
 
 const capabilityCall = (
@@ -295,6 +296,22 @@ const startFlorence = (transcript: Transcript, cover: string): ReturnType<Transc
   return started;
 };
 
+const sub20Card = {
+  id: sub20Id,
+  kind: "training",
+  title: "Sub-20 5K",
+  summary: "Week 6 of 10 · intervals today",
+  status: "active" as const,
+  pinned: true,
+};
+
+type TrainingWeek = { readonly id: string; readonly note?: string };
+
+const withWeekNote = (week: string, note: string): Readonly<Record<string, unknown>> => ({
+  ...sub20Training,
+  weeks: (sub20Training.weeks as readonly TrainingWeek[]).map((each) => (each.id === week ? { ...each, note } : each)),
+});
+
 const findFlorenceCover = (transcript: Transcript): string => {
   transcript.step("web_search", searching("Florence Duomo photograph"));
   transcript.wait(1500);
@@ -305,30 +322,6 @@ const findFlorenceCover = (transcript: Transcript): string => {
   agentCalls(transcript, "keep_image", { url }, { attachment: cover });
   return cover;
 };
-
-const boraPage = {
-  address: "memory:people/bora",
-  title: "Bora",
-  gist: "Chairs the QRT panel; your Saturday running partner",
-  aliases: ["Bora K"],
-  links: ["memory:projects/qrt-panel"],
-  markdown: "Bora chairs the QRT panel at work, and you run with her on Saturdays (as of 20 Oct).\n",
-};
-
-const qrtPage = {
-  address: "memory:projects/qrt-panel",
-  title: "QRT panel",
-  gist: "Reviews your design in November",
-  aliases: [],
-  links: ["memory:people/bora"],
-  markdown: "The QRT panel reviews your design in November; Bora wants one more round first (as of 22 Oct).\n",
-};
-
-const correctionOf = (text: string, meant: string, heard: string): Correction => ({
-  offset: text.indexOf(meant),
-  length: meant.length,
-  heard,
-});
 
 const spokenWav = { "Content-Type": "audio/wav", "Content-Length": "12044" };
 
@@ -553,11 +546,9 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 7,
       title: "Stop",
       summary:
-        "Stop names the turn and the cut point on screen; the stopped message keeps exactly that, " +
-        "a message sent while stopping starts the next turn, and a Stop that arrives after a reply " +
-        "finished changes nothing. When the screen lags, Stop cuts the message still being written " +
-        "and a reply that already finished keeps all its text. A Stop while a step runs ends the " +
-        "step as stopped, keeping its present-tense title.",
+        "Stop names the turn; the stopped message keeps everything it had streamed, and a message sent " +
+        "while stopping starts the next turn. A Stop just after a message began keeps what little it " +
+        "had. A Stop while a step runs ends the step as stopped, keeping its present-tense title.",
       guarantees: ["G3", "G7", "G9", "G14"],
     });
     yesterday(transcript);
@@ -569,17 +560,16 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.step("thinking", thinking);
     transcript.wait(1400);
     transcript.status("writing", "Writing");
-    const reply = transcript.reply();
+    transcript.reply();
     transcript.write(upTo(saturdayAnswer, "botanic garden,"), { everyMs: 110 });
-    const cut = upTo(saturdayAnswer, "keep it light before").length;
     transcript.wait(60);
-    transcript.stop(turn, { message: reply, offset: cut });
+    transcript.stop(turn);
     transcript.status("stopping", "Stopping");
     transcript.wait(150);
     const morning = transcript.send("Actually, just plan the morning.");
     transcript.queue(morning);
     transcript.wait(250);
-    transcript.endMessage("stopped", { length: cut });
+    transcript.endMessage("stopped");
     transcript.endTurn("stopped");
     transcript.startTurn([morning]);
     transcript.wait(300);
@@ -592,28 +582,17 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.endTurn("completed");
 
     transcript.wait(20_000);
-    const sunday = sendAndStart(transcript, "And Sunday?");
-    transcript.wait(900);
-    transcript.status("writing", "Writing");
-    const late = transcript.reply();
-    transcript.write("Sunday: a slow start, then lunch with friends if you're up for it.", { pieces: 3 });
-    transcript.endMessage("completed");
-    transcript.endTurn("completed");
-    transcript.wait(150);
-    transcript.stop(sunday.turn, { message: late, offset: 52 });
-
-    transcript.wait(20_000);
     const evening = sendAndStart(transcript, "And Saturday evening?");
     transcript.wait(900);
     writeWhole(transcript, "Evening: dinner at home, then an early night before the long run.", 3);
     transcript.status("writing", "Writing");
-    const rainyDay = transcript.reply();
+    transcript.reply();
     transcript.write("If it rains, swap the walk for the ", { pieces: 2 });
     transcript.wait(60);
-    transcript.stop(evening.turn, { message: rainyDay, offset: 0 });
+    transcript.stop(evening.turn);
     transcript.status("stopping", "Stopping");
     transcript.wait(150);
-    transcript.endMessage("stopped", { length: 0 });
+    transcript.endMessage("stopped");
     transcript.endTurn("stopped");
 
     transcript.wait(20_000);
@@ -1172,10 +1151,10 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, "Book a table at Juno for Saturday at 7:30, for two.");
     transcript.wait(300);
-    const juno = askWhichJuno(transcript);
+    askWhichJuno(transcript);
     transcript.endTurn("completed");
     transcript.wait(4000);
-    const clapham = transcript.send("Clapham", { answers: juno });
+    const clapham = transcript.send("Clapham");
     transcript.startTurn([clapham]);
     transcript.wait(300);
     transcript.step(
@@ -1220,7 +1199,7 @@ const scenarios: readonly (() => Transcript)[] = [
       }),
     );
     transcript.wait(1300);
-    const approval = transcript.ask({
+    transcript.ask({
       kind: "approval",
       question: "Shall I book this?",
       preview: "Juno, Clapham\nSaturday 18 October, 7:30pm\nTable for 2, under your name",
@@ -1229,7 +1208,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.endTurn("completed");
     transcript.wait(3000);
-    const yes = transcript.send("Book it", { answers: approval });
+    const yes = transcript.send("Book it");
     transcript.startTurn([yes]);
     transcript.wait(300);
     transcript.step(
@@ -1274,7 +1253,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.endTurn("completed");
     transcript.wait(90_000);
     transcript.world("notification_answered", { ask: juno, option: "Soho" });
-    const soho = transcript.send("Soho", { answers: juno });
+    const soho = transcript.send("Soho");
     transcript.startTurn([soho]);
     transcript.wait(300);
     transcript.step(
@@ -1384,7 +1363,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.presence(false);
     transcript.disconnect("app_closed");
     transcript.wait(300);
-    const juno = askWhichJuno(transcript);
+    askWhichJuno(transcript);
     transcript.endTurn("completed");
     transcript.remind();
     transcript.wait(5 * 60 * 60 * 1000);
@@ -1392,7 +1371,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.presence(true);
     transcript.wait(4000);
-    const clapham = transcript.send("Clapham", { answers: juno });
+    const clapham = transcript.send("Clapham");
     transcript.startTurn([clapham]);
     transcript.wait(300);
     transcript.step(
@@ -1407,47 +1386,6 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(1400);
     transcript.endStep();
     writeWhole(transcript, "Juno in Clapham has a table for two at 7:30 on Saturday. Shall I book it?");
-    transcript.endTurn("completed");
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
-      name: "25-a-secret",
-      scenario: 25,
-      title: "A secret",
-      summary:
-        "The agent asks for a code that was texted to you, as a secret. You send it naming the ask: the " +
-        "agent receives it, but the conversation keeps an empty message marked secret, in the stream, the " +
-        "answer and everywhere after.",
-      guarantees: ["G17"],
-    });
-    yesterday(transcript);
-    transcript.begin(todayAt, { cursor: "latest" });
-    transcript.connect();
-    transcript.wait(2000);
-    sendAndStart(transcript, "Book Juno in Clapham for Saturday at 7:30, for two.");
-    transcript.wait(300);
-    transcript.step(
-      "tool",
-      booking("book", {
-        place: "Juno, Clapham",
-        day: "Saturday",
-        time: "19:30",
-        people: 2,
-      }),
-    );
-    transcript.wait(1600);
-    const code = transcript.ask({ question: "Juno texted you a 6-digit code. What is it?", secret: true });
-    transcript.endTurn("completed");
-    transcript.wait(12_000);
-    const answer = transcript.send("481516", { answers: code });
-    transcript.startTurn([answer]);
-    transcript.wait(300);
-    transcript.step("tool", booking("confirm", { reference: "JC4821" }));
-    transcript.wait(1200);
-    transcript.endStep();
-    writeWhole(transcript, "Booked: Juno in Clapham, Saturday at 7:30, a table for two.");
     transcript.endTurn("completed");
     return transcript;
   },
@@ -1718,42 +1656,25 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 32,
       title: "Set up a capability",
       summary:
-        "Settings lists the capabilities installed with the server. You switch Reports on, its sheet asks for " +
-        "a GitHub token, Test connection catches a wrong one, and the right one turns it on. The token never " +
-        "comes back, only that one is set.",
+        "Settings lists the capabilities installed with the server. You switch Reports on and connect GitHub: " +
+        "the server gives a code, you approve it on GitHub, where you're already signed in, and GitHub hands " +
+        "the token to the server, which turns Reports on. The token never reaches the app, only that one is set.",
       guarantees: ["G21"],
     });
     transcript.begin(todayAt);
     capabilityCall(transcript, "GET", "/v0/capabilities", undefined, 200, { capabilities: [reports("off", false)] });
     transcript.wait(4000);
     capabilityCall(transcript, "PUT", "/v0/capabilities/reports", { on: true }, 200, reports("setup", false));
-    transcript.wait(12_000);
-    capabilityCall(
-      transcript,
-      "POST",
-      "/v0/capabilities/reports/check",
-      { values: { token: "github_pat_wrong" } },
-      200,
-      { problem: "GitHub rejected that token." },
-    );
-    transcript.wait(9000);
-    capabilityCall(
-      transcript,
-      "POST",
-      "/v0/capabilities/reports/check",
-      { values: { token: "github_pat_example" } },
-      200,
-      {},
-    );
-    transcript.wait(900);
-    capabilityCall(
-      transcript,
-      "PUT",
-      "/v0/capabilities/reports/setup",
-      { values: { token: "github_pat_example" } },
-      200,
-      reports("on", true),
-    );
+    transcript.wait(3000);
+    capabilityCall(transcript, "POST", "/v0/capabilities/reports/connect", undefined, 200, {
+      code: "WDJB-MJHT",
+      url: "https://github.com/login/device",
+      expires_at: "2026-10-12T08:56:07.120Z",
+    });
+    transcript.wait(3000);
+    transcript.world("you_approve", { code: "WDJB-MJHT" });
+    transcript.wait(7000);
+    capabilityCall(transcript, "GET", "/v0/capabilities", undefined, 200, { capabilities: [reports("on", true)] });
     transcript.wait(300);
     transcript.request("GET", "/v0/server");
     transcript.wait(40);
@@ -1771,7 +1692,6 @@ const scenarios: readonly (() => Transcript)[] = [
     );
     return transcript;
   },
-
   () => {
     const transcript = createTranscript({
       name: "33-a-capability-needs-you",
@@ -2133,72 +2053,6 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
-      name: "39-ari-learns-a-name",
-      scenario: 39,
-      title: "Ari learns a name",
-      summary:
-        "On a call the server mishears a name and a word. You fix both from the chat: the name's mishearing joins " +
-        "that person's page and the word becomes a term of its own, so on your next turn the server corrects both " +
-        "and says what it changed.",
-      guarantees: ["G25"],
-    });
-    const vocabulary: readonly Term[] = [
-      { text: "Bora", kind: "person", weight: 1, phrases: [], heard: ["Bara"] },
-      { text: "Bora K", kind: "person", weight: 1, phrases: [], heard: ["Bara"] },
-      { text: "QRT", kind: "term", weight: 0.5, phrases: [], heard: ["cutie"] },
-    ];
-    transcript.begin("2026-10-26T08:10:00.000Z");
-    transcript.world("memory_holds", { pages: [boraPage, qrtPage] });
-    transcript.connect();
-    transcript.wait(2000);
-    const call = transcript.startCall();
-    transcript.wait(300);
-    transcript.openStream(call);
-    transcript.wait(5000);
-    const first = transcript.youSay("walk-question.pcm", "What did Bara say about the cutie panel?");
-    transcript.startTurn([first]);
-    transcript.wait(900);
-    writeWhole(transcript, "Did you mean Bora and the QRT panel? Tap a word to fix it.", 1);
-    transcript.endTurn("completed");
-    transcript.wait(3000);
-    transcript.played("s1");
-    transcript.wait(2500);
-    transcript.played("s2");
-    transcript.wait(20_000);
-    transcript.request("POST", "/v0/vocabulary/corrections", {
-      body: {
-        corrections: [
-          { heard: "Bara", meant: "Bora" },
-          { heard: "cutie", meant: "QRT" },
-        ],
-      },
-    });
-    transcript.wait(80);
-    transcript.response(
-      200,
-      {
-        corrections: [
-          { heard: "Bara", meant: "Bora", address: boraPage.address },
-          { heard: "cutie", meant: "QRT" },
-        ],
-      },
-      { headers: { "Ito-Protocol": protocol } },
-    );
-    transcript.wait(5000);
-    const second = transcript.youSay("walk-follow-up.pcm", "When does Bara want the cutie notes?", { vocabulary });
-    transcript.startTurn([second]);
-    transcript.wait(900);
-    writeWhole(transcript, "Bora wants them by Friday.", 1);
-    transcript.endTurn("completed");
-    transcript.wait(2000);
-    transcript.played("s3");
-    transcript.wait(60_000);
-    transcript.hangUp();
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
       name: "40-delete-a-call-s-audio",
       scenario: 40,
       title: "Delete a call's audio",
@@ -2241,17 +2095,14 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 41,
       title: "Another device sees the call",
       summary:
-        "A walk earlier this morning was a call with one spoken message. Ari on the Mac connects for the first " +
-        "time, and its snapshot carries the call before the message it opened, with the recording and the " +
-        "corrections.",
+        "A walk earlier this morning was a call with one spoken message. Ari on another device connects for the " +
+        "first time, and its snapshot carries the call before the message it opened, with its recording.",
       guarantees: ["G13", "G23"],
     });
     transcript.time("2026-10-26T07:30:00.000Z");
-    const question = "What did Bora say about the QRT panel?";
     transcript.callExchange(
-      question,
+      "What did Bora say about the QRT panel?",
       "She wants one more round on your design before the panel sits in November.",
-      [correctionOf(question, "Bora", "Bara"), correctionOf(question, "QRT", "cutie")],
       "walk-turn.m4a",
     );
     transcript.begin("2026-10-26T09:00:00.000Z");
@@ -2653,51 +2504,6 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
-      name: "52-a-code-on-a-call",
-      scenario: 52,
-      title: "A code on a call",
-      summary:
-        "Ari needs a code mid-call. The server never takes a secret by voice: it says to type it in the chat, " +
-        "a code said aloud stays an ordinary message, and the ask waits until you type the answer.",
-      guarantees: ["G25"],
-    });
-    transcript.begin("2026-10-28T08:30:00.000Z");
-    transcript.connect();
-    transcript.wait(1000);
-    const call = transcript.startCall();
-    transcript.wait(300);
-    transcript.openStream(call);
-    transcript.wait(3000);
-    const asked = transcript.youSay("walk-question.pcm", "Confirm the Juno booking.");
-    transcript.startTurn([asked]);
-    transcript.wait(1200);
-    const code = transcript.ask({ question: "Juno texted you a 6-digit code. What is it?", secret: true });
-    transcript.endTurn("completed");
-    transcript.wait(2500);
-    for (const sentence of transcript.unplayed()) transcript.played(sentence);
-    transcript.wait(1500);
-    const said = transcript.youSay("walk-follow-up.pcm", "It's four eight one five one six.");
-    transcript.startTurn([said]);
-    transcript.wait(900);
-    writeWhole(transcript, "Type it in the chat, please. I won't take a code by voice.", 1);
-    transcript.endTurn("completed");
-    transcript.wait(2500);
-    for (const sentence of transcript.unplayed()) transcript.played(sentence);
-    transcript.wait(8000);
-    const answer = transcript.send("481516", { answers: code });
-    transcript.startTurn([answer]);
-    transcript.wait(900);
-    writeWhole(transcript, "Confirmed. You're booked at Juno on Saturday.", 1);
-    transcript.endTurn("completed");
-    transcript.wait(2500);
-    for (const sentence of transcript.unplayed()) transcript.played(sentence);
-    transcript.wait(10_000);
-    transcript.hangUp();
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
       name: "53-an-app-asks-first",
       scenario: 53,
       title: "An app asks first",
@@ -2714,9 +2520,9 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(600);
     transcript.step("tool", addToCalendar({ title: "Call Mum", start: "2026-11-01T14:00:00Z" }));
     transcript.wait(400);
-    const asked = transcript.approval(calendarApproval);
+    transcript.approval(calendarApproval);
     transcript.wait(5000);
-    const allowed = transcript.send("Allow", { answers: asked });
+    const allowed = transcript.send("Allow");
     transcript.read(allowed);
     transcript.status("working", "Going ahead");
     transcript.wait(800);
@@ -2973,45 +2779,27 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
-      name: "59-a-plan-you-can-tick",
+      name: "59-blocks-in-a-reply",
       scenario: 59,
-      title: "A plan you can tick",
+      title: "Blocks in a reply",
       summary:
-        "Ari answers with a plan, a time and a place, as blocks the app draws. You tick the first item, and " +
-        "ticking it again changes nothing. Scrolling back later, the reply comes with its tick.",
-      guarantees: ["G30"],
+        "Ari answers with a Markdown list, a place and choices to tap, the last two as blocks the app draws. " +
+        "Tapping a choice sends its label as an ordinary message.",
+      guarantees: [],
     });
     transcript.begin("2026-10-28T12:00:00.000Z");
     transcript.connect();
     transcript.wait(2000);
     sendAndStart(transcript, "Can you plan our three days in Florence? We land on Friday morning.");
     transcript.wait(900);
-    transcript.status("writing", "Writing");
-    const reply = transcript.reply();
-    transcript.write(
+    writeWhole(
+      transcript,
       [
         "Here's a gentle shape for it, with the Uffizi first thing on Saturday, before the crowds.",
         "",
-        "```ari:plan",
-        JSON.stringify({
-          title: "Florence",
-          items: [
-            { id: "book-uffizi", text: "Book the Uffizi for 8:15 on Saturday", when: "This week", done: false },
-            { id: "duomo-climb", text: "Climb the Duomo", when: "Fri 6 Nov, afternoon", done: false },
-            { id: "siena", text: "Train to Siena", when: "Sun 8 Nov", done: false },
-          ],
-        }),
-        "```",
-        "",
-        "```ari:time",
-        JSON.stringify({
-          title: "Uffizi, 8:15 entry",
-          start: "2026-11-07T08:15",
-          end: "2026-11-07T11:00",
-          timezone: "Europe/Rome",
-          location: "Uffizi Gallery",
-        }),
-        "```",
+        "- **Friday:** the Duomo climb in the afternoon",
+        "- **Saturday:** the Uffizi at 8:15, then the Oltrarno",
+        "- **Sunday:** a train to Siena",
         "",
         "```ari:place",
         JSON.stringify({
@@ -3021,24 +2809,20 @@ const scenarios: readonly (() => Transcript)[] = [
           lon: 11.2553,
         }),
         "```",
+        "",
+        "```ari:choices",
+        JSON.stringify({ options: ["Book the Uffizi", "Swap Siena for Pisa"] }),
+        "```",
       ].join("\n"),
     );
-    transcript.endMessage("completed");
     transcript.endTurn("completed");
     transcript.wait(60_000);
-    transcript.tick(reply, 0, "book-uffizi", true);
-    transcript.wait(1000);
-    transcript.tick(reply, 0, "book-uffizi", true);
-    transcript.wait(5 * 60 * 1000);
-    const booked = sendAndStart(transcript, "Booked! How do we get from the station to the hotel?");
+    sendAndStart(transcript, "Swap Siena for Pisa");
     transcript.wait(800);
-    writeWhole(transcript, "It's a ten-minute walk, flat all the way, past San Lorenzo.");
+    writeWhole(transcript, "Done: Pisa on Sunday, 50 minutes by train from Santa Maria Novella.");
     transcript.endTurn("completed");
-    transcript.wait(2000);
-    transcript.listMessages(booked.user, 2);
     return transcript;
   },
-
   () => {
     const transcript = createTranscript({
       name: "60-pictures-ari-found",
@@ -3261,6 +3045,107 @@ const scenarios: readonly (() => Transcript)[] = [
     sendAndStart(transcript, "Thanks! What's left?");
     transcript.wait(900);
     writeWhole(transcript, "The Duomo climb and the Pitti Palace. The Pisa train's ticked off.");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "64-a-training-block",
+      scenario: 64,
+      title: "A training block",
+      summary:
+        "You ask Ari to keep your sub-20 5K plan. Ari starts the whole block as a thing in motion, every week " +
+        "from the first to the last. That evening you tick today's intervals; a few seconds later Ari quietly " +
+        "rewrites the week's note, with no chat message and no turn. On Saturday you tell Ari a parkrun time, " +
+        "and Ari adds it to the results.",
+      guarantees: ["G32"],
+    });
+    transcript.begin("2026-10-28T07:30:00.000Z");
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(
+      transcript,
+      "I'm five weeks into a sub-20 5K block, ten weeks to the end of November. Can you keep the plan? Intervals today.",
+    );
+    transcript.wait(1200);
+    agentCalls(transcript, "start_motion", {
+      id: sub20Id,
+      kind: sub20Card.kind,
+      title: sub20Card.title,
+      summary: sub20Card.summary,
+      content: sub20Training,
+      note: "Started the block",
+    });
+    const started = transcript.motion("started", { ...sub20Card, version: 1 }, "Started the block");
+    motionStep(transcript, "started", started.motion, {
+      title: "Starting Sub-20 5K",
+      endedTitle: "Started Sub-20 5K",
+    });
+    transcript.wait(400);
+    writeWhole(
+      transcript,
+      `All ten weeks are in In motion. Today's the 6 × 800 m; keep the jogs honest.\n\n${motionLine(sub20Id, 1)}`,
+    );
+    transcript.endTurn("completed");
+    transcript.wait(10 * 60 * 60 * 1000);
+    const state = transcript.patchMotion(sub20Id, { sessions: { "w6-wed": { done: true } } });
+    const weekNote = "Intervals done. Keep tomorrow easy; Friday's tempo is next.";
+    const keptUp = "Week 6: intervals done";
+    transcript.world("ari_keeps_up", {
+      changes: [{ set: "week-6", fields: { note: weekNote } }],
+      summary: "Week 6 of 10 · tempo Friday",
+      note: keptUp,
+    });
+    transcript.wait(3000);
+    const changed = transcript.motion(
+      "changed",
+      { ...sub20Card, summary: "Week 6 of 10 · tempo Friday", version: 2 },
+      keptUp,
+    );
+    transcript.wait(2000);
+    memoryCall(transcript, `/v0/motion/${sub20Id}`, {
+      motion: changed.motion,
+      content: withWeekNote("week-6", weekNote),
+      state,
+      changes: [changed.change, started.change],
+    });
+    transcript.wait(2.5 * 24 * 60 * 60 * 1000);
+    sendAndStart(transcript, "Did parkrun this morning: 20:12!");
+    transcript.wait(600);
+    agentCalls(transcript, "read_motion", { id: sub20Id });
+    transcript.wait(900);
+    const resultNote = "Parkrun 20:12, a best";
+    agentCalls(transcript, "change_motion", {
+      id: sub20Id,
+      version: 2,
+      changes: [
+        {
+          add: { id: "parkrun-oct-31", date: "2026-10-31", result: "20:12", note: "29 s faster than last time" },
+          to: "results",
+          after: "parkrun-oct-24",
+        },
+      ],
+      summary: "Week 6 of 10 · long run Sunday",
+      note: resultNote,
+    });
+    const added = transcript.motion(
+      "changed",
+      { ...sub20Card, summary: "Week 6 of 10 · long run Sunday", version: 3 },
+      resultNote,
+    );
+    motionStep(
+      transcript,
+      "updated",
+      added.motion,
+      { title: "Updating Sub-20 5K: parkrun 20:12, a best", endedTitle: "Updated Sub-20 5K: parkrun 20:12, a best" },
+      resultNote,
+    );
+    transcript.wait(400);
+    writeWhole(
+      transcript,
+      `20:12, 29 seconds off in four weeks. Sunday's long run stays easy.\n\n${motionLine(sub20Id, 3)}`,
+    );
     transcript.endTurn("completed");
     return transcript;
   },

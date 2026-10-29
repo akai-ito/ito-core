@@ -54,15 +54,12 @@ export const toClauses = (sentence: string): readonly string[] => {
   return [...toClauses(words.slice(0, cut).join(" ")), ...toClauses(words.slice(cut).join(" "))];
 };
 
-export const secretAloud = "There's something to type in the chat.";
-
-type Asked = Pick<Ask, "kind" | "question" | "options" | "preview" | "secret">;
+type Asked = Pick<Ask, "kind" | "question" | "options" | "preview">;
 
 const orList = (labels: readonly string[]): string =>
   labels.length < 2 ? (labels[0] ?? "") : `${labels.slice(0, -1).join(", ")}, or ${labels.at(-1) ?? ""}`;
 
-export const askAloud = ({ kind, question, options, preview, secret }: Asked): readonly string[] => {
-  if (secret) return [secretAloud];
+export const askAloud = ({ kind, question, options, preview }: Asked): readonly string[] => {
   const labels = options.map(({ label }) => label);
   const asked = spokenPart(question);
   const isOffered = labels.every((label) => asked.toLowerCase().includes(label.toLowerCase()));

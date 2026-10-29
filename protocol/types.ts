@@ -132,11 +132,8 @@ export interface paths {
      *     refused with `attachment_missing`: upload its attachments again under the same ids, then
      *     send the same message again.
      *
-     *     While an ask waits, the message answers it, whether or not it names the ask: `message.accepted`
-     *     for the message comes first, then `ask.ended`. Name the ask in `answers` when you send a
-     *     tapped option or a secret. The text of an answer to a secret ask is never stored, never
-     *     streamed and never sent back: the message keeps an empty text, marked `secret`, and only the
-     *     agent's next turn receives what you typed. A secret answer can't carry attachments.
+     *     While an ask waits, the message answers it: `message.accepted` for the message comes first,
+     *     then `ask.ended`.
      */
     post: operations["sendMessage"];
     delete?: never;
@@ -157,9 +154,9 @@ export interface paths {
     /**
      * Stop a turn
      * @description Handled ahead of everything else, and never behind a message being accepted. The server
-     *     sends no more text for the turn, stops the agent, and keeps the message being written cut
-     *     at `cut`: where it was on your screen. `turn.ended` with outcome `stopped` follows once the
-     *     agent has really stopped.
+     *     sends no more text for the turn and stops the agent, and the message being written keeps
+     *     everything sent so far. `turn.ended` with outcome `stopped` follows once the agent has
+     *     really stopped.
      *
      *     If the turn has already ended, nothing changes and the answer gives its outcome.
      *     Messages waiting as Next are answered after the stop.
@@ -214,29 +211,6 @@ export interface paths {
      *     roughly what the model looks at. An attachment no message names is deleted after a day.
      */
     put: operations["uploadAttachment"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v0/messages/{message}/parts/{part}/items/{item}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /**
-     * Tick an item in a reply's plan, or untick it
-     * @description `part` is the plan's index among the reply's `ari:` blocks, from 0, and `item` the item's
-     *     `id` in it (see [the blocks schema](blocks.schema.json)). Every app hears `plan.ticked`,
-     *     the message keeps the item's latest state in `ticks`, and the agent learns of it with your
-     *     next message. Ticking an item to the state it's already in changes nothing.
-     */
-    put: operations["tickItem"];
     post?: never;
     delete?: never;
     options?: never;
@@ -378,6 +352,31 @@ export interface paths {
      */
     put: operations["setUpCapability"];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/capabilities/{capability}/connect": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Connect it through its provider
+     * @description For a capability with an `oauth_device` field in its setup. The server asks the provider for a
+     *     code and answers with it and the page to enter it on: show the code, and open the page, where
+     *     you're already signed in. Once you approve there, the provider hands the server the value,
+     *     which the server saves as setup would, restarting the capability; the value never reaches the
+     *     app. `GET /v0/capabilities` shows the field `set` once it's in. Connecting again starts over
+     *     with a new code. The code stops working at `expires_at`.
+     */
+    post: operations["connectCapability"];
     delete?: never;
     options?: never;
     head?: never;
@@ -734,28 +733,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v0/vocabulary/corrections": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Teach it what you meant
-     * @description Each pair is a word the recogniser heard and what you meant. When `meant` is a page's title
-     *     or alias, `heard` joins that page's mishearings; otherwise the pair is kept as a term of its
-     *     own. Teaching the same pair again changes nothing.
-     */
-    post: operations["teachVocabulary"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/v0/speech": {
     parameters: {
       query?: never;
@@ -880,14 +857,6 @@ export interface components {
     };
     CallResult: {
       call: components["schemas"]["Call"];
-    };
-    Corrections: {
-      corrections: {
-        heard: string;
-        meant: string;
-        /** @description In an answer, the page the mishearing joined, when there was one. */
-        address?: components["schemas"]["MemoryAddress"];
-      }[];
     };
     ModelChoice: {
       /** @description The model's id. */
@@ -1101,6 +1070,33 @@ export interface components {
       value?: string | boolean;
       /** @description `secret` only: whether one is saved. */
       set?: boolean;
+      /**
+       * @description How to fill it without typing it in. `oauth_device`: start with
+       *     `POST /v0/capabilities/{capability}/connect`, which gives a code to approve at the
+       *     provider. `link`: open `url`, where the provider makes one, and paste it here.
+       */
+      connect?: {
+        /** @enum {unknown} */
+        kind: "oauth_device" | "link";
+        /** @description What the button says, such as Connect GitHub. */
+        title: string;
+        /**
+         * Format: uri
+         * @description `link` only: the page that makes one, filled in where the provider allows it.
+         */
+        url?: string;
+      };
+    };
+    CapabilityConnection: {
+      /** @description The code to approve at the provider, to show as it is. */
+      code: string;
+      /**
+       * Format: uri
+       * @description The provider's page to approve it on.
+       */
+      url: string;
+      /** @description When the code stops working. */
+      expires_at: components["schemas"]["Timestamp"];
     };
     SwitchCapability: {
       on: boolean;
@@ -1142,8 +1138,7 @@ export interface components {
       | components["schemas"]["MotionChanged"]
       | components["schemas"]["MotionFinished"]
       | components["schemas"]["MotionStateChanged"]
-      | components["schemas"]["MotionRemoved"]
-      | components["schemas"]["PlanTicked"];
+      | components["schemas"]["MotionRemoved"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -1364,8 +1359,6 @@ export interface components {
       allows_text: boolean;
       /** @description Approvals only: what would happen, in plain text, to show before you agree. */
       preview?: string;
-      /** @description Whether the answer is a secret, such as a code. Send it with `answers` set to this ask: the agent receives it, and it never enters the conversation's history. */
-      secret: boolean;
       at: components["schemas"]["Timestamp"];
       position: components["schemas"]["Position"];
       /** @description When it was answered or cancelled. */
@@ -1399,14 +1392,12 @@ export interface components {
       turn?: components["schemas"]["TurnId"];
       /** @description `reply`: the reply, so that a tap opens the conversation there. */
       message?: components["schemas"]["MessageId"];
-      /** @description `ask` and `reminder`: what the device needs to answer from the notification. Answering is an ordinary send, with `answers` set to the ask. */
+      /** @description `ask` and `reminder`: what the device needs to answer from the notification. Answering is an ordinary send. */
       ask?: {
         id: components["schemas"]["AskId"];
         /** @description The options' labels, in order. */
         options: string[];
         allows_text: boolean;
-        /** @description A secret can't be typed into a notification safely: offer to open Ari instead. */
-        secret: boolean;
       };
     };
     /** @description One message in the conversation. Messages are ordered by when they began. */
@@ -1420,18 +1411,13 @@ export interface components {
       kind?: components["schemas"]["MessageKind"];
       /** @description Agent messages only: the turn that wrote it. */
       turn?: components["schemas"]["TurnId"];
-      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing. A reply may hold `ari:` blocks, described in [the blocks schema](blocks.schema.json). */
+      /** @description GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing. A reply may hold `ari:` blocks, described in [the blocks schema](blocks.schema.json). */
       text: string;
       /** @description When the message began: when the server accepted it, or the agent's first word. */
       at: components["schemas"]["Timestamp"];
       position: components["schemas"]["Position"];
       /** @description User messages only: the ask this message answered. Any message you send while an ask waits answers it, whether or not you meant it to. */
       answers?: components["schemas"]["AskId"];
-      /**
-       * @description User messages only: a secret answer, such as a code. Its `text` is always empty: the agent received what you typed, and the conversation keeps nothing of it.
-       * @constant
-       */
-      secret?: true;
       /** @description User messages only: the photos and files you attached, in order. */
       attachments?: components["schemas"]["Attachment"][];
       /** @description Only on a message you spoke on a call. */
@@ -1442,8 +1428,6 @@ export interface components {
       outcome?: components["schemas"]["Outcome"];
       /** @description Present when the outcome is `failed`. */
       error?: components["schemas"]["Error"];
-      /** @description Replies only: the items you ticked or unticked in its plans, each at its latest. Absent until you tick one. An item without a tick is as Ari wrote it. */
-      ticks?: components["schemas"]["Tick"][];
     };
     /** @description One thing the agent did while working on a turn: thinking, a web search, a command, an edit, a tool, a plan, a wait. Its title is plain words written by the server, safe to show as it is. Its other fields carry the specifics exactly as the agent used them (commands, paths, queries, URLs, output); show what you choose. Fields beyond the common ones belong to particular kinds, and a step carries those its kind has. */
     Step: {
@@ -1623,9 +1607,7 @@ export interface components {
           id: string;
           /** @description What you wrote, as plain text or Markdown. It may be empty, or left out, when the message carries attachments. */
           text?: string;
-          /** @description The ask this message answers, when you tap one of its options or answer a secret. When it names a secret ask, the text is never stored, even if the ask has stopped waiting. An ask the server doesn't know is an `invalid_request`. */
-          answers?: components["schemas"]["AskId"];
-          /** @description The photos and files to attach, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`. Naming one another message already carries, or attaching anything to a secret answer, is an `invalid_request`. */
+          /** @description The photos and files to attach, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`. Naming one another message already carries is an `invalid_request`. */
           attachments?: components["schemas"]["UploadId"][];
         }
       | {
@@ -1651,9 +1633,6 @@ export interface components {
       /** @description Whether even older messages exist. */
       has_more: boolean;
     };
-    TickItem: {
-      done: boolean;
-    };
     MotionList: {
       motions: components["schemas"]["Motion"][];
     };
@@ -1673,17 +1652,6 @@ export interface components {
     MotionState: {
       state: {
         [key: string]: unknown;
-      };
-    };
-    TickList: {
-      ticks: components["schemas"]["Tick"][];
-    };
-    StopTurn: {
-      /** @description Where the message still being written was on your screen when you tapped Stop. Without it, the server keeps everything written so far. A cut that names a message which already finished changes nothing; a finished message keeps all its text. */
-      cut?: {
-        message: components["schemas"]["MessageId"];
-        /** @description How much of the message's text you saw, in UTF-16 code units. */
-        offset: number;
       };
     };
     StopResult: {
@@ -1784,32 +1752,17 @@ export interface components {
      * @description A random UUID the app makes when you start a call.
      */
     CallId: string;
-    /** @description A word the server corrected in a spoken message, from what it has learnt: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard. */
-    Correction: {
-      offset: number;
-      length: number;
-      heard: string;
-    };
-    /** @description How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the server corrected. */
+    /** @description How a message you spoke on a call came to be: the call, and its audio while it's kept. */
     Spoken: {
       call: components["schemas"]["CallId"];
       /** @description The recording of what you said. Absent once you've deleted the call's audio. */
       audio?: components["schemas"]["Attachment"];
-      corrections?: components["schemas"]["Correction"][];
     };
     /**
      * @description How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.
      * @enum {unknown}
      */
     Outcome: "completed" | "stopped" | "interrupted" | "failed";
-    /** @description An item in one of a reply's plans, ticked or not. */
-    Tick: {
-      /** @description The plan's index among the reply's `ari:` blocks, from 0. */
-      part: number;
-      /** @description The item's `id` in the plan. */
-      item: string;
-      done: boolean;
-    };
     /** @description Opaque. The server makes it when a step starts. */
     StepId: string;
     /**
@@ -1958,7 +1911,7 @@ export interface components {
     };
     /**
      * message.amended
-     * @description On a call you carried on speaking before Ari began to answer, so your words joined the message you'd just spoken. It carries the whole message as it is now: the text with your new words, the corrections for all of it, and one recording of both parts, in place of the earlier recording, which is gone. Replace the message you have with it.
+     * @description On a call you carried on speaking before Ari began to answer, so your words joined the message you'd just spoken. It carries the whole message as it is now: the text with your new words, and one recording of both parts, in place of the earlier recording, which is gone. Replace the message you have with it.
      */
     MessageAmended: {
       id: components["schemas"]["EventId"];
@@ -2087,20 +2040,6 @@ export interface components {
       type: "motion.removed";
       at: components["schemas"]["Timestamp"];
       motion: components["schemas"]["MotionId"];
-    };
-    /**
-     * plan.ticked
-     * @description You ticked or unticked an item in a reply's plan, on any device. The agent hears about it with your next message.
-     */
-    PlanTicked: {
-      id: components["schemas"]["EventId"];
-      /** @constant */
-      type: "plan.ticked";
-      at: components["schemas"]["Timestamp"];
-      message: components["schemas"]["MessageId"];
-      part: number;
-      item: string;
-      done: boolean;
     };
     /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once.
@@ -2252,7 +2191,6 @@ export type VoiceprintState = components["schemas"]["VoiceprintState"];
 export type VoiceChoice = components["schemas"]["VoiceChoice"];
 export type Voice = components["schemas"]["Voice"];
 export type CallResult = components["schemas"]["CallResult"];
-export type Corrections = components["schemas"]["Corrections"];
 export type ModelChoice = components["schemas"]["ModelChoice"];
 export type ModelList = components["schemas"]["ModelList"];
 export type ModelOption = components["schemas"]["ModelOption"];
@@ -2272,6 +2210,7 @@ export type CapabilityId = components["schemas"]["CapabilityId"];
 export type CapabilityList = components["schemas"]["CapabilityList"];
 export type Capability = components["schemas"]["Capability"];
 export type CapabilityField = components["schemas"]["CapabilityField"];
+export type CapabilityConnection = components["schemas"]["CapabilityConnection"];
 export type SwitchCapability = components["schemas"]["SwitchCapability"];
 export type CapabilitySetup = components["schemas"]["CapabilitySetup"];
 export type CheckResult = components["schemas"]["CheckResult"];
@@ -2303,12 +2242,9 @@ export type ServerInfo = components["schemas"]["ServerInfo"];
 export type SendMessage = components["schemas"]["SendMessage"];
 export type MessageResult = components["schemas"]["MessageResult"];
 export type MessagePage = components["schemas"]["MessagePage"];
-export type TickItem = components["schemas"]["TickItem"];
 export type MotionList = components["schemas"]["MotionList"];
 export type MotionDetail = components["schemas"]["MotionDetail"];
 export type MotionState = components["schemas"]["MotionState"];
-export type TickList = components["schemas"]["TickList"];
-export type StopTurn = components["schemas"]["StopTurn"];
 export type StopResult = components["schemas"]["StopResult"];
 export type RetryResult = components["schemas"]["RetryResult"];
 export type AttachmentResult = components["schemas"]["AttachmentResult"];
@@ -2330,10 +2266,8 @@ export type AskId = components["schemas"]["AskId"];
 export type AttachmentId = components["schemas"]["AttachmentId"];
 export type AttachmentKind = components["schemas"]["AttachmentKind"];
 export type CallId = components["schemas"]["CallId"];
-export type Correction = components["schemas"]["Correction"];
 export type Spoken = components["schemas"]["Spoken"];
 export type Outcome = components["schemas"]["Outcome"];
-export type Tick = components["schemas"]["Tick"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
 export type MemoryAddress = components["schemas"]["MemoryAddress"];
@@ -2366,7 +2300,6 @@ export type MotionChanged = components["schemas"]["MotionChanged"];
 export type MotionFinished = components["schemas"]["MotionFinished"];
 export type MotionStateChanged = components["schemas"]["MotionStateChanged"];
 export type MotionRemoved = components["schemas"]["MotionRemoved"];
-export type PlanTicked = components["schemas"]["PlanTicked"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -2640,19 +2573,7 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody?: {
-      content: {
-        /**
-         * @example {
-         *       "cut": {
-         *         "message": "m_0012",
-         *         "offset": 214
-         *       }
-         *     }
-         */
-        "application/json": components["schemas"]["StopTurn"];
-      };
-    };
+    requestBody?: never;
     responses: {
       /** @description The turn had already ended. */
       200: {
@@ -2808,38 +2729,6 @@ export interface operations {
       409: components["responses"]["IdConflict"];
       413: components["responses"]["TooLarge"];
       429: components["responses"]["SlowDown"];
-    };
-  };
-  tickItem: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        message: components["schemas"]["MessageId"];
-        part: number;
-        item: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["TickItem"];
-      };
-    };
-    responses: {
-      /** @description The reply's ticks, each at its latest. */
-      200: {
-        headers: {
-          "Ito-Protocol": components["headers"]["ItoProtocol"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TickList"];
-        };
-      };
-      400: components["responses"]["InvalidRequest"];
-      401: components["responses"]["TokenRejected"];
-      404: components["responses"]["NotFound"];
     };
   };
   cancelAsk: {
@@ -3066,6 +2955,41 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  connectCapability: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The capability's id, such as `reports`. */
+        capability: components["parameters"]["Capability"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The code to approve, and where. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "code": "WDJB-MJHT",
+           *       "url": "https://github.com/login/device",
+           *       "expires_at": "2026-10-30T09:15:00.000Z"
+           *     }
+           */
+          "application/json": components["schemas"]["CapabilityConnection"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      503: components["responses"]["Unavailable"];
     };
   };
   checkCapability: {
@@ -3502,43 +3426,6 @@ export interface operations {
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
       503: components["responses"]["Unavailable"];
-    };
-  };
-  teachVocabulary: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        /**
-         * @example {
-         *       "corrections": [
-         *         {
-         *           "heard": "Bara",
-         *           "meant": "Bora"
-         *         }
-         *       ]
-         *     }
-         */
-        "application/json": components["schemas"]["Corrections"];
-      };
-    };
-    responses: {
-      /** @description Where each one went. */
-      200: {
-        headers: {
-          "Ito-Protocol": components["headers"]["ItoProtocol"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Corrections"];
-        };
-      };
-      400: components["responses"]["InvalidRequest"];
-      401: components["responses"]["TokenRejected"];
     };
   };
   speak: {

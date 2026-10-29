@@ -22,6 +22,7 @@ import type { Kind, Kinds } from "#motion/kinds.ts";
 import type { Motion, MotionChange } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
+import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 
@@ -66,13 +67,7 @@ const recentNotes = 5;
 
 const changesShown = 20;
 
-const fieldOf = (value: unknown, field: string): unknown =>
-  value && typeof value === "object" ? Reflect.get(value, field) : undefined;
-
-const textOf = (value: unknown, field: string): string => {
-  const text = fieldOf(value, field);
-  return typeof text === "string" ? text.replaceAll(/\s+/gu, " ").trim() : "";
-};
+const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
@@ -316,12 +311,12 @@ export const createMotions = ({
 
   const start = (input: unknown): Promise<Result<Motion, string>> =>
     memory.withThread(async (thread) => {
-      const id = textOf(input, "id");
+      const id = lineOf(input, "id");
       if (!idPattern.test(id)) return fail("Give it an id of lowercase words joined by dashes, such as florence-trip.");
-      const kind = textOf(input, "kind");
+      const kind = lineOf(input, "kind");
       if (!kinds.isKind(kind)) return fail(`${kind || "That"} isn't a kind of thing yet: use trip or training.`);
-      const title = textOf(input, "title");
-      const note = textOf(input, "note");
+      const title = lineOf(input, "title");
+      const note = lineOf(input, "note");
       if (title === "" || note === "") return fail("Give it a title and a note.");
       if (store.findMotion(id) || readNow(thread, id)) {
         return fail(`${id} is already a thing in motion: read it with read_motion and change it, or pick another id.`);
@@ -332,7 +327,7 @@ export const createMotions = ({
       if (!valid.ok) return valid;
       const thing: Saved = {
         kind,
-        card: { title, summary: textOf(input, "summary"), pinned: true },
+        card: { title, summary: lineOf(input, "summary"), pinned: true },
         status: "active",
         content,
       };
@@ -342,8 +337,8 @@ export const createMotions = ({
 
   const change = (input: unknown): Promise<Result<Motion, string>> =>
     memory.withThread(async (thread) => {
-      const id = textOf(input, "id");
-      const note = textOf(input, "note");
+      const id = lineOf(input, "id");
+      const note = lineOf(input, "note");
       const current = readNow(thread, id);
       if (!current) return fail(`There's no thing ${id || "with that id"} in motion.`);
       if (note === "") return fail("Give a note: what this change does, in a few words.");
@@ -362,7 +357,7 @@ export const createMotions = ({
       if (typeof title !== "string" || title === "" || typeof line !== "string" || typeof pinned !== "boolean") {
         return fail("A thing's title and summary are text, and pinned is true or false.");
       }
-      const summary = textOf(input, "summary");
+      const summary = lineOf(input, "summary");
       const thing: Saved = {
         ...current,
         card: summary === "" ? applied.value.card : { ...applied.value.card, summary },
@@ -378,8 +373,8 @@ export const createMotions = ({
 
   const finish = (input: unknown): Promise<Result<Motion, string>> =>
     memory.withThread(async (thread) => {
-      const id = textOf(input, "id");
-      const note = textOf(input, "note");
+      const id = lineOf(input, "id");
+      const note = lineOf(input, "note");
       const current = readNow(thread, id);
       if (!current) return fail(`There's no thing ${id || "with that id"} in motion.`);
       if (current.status === "done") return fail(`${current.card.title} is already done.`);
@@ -392,8 +387,8 @@ export const createMotions = ({
 
   const restore = (input: unknown): Promise<Result<Motion, string>> =>
     memory.withThread(async (thread) => {
-      const id = textOf(input, "id");
-      const note = textOf(input, "note");
+      const id = lineOf(input, "id");
+      const note = lineOf(input, "note");
       const wanted = fieldOf(input, "version");
       const current = readNow(thread, id);
       if (!current) return fail(`There's no thing ${id || "with that id"} in motion.`);
@@ -408,8 +403,8 @@ export const createMotions = ({
     });
 
   const forget = async (input: unknown): Promise<Result<string, string>> => {
-    const id = textOf(input, "id");
-    const reason = textOf(input, "reason");
+    const id = lineOf(input, "id");
+    const reason = lineOf(input, "reason");
     const motion = store.findMotion(id);
     if (!motion) return fail(`There's no thing ${id || "with that id"} in motion.`);
     if (reason === "") return fail("Say why it should go.");
@@ -419,7 +414,6 @@ export const createMotions = ({
       options: [{ label: "Forget it", acts: true }, { label: "Keep it" }],
       allows_text: true,
       preview: `${motion.title}: ${reason}`,
-      secret: false,
     });
     if (!isAllowed) return ok(`They kept ${motion.title}, so nothing was forgotten.`);
     return memory.withThread(async (thread) => {
@@ -455,7 +449,7 @@ export const createMotions = ({
 
   const read = (input: unknown): Promise<Result<string, string>> =>
     memory.withThread(async (thread) => {
-      const id = textOf(input, "id");
+      const id = lineOf(input, "id");
       const current = readNow(thread, id);
       if (!current) return fail(`There's no thing ${id || "with that id"} in motion.`);
       const latest = await versionOf(thread, id);
@@ -528,7 +522,7 @@ export const createMotions = ({
       call: async (input) => {
         const changed = await change(input);
         if (!changed.ok) return failed(changed.failure);
-        step("updated", changed.value, textOf(input, "note"));
+        step("updated", changed.value, lineOf(input, "note"));
         return { text: `Saved ${changed.value.title}, now at version ${String(changed.value.version)}.` };
       },
     },

@@ -13,6 +13,7 @@ import { memoryToolNames } from "#memory/tool-names.ts";
 import { imageToolName } from "#replies/images.ts";
 import { topicToolName } from "#topics/tool.ts";
 import { toolServerName } from "#tools/mcp.ts";
+import { fieldOf } from "#tools/input.ts";
 
 export type TurnState = {
   readonly openMessage: string | undefined;
@@ -89,9 +90,6 @@ const ended = (key: string, isCompleted: boolean, facts: StepFacts = {}): Engine
   outcome: isCompleted ? "completed" : "failed",
   facts,
 });
-
-const fieldOf = (value: unknown, field: string): unknown =>
-  value && typeof value === "object" ? Reflect.get(value, field) : undefined;
 
 const resultText = (result: McpToolCallResult | null): string =>
   (result?.content ?? [])

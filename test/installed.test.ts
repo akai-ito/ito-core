@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { maxTools } from "#capabilities/doors.ts";
 import { createHost } from "#capabilities/host.ts";
-import { bundledDirectory, findInstalled } from "#capabilities/installed.ts";
+import { demoInstalled, installed } from "#capabilities/installed.ts";
 import { coreCommands } from "#cli/main.ts";
 import { systemClock } from "#clock.ts";
 import { randomIdentifiers } from "#identifiers.ts";
@@ -21,10 +21,9 @@ describe("the capabilities installed with the server", () => {
   });
 
   it("all start and describe themselves, within the tool budget and without taking core's names", async () => {
-    const installed = findInstalled(bundledDirectory);
     const database = openDatabase(path.join(home, "ito.db"));
     const host = createHost({
-      installed,
+      installed: demoInstalled,
       server: { version: "0.0.0", engine: "Codex test" },
       settings: createStore(database, systemClock, randomIdentifiers),
       folders: home,

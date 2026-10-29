@@ -1,6 +1,6 @@
 {
   "name": "ito-core",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "license": "SEE LICENSE IN LICENSE.md",
@@ -12,6 +12,8 @@
   },
   "imports": {
     "#protocol/*": "./protocol/*",
+    "#sdk/*": "./capabilities/sdk/*",
+    "#reports/*": "./capabilities/reports/*",
     "#*": "./src/*"
   },
   "scripts": {
@@ -25,7 +27,6 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "docs": "node docs/build.ts",
     "serve": "node bin/ito.ts serve"
   },
   "dependencies": {
@@ -35,21 +36,18 @@
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "fastify": "5.12.7",
-    "ito-capabilities": "github:akai-ito/ito-capabilities#be636bc",
     "uqr": "0.1.3",
-    "yaml": "2.9.1"
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@redocly/cli": "2.71.0",
-    "@redocly/openapi-core": "2.71.0",
-    "@scalar/api-reference": "1.76.0",
     "@types/node": "24.19.2",
     "@types/ws": "8.18.2",
     "eslint": "10.13.0",
     "eslint-plugin-functional": "10.0.1",
     "eslint-plugin-unicorn": "79.0.0",
-    "marked": "18.1.1",
     "openapi-typescript": "7.13.0",
     "prettier": "3.9.10",
     "typescript": "6.0.3",
@@ -64,8 +62,6 @@
   },
   "allowScripts": {
     "onnxruntime-node": false,
-    "protobufjs": false,
-    "vue-demi": false,
-    "github:akai-ito/ito-capabilities#be636bc97a6401564084caca8ab5e81b65cbd346": true
+    "protobufjs": false
   }
 }

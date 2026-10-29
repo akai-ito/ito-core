@@ -92,9 +92,9 @@
           "description": "`reply`: the reply, so that a tap opens the conversation there."
         },
         "ask": {
-          "description": "`ask` and `reminder`: what the device needs to answer from the notification. Answering is an ordinary send, with `answers` set to the ask.",
+          "description": "`ask` and `reminder`: what the device needs to answer from the notification. Answering is an ordinary send.",
           "type": "object",
-          "required": ["id", "options", "allows_text", "secret"],
+          "required": ["id", "options", "allows_text"],
           "properties": {
             "id": {
               "$ref": "events.schema.json#/$defs/AskId"
@@ -107,10 +107,6 @@
               }
             },
             "allows_text": {
-              "type": "boolean"
-            },
-            "secret": {
-              "description": "A secret can't be typed into a notification safely: offer to open Ari instead.",
               "type": "boolean"
             }
           }

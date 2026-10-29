@@ -1,12 +1,18 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
-import { protocolDirectory, type JsonSchema } from "#protocol/schemas.ts";
+import type { JsonSchema } from "#protocol/schemas.ts";
 import { fail, ok, type Result } from "#result.ts";
 
-export const capabilityProtocol = "0.1";
-
 export type FieldKind = "text" | "secret" | "toggle" | "choice";
+
+export type DeviceConnect = {
+  readonly kind: "oauth_device";
+  readonly title: string;
+  readonly deviceUrl: string;
+  readonly tokenUrl: string;
+  readonly clientId: string;
+  readonly scope?: string;
+};
+
+export type LinkConnect = { readonly kind: "link"; readonly title: string; readonly url: string };
 
 export type Field = {
   readonly name: string;
@@ -15,6 +21,7 @@ export type Field = {
   readonly description?: string;
   readonly optional?: boolean;
   readonly options?: readonly { readonly value: string; readonly label: string }[];
+  readonly connect?: DeviceConnect | LinkConnect;
 };
 
 export type Operation = {
@@ -25,7 +32,6 @@ export type Operation = {
   readonly description: string;
   readonly input: JsonSchema;
   readonly tool?: string;
-  readonly publishes?: boolean;
 };
 
 export type Manifest = {
@@ -47,35 +53,7 @@ export type CallResult = { readonly text: string; readonly data?: Readonly<Recor
 
 export type Status = { readonly state: "ok" | "needs_you"; readonly detail?: string };
 
-type Messages = {
-  readonly InitializeResult: { readonly protocol: string; readonly manifest: Manifest };
-  readonly CheckResult: { readonly problem?: string };
-  readonly CallResult: CallResult;
-  readonly StatusParams: Status;
-};
-
-const schema = JSON.parse(
-  readFileSync(path.join(protocolDirectory, "capability.schema.json"), "utf8"),
-) as JsonSchema & {
-  readonly $id: string;
-};
-
-const ajv = new Ajv2020({ strict: true, allErrors: true });
-ajv.addSchema(schema);
-
-const compile = (name: keyof Messages): ValidateFunction => ajv.compile({ $ref: `${schema.$id}#/$defs/${name}` });
-
-const validators: Readonly<Record<keyof Messages, ValidateFunction>> = {
-  InitializeResult: compile("InitializeResult"),
-  CheckResult: compile("CheckResult"),
-  CallResult: compile("CallResult"),
-  StatusParams: compile("StatusParams"),
-};
-
-export const toMessage = <Name extends keyof Messages>(name: Name, value: unknown): Result<Messages[Name], string> => {
-  const validate = validators[name];
-  return validate(value) ? ok(value as Messages[Name]) : fail(ajv.errorsText(validate.errors, { dataVar: name }));
-};
+export type Server = { readonly version: string; readonly engine: string };
 
 export const isComplete = (manifest: Manifest, values: Values): boolean =>
   manifest.setup.every((field) => field.optional === true || (values[field.name] ?? "") !== "");

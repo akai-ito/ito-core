@@ -53,6 +53,12 @@ request that shows its own `Authorization` header uses the token it names.
 | `voice_loading`, `voice_ready`, `voice_failed` | the server's voice starts loading, becomes ready, or fails; `reason` says why it isn't ready |
 | `you_say` | what the server's recogniser will hear in your next audio on the call's stream: the turn's `text`, and the live captions on the way in `heard` |
 | `voiceprint_learnt` | the server has learnt your voice from your calls |
+| `memory_holds` | memory already holds these `pages` |
+| `capability_on` | a capability is set up with these `values` and switched on |
+| `web_has` | the web serves the picture at `url` |
+| `agent_calls` | the agent calls one of Ito's tools: `tool` and `input`, and what it `returns` where it matters |
+| `you_approve` | you approve the `code` a capability's connection showed, at the provider; the server picks up the token at its next poll, within 5 seconds |
+| `ari_keeps_up` | what Ari will answer when the server asks it, aside, to keep a thing up with your ticks: its `changes`, `summary` and `note` |
 
 ## Ids
 

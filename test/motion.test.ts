@@ -304,10 +304,10 @@ describe("things in motion", () => {
       content: sub20Training,
       note: "Started the block",
     });
-    const ticked = motions.patchState(sub20Id, { sessions: { "wed-intervals": { done: true } } });
+    const ticked = motions.patchState(sub20Id, { sessions: { "w6-wed": { done: true } } });
 
     expect(started.isError).toBeUndefined();
-    expect(ticked).toEqual({ ok: true, value: { sessions: { "wed-intervals": { done: true } } } });
+    expect(ticked).toEqual({ ok: true, value: { sessions: { "w6-wed": { done: true } } } });
     expect(motions.tickNote()).toBe("(Since your last reply: in Sub-20 5K, you ticked Intervals.)");
   });
 

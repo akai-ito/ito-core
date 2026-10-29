@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import type { Attachments } from "#attachments/attachments.ts";
 import { toCommandError } from "#conversation/failures.ts";
 import type { RouteSchema } from "#http/validation.ts";
-import type { Memory } from "#memory/memory.ts";
 import type { Store } from "#store/store.ts";
 import { spokenRate, toWav, type VoiceLoop } from "#voice/loop.ts";
 import type { Calls } from "#voice/calls.ts";
@@ -15,12 +14,9 @@ type SpeechBody = { readonly text: string; readonly voice?: string };
 
 type VoiceBody = { readonly voice: string };
 
-type CorrectionsBody = { readonly corrections: readonly { readonly heard: string; readonly meant: string }[] };
-
 export type TalkOptions = {
   readonly store: Store;
   readonly attachments: Attachments;
-  readonly memory: Memory;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
   readonly voiceprints: Voiceprints;
@@ -33,7 +29,7 @@ const noCall = (call: string): { readonly error: ReturnType<typeof toCommandErro
 
 export const registerTalk = (
   app: FastifyInstance,
-  { store, attachments, memory, voice, calls, voiceprints, schemaFor }: TalkOptions,
+  { store, attachments, voice, calls, voiceprints, schemaFor }: TalkOptions,
 ): void => {
   app.put<{ Params: CallPath }>("/v0/calls/:call", { schema: schemaFor("startCall") }, async (request, reply) => {
     void voice.refreshVocabulary();
@@ -95,14 +91,4 @@ export const registerTalk = (
       ? reply.code(503).header("retry-after", "10").send(unavailable)
       : reply.code(503).send(unavailable);
   });
-
-  app.post<{ Body: CorrectionsBody }>(
-    "/v0/vocabulary/corrections",
-    { schema: schemaFor("teachVocabulary") },
-    async (request) => {
-      const corrections = await memory.learn(request.body.corrections);
-      void voice.refreshVocabulary();
-      return { corrections };
-    },
-  );
 };

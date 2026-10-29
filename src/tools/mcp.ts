@@ -1,3 +1,5 @@
+import { fieldOf } from "#tools/input.ts";
+
 export const toolServerName = "ito";
 
 export const toolsTokenVariable = "ITO_TOOLS_TOKEN";
@@ -25,9 +27,6 @@ export type McpAnswer =
 
 const latestProtocol = "2025-06-18";
 
-const parameterOf = (parameters: unknown, name: string): unknown =>
-  parameters && typeof parameters === "object" ? Reflect.get(parameters, name) : undefined;
-
 const textOf = (value: unknown): string => (typeof value === "string" ? value : JSON.stringify(value));
 
 export const createMcpAnswerer =
@@ -35,7 +34,7 @@ export const createMcpAnswerer =
   async ({ method, params: parameters }: McpMessage): Promise<McpAnswer> => {
     switch (method) {
       case "initialize": {
-        const requested = parameterOf(parameters, "protocolVersion");
+        const requested = fieldOf(parameters, "protocolVersion");
         return {
           result: {
             protocolVersion: typeof requested === "string" ? requested : latestProtocol,
@@ -60,10 +59,10 @@ export const createMcpAnswerer =
         };
       }
       case "tools/call": {
-        const name = parameterOf(parameters, "name");
+        const name = fieldOf(parameters, "name");
         const tool = tools().find((candidate) => candidate.name === name);
         if (!tool) return { error: { code: -32_602, message: `Ito has no tool ${textOf(name)}.` } };
-        const { text, isError = false, structured } = await tool.call(parameterOf(parameters, "arguments"));
+        const { text, isError = false, structured } = await tool.call(fieldOf(parameters, "arguments"));
         return {
           result: { content: [{ type: "text", text }], isError, ...(structured && { structuredContent: structured }) },
         };

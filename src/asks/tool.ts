@@ -1,6 +1,7 @@
 import type { AskFields } from "#engine/engine.ts";
 import type { AskOption } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
+import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Turns } from "#turns/turns.ts";
 
@@ -9,18 +10,12 @@ export const askToolName = "ask";
 const maxOptions = 6;
 const maxLabelLength = 80;
 
-const fieldOf = (value: unknown, field: string): unknown =>
-  value && typeof value === "object" ? Reflect.get(value, field) : undefined;
-
-const textOf = (value: unknown, field: string): string => {
-  const text = fieldOf(value, field);
-  return typeof text === "string" ? text.trim() : "";
-};
+const trimmedOf = (value: unknown, field: string): string => textOf(value, field).trim();
 
 const toOption = (value: unknown): AskOption | undefined => {
-  const label = textOf(value, "label");
+  const label = trimmedOf(value, "label");
   if (label === "" || label.length > maxLabelLength) return undefined;
-  const description = textOf(value, "description");
+  const description = trimmedOf(value, "description");
   return {
     label,
     ...(description && { description }),
@@ -29,7 +24,7 @@ const toOption = (value: unknown): AskOption | undefined => {
 };
 
 export const toAskFields = (input: unknown): Result<AskFields, string> => {
-  const question = textOf(input, "question");
+  const question = trimmedOf(input, "question");
   if (question === "") return fail("An ask needs a question.");
   const given = fieldOf(input, "options");
   const listed: readonly unknown[] = Array.isArray(given) ? given : [];
@@ -40,7 +35,7 @@ export const toAskFields = (input: unknown): Result<AskFields, string> => {
   const isApproval = fieldOf(input, "kind") === "approval";
   const actingCount = valid.filter((option) => option.acts).length;
   if (isApproval && actingCount !== 1) return fail("An approval needs options, exactly one of them with acts: true.");
-  const preview = textOf(input, "preview");
+  const preview = trimmedOf(input, "preview");
   return ok({
     kind: isApproval ? "approval" : "question",
     question,
@@ -52,7 +47,6 @@ export const toAskFields = (input: unknown): Result<AskFields, string> => {
         })),
     allows_text: valid.length === 0 || fieldOf(input, "allows_text") !== false,
     ...(isApproval && preview && { preview }),
-    secret: fieldOf(input, "secret") === true,
   });
 };
 
@@ -75,8 +69,7 @@ export const createAskTool = (turns: Asking): Tool => ({
     "detail. Before anything consequential, such as booking, buying, sending or deleting, ask for their " +
     "approval: kind approval, a preview of exactly what would happen, and acts: true on the option that goes " +
     "ahead. Apps that change things, such as a calendar or mail, ask for approval themselves when they run, so " +
-    "don't ask first for those. For a code or a password, set secret: their answer reaches you and is never stored. Asking ends " +
-    "your turn, and their answer arrives as their next message. Don't ask what you can find out yourself.",
+    "don't ask first for those. Never ask for a password or a code. Asking ends your turn, and their answer arrives as their next message. Don't ask what you can find out yourself.",
   inputSchema: {
     type: "object",
     properties: {
@@ -98,7 +91,6 @@ export const createAskTool = (turns: Asking): Tool => ({
       allows_text: { type: "boolean", description: "Whether they can type their own answer too. Defaults to true." },
       kind: { type: "string", enum: ["question", "approval"], description: "Defaults to question." },
       preview: { type: "string", description: "Approvals only: exactly what would happen." },
-      secret: { type: "boolean", description: "True for a code or a password." },
     },
     required: ["question"],
     additionalProperties: false,

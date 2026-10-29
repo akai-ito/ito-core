@@ -12,14 +12,13 @@ describe("the ask tool's input", () => {
         question: "Which Juno?",
         options: [{ label: "Clapham" }, { label: "Soho" }],
         allows_text: true,
-        secret: false,
       },
     });
     expect(toAskFields({ question: "Pick one", options: [{ label: "A" }], allows_text: false })).toMatchObject({
       value: { allows_text: false },
     });
-    expect(toAskFields({ question: "What's the code?", allows_text: false, secret: true })).toMatchObject({
-      value: { options: [], allows_text: true, secret: true },
+    expect(toAskFields({ question: "What's on your mind?", allows_text: false })).toMatchObject({
+      value: { options: [], allows_text: true },
     });
   });
 

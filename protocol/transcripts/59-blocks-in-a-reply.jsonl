@@ -1,0 +1,38 @@
+{"transcript":"59-blocks-in-a-reply","start":"2026-10-28T12:00:00.000Z","scenario":59,"title":"Blocks in a reply","summary":"Ari answers with a Markdown list, a place and choices to tap, the last two as blocks the app draws. Tapping a choice sends its label as an ordinary message.","guarantees":[],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T12:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"b9a80e96-e760-4e1d-b29c-8431481ad7af","text":"Can you plan our three days in Florence? We land on Friday morning."}}}
+{"at":2000,"event":{"id":"e_0001_22612","type":"message.accepted","at":"2026-10-28T12:00:02.000Z","message":{"id":"b9a80e96-e760-4e1d-b29c-8431481ad7af","role":"user","text":"Can you plan our three days in Florence? We land on Friday morning.","at":"2026-10-28T12:00:02.000Z","position":1}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"b9a80e96-e760-4e1d-b29c-8431481ad7af","role":"user","text":"Can you plan our three days in Florence? We land on Friday morning.","at":"2026-10-28T12:00:02.000Z","position":1}}}}
+{"at":2000,"event":{"id":"e_0002_77125","type":"turn.started","at":"2026-10-28T12:00:02.000Z","turn":"t_0001_22299","inputs":["b9a80e96-e760-4e1d-b29c-8431481ad7af"]}}
+{"at":2900,"event":{"id":"e_0003_14187","type":"turn.status","at":"2026-10-28T12:00:02.900Z","turn":"t_0001_22299","kind":"writing","label":"Writing"}}
+{"at":2900,"event":{"id":"e_0004_81294","type":"message.started","at":"2026-10-28T12:00:02.900Z","message":{"id":"m_0001_24454","role":"agent","kind":"reply","turn":"t_0001_22299","text":"","at":"2026-10-28T12:00:02.900Z","position":4}}}
+{"at":2900,"event":{"id":"e_0005_15715","type":"message.delta","at":"2026-10-28T12:00:02.900Z","message":"m_0001_24454","offset":0,"text":"Here's a gentle shape for "}}
+{"at":3020,"event":{"id":"e_0006_62967","type":"message.delta","at":"2026-10-28T12:00:03.020Z","message":"m_0001_24454","offset":26,"text":"it, with the Uffizi first "}}
+{"at":3140,"event":{"id":"e_0007_95692","type":"message.delta","at":"2026-10-28T12:00:03.140Z","message":"m_0001_24454","offset":52,"text":"thing on Saturday, before "}}
+{"at":3260,"event":{"id":"e_0008_89081","type":"message.delta","at":"2026-10-28T12:00:03.260Z","message":"m_0001_24454","offset":78,"text":"the crowds.\n\n- **Friday:** "}}
+{"at":3380,"event":{"id":"e_0009_58335","type":"message.delta","at":"2026-10-28T12:00:03.380Z","message":"m_0001_24454","offset":105,"text":"the Duomo climb in the "}}
+{"at":3500,"event":{"id":"e_0010_03057","type":"message.delta","at":"2026-10-28T12:00:03.500Z","message":"m_0001_24454","offset":128,"text":"afternoon\n- **Saturday:** "}}
+{"at":3620,"event":{"id":"e_0011_49665","type":"message.delta","at":"2026-10-28T12:00:03.620Z","message":"m_0001_24454","offset":154,"text":"the Uffizi at 8:15, then the "}}
+{"at":3740,"event":{"id":"e_0012_77097","type":"message.delta","at":"2026-10-28T12:00:03.740Z","message":"m_0001_24454","offset":183,"text":"Oltrarno\n- **Sunday:** a "}}
+{"at":3860,"event":{"id":"e_0013_37583","type":"message.delta","at":"2026-10-28T12:00:03.860Z","message":"m_0001_24454","offset":208,"text":"train to "}}
+{"at":3980,"event":{"id":"e_0014_07831","type":"message.delta","at":"2026-10-28T12:00:03.980Z","message":"m_0001_24454","offset":217,"text":"Siena\n\n```ari:place\n{\"name\":\"Uffizi "}}
+{"at":4100,"event":{"id":"e_0015_00206","type":"message.delta","at":"2026-10-28T12:00:04.100Z","message":"m_0001_24454","offset":253,"text":"Gallery\",\"address\":\"Piazzale "}}
+{"at":4220,"event":{"id":"e_0016_54579","type":"message.delta","at":"2026-10-28T12:00:04.220Z","message":"m_0001_24454","offset":282,"text":"degli Uffizi 6, "}}
+{"at":4340,"event":{"id":"e_0017_92587","type":"message.delta","at":"2026-10-28T12:00:04.340Z","message":"m_0001_24454","offset":298,"text":"Florence\",\"lat\":43.7678,\"lon\":11.2553}\n```\n\n```ari:choices\n{\"options\":[\"Book "}}
+{"at":4460,"event":{"id":"e_0018_36652","type":"message.delta","at":"2026-10-28T12:00:04.460Z","message":"m_0001_24454","offset":375,"text":"the Uffizi\",\"Swap Siena for "}}
+{"at":4580,"event":{"id":"e_0019_72357","type":"message.delta","at":"2026-10-28T12:00:04.580Z","message":"m_0001_24454","offset":403,"text":"Pisa\"]}\n```"}}
+{"at":4580,"event":{"id":"e_0020_97618","type":"message.ended","at":"2026-10-28T12:00:04.580Z","message":"m_0001_24454","outcome":"completed","length":414}}
+{"at":4580,"event":{"id":"e_0021_64682","type":"turn.ended","at":"2026-10-28T12:00:04.580Z","turn":"t_0001_22299","outcome":"completed"}}
+{"at":64580,"app":{"method":"POST","path":"/v0/messages","body":{"id":"022d1d4f-19be-4f73-8d0c-4594869ee25d","text":"Swap Siena for Pisa"}}}
+{"at":64580,"event":{"id":"e_0022_80052","type":"message.accepted","at":"2026-10-28T12:01:04.580Z","message":{"id":"022d1d4f-19be-4f73-8d0c-4594869ee25d","role":"user","text":"Swap Siena for Pisa","at":"2026-10-28T12:01:04.580Z","position":22}}}
+{"at":64580,"server":{"status":201,"body":{"message":{"id":"022d1d4f-19be-4f73-8d0c-4594869ee25d","role":"user","text":"Swap Siena for Pisa","at":"2026-10-28T12:01:04.580Z","position":22}}}}
+{"at":64580,"event":{"id":"e_0023_28300","type":"turn.started","at":"2026-10-28T12:01:04.580Z","turn":"t_0002_20885","inputs":["022d1d4f-19be-4f73-8d0c-4594869ee25d"]}}
+{"at":65380,"event":{"id":"e_0024_24864","type":"turn.status","at":"2026-10-28T12:01:05.380Z","turn":"t_0002_20885","kind":"writing","label":"Writing"}}
+{"at":65380,"event":{"id":"e_0025_30758","type":"message.started","at":"2026-10-28T12:01:05.380Z","message":{"id":"m_0002_97684","role":"agent","kind":"reply","turn":"t_0002_20885","text":"","at":"2026-10-28T12:01:05.380Z","position":25}}}
+{"at":65380,"event":{"id":"e_0026_43703","type":"message.delta","at":"2026-10-28T12:01:05.380Z","message":"m_0002_97684","offset":0,"text":"Done: Pisa on Sunday, 50 "}}
+{"at":65500,"event":{"id":"e_0027_06584","type":"message.delta","at":"2026-10-28T12:01:05.500Z","message":"m_0002_97684","offset":25,"text":"minutes by train from Santa "}}
+{"at":65620,"event":{"id":"e_0028_16427","type":"message.delta","at":"2026-10-28T12:01:05.620Z","message":"m_0002_97684","offset":53,"text":"Maria Novella."}}
+{"at":65620,"event":{"id":"e_0029_10569","type":"message.ended","at":"2026-10-28T12:01:05.620Z","message":"m_0002_97684","outcome":"completed","length":67}}
+{"at":65620,"event":{"id":"e_0030_64695","type":"turn.ended","at":"2026-10-28T12:01:05.620Z","turn":"t_0002_20885","outcome":"completed"}}

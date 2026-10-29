@@ -144,4 +144,13 @@ export const migrations: readonly string[] = [
     motion TEXT PRIMARY KEY,
     state TEXT NOT NULL
   );`,
+  `ALTER TABLE messages DROP COLUMN secret;
+  ALTER TABLE messages DROP COLUMN ticks;
+  DELETE FROM events WHERE type = 'plan.ticked';
+  UPDATE events SET body = json_remove(body, '$.message.secret', '$.message.ticks', '$.message.spoken.corrections')
+    WHERE type IN ('message.accepted', 'message.amended');
+  UPDATE events SET body = json_remove(body, '$.ask.secret') WHERE type IN ('ask.started', 'ask.ended');
+  UPDATE asks SET body = json_remove(body, '$.secret');
+  UPDATE messages SET spoken = json_remove(spoken, '$.corrections') WHERE spoken IS NOT NULL;
+  DELETE FROM settings WHERE key = 'vocabulary_learned';`,
 ];

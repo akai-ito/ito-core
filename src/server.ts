@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
 import { createCell } from "#cell.ts";
@@ -11,15 +11,16 @@ import { createMotions, type Motions } from "#motion/motion.ts";
 import { createTrail } from "#capabilities/trail.ts";
 import type { Embedder } from "#memory/embedder.ts";
 import { noVoice, type VoiceContext, type VoiceLoop } from "#voice/loop.ts";
-import { vocabularyFile } from "#voice/sidecar.ts";
 import { createCalls, type Calls } from "#voice/calls.ts";
 import { createVoiceprints } from "#voice/voiceprints.ts";
 import { chosenVoice } from "#voice/voices.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
-import { createImageTool, type FetchImage } from "#replies/images.ts";
+import { createImageTool } from "#replies/images.ts";
+import type { Fetch } from "#capabilities/connect.ts";
 import { createTopicTool } from "#topics/tool.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
+import { withCheckedInput } from "#tools/input.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
 import type { Engine, ToolServer } from "#engine/engine.ts";
@@ -35,7 +36,6 @@ import { createNotifier, defaultReminderMs } from "#notifications/notifier.ts";
 import { createPresence } from "#notifications/presence.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
-import { createSecrets } from "#conversation/secrets.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
 import { packageVersion } from "#version.ts";
 
@@ -54,7 +54,7 @@ export type ServerOptions = {
   readonly embedder: Embedder;
   readonly createVoice?: (context: VoiceContext) => VoiceLoop;
   readonly timeZone?: string;
-  readonly fetchImage?: FetchImage;
+  readonly fetch?: Fetch;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
@@ -122,8 +122,10 @@ export const createServer = (options: ServerOptions): Server => {
     const origin = `http://${address.address}:${String(address.port)}`;
     return { url: `${origin}${toolsPath}`, origin, token: toolsToken };
   };
+  const fetcher = options.fetch ?? fetch;
   const host = createHost({
     installed: options.capabilities ?? [],
+    fetch: fetcher,
     settings: store,
     folders: path.join(options.dataDirectory, "capabilities"),
     server: { version: packageVersion(), engine: `Codex ${codexVersion()}` },
@@ -145,10 +147,6 @@ export const createServer = (options: ServerOptions): Server => {
     approve: (fields) => turns.approve(fields),
     info,
     timeZone: options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
-    complete: async (prompt, schema) => {
-      await listening;
-      return engine.complete(prompt, schema);
-    },
   });
   const callContext = (): string => {
     const latest = store.latestCall();
@@ -175,24 +173,15 @@ export const createServer = (options: ServerOptions): Server => {
       onReadiness: ({ state, reason }) => {
         store.recordVoiceStatus(state, reason);
       },
-      vocabulary: async () => {
-        const terms = await memory.vocabulary();
-        const file = vocabularyFile(options.dataDirectory);
-        mkdirSync(path.dirname(file), { recursive: true });
-        const boosted = memory.boosted(terms);
-        writeFileSync(file, JSON.stringify({ terms, boosted }));
-        return boosted;
-      },
+      vocabulary: () => memory.boostedNames(),
       clock,
       info,
       log,
     }) ?? noVoice("This server runs without a voice.");
   const attachments = createAttachments(store, path.join(options.dataDirectory, "attachments"));
-  const secrets = createSecrets();
   const turns = createTurns(store, engine, clock, identifiers, log, {
     limits: options.limits ?? defaultLimits,
     attachmentPath: attachments.pathOf,
-    secrets,
     trail: createTrail(host, launcher),
     moreNotes: () => motions.tickNote(),
   });
@@ -206,10 +195,7 @@ export const createServer = (options: ServerOptions): Server => {
     approve: (fields) => turns.approve(fields),
     recordStep: (facts) => turns.recordStep("motion", facts),
     info,
-    complete: async (prompt, schema) => {
-      await listening;
-      return engine.complete(prompt, schema);
-    },
+    complete: (prompt, schema) => engine.complete(prompt, schema),
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
@@ -217,7 +203,6 @@ export const createServer = (options: ServerOptions): Server => {
     turns,
     attachments,
     voice,
-    vocabulary: () => memory.vocabulary(),
     voiceprints,
     chosenVoice: () => chosenVoice(store),
     identifiers,
@@ -250,26 +235,20 @@ export const createServer = (options: ServerOptions): Server => {
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
   });
-  const listening = new Promise<void>((resolve) => {
-    app.addHook("onListen", (done) => {
-      resolve();
-      done();
-    });
-  });
   logError.set((message, error) => {
     app.log.error({ err: error }, message);
   });
   logInfo.set((message, details) => {
     app.log.info(details, message);
   });
-  const doors = createDoors({ host, secrets, currentTurn: () => store.runningTurn()?.id, command: launcher });
+  const doors = createDoors({ host, currentTurn: () => store.runningTurn()?.id, command: launcher });
   const imageTool = createImageTool({
     attachments,
     keep: (id) => {
       store.keepAttachment(id);
     },
     newId: () => identifiers.attachment(),
-    fetchImage: options.fetchImage ?? (async (url, signal) => fetch(url, { signal })),
+    fetchImage: (url, signal) => fetcher(url, { signal }),
   });
   const coreTools: readonly Tool[] = [
     createAskTool(turns),
@@ -278,7 +257,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...memory.tools,
     ...motions.tools,
   ];
-  const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()];
+  const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()].map((tool) => withCheckedInput(tool));
   const callTool = async (name: string, input: unknown): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
     return tool ? tool.call(input) : { text: `Ito has no tool ${name}.`, isError: true };

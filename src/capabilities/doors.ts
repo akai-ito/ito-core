@@ -1,7 +1,6 @@
 import { toInput, toOperationUsage, toUsage } from "#capabilities/commands.ts";
 import type { Host, Offered } from "#capabilities/host.ts";
 import type { Operation } from "#capabilities/manifest.ts";
-import type { Secrets } from "#conversation/secrets.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Tool } from "#tools/mcp.ts";
 
@@ -12,7 +11,6 @@ export type Doors = {
 
 export type DoorsOptions = {
   readonly host: Host;
-  readonly secrets: Secrets;
   readonly currentTurn: () => string | undefined;
   readonly command: string;
 };
@@ -21,11 +19,10 @@ export const maxTools = 20;
 
 const isHelp = (word: string | undefined): boolean => word === undefined || word === "--help" || word === "help";
 
-export const createDoors = ({ host, secrets, currentTurn, command }: DoorsOptions): Doors => {
+export const createDoors = ({ host, currentTurn, command }: DoorsOptions): Doors => {
   const call = async (capability: Offered, operation: Operation, input: unknown): Promise<Result<string, string>> => {
-    const given = operation.publishes === true ? secrets.redactValue(input) : input;
     const turn = currentTurn();
-    const called = await host.call(capability.id, operation.name, given, turn === undefined ? {} : { turn });
+    const called = await host.call(capability.id, operation.name, input, turn === undefined ? {} : { turn });
     return called.ok ? ok(called.value.text) : called;
   };
 

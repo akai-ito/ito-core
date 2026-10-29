@@ -15,14 +15,11 @@
 Commands in, one resumable event stream out. [protocol](protocol) holds the spec (OpenAPI for the
 commands, JSON Schema for the events), the [guarantees](protocol/guarantees.md) the server keeps,
 and a golden transcript of every scenario, which the server's tests replay through the real API.
-Read it rendered at [akai-ito.github.io/ito-core](https://akai-ito.github.io/ito-core/): the API
-reference, the guarantees, and a timeline of every transcript.
 
 ```sh
 npm ci
 npm test                    # every transcript through the server, a crash, Codex against a mock
 npm run check:transcripts   # every transcript against the spec
-npm run docs                # the API reference, built into site/
 ```
 
 ## Run the server
@@ -42,8 +39,9 @@ Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code inste
 redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new` makes
 another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
 in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a timeout,
-*ask* a question, *approve* an approval, *secret* a secret question, *remember* writes a page and
-the journal in memory, and *recall* looks it up.
+*ask* a question, *approve* an approval, *remember* writes a page and the journal in memory,
+*recall* looks it up, *trip* and *training* start things in motion, and *booked* books the trip's
+Uffizi.
 
 Before reaching for your phone, check a real turn from the machine itself, with the server running
 and your token in `TOKEN`. The stream should show the turn start, statuses, the reply's text
@@ -88,17 +86,16 @@ The agent's instructions, Ari's voice and how it works, are in
 [agent/instructions.md](agent/instructions.md). Change them and restart: the next message picks
 them up, in the same conversation.
 
-Capabilities, such as Reports, install with the server from
-[ito-capabilities](https://github.com/akai-ito/ito-capabilities) and start switched off; switch
+Capabilities, such as Reports, live in [capabilities](capabilities) and start switched off; switch
 them on and set them up in Ari's Settings › Capabilities. Each runs as its own process with only its
-own setup values. Reports files the gaps Ari hits, such as a page it couldn't load or a mistake you
-corrected, as public
+own setup values, and each is one definition written with the SDK in
+[capabilities/sdk](capabilities/sdk). Reports files the gaps Ari hits, such as a page it couldn't
+load or a mistake you corrected, as public
 [issues labelled `gap`](https://github.com/akai-ito/ito-core/issues?q=label%3Agap) on ito-core,
-never with anything from your conversation: give it a
-[fine-grained GitHub token](https://github.com/settings/personal-access-tokens/new) for
-akai-ito/ito-core with *Issues: read and write*. Up to 20 reports a day are filed; any more go to
-Ito's log. To work on a capability, point the server at a working copy with
-`ITO_CAPABILITIES=/path/to/ito-capabilities`.
+never with anything from your conversation. Tap *Connect GitHub* on its sheet and approve the code
+on GitHub: Ito's GitHub app can only open and comment on issues in Ito's own repositories, and
+GitHub hands its token to your server, never to the phone. Up to 20 reports a day are filed; any
+more go to Ito's log.
 
 Ari remembers you in the Thread, a git repository of Markdown pages in `~/.ito/thread` that you can
 read without Ito: your portrait, what's going on now, how you like to be helped, pages on people,
@@ -139,14 +136,13 @@ node bin/ito.ts voice check
 ```
 
 It installs the Python packages (about 6 GB the first time), downloads the models (about 3 GB),
-loads each on the GPU, and times listening, turn-taking, recognition with and without your
-vocabulary, telling your voice from others', and speaking. It prints a report and keeps it in
-`~/.ito/voice-check.md`; the details, which quote your memory, stay in
-`~/.ito/voice-check-details.md`. Then start `ito serve` again. Ari offers Talk only once the voice is
-ready, and otherwise says why. After your first few minutes of calls, the voice learns a voiceprint
-of you, kept in `~/.ito/voice` and never sent anywhere, so people talking nearby don't hold your turn
-open. If espeak-ng, which says names Kokoro doesn't know, won't load from
-its Python package, install it with `sudo apt install espeak-ng`.
+loads each on the GPU, times Ari's first audio, and holds a call through the box, watching GPU
+memory. It prints a report and keeps it in `~/.ito/voice-check.md`, with the details of any problem
+in `~/.ito/voice-check-details.md`. Then start `ito serve` again. Ari offers Talk only once the
+voice is ready, and otherwise says why. After your first few minutes of calls, the voice learns a
+voiceprint of you, kept in `~/.ito/voice` and never sent anywhere, so people talking nearby don't
+hold your turn open. If espeak-ng, which says names Kokoro doesn't know, won't load from its Python
+package, install it with `sudo apt install espeak-ng`.
 
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, the agent's working directory in `workspace`, its memory in

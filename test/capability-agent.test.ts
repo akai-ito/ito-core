@@ -4,9 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
-import { toMessageId } from "#conversation/ids.ts";
 import { onSetting, valuesSetting } from "#capabilities/host.ts";
-import { findInstalled } from "#capabilities/installed.ts";
 import { systemClock } from "#clock.ts";
 import { createCodexEngine } from "#engine/codex/codex-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
@@ -15,6 +13,7 @@ import type { Step } from "#protocol/types.ts";
 import { createServer, databaseFile, type Server } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore } from "#store/store.ts";
+import { testCapability } from "./support/test-capabilities.ts";
 import { startMockModel, type MockModel } from "./support/mock-model.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 
@@ -94,9 +93,7 @@ describe("capabilities, through the pinned Codex", () => {
       embedder: wordEmbedder,
       dataDirectory: home,
       name: "test",
-      capabilities: findInstalled(path.join(import.meta.dirname, "support", "capabilities")).filter(
-        ({ id }) => id === "echo",
-      ),
+      capabilities: [testCapability("echo")],
       createEngine: ({ settings, log, info, tools, skills, inMind }) =>
         createCodexEngine({
           codexHome,
@@ -175,36 +172,5 @@ describe("capabilities, through the pinned Codex", () => {
 
     expect(during).toContain("You're on a call.");
     expect(after.slice(after.lastIndexOf("<call>"))).toContain("The call has ended, so they're reading the chat.");
-  });
-
-  it("shows the agent which words were corrected in a spoken message", async () => {
-    const { store, turns } = currentServer();
-    const call = randomUUID();
-    store.startCall(call);
-    const text = "[[reply]] What did Bora say about the QRT panel?";
-    const message = toMessageId(randomUUID());
-
-    const accepted = store.acceptMessage(message, text, undefined, [], {
-      call,
-      corrections: [
-        { offset: text.indexOf("Bora"), length: 4, heard: "Bara" },
-        { offset: text.indexOf("QRT"), length: 3, heard: "cutie" },
-      ],
-    });
-    turns.route(message, text);
-    await vi.waitFor(
-      () => {
-        expect(store.runningTurn()).toBeUndefined();
-        expect(currentModel().userTexts().at(-1)).toContain("Bora");
-      },
-      { timeout: 20_000, interval: 100 },
-    );
-    store.endCall(call);
-
-    expect(accepted.ok).toBe(true);
-    expect(currentModel().userTexts().at(-1)).toBe(
-      `${text}\n\n(Spoken. Words corrected from what was heard: heard “Bara”, wrote Bora; heard “cutie”, wrote QRT. ` +
-        "Either could be right.)",
-    );
   });
 });

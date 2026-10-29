@@ -1,16 +1,15 @@
 # The Ito client API
 
 **Commands in, one resumable event stream out.** Ari speaks it, and so can any other client.
-Read it rendered, with the guarantees and a timeline of every transcript, at
-[akai-ito.github.io/ito-core](https://akai-ito.github.io/ito-core/).
 
 | File | What it is |
 | --- | --- |
 | [openapi.yaml](openapi.yaml) | The commands, as OpenAPI 3.1 |
 | [events.schema.json](events.schema.json) | Every event on the stream, as JSON Schema |
 | [push.schema.json](push.schema.json) | What a push notification carries, encrypted and decrypted |
-| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: plans, places, times, comparisons, choices and pictures |
-| [capability.schema.json](capability.schema.json) | What the server and a capability say to each other, explained in [capabilities.md](capabilities.md) |
+| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: places, choices, pictures and things in motion |
+| [motion.schema.json](motion.schema.json) | What a thing in motion holds, for each kind, and the changes Ari makes to it |
+| [stream.schema.json](stream.schema.json) | The frames on a call's stream, both ways |
 | [guarantees.md](guarantees.md) | What the server and the protocol promise |
 | [transcripts](transcripts) | One golden transcript per scenario: what crosses the API, step by step |
 | [types.ts](types.ts) | TypeScript types generated from the spec |
@@ -31,7 +30,7 @@ sequenceDiagram
   App->>Server: POST /v0/messages {id, text}
   Server-->>App: 201 once the message is on disk
   Server-->>App: message.accepted, turn.started, step.started, turn.status, message.delta …
-  App->>Server: POST /v0/turns/{turn}/stop {cut}
+  App->>Server: POST /v0/turns/{turn}/stop
   Server-->>App: message.ended (stopped), turn.ended (stopped)
 ```
 
@@ -86,6 +85,6 @@ types they don't recognise, and servers ignore unknown request fields.
 
 - `npm run generate` rewrites the transcripts from [tools/scenarios.ts](tools/scenarios.ts) and
   the types from the spec.
-- `npm run check:transcripts` checks every transcript against the spec and the guarantees it can
-  see: offsets, unique ids, exactly-once delivery, every turn ending.
-- `npm run docs` builds the API reference into `site/`; every push to `main` publishes it.
+- `npm run check:transcripts` checks every transcript against the spec, with every object closed so
+  a typo can't pass, and against the guarantees table. Replaying them through the server checks the
+  rest.

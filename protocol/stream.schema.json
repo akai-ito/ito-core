@@ -86,7 +86,7 @@
     },
     "Played": {
       "title": "played",
-      "description": "A sentence's audio has finished playing, or `cut` when `stop_playback` dropped it. It times when Ari went quiet.",
+      "description": "A sentence's audio has finished playing, or `stop_playback` dropped it. It times when Ari went quiet.",
       "type": "object",
       "required": ["type", "id"],
       "properties": {
@@ -95,9 +95,6 @@
         },
         "id": {
           "$ref": "#/$defs/SentenceId"
-        },
-        "cut": {
-          "type": "boolean"
         }
       }
     },
@@ -155,7 +152,7 @@
     },
     "StopPlayback": {
       "title": "stop_playback",
-      "description": "You spoke over Ari: drop all audio you haven't played, at once, and answer each dropped sentence with `played` and `cut`.",
+      "description": "You spoke over Ari: drop all audio you haven't played, at once, and answer each dropped sentence with `played`.",
       "type": "object",
       "required": ["type"],
       "properties": {

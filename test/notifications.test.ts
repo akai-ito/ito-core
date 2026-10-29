@@ -148,7 +148,6 @@ describe("notifications", () => {
       question: "Which Juno did you mean?",
       options: [],
       allows_text: true,
-      secret: false,
     });
     await expect.poll(() => store.devices().length).toBe(0);
     expect(sent.get()).toBe(1);

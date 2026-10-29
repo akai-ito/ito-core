@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.13"
+  version: "0.14"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -20,18 +20,18 @@ info:
     - **Attach** photos and files: upload each one, then name them in a message.
     - **Answer** what the agent asks by sending a message, or cancel the ask.
     - **Shaped replies:** a reply may hold [`ari:` blocks](blocks.schema.json) the app draws
-      natively: plans you can tick, places, times, comparisons, choices and pictures.
+      natively: places, choices, pictures and things in motion.
     - **Notify** a device while you're not looking: register it, then say when the conversation is
       on screen. [The push schema](push.schema.json) describes what it receives.
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
-      and fill in its setup sheet.
+      and fill in its setup sheet, or connect it through its provider.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
       journal, what Ari changed lately and why, and what each change changed. Ari writes memory
       itself; the API only reads it.
     - **Choose the model** the agent runs on, and how hard it thinks, from those its engine offers.
     - **Talk:** start and end a call with the agent, and stream it: your microphone up, Ari's voice
       down, with states and captions. The server hears your turns, steered toward the names in
-      memory, and posts each as a spoken message; teach it a word it got wrong.
+      memory, and posts each as a spoken message.
     - **Ari's voice:** whether the server can hold a call, the voices Ari can speak in, choosing
       one, and hearing it speak.
 
@@ -81,7 +81,7 @@ tags:
   - name: Model
     description: Choose the model the agent runs on.
   - name: Talk
-    description: Call the agent, speak your messages, and steer speech recognition with your words.
+    description: Call the agent and speak your messages.
 paths:
   /.well-known/ito:
     get:
@@ -222,11 +222,8 @@ paths:
         refused with `attachment_missing`: upload its attachments again under the same ids, then
         send the same message again.
 
-        While an ask waits, the message answers it, whether or not it names the ask: `message.accepted`
-        for the message comes first, then `ask.ended`. Name the ask in `answers` when you send a
-        tapped option or a secret. The text of an answer to a secret ask is never stored, never
-        streamed and never sent back: the message keeps an empty text, marked `secret`, and only the
-        agent's next turn receives what you typed. A secret answer can't carry attachments.
+        While an ask waits, the message answers it: `message.accepted` for the message comes first,
+        then `ask.ended`.
       requestBody:
         required: true
         content:
@@ -312,21 +309,14 @@ paths:
       summary: Stop a turn
       description: |
         Handled ahead of everything else, and never behind a message being accepted. The server
-        sends no more text for the turn, stops the agent, and keeps the message being written cut
-        at `cut`: where it was on your screen. `turn.ended` with outcome `stopped` follows once the
-        agent has really stopped.
+        sends no more text for the turn and stops the agent, and the message being written keeps
+        everything sent so far. `turn.ended` with outcome `stopped` follows once the agent has
+        really stopped.
 
         If the turn has already ended, nothing changes and the answer gives its outcome.
         Messages waiting as Next are answered after the stop.
       parameters:
         - $ref: "#/components/parameters/Turn"
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/StopTurn" }
-            example:
-              cut: { message: m_0012, offset: 214 }
       responses:
         "202":
           description: The turn is stopping.
@@ -445,45 +435,6 @@ paths:
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/SlowDown" }
-  /v0/messages/{message}/parts/{part}/items/{item}:
-    put:
-      tags: [Conversation]
-      operationId: tickItem
-      summary: Tick an item in a reply's plan, or untick it
-      description: |
-        `part` is the plan's index among the reply's `ari:` blocks, from 0, and `item` the item's
-        `id` in it (see [the blocks schema](blocks.schema.json)). Every app hears `plan.ticked`,
-        the message keeps the item's latest state in `ticks`, and the agent learns of it with your
-        next message. Ticking an item to the state it's already in changes nothing.
-      parameters:
-        - name: message
-          in: path
-          required: true
-          schema: { $ref: "events.schema.json#/$defs/MessageId" }
-        - name: part
-          in: path
-          required: true
-          schema: { type: integer, minimum: 0 }
-        - name: item
-          in: path
-          required: true
-          schema: { type: string, minLength: 1 }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/TickItem" }
-      responses:
-        "200":
-          description: The reply's ticks, each at its latest.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/TickList" }
-        "400": { $ref: "#/components/responses/InvalidRequest" }
-        "401": { $ref: "#/components/responses/TokenRejected" }
-        "404": { $ref: "#/components/responses/NotFound" }
   /v0/asks/{ask}/cancel:
     post:
       tags: [Asks]
@@ -658,6 +609,36 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/capabilities/{capability}/connect:
+    post:
+      tags: [Capabilities]
+      operationId: connectCapability
+      summary: Connect it through its provider
+      description: |
+        For a capability with an `oauth_device` field in its setup. The server asks the provider for a
+        code and answers with it and the page to enter it on: show the code, and open the page, where
+        you're already signed in. Once you approve there, the provider hands the server the value,
+        which the server saves as setup would, restarting the capability; the value never reaches the
+        app. `GET /v0/capabilities` shows the field `set` once it's in. Connecting again starts over
+        with a new code. The code stops working at `expires_at`.
+      parameters:
+        - $ref: "#/components/parameters/Capability"
+      responses:
+        "200":
+          description: The code to approve, and where.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapabilityConnection" }
+              example:
+                code: WDJB-MJHT
+                url: https://github.com/login/device
+                expires_at: "2026-10-30T09:15:00.000Z"
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v0/capabilities/{capability}/check:
     post:
       tags: [Capabilities]
@@ -1011,31 +992,6 @@ paths:
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
         "503": { $ref: "#/components/responses/Unavailable" }
-  /v0/vocabulary/corrections:
-    post:
-      tags: [Talk]
-      operationId: teachVocabulary
-      summary: Teach it what you meant
-      description: |
-        Each pair is a word the recogniser heard and what you meant. When `meant` is a page's title
-        or alias, `heard` joins that page's mishearings; otherwise the pair is kept as a term of its
-        own. Teaching the same pair again changes nothing.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/Corrections" }
-            example: { corrections: [{ heard: Bara, meant: Bora }] }
-      responses:
-        "200":
-          description: Where each one went.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Corrections" }
-        "400": { $ref: "#/components/responses/InvalidRequest" }
-        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/speech:
     post:
       tags: [Talk]
@@ -1314,23 +1270,6 @@ components:
       required: [call]
       properties:
         call: { $ref: "events.schema.json#/$defs/Call" }
-    Corrections:
-      type: object
-      required: [corrections]
-      properties:
-        corrections:
-          type: array
-          minItems: 1
-          maxItems: 50
-          items:
-            type: object
-            required: [heard, meant]
-            properties:
-              heard: { type: string, minLength: 1, maxLength: 100 }
-              meant: { type: string, minLength: 1, maxLength: 100 }
-              address:
-                description: In an answer, the page the mishearing joined, when there was one.
-                $ref: "events.schema.json#/$defs/MemoryAddress"
     ModelChoice:
       type: object
       required: [model, effort]
@@ -1588,6 +1527,36 @@ components:
         set:
           description: "`secret` only: whether one is saved."
           type: boolean
+        connect:
+          description: |
+            How to fill it without typing it in. `oauth_device`: start with
+            `POST /v0/capabilities/{capability}/connect`, which gives a code to approve at the
+            provider. `link`: open `url`, where the provider makes one, and paste it here.
+          type: object
+          required: [kind, title]
+          properties:
+            kind: { enum: [oauth_device, link] }
+            title:
+              description: What the button says, such as Connect GitHub.
+              type: string
+            url:
+              description: "`link` only: the page that makes one, filled in where the provider allows it."
+              type: string
+              format: uri
+    CapabilityConnection:
+      type: object
+      required: [code, url, expires_at]
+      properties:
+        code:
+          description: The code to approve at the provider, to show as it is.
+          type: string
+        url:
+          description: The provider's page to approve it on.
+          type: string
+          format: uri
+        expires_at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When the code stops working.
     SwitchCapability:
       type: object
       required: [on]
@@ -1755,11 +1724,8 @@ components:
           description: What you wrote, as plain text or Markdown. It may be empty, or left out, when the message carries attachments.
           type: string
           maxLength: 32000
-        answers:
-          $ref: "events.schema.json#/$defs/AskId"
-          description: The ask this message answers, when you tap one of its options or answer a secret. When it names a secret ask, the text is never stored, even if the ask has stopped waiting. An ask the server doesn't know is an `invalid_request`.
         attachments:
-          description: The photos and files to attach, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`. Naming one another message already carries, or attaching anything to a secret answer, is an `invalid_request`.
+          description: The photos and files to attach, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`. Naming one another message already carries is an `invalid_request`.
           type: array
           maxItems: 10
           uniqueItems: true
@@ -1796,11 +1762,6 @@ components:
         has_more:
           description: Whether even older messages exist.
           type: boolean
-    TickItem:
-      type: object
-      required: [done]
-      properties:
-        done: { type: boolean }
     MotionList:
       type: object
       required: [motions]
@@ -1830,26 +1791,6 @@ components:
       required: [state]
       properties:
         state: { type: object, additionalProperties: true }
-    TickList:
-      type: object
-      required: [ticks]
-      properties:
-        ticks:
-          type: array
-          items: { $ref: "events.schema.json#/$defs/Tick" }
-    StopTurn:
-      type: object
-      properties:
-        cut:
-          description: Where the message still being written was on your screen when you tapped Stop. Without it, the server keeps everything written so far. A cut that names a message which already finished changes nothing; a finished message keeps all its text.
-          type: object
-          required: [message, offset]
-          properties:
-            message: { $ref: "events.schema.json#/$defs/MessageId" }
-            offset:
-              description: How much of the message's text you saw, in UTF-16 code units.
-              type: integer
-              minimum: 0
     StopResult:
       type: object
       required: [turn, state]

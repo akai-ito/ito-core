@@ -1,5 +1,4 @@
 node_modules/
-site/
 voice/.venv/
 __pycache__/
 .pytest_cache/

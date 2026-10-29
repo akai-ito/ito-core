@@ -2,38 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://akai-ito.github.io/ito-core/protocol/v0/blocks.schema.json",
   "title": "Ari's reply blocks",
-  "description": "A reply is Markdown. Where its content has a shape, Ari writes it as a fenced block whose info string is `ari:` and a kind, holding one JSON object, and the app draws it natively. A block the app doesn't recognise, or whose JSON doesn't parse, shows as its fenced text. Blocks are never spoken on a call. A block's part is its 0-based index among the reply's `ari:` blocks, of every kind.",
+  "description": "A reply is Markdown. Where its content has a shape, Ari writes it as a fenced block whose info string is `ari:` and a kind, holding one JSON object, and the app draws it natively. A block the app doesn't recognise, or whose JSON doesn't parse, shows as its fenced text. Blocks are never spoken on a call.",
   "$defs": {
-    "Plan": {
-      "title": "ari:plan",
-      "description": "Something to do step by step, with items you can tick: an itinerary, a to-do list, a packing list, a training week. Ticks go to the server, which keeps them on the message as `ticks`; the block's own `done` is how Ari wrote it.",
-      "type": "object",
-      "required": ["items"],
-      "properties": {
-        "title": { "type": "string", "minLength": 1 },
-        "items": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "required": ["id", "text", "done"],
-            "properties": {
-              "id": {
-                "description": "Unique within the plan, such as `book-flights`.",
-                "type": "string",
-                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-              },
-              "text": { "type": "string", "minLength": 1 },
-              "when": {
-                "description": "When it happens, in plain words, such as \"Fri 6 Nov, morning\".",
-                "type": "string"
-              },
-              "done": { "type": "boolean" }
-            }
-          }
-        }
-      }
-    },
     "Place": {
       "title": "ari:place",
       "description": "A place you might go. The app opens it in Maps.",
@@ -45,48 +15,6 @@
         "lat": { "type": "number", "minimum": -90, "maximum": 90 },
         "lon": { "type": "number", "minimum": -180, "maximum": 180 },
         "url": { "type": "string", "format": "uri" }
-      }
-    },
-    "Time": {
-      "title": "ari:time",
-      "description": "A time worth keeping. The app adds it to your calendar or reminders on the phone, with no approval from the server.",
-      "type": "object",
-      "required": ["title", "start", "timezone"],
-      "properties": {
-        "title": { "type": "string", "minLength": 1 },
-        "start": {
-          "description": "Local date and time, such as `2026-11-06T08:15`, or a date, such as `2026-11-06`, for all day.",
-          "type": "string"
-        },
-        "end": { "description": "As `start`.", "type": "string" },
-        "timezone": { "description": "An IANA time zone, such as `Europe/Rome`.", "type": "string" },
-        "location": { "type": "string" }
-      }
-    },
-    "Compare": {
-      "title": "ari:compare",
-      "description": "Options side by side, with the same facts for each, and Ari's pick.",
-      "type": "object",
-      "required": ["options"],
-      "properties": {
-        "options": {
-          "type": "array",
-          "minItems": 2,
-          "items": {
-            "type": "object",
-            "required": ["name", "facts"],
-            "properties": {
-              "name": { "type": "string", "minLength": 1 },
-              "facts": {
-                "description": "The same keys for every option, in the order to show them.",
-                "type": "object",
-                "additionalProperties": { "type": "string" }
-              }
-            }
-          }
-        },
-        "pick": { "description": "The name of the option Ari would choose.", "type": "string" },
-        "why": { "type": "string" }
       }
     },
     "Choices": {

@@ -46,7 +46,6 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "call.audio_deleted":
     case "voice.status":
     case "topic.started":
-    case "plan.ticked":
     case "motion.started":
     case "motion.changed":
     case "motion.finished":
@@ -66,8 +65,8 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
   const at = Date.parse(event.at);
   switch (event.type) {
     case "ask.started": {
-      const { id, kind, question, options, allows_text, preview, secret } = event.ask;
-      const fields = { kind, question, options, allows_text, ...(preview && { preview }), secret };
+      const { id, kind, question, options, allows_text, preview } = event.ask;
+      const fields = { kind, question, options, allows_text, ...(preview && { preview }) };
       return approvals.has(id)
         ? { at, event: { type: "approval", key: id, fields } }
         : { at, event: { type: "ask", fields } };
@@ -117,7 +116,6 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
     case "call.audio_deleted":
     case "voice.status":
     case "topic.started":
-    case "plan.ticked":
     case "motion.started":
     case "motion.changed":
     case "motion.finished":

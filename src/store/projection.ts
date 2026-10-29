@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Event, Snapshot, Tick } from "#protocol/types.ts";
+import type { Event, Snapshot } from "#protocol/types.ts";
 
 export type LoggedEvent = Exclude<Event, Snapshot>;
 
@@ -13,8 +13,8 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       const { message } = event;
       database
         .prepare(
-          `INSERT INTO messages (id, position, role, text, at, answers, secret, attachments, spoken)
-            VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO messages (id, position, role, text, at, answers, attachments, spoken)
+            VALUES (?, ?, 'user', ?, ?, ?, ?, ?)`,
         )
         .run(
           message.id,
@@ -22,7 +22,6 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
           message.text,
           message.at,
           message.answers ?? null,
-          message.secret ? 1 : 0,
           message.attachments?.length ? toJson(message.attachments) : null,
           message.spoken ? toJson(message.spoken) : null,
         );
@@ -176,15 +175,6 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       return;
     }
     case "voice.status": {
-      return;
-    }
-    case "plan.ticked": {
-      const { message, part, item, done } = event;
-      const row = database.prepare("SELECT ticks FROM messages WHERE id = ?").get(message) as
-        { readonly ticks: string | null } | undefined;
-      const ticks = row?.ticks ? (JSON.parse(row.ticks) as readonly Tick[]) : [];
-      const latest = [...ticks.filter((tick) => tick.part !== part || tick.item !== item), { part, item, done }];
-      database.prepare("UPDATE messages SET ticks = ? WHERE id = ?").run(toJson(latest), message);
       return;
     }
     case "topic.started": {

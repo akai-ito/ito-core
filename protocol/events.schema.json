@@ -85,9 +85,6 @@
         },
         {
           "$ref": "#/$defs/MotionRemoved"
-        },
-        {
-          "$ref": "#/$defs/PlanTicked"
         }
       ]
     },
@@ -207,7 +204,7 @@
           "description": "Agent messages only: the turn that wrote it."
         },
         "text": {
-          "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a secret answer, for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing. A reply may hold `ari:` blocks, described in [the blocks schema](blocks.schema.json).",
+          "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing. A reply may hold `ari:` blocks, described in [the blocks schema](blocks.schema.json).",
           "type": "string"
         },
         "at": {
@@ -220,10 +217,6 @@
         "answers": {
           "$ref": "#/$defs/AskId",
           "description": "User messages only: the ask this message answered. Any message you send while an ask waits answers it, whether or not you meant it to."
-        },
-        "secret": {
-          "description": "User messages only: a secret answer, such as a code. Its `text` is always empty: the agent received what you typed, and the conversation keeps nothing of it.",
-          "const": true
         },
         "attachments": {
           "description": "User messages only: the photos and files you attached, in order.",
@@ -247,13 +240,6 @@
         "error": {
           "$ref": "#/$defs/Error",
           "description": "Present when the outcome is `failed`."
-        },
-        "ticks": {
-          "description": "Replies only: the items you ticked or unticked in its plans, each at its latest. Absent until you tick one. An item without a tick is as Ari wrote it.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Tick"
-          }
         }
       },
       "if": {
@@ -272,57 +258,6 @@
           "turn": {
             "$ref": "#/$defs/TurnId"
           }
-        }
-      }
-    },
-    "Tick": {
-      "description": "An item in one of a reply's plans, ticked or not.",
-      "type": "object",
-      "required": ["part", "item", "done"],
-      "properties": {
-        "part": {
-          "description": "The plan's index among the reply's `ari:` blocks, from 0.",
-          "type": "integer",
-          "minimum": 0
-        },
-        "item": {
-          "description": "The item's `id` in the plan.",
-          "type": "string",
-          "minLength": 1
-        },
-        "done": {
-          "type": "boolean"
-        }
-      }
-    },
-    "PlanTicked": {
-      "title": "plan.ticked",
-      "description": "You ticked or unticked an item in a reply's plan, on any device. The agent hears about it with your next message.",
-      "type": "object",
-      "required": ["id", "type", "at", "message", "part", "item", "done"],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/EventId"
-        },
-        "type": {
-          "const": "plan.ticked"
-        },
-        "at": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "message": {
-          "$ref": "#/$defs/MessageId"
-        },
-        "part": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "item": {
-          "type": "string",
-          "minLength": 1
-        },
-        "done": {
-          "type": "boolean"
         }
       }
     },
@@ -637,7 +572,7 @@
     "Ask": {
       "description": "Something the agent asked you. Asking ends the agent's turn, and the ask waits as long as it takes: through the app closing, the phone going offline and the server restarting. The next message you send answers it, whether you tap an option, type your own answer or write about something else. At most one ask waits at a time.",
       "type": "object",
-      "required": ["id", "turn", "kind", "question", "options", "allows_text", "secret", "at", "position"],
+      "required": ["id", "turn", "kind", "question", "options", "allows_text", "at", "position"],
       "properties": {
         "id": {
           "$ref": "#/$defs/AskId"
@@ -670,10 +605,6 @@
           "description": "Approvals only: what would happen, in plain text, to show before you agree.",
           "type": "string",
           "minLength": 1
-        },
-        "secret": {
-          "description": "Whether the answer is a secret, such as a code. Send it with `answers` set to this ask: the agent receives it, and it never enters the conversation's history.",
-          "type": "boolean"
         },
         "at": {
           "$ref": "#/$defs/Timestamp"
@@ -867,7 +798,7 @@
     },
     "MessageAmended": {
       "title": "message.amended",
-      "description": "On a call you carried on speaking before Ari began to answer, so your words joined the message you'd just spoken. It carries the whole message as it is now: the text with your new words, the corrections for all of it, and one recording of both parts, in place of the earlier recording, which is gone. Replace the message you have with it.",
+      "description": "On a call you carried on speaking before Ari began to answer, so your words joined the message you'd just spoken. It carries the whole message as it is now: the text with your new words, and one recording of both parts, in place of the earlier recording, which is gone. Replace the message you have with it.",
       "type": "object",
       "required": ["id", "type", "at", "message"],
       "properties": {
@@ -1301,27 +1232,8 @@
         }
       }
     },
-    "Correction": {
-      "description": "A word the server corrected in a spoken message, from what it has learnt: `text` from `offset` for `length` characters is what it meant, and `heard` what the recogniser heard.",
-      "type": "object",
-      "required": ["offset", "length", "heard"],
-      "properties": {
-        "offset": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "length": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "heard": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
-    },
     "Spoken": {
-      "description": "How a message you spoke on a call came to be: the call, its audio while it's kept, and the words the server corrected.",
+      "description": "How a message you spoke on a call came to be: the call, and its audio while it's kept.",
       "type": "object",
       "required": ["call"],
       "properties": {
@@ -1331,12 +1243,6 @@
         "audio": {
           "$ref": "#/$defs/Attachment",
           "description": "The recording of what you said. Absent once you've deleted the call's audio."
-        },
-        "corrections": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Correction"
-          }
         }
       }
     },

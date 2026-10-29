@@ -1,7 +1,5 @@
-import { spawn } from "node:child_process";
 import { mkdirSync, realpathSync } from "node:fs";
-import { setTimeout as delay } from "node:timers/promises";
-import { createCell } from "#cell.ts";
+import { describeExit, startChild } from "#child.ts";
 import { codexScript } from "#engine/codex/binary.ts";
 import type { InitializeParams } from "#engine/codex/bindings/InitializeParams.ts";
 import type { InitializeResponse } from "#engine/codex/bindings/InitializeResponse.ts";
@@ -28,7 +26,7 @@ import type { TurnStartParams } from "#engine/codex/bindings/v2/TurnStartParams.
 import type { TurnStartResponse } from "#engine/codex/bindings/v2/TurnStartResponse.ts";
 import type { TurnSteerParams } from "#engine/codex/bindings/v2/TurnSteerParams.ts";
 import type { TurnSteerResponse } from "#engine/codex/bindings/v2/TurnSteerResponse.ts";
-import { createConnection, type IncomingRequest, type RpcFailure } from "#json-rpc.ts";
+import type { IncomingRequest, RpcFailure } from "#json-rpc.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { packageVersion } from "#version.ts";
 
@@ -67,9 +65,6 @@ export type CodexProcessOptions = {
   readonly onExit: (description: string) => void;
 };
 
-const gracefulExitMs = 3000;
-const keptStderrLines = 20;
-
 const toAnswerer =
   (onElicitation: CodexProcessOptions["onElicitation"]) =>
   async ({ method, parameters }: IncomingRequest): Promise<Result<unknown, RpcFailure>> => {
@@ -86,55 +81,25 @@ const toAnswerer =
       : fail({ code: -32_601, message: `Ito doesn't handle ${method}.` });
   };
 
-const describeExit = (code: number | null, signal: NodeJS.Signals | null, stderr: readonly string[]): string => {
-  const how = signal ? `was killed by ${signal}` : `exited with code ${String(code)}`;
-  const lastLine = stderr.at(-1);
-  return lastLine ? `Codex ${how}: ${lastLine}` : `Codex ${how}.`;
-};
-
 export const startCodexProcess = async (options: CodexProcessOptions): Promise<Result<CodexProcess, string>> => {
   mkdirSync(options.codexHome, { recursive: true });
   mkdirSync(options.workspace, { recursive: true });
-  const child = spawn(process.execPath, [codexScript(), "app-server"], {
+  const { connection, exited, stop, kill } = startChild({
+    command: process.execPath,
+    arguments: [codexScript(), "app-server"],
     cwd: options.workspace,
-    env: { ...process.env, ...options.environment, CODEX_HOME: options.codexHome },
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: true,
-  });
-  const stderr = createCell<readonly string[]>([]);
-  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
-    const lines = chunk.split("\n").filter((line) => line.trim() !== "");
-    stderr.update((kept) => [...kept, ...lines].slice(-keptStderrLines));
-  });
-  const exited = new Promise<string>((resolve) => {
-    child.once("error", (error) => {
-      resolve(`Codex couldn't start: ${error.message}`);
-    });
-    child.once("exit", (code, signal) => {
-      resolve(describeExit(code, signal, stderr.get()));
-    });
-  });
-  void exited.then(options.onExit);
-
-  const connection = createConnection({
-    input: child.stdout,
-    output: child.stdin,
+    environment: { ...process.env, ...options.environment, CODEX_HOME: options.codexHome },
     onNotification: ({ method, parameters }) => {
       options.onNotification({ method, params: parameters } as ServerNotification);
     },
     onRequest: toAnswerer(options.onElicitation),
-    onMalformed: (line) => {
-      stderr.update((kept) => [...kept, `Unreadable output: ${line}`].slice(-keptStderrLines));
-    },
+    onLine: () => true,
     closedMessage: "The Codex process exited.",
   });
-
-  const killGroup = async (): Promise<void> => {
-    if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
-      process.kill(-child.pid, "SIGKILL");
-    }
-    await exited;
-  };
+  const described = (async () => describeExit("Codex", await exited))();
+  void (async () => {
+    options.onExit(await described);
+  })();
 
   const call: CodexProcess["call"] = async (method, parameters) =>
     (await connection.request(method, parameters)) as Awaited<ReturnType<CodexProcess["call"]>>;
@@ -145,28 +110,15 @@ export const startCodexProcess = async (options: CodexProcessOptions): Promise<R
   };
   const initialized = await connection.request("initialize", initializeParameters);
   if (!initialized.ok) {
-    await killGroup();
+    await kill();
     return fail(`Codex didn't start: ${initialized.failure.message}`);
   }
   connection.notify("initialized");
   const { codexHome } = initialized.value as InitializeResponse;
   if (realpathSync(codexHome) !== realpathSync(options.codexHome)) {
-    await killGroup();
+    await kill();
     return fail(`Codex started with ${codexHome} as its home instead of ${options.codexHome}.`);
   }
 
-  return ok({
-    call,
-    exited,
-    stop: async () => {
-      child.stdin.end();
-      const didExit = async (): Promise<boolean> => {
-        await exited;
-        return true;
-      };
-      const hasExited = await Promise.race([didExit(), delay(gracefulExitMs, false)]);
-      if (!hasExited) await killGroup();
-    },
-    kill: killGroup,
-  });
+  return ok({ call, exited: described, stop, kill });
 };

@@ -1,6 +1,8 @@
 import { createCell } from "#cell.ts";
 import type { AskFields, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { Act, CallTool, ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
+import { florenceId, florenceTrip } from "#protocol/tools/florence.ts";
+import { sub20Id, sub20Training } from "#protocol/tools/sub20.ts";
 
 const pieceMs = 70;
 
@@ -9,14 +11,15 @@ const shortReply = [
   "",
   "- It streams a reply in small pieces, the way a real model does.",
   "- Send a message while it writes to try **steering**.",
-  "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, *approve* for an approval, or *secret* for a secret question.",
+  "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, or *approve* for an approval.",
   "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
+  "- *trip* starts Florence with Janki in In motion, *training* a sub-20 5K block, and *booked* books the trip's Uffizi.",
 ].join("\n");
 
 const longReply = Array.from(
   { length: 12 },
   (_, index) =>
-    `**Part ${index + 1}.** This is a long reply from the demo engine, so you can tap Stop halfway through and see the text cut exactly where it was on your screen.`,
+    `**Part ${index + 1}.** This is a long reply from the demo engine, so you can tap Stop halfway through and see the reply keep what it had written.`,
 ).join("\n\n");
 
 const toPieces = (text: string): readonly string[] => text.match(/\S+\s*/g) ?? [text];
@@ -118,15 +121,6 @@ const busyTrail = (startAt: number): readonly TimedEvent[] =>
   ].map((event, index) => ({ at: startAt + index * 450, event }));
 
 const askFor = (text: string): AskFields | undefined => {
-  if (/\bsecret\b/u.test(text)) {
-    return {
-      kind: "question",
-      question: "The demo engine needs a code. What is it?",
-      options: [],
-      allows_text: true,
-      secret: true,
-    };
-  }
   if (/\bapprove\b/u.test(text)) {
     return {
       kind: "approval",
@@ -134,7 +128,6 @@ const askFor = (text: string): AskFields | undefined => {
       options: [{ label: "Go ahead", acts: true }, { label: "Not now" }],
       allows_text: false,
       preview: "The demo engine would book a table for two, Saturday at 7:30.",
-      secret: false,
     };
   }
   if (!/\bask\b/u.test(text)) return undefined;
@@ -146,7 +139,6 @@ const askFor = (text: string): AskFields | undefined => {
       { label: "Soho", description: "Greek Street, W1" },
     ],
     allows_text: true,
-    secret: false,
   };
 };
 
@@ -192,6 +184,61 @@ const recallAlex: Act["act"] = async (callTool) => {
 
 type Script = { readonly events: readonly TimedEvent[]; readonly acts?: readonly Act[] };
 
+const motionLine = (id: string): string =>
+  ["```ari:motion", JSON.stringify({ motion: id, change: 1 }), "```"].join("\n");
+
+const startTrip: Act["act"] = async (callTool) => {
+  const trip = Object.fromEntries(Object.entries(florenceTrip("")).filter(([field]) => field !== "cover"));
+  await callTool("start_motion", {
+    id: florenceId,
+    kind: "trip",
+    title: "Florence with Janki",
+    summary: "6–9 Nov · 4 to book",
+    content: trip,
+    note: "Started the trip",
+  });
+};
+
+const startTraining: Act["act"] = async (callTool) => {
+  await callTool("start_motion", {
+    id: sub20Id,
+    kind: "training",
+    title: "Sub-20 5K",
+    summary: "Week 6 of 10 · intervals today",
+    content: sub20Training,
+    note: "Started the block",
+  });
+};
+
+const bookUffizi: Act["act"] = async (callTool) => {
+  const read = await callTool("read_motion", { id: florenceId });
+  const version = Number(/version (?<version>\d+)/u.exec(read.text)?.groups?.version);
+  const booking = { status: "booked", ref: "UF-2291" };
+  await callTool("change_motion", {
+    id: florenceId,
+    version,
+    changes: [
+      { set: "book-uffizi", fields: { done: true } },
+      { set: "uffizi", fields: { booking } },
+      { set: "uffizi-place", fields: { status: "booked", booking } },
+    ],
+    summary: "6–9 Nov · 3 to book",
+    note: "Booked the Uffizi, 8:15 Saturday",
+  });
+};
+
+const motionScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {
+  const chosen = [
+    { pattern: /\btrip\b/u, act: startTrip, said: `I've started Florence with Janki.\n\n${motionLine(florenceId)}` },
+    { pattern: /\btraining\b/u, act: startTraining, said: `All ten weeks are in.\n\n${motionLine(sub20Id)}` },
+    { pattern: /\bbooked\b/u, act: bookUffizi, said: "Lovely: the Uffizi is booked for 8:15 on Saturday." },
+  ].find(({ pattern }) => pattern.test(text));
+  if (!chosen) return undefined;
+  const actAt = lastAt(start) + 300;
+  const reply = writeMessage("reply", chosen.said, actAt + 1200);
+  return { events: [...start, ...reply, ending(reply, { type: "ended" })], acts: [{ at: actAt, act: chosen.act }] };
+};
+
 const memoryScript = (text: string, start: readonly TimedEvent[], now: number): Script | undefined => {
   const isRemembering = /\bremember\b/u.test(text);
   if (!isRemembering && !/\brecall\b/u.test(text)) return undefined;
@@ -215,7 +262,7 @@ const scriptFor = (inputs: readonly Input[], now: number): Script => {
   const opened = opening(text, now);
   const start = text.includes("busy") ? [...opened, ...busyTrail(lastAt(opened) + 300)] : opened;
   if (text.includes("silent")) return { events: start };
-  const remembering = memoryScript(text, start, now);
+  const remembering = memoryScript(text, start, now) ?? motionScript(text, start);
   if (remembering) return remembering;
   const fields = askFor(text);
   if (fields) {

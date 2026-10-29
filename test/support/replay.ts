@@ -5,10 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/promises";
 import { createCell } from "#cell.ts";
-import { findInstalled } from "#capabilities/installed.ts";
 import { createCannedVoice, type CannedVoice, type YouSay } from "./canned-voice.ts";
 import { openCallSocket, type Arrived, type CallSocket } from "./call-socket.ts";
-import { createScriptEngine } from "#engine/scripted/script-engine.ts";
+import { createScriptEngine, type Complete } from "#engine/scripted/script-engine.ts";
+import { demoModels } from "#engine/scripted/models.ts";
+import { fail as failed, ok } from "#result.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
 import type { Attachment } from "#protocol/types.ts";
@@ -22,6 +23,7 @@ import { openEventStream, type EventStream } from "./event-stream.ts";
 import { startFakeApns, type Pushed } from "./fake-apns.ts";
 import { createIdMatcher } from "./matching.ts";
 import { createScriptQueue, deriveScripts } from "./scripts.ts";
+import { testCapability } from "./test-capabilities.ts";
 import {
   readTranscript,
   type Transcript,
@@ -36,7 +38,7 @@ import { wordEmbedder } from "#memory/embedder.ts";
 
 export const transcriptToken = "ito_example_not_a_real_token_00000000000000000000";
 
-const capabilities = findInstalled(path.join(import.meta.dirname, "capabilities")).filter(({ id }) => id === "reports");
+const capabilities = [testCapability("reports")];
 const waitMs = 4000;
 const quietMs = 300;
 const afterwardsMs = 70_000;
@@ -69,6 +71,10 @@ const toHeaders = (headers: AppRequest["headers"]): Readonly<Record<string, stri
   authorization: `Bearer ${transcriptToken}`,
   ...Object.fromEntries(Object.entries(headers ?? {}).map(([name, value]) => [name.toLowerCase(), value])),
 });
+
+const providerPollMs = 5000;
+
+const connectionCode = "WDJB-MJHT";
 
 const settle = async (): Promise<void> => {
   await yieldToIo();
@@ -142,8 +148,36 @@ export const replay = async (name: string): Promise<void> => {
   const callSocket = createCell<CallSocket | undefined>(undefined);
   const spokenPcm = new Uint8Array(fixture("spoken-sentence.wav")).slice(44);
   const web = createCell<ReadonlyMap<string, string>>(new Map());
+  const asides = createCell<readonly unknown[]>([]);
 
-  const fetchImage = (url: string): Promise<Response> => {
+  const complete: Complete = () => {
+    const [next, ...rest] = asides.get();
+    asides.set(rest);
+    return Promise.resolve(next === undefined ? failed("The transcript has Ari answer nothing aside here.") : ok(next));
+  };
+
+  const isApproved = createCell(false);
+
+  const providerAnswer = (url: string): Response | undefined => {
+    const json = (body: unknown): Response => Response.json(body);
+    if (url === "https://github.com/login/device/code") {
+      return json({
+        device_code: "dc_replay",
+        user_code: connectionCode,
+        verification_uri: "https://github.com/login/device",
+        expires_in: 900,
+        interval: providerPollMs / 1000,
+      });
+    }
+    if (url !== "https://github.com/login/oauth/access_token") return undefined;
+    return json(
+      isApproved.get() ? { access_token: "ghu_replay", token_type: "bearer" } : { error: "authorization_pending" },
+    );
+  };
+
+  const fetchFromWorld = (url: string): Promise<Response> => {
+    const answered = providerAnswer(url);
+    if (answered) return Promise.resolve(answered);
     const file = web.get().get(url);
     if (file === undefined) return Promise.resolve(new Response("Not found", { status: 404 }));
     const bytes = new Uint8Array(fixture(file));
@@ -152,10 +186,10 @@ export const replay = async (name: string): Promise<void> => {
 
   const createReplayServer = (): Server =>
     createServer({
-      fetchImage,
+      fetch: fetchFromWorld,
       embedder: wordEmbedder,
       dataDirectory: directory,
-      createEngine: () => createScriptEngine(clock, scripts),
+      createEngine: () => createScriptEngine(clock, scripts, undefined, demoModels, complete),
       name: "studio",
       agentName: "Ari",
       clock,
@@ -389,6 +423,28 @@ export const replay = async (name: string): Promise<void> => {
           Promise.resolve(undefined));
         check(called?.isError === true ? `${tool} failed: ${called.text}` : undefined, index);
         if (returns !== undefined) check(ids.match(returns, called?.structured), index);
+        return;
+      }
+      case "ari_keeps_up": {
+        const { changes, summary, note } = step as unknown as {
+          readonly changes: unknown;
+          readonly summary: string;
+          readonly note: string;
+        };
+        asides.update((current) => [...current, { changes_json: JSON.stringify(changes), summary, note }]);
+        await advance(time);
+        return;
+      }
+      case "you_approve": {
+        isApproved.set(true);
+        await advance(time + providerPollMs);
+        const host = live.get()?.server.host;
+        const waitUntilSaved = async (attempt: number): Promise<void> => {
+          if (attempt === 100 || host?.find("reports")?.values.token !== undefined) return;
+          await delay(20);
+          await waitUntilSaved(attempt + 1);
+        };
+        await waitUntilSaved(1);
         return;
       }
       case "web_has": {

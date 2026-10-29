@@ -106,7 +106,7 @@ where they're staying, and what's left to do.
 
 ## Training
 
-A training block towards a goal, such as a sub-20 5K: the goal, results so far, and each week's
+A training block towards a goal, such as a sub-20 5K: the goal, results so far, and every week's
 sessions.
 
 ```json
@@ -114,12 +114,21 @@ sessions.
   "goal": { "title": "Sub-20 5K", "target": "19:59", "by": "2026-11-30" },
   "weeks": [
     {
+      "id": "week-1",
+      "start": "2026-09-21",
+      "focus": "Base",
+      "note": "Easy miles to build on; nothing fast yet.",
+      "sessions": [
+        { "id": "w1-mon", "date": "2026-09-21", "kind": "easy", "title": "Easy run", "detail": "5 km, conversational", "done": true }
+      ]
+    },
+    {
       "id": "week-6",
       "start": "2026-10-26",
       "focus": "Speed",
       "note": "Two hard days, so keep the easy runs easy.",
       "sessions": [
-        { "id": "wed-intervals", "date": "2026-10-28", "kind": "intervals", "title": "Intervals", "detail": "6 × 800 m at 3:50/km · 90 s jog · 2 km warm-up", "done": false }
+        { "id": "w6-wed", "date": "2026-10-28", "kind": "intervals", "title": "Intervals", "detail": "6 × 800 m at 3:50/km · 90 s jog · 2 km warm-up", "done": false }
       ]
     }
   ],
@@ -127,8 +136,12 @@ sessions.
 }
 ```
 
-- **Sessions** are `easy`, `intervals`, `tempo`, `long`, `strength`, `race` or `rest`. When they
-  tell you how one went, tick it and keep their words in `how`.
+- **The whole block, up front.** When you start it, write every week from the first to the last,
+  each with its dated sessions, even weeks that have passed. The app counts weeks by their place in
+  `weeks`, as in "Week 6 of 10". Change a week as the plan changes, but never drop one.
+- **Sessions** are `easy`, `intervals`, `tempo`, `long`, `strength`, `race` or `rest`, with ids
+  that are unique across the block, such as `w6-wed`. When they tell you how one went, tick it and
+  keep their words in `how`.
 - **Each week** has a line from you in `note`: what matters this week, updated as it goes.
 - **Results** are timed efforts towards the goal, oldest first, such as a parkrun. Add one whenever
   they tell you a time.
