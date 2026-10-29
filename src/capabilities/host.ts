@@ -10,6 +10,7 @@ import {
   type Status,
   type Values,
 } from "#capabilities/manifest.ts";
+import { awaitToken, requestDeviceCode, type Fetch } from "#capabilities/connect.ts";
 import { startCapabilityProcess, type CapabilityProcess } from "#capabilities/process.ts";
 import { recentCrashes, toRestartDecision } from "#capabilities/restarts.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -32,7 +33,9 @@ export type Offered = Capability & { readonly manifest: Manifest };
 
 export type CallContext = { readonly turn?: string; readonly signal?: AbortSignal };
 
-export type HostFailure = { readonly code: "not_found" | "invalid_values"; readonly detail: string };
+export type HostFailure = { readonly code: "not_found" | "invalid_values" | "unavailable"; readonly detail: string };
+
+export type Connection = { readonly code: string; readonly url: string; readonly expiresAt: number };
 
 export type Host = {
   readonly ready: Promise<void>;
@@ -42,6 +45,7 @@ export type Host = {
   readonly switchTo: (id: string, on: boolean) => Promise<Result<Capability, HostFailure>>;
   readonly setUp: (id: string, values: Values) => Promise<Result<Capability, HostFailure>>;
   readonly check: (id: string, values: Values) => Promise<Result<string | undefined, HostFailure>>;
+  readonly connect: (id: string) => Promise<Result<Connection, HostFailure>>;
   readonly call: (
     id: string,
     operation: string,
@@ -59,6 +63,7 @@ export type HostOptions = {
   readonly folders: string;
   readonly clock: Clock;
   readonly info: Info;
+  readonly fetch?: Fetch;
 };
 
 type Runner = {
@@ -119,8 +124,17 @@ const unavailable = (title: string, { state, detail = "it isn't working" }: Capa
 const notFound = (id: string): Result<never, HostFailure> =>
   fail({ code: "not_found", detail: `No capability called ${id} is installed.` });
 
-export const createHost = ({ installed, server, settings, folders, clock, info }: HostOptions): Host => {
+export const createHost = ({
+  installed,
+  server,
+  settings,
+  folders,
+  clock,
+  info,
+  fetch: fetcher = fetch,
+}: HostOptions): Host => {
   const runners = createCell<ReadonlyMap<string, Runner>>(new Map(installed.map(({ id }) => [id, idle])));
+  const connecting = createCell<ReadonlyMap<string, AbortController>>(new Map());
   const queues = createCell<ReadonlyMap<string, Promise<unknown>>>(new Map());
   const listeners = createCell<ReadonlySet<() => void>>(new Set());
   const isClosed = createCell(false);
@@ -248,6 +262,50 @@ export const createHost = ({ installed, server, settings, folders, clock, info }
 
   const isInstalled = (id: string): boolean => runners.get().has(id);
 
+  const setUp = async (id: string, given: Values): Promise<Result<Capability, HostFailure>> => {
+    if (!isInstalled(id)) return notFound(id);
+    const { manifest } = runnerOf(id);
+    if (!manifest) return fail({ code: "invalid_values", detail: `${id} hasn't described its setup yet.` });
+    const values = toValues(manifest, { ...valuesOf(id), ...given });
+    if (!values.ok) return fail({ code: "invalid_values", detail: values.failure });
+    const saved = await serially(id, async () => {
+      settings.setSetting(valuesSetting(id), JSON.stringify(values.value));
+      await halt(id);
+      retry(id);
+      await reconcile(id);
+      return view(id);
+    });
+    notify();
+    return ok(saved);
+  };
+
+  const connect = async (id: string): Promise<Result<Connection, HostFailure>> => {
+    if (!isInstalled(id)) return notFound(id);
+    const { manifest } = runnerOf(id);
+    const field = manifest?.setup.find((candidate) => candidate.connect?.kind === "oauth_device");
+    const method = field?.connect;
+    if (!field || method?.kind !== "oauth_device") {
+      return fail({ code: "invalid_values", detail: `${manifest?.title ?? id} has nothing to connect.` });
+    }
+    connecting.get().get(id)?.abort();
+    const controller = new AbortController();
+    connecting.update((current) => new Map([...current, [id, controller]]));
+    const device = await requestDeviceCode(method, fetcher, clock.now());
+    if (!device.ok) return fail({ code: "unavailable", detail: device.failure });
+    void (async () => {
+      const token = await awaitToken(method, device.value, fetcher, clock, controller.signal);
+      connecting.update((current) => new Map([...current].filter(([, waiting]) => waiting !== controller)));
+      if (!token.ok) {
+        info("Connecting a capability didn't finish", { capability: id, reason: token.failure });
+        return;
+      }
+      const saved = await setUp(id, { [field.name]: token.value });
+      if (!saved.ok) info("A connected capability couldn't save its value", { capability: id, ...saved.failure });
+    })();
+    const { code, url, expiresAt } = device.value;
+    return ok({ code, url, expiresAt });
+  };
+
   const open = async (): Promise<void> => {
     await Promise.all(installed.map(({ id }) => serially(id, () => launch(id))));
     notify();
@@ -276,22 +334,7 @@ export const createHost = ({ installed, server, settings, folders, clock, info }
       notify();
       return ok(switched);
     },
-    setUp: async (id, given) => {
-      if (!isInstalled(id)) return notFound(id);
-      const { manifest } = runnerOf(id);
-      if (!manifest) return fail({ code: "invalid_values", detail: `${id} hasn't described its setup yet.` });
-      const values = toValues(manifest, { ...valuesOf(id), ...given });
-      if (!values.ok) return fail({ code: "invalid_values", detail: values.failure });
-      const saved = await serially(id, async () => {
-        settings.setSetting(valuesSetting(id), JSON.stringify(values.value));
-        await halt(id);
-        retry(id);
-        await reconcile(id);
-        return view(id);
-      });
-      notify();
-      return ok(saved);
-    },
+    setUp,
     check: async (id, given) => {
       if (!isInstalled(id)) return notFound(id);
       const { manifest, process } = runnerOf(id);
@@ -318,6 +361,7 @@ export const createHost = ({ installed, server, settings, folders, clock, info }
         return fail(`${title} has no operation called ${operation}.`);
       return process.call(operation, input, turn, signal);
     },
+    connect,
     subscribe: (listener) => {
       listeners.update((current) => new Set([...current, listener]));
       return () => {
@@ -326,6 +370,7 @@ export const createHost = ({ installed, server, settings, folders, clock, info }
     },
     close: async () => {
       isClosed.set(true);
+      for (const controller of connecting.get().values()) controller.abort();
       await Promise.all(installed.map(({ id }) => serially(id, () => halt(id))));
     },
   };

@@ -24,7 +24,7 @@ info:
     - **Notify** a device while you're not looking: register it, then say when the conversation is
       on screen. [The push schema](push.schema.json) describes what it receives.
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
-      and fill in its setup sheet.
+      and fill in its setup sheet, or connect it through its provider.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
       journal, what Ari changed lately and why, and what each change changed. Ari writes memory
       itself; the API only reads it.
@@ -609,6 +609,36 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/capabilities/{capability}/connect:
+    post:
+      tags: [Capabilities]
+      operationId: connectCapability
+      summary: Connect it through its provider
+      description: |
+        For a capability with an `oauth_device` field in its setup. The server asks the provider for a
+        code and answers with it and the page to enter it on: show the code, and open the page, where
+        you're already signed in. Once you approve there, the provider hands the server the value,
+        which the server saves as setup would, restarting the capability; the value never reaches the
+        app. `GET /v0/capabilities` shows the field `set` once it's in. Connecting again starts over
+        with a new code. The code stops working at `expires_at`.
+      parameters:
+        - $ref: "#/components/parameters/Capability"
+      responses:
+        "200":
+          description: The code to approve, and where.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapabilityConnection" }
+              example:
+                code: WDJB-MJHT
+                url: https://github.com/login/device
+                expires_at: "2026-10-30T09:15:00.000Z"
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v0/capabilities/{capability}/check:
     post:
       tags: [Capabilities]
@@ -1497,6 +1527,36 @@ components:
         set:
           description: "`secret` only: whether one is saved."
           type: boolean
+        connect:
+          description: |
+            How to fill it without typing it in. `oauth_device`: start with
+            `POST /v0/capabilities/{capability}/connect`, which gives a code to approve at the
+            provider. `link`: open `url`, where the provider makes one, and paste it here.
+          type: object
+          required: [kind, title]
+          properties:
+            kind: { enum: [oauth_device, link] }
+            title:
+              description: What the button says, such as Connect GitHub.
+              type: string
+            url:
+              description: "`link` only: the page that makes one, filled in where the provider allows it."
+              type: string
+              format: uri
+    CapabilityConnection:
+      type: object
+      required: [code, url, expires_at]
+      properties:
+        code:
+          description: The code to approve at the provider, to show as it is.
+          type: string
+        url:
+          description: The provider's page to approve it on.
+          type: string
+          format: uri
+        expires_at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When the code stops working.
     SwitchCapability:
       type: object
       required: [on]

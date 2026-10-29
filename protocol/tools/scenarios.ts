@@ -126,7 +126,8 @@ const reportsTokenField = {
   name: "token",
   kind: "secret",
   title: "GitHub token",
-  description: "A fine-grained token for akai-ito/ito-core, with Issues set to read and write.",
+  description: "Connect GitHub, so Reports files issues on akai-ito/ito-core as you.",
+  connect: { kind: "oauth_device", title: "Connect GitHub" },
 };
 
 const reports = (state: string, isTokenSet: boolean, detail?: string): Readonly<Record<string, unknown>> => ({
@@ -139,7 +140,7 @@ const reports = (state: string, isTokenSet: boolean, detail?: string): Readonly<
   state,
   ...(detail !== undefined && { detail }),
   fields: [{ ...reportsTokenField, set: isTokenSet }],
-  uses: { hosts: ["api.github.com"], folders: [] },
+  uses: { hosts: ["api.github.com", "github.com"], folders: [] },
 });
 
 const capabilityCall = (
@@ -1655,42 +1656,25 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 32,
       title: "Set up a capability",
       summary:
-        "Settings lists the capabilities installed with the server. You switch Reports on, its sheet asks for " +
-        "a GitHub token, Test connection catches a wrong one, and the right one turns it on. The token never " +
-        "comes back, only that one is set.",
+        "Settings lists the capabilities installed with the server. You switch Reports on and connect GitHub: " +
+        "the server gives a code, you approve it on GitHub, where you're already signed in, and GitHub hands " +
+        "the token to the server, which turns Reports on. The token never reaches the app, only that one is set.",
       guarantees: ["G21"],
     });
     transcript.begin(todayAt);
     capabilityCall(transcript, "GET", "/v0/capabilities", undefined, 200, { capabilities: [reports("off", false)] });
     transcript.wait(4000);
     capabilityCall(transcript, "PUT", "/v0/capabilities/reports", { on: true }, 200, reports("setup", false));
-    transcript.wait(12_000);
-    capabilityCall(
-      transcript,
-      "POST",
-      "/v0/capabilities/reports/check",
-      { values: { token: "github_pat_wrong" } },
-      200,
-      { problem: "GitHub rejected that token." },
-    );
-    transcript.wait(9000);
-    capabilityCall(
-      transcript,
-      "POST",
-      "/v0/capabilities/reports/check",
-      { values: { token: "github_pat_example" } },
-      200,
-      {},
-    );
-    transcript.wait(900);
-    capabilityCall(
-      transcript,
-      "PUT",
-      "/v0/capabilities/reports/setup",
-      { values: { token: "github_pat_example" } },
-      200,
-      reports("on", true),
-    );
+    transcript.wait(3000);
+    capabilityCall(transcript, "POST", "/v0/capabilities/reports/connect", undefined, 200, {
+      code: "WDJB-MJHT",
+      url: "https://github.com/login/device",
+      expires_at: "2026-10-12T08:56:07.120Z",
+    });
+    transcript.wait(3000);
+    transcript.world("you_approve", { code: "WDJB-MJHT" });
+    transcript.wait(7000);
+    capabilityCall(transcript, "GET", "/v0/capabilities", undefined, 200, { capabilities: [reports("on", true)] });
     transcript.wait(300);
     transcript.request("GET", "/v0/server");
     transcript.wait(40);
@@ -1708,7 +1692,6 @@ const scenarios: readonly (() => Transcript)[] = [
     );
     return transcript;
   },
-
   () => {
     const transcript = createTranscript({
       name: "33-a-capability-needs-you",

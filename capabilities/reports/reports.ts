@@ -23,6 +23,8 @@ const gapInput = z.object({
 
 const tokenOf = (values: Values): string => (typeof values.token === "string" ? values.token.trim() : "");
 
+const githubAppClientId = "Iv23li3oHOYWc4Qelv2h";
+
 export const createReports = ({
   apiUrl = "https://api.github.com",
   repository = "akai-ito/ito-core",
@@ -44,13 +46,20 @@ export const createReports = ({
       "Report a gap whenever you couldn't find something out or do something, or the person corrected a mistake: " +
       "use the report_gap tool. Reports are public GitHub issues, so describe only operations, never what the " +
       'person said or anything about them. Say "I\'ve reported that" once, and only after the report went through.',
-    uses: { hosts: [new URL(apiUrl).host], folders: [] },
+    uses: { hosts: [new URL(apiUrl).host, "github.com"], folders: [] },
     setup: [
       {
         name: "token",
         kind: "secret",
         title: "GitHub token",
-        description: `A fine-grained token for ${repository}, with Issues set to read and write.`,
+        description: `Connect GitHub, so Reports files issues on ${repository} as you.`,
+        connect: {
+          kind: "oauth_device",
+          title: "Connect GitHub",
+          deviceUrl: "https://github.com/login/device/code",
+          tokenUrl: "https://github.com/login/oauth/access_token",
+          clientId: githubAppClientId,
+        },
       },
     ],
     check: async (values, server) => {

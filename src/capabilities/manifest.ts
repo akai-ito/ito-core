@@ -3,6 +3,17 @@ import { fail, ok, type Result } from "#result.ts";
 
 export type FieldKind = "text" | "secret" | "toggle" | "choice";
 
+export type DeviceConnect = {
+  readonly kind: "oauth_device";
+  readonly title: string;
+  readonly deviceUrl: string;
+  readonly tokenUrl: string;
+  readonly clientId: string;
+  readonly scope?: string;
+};
+
+export type LinkConnect = { readonly kind: "link"; readonly title: string; readonly url: string };
+
 export type Field = {
   readonly name: string;
   readonly kind: FieldKind;
@@ -10,6 +21,7 @@ export type Field = {
   readonly description?: string;
   readonly optional?: boolean;
   readonly options?: readonly { readonly value: string; readonly label: string }[];
+  readonly connect?: DeviceConnect | LinkConnect;
 };
 
 export type Operation = {

@@ -55,7 +55,7 @@ describe("keeping a picture", () => {
           steer: () => ({ outcome: "refused" }),
           stoppedAt: (at) => at,
         })),
-      fetchImage: (url) =>
+      fetch: (url) =>
         Promise.resolve(
           url.endsWith(".jpg")
             ? new Response(new Uint8Array(photo), { headers: { "Content-Type": "image/jpeg" } })

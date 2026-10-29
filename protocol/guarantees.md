@@ -28,7 +28,7 @@ where the protocol has to make it possible, marked *App*.
 | G18 | **Notifications are private.** The text of every notification is encrypted on the server with a key the device made, so Apple's push service carries only ciphertext. | 18, 21, 24, 26 |
 | G19 | **Attachments stay as you sent them.** A photo or file is uploaded once, under an id the app chooses, so a retry never makes a second copy. Its bytes never change, every app can fetch them, and the agent works on its own copy, so nothing it does changes what you sent. | 27, 28, 29, 30 |
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
-| G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
+| G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. One that connects through its provider goes from the provider to the server, and the app only shows the code to approve. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
 | G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36, 57 |
 | G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. | 38, 40, 41 |
 | G24 | **Talk only when the server can talk.** The server says whether it can hold a call, meaning it can listen and speak with your names loaded, and when it can't, why in a line to show. It says so on the event stream as soon as that changes. There's no worse fallback: while the voice isn't ready, the app doesn't offer Talk. | 43, 44, 49 |
@@ -271,8 +271,9 @@ where the protocol has to make it possible, marked *App*.
 
 - The list shows every capability installed with the server, on or not, with its setup sheet's
   fields. A secret field shows only whether one is set. (G21)
-- Switching on a capability whose setup isn't complete leaves it in `setup`. *Test connection*
-  tries values without saving them, and saving complete values turns it on. (G21)
+- Switching on a capability whose setup isn't complete leaves it in `setup`. Connecting gives a code
+  to approve at the provider; once you approve it, the server saves the token it receives and turns
+  the capability on, and the list shows the field set. (G21)
 - `GET /v0/server` names the capabilities that are on, with their versions.
 
 ### 33 · [A capability needs you](transcripts/33-a-capability-needs-you.jsonl)

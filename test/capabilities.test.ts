@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
 import { splitCommand } from "#capabilities/commands.ts";
+import type { Fetch } from "#capabilities/connect.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, onSetting, valuesSetting, type Host } from "#capabilities/host.ts";
 import type { Settings } from "#store/store.ts";
@@ -33,6 +34,7 @@ const switchedOn = (values: Readonly<Record<string, unknown>>): readonly (readon
 const startHost = async (
   settings: Settings,
   clock: VirtualClock = createVirtualClock(0),
+  fetcher: Fetch = () => Promise.reject(new Error("No provider here.")),
 ): Promise<{ readonly host: Host; readonly folder: string }> => {
   const folders = mkdtempSync(path.join(home, "folders-"));
   const host = createHost({
@@ -41,6 +43,7 @@ const startHost = async (
     settings,
     folders,
     clock,
+    fetch: fetcher,
     info: (message) => {
       logged.update((current) => [...current, message]);
     },
@@ -230,5 +233,63 @@ describe("the agent's doors to a capability", () => {
       failure: "There's no --txet here.\n\nito echo say: Says the text back.\n  --text <string> (required)",
     });
     expect(doors.tools().map(({ name }) => name)).toEqual(["echo_say"]);
+  });
+
+  it("connects through the provider's device flow, polling as told, and saves the token it hands over", async () => {
+    const clock = createVirtualClock(0);
+    const polls = createCell<readonly number[]>([]);
+    const answers = [{ error: "authorization_pending" }, { error: "slow_down", interval: 10 }, { access_token: "t-1" }];
+    const provider: Fetch = (url, init) => {
+      const fields = new URLSearchParams(typeof init.body === "string" ? init.body : "");
+      if (url === "https://echo.example/device" && fields.get("client_id") === "echo-app") {
+        return Promise.resolve(
+          Response.json({ device_code: "d-1", user_code: "ABCD-EFGH", verification_uri: "https://echo.example/go" }),
+        );
+      }
+      const answer = answers[polls.get().length] ?? { error: "expired_token" };
+      polls.update((current) => [...current, clock.now()]);
+      return Promise.resolve(Response.json(fields.get("device_code") === "d-1" ? answer : { error: "bad" }));
+    };
+    const { host } = await startHost(createMemorySettings([[onSetting("echo"), "true"]]), clock, provider);
+
+    const connected = await host.connect("echo");
+    await vi.waitFor(() => {
+      clock.runNext(Number.MAX_SAFE_INTEGER);
+      expect(host.find("echo")?.state).toBe("on");
+    });
+
+    expect(connected).toEqual({
+      ok: true,
+      value: { code: "ABCD-EFGH", url: "https://echo.example/go", expiresAt: 900_000 },
+    });
+    expect(polls.get()).toEqual([5000, 10_000, 20_000]);
+    expect(host.find("echo")?.values).toEqual({ token: "t-1" });
+  });
+
+  it("starts over with a new code, and saves nothing when you decline", async () => {
+    const clock = createVirtualClock(0);
+    const codes = createCell(0);
+    const provider: Fetch = (url) => {
+      if (url !== "https://echo.example/device") return Promise.resolve(Response.json({ error: "access_denied" }));
+      const count = String(codes.update((current) => current + 1));
+      const code = {
+        device_code: `d-${count}`,
+        user_code: `CODE-${count}`,
+        verification_uri: "https://echo.example/go",
+      };
+      return Promise.resolve(Response.json(code));
+    };
+    const { host } = await startHost(createMemorySettings([[onSetting("echo"), "true"]]), clock, provider);
+
+    const first = await host.connect("echo");
+    const second = await host.connect("echo");
+    await vi.waitFor(() => {
+      clock.runNext(Number.MAX_SAFE_INTEGER);
+      expect(logged.get().filter((message) => message === "Connecting a capability didn't finish")).toHaveLength(2);
+    });
+
+    expect([first, second]).toMatchObject([{ value: { code: "CODE-1" } }, { value: { code: "CODE-2" } }]);
+    expect(host.find("echo")?.values).toEqual({});
+    expect(await host.connect("nothing")).toMatchObject({ ok: false, failure: { code: "not_found" } });
   });
 });

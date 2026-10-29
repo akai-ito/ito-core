@@ -358,6 +358,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/capabilities/{capability}/connect": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Connect it through its provider
+     * @description For a capability with an `oauth_device` field in its setup. The server asks the provider for a
+     *     code and answers with it and the page to enter it on: show the code, and open the page, where
+     *     you're already signed in. Once you approve there, the provider hands the server the value,
+     *     which the server saves as setup would, restarting the capability; the value never reaches the
+     *     app. `GET /v0/capabilities` shows the field `set` once it's in. Connecting again starts over
+     *     with a new code. The code stops working at `expires_at`.
+     */
+    post: operations["connectCapability"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/capabilities/{capability}/check": {
     parameters: {
       query?: never;
@@ -1045,6 +1070,33 @@ export interface components {
       value?: string | boolean;
       /** @description `secret` only: whether one is saved. */
       set?: boolean;
+      /**
+       * @description How to fill it without typing it in. `oauth_device`: start with
+       *     `POST /v0/capabilities/{capability}/connect`, which gives a code to approve at the
+       *     provider. `link`: open `url`, where the provider makes one, and paste it here.
+       */
+      connect?: {
+        /** @enum {unknown} */
+        kind: "oauth_device" | "link";
+        /** @description What the button says, such as Connect GitHub. */
+        title: string;
+        /**
+         * Format: uri
+         * @description `link` only: the page that makes one, filled in where the provider allows it.
+         */
+        url?: string;
+      };
+    };
+    CapabilityConnection: {
+      /** @description The code to approve at the provider, to show as it is. */
+      code: string;
+      /**
+       * Format: uri
+       * @description The provider's page to approve it on.
+       */
+      url: string;
+      /** @description When the code stops working. */
+      expires_at: components["schemas"]["Timestamp"];
     };
     SwitchCapability: {
       on: boolean;
@@ -2158,6 +2210,7 @@ export type CapabilityId = components["schemas"]["CapabilityId"];
 export type CapabilityList = components["schemas"]["CapabilityList"];
 export type Capability = components["schemas"]["Capability"];
 export type CapabilityField = components["schemas"]["CapabilityField"];
+export type CapabilityConnection = components["schemas"]["CapabilityConnection"];
 export type SwitchCapability = components["schemas"]["SwitchCapability"];
 export type CapabilitySetup = components["schemas"]["CapabilitySetup"];
 export type CheckResult = components["schemas"]["CheckResult"];
@@ -2902,6 +2955,41 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  connectCapability: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The capability's id, such as `reports`. */
+        capability: components["parameters"]["Capability"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The code to approve, and where. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "code": "WDJB-MJHT",
+           *       "url": "https://github.com/login/device",
+           *       "expires_at": "2026-10-30T09:15:00.000Z"
+           *     }
+           */
+          "application/json": components["schemas"]["CapabilityConnection"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      503: components["responses"]["Unavailable"];
     };
   };
   checkCapability: {

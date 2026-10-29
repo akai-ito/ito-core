@@ -87,7 +87,18 @@ runCapability(
     title: "Echo",
     summary: "Says back what it's given.",
     setup: [
-      { name: "token", kind: "secret", title: "Token" },
+      {
+        name: "token",
+        kind: "secret",
+        title: "Token",
+        connect: {
+          kind: "oauth_device",
+          title: "Connect Echo",
+          deviceUrl: "https://echo.example/device",
+          tokenUrl: "https://echo.example/token",
+          clientId: "echo-app",
+        },
+      },
       { name: "loud", kind: "toggle", title: "Loud", optional: true },
     ],
     operations: [say, inspect, crash, wait, complain],

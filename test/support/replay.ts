@@ -72,6 +72,10 @@ const toHeaders = (headers: AppRequest["headers"]): Readonly<Record<string, stri
   ...Object.fromEntries(Object.entries(headers ?? {}).map(([name, value]) => [name.toLowerCase(), value])),
 });
 
+const providerPollMs = 5000;
+
+const connectionCode = "WDJB-MJHT";
+
 const settle = async (): Promise<void> => {
   await yieldToIo();
   await yieldToIo();
@@ -152,7 +156,28 @@ export const replay = async (name: string): Promise<void> => {
     return Promise.resolve(next === undefined ? failed("The transcript has Ari answer nothing aside here.") : ok(next));
   };
 
-  const fetchImage = (url: string): Promise<Response> => {
+  const isApproved = createCell(false);
+
+  const providerAnswer = (url: string): Response | undefined => {
+    const json = (body: unknown): Response => Response.json(body);
+    if (url === "https://github.com/login/device/code") {
+      return json({
+        device_code: "dc_replay",
+        user_code: connectionCode,
+        verification_uri: "https://github.com/login/device",
+        expires_in: 900,
+        interval: providerPollMs / 1000,
+      });
+    }
+    if (url !== "https://github.com/login/oauth/access_token") return undefined;
+    return json(
+      isApproved.get() ? { access_token: "ghu_replay", token_type: "bearer" } : { error: "authorization_pending" },
+    );
+  };
+
+  const fetchFromWorld = (url: string): Promise<Response> => {
+    const answered = providerAnswer(url);
+    if (answered) return Promise.resolve(answered);
     const file = web.get().get(url);
     if (file === undefined) return Promise.resolve(new Response("Not found", { status: 404 }));
     const bytes = new Uint8Array(fixture(file));
@@ -161,7 +186,7 @@ export const replay = async (name: string): Promise<void> => {
 
   const createReplayServer = (): Server =>
     createServer({
-      fetchImage,
+      fetch: fetchFromWorld,
       embedder: wordEmbedder,
       dataDirectory: directory,
       createEngine: () => createScriptEngine(clock, scripts, undefined, demoModels, complete),
@@ -408,6 +433,18 @@ export const replay = async (name: string): Promise<void> => {
         };
         asides.update((current) => [...current, { changes_json: JSON.stringify(changes), summary, note }]);
         await advance(time);
+        return;
+      }
+      case "you_approve": {
+        isApproved.set(true);
+        await advance(time + providerPollMs);
+        const host = live.get()?.server.host;
+        const waitUntilSaved = async (attempt: number): Promise<void> => {
+          if (attempt === 100 || host?.find("reports")?.values.token !== undefined) return;
+          await delay(20);
+          await waitUntilSaved(attempt + 1);
+        };
+        await waitUntilSaved(1);
         return;
       }
       case "web_has": {

@@ -16,7 +16,8 @@ import { createCalls, type Calls } from "#voice/calls.ts";
 import { createVoiceprints } from "#voice/voiceprints.ts";
 import { chosenVoice } from "#voice/voices.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
-import { createImageTool, type FetchImage } from "#replies/images.ts";
+import { createImageTool } from "#replies/images.ts";
+import type { Fetch } from "#capabilities/connect.ts";
 import { createTopicTool } from "#topics/tool.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
@@ -53,7 +54,7 @@ export type ServerOptions = {
   readonly embedder: Embedder;
   readonly createVoice?: (context: VoiceContext) => VoiceLoop;
   readonly timeZone?: string;
-  readonly fetchImage?: FetchImage;
+  readonly fetch?: Fetch;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
@@ -121,8 +122,10 @@ export const createServer = (options: ServerOptions): Server => {
     const origin = `http://${address.address}:${String(address.port)}`;
     return { url: `${origin}${toolsPath}`, origin, token: toolsToken };
   };
+  const fetcher = options.fetch ?? fetch;
   const host = createHost({
     installed: options.capabilities ?? [],
+    fetch: fetcher,
     settings: store,
     folders: path.join(options.dataDirectory, "capabilities"),
     server: { version: packageVersion(), engine: `Codex ${codexVersion()}` },
@@ -265,7 +268,7 @@ export const createServer = (options: ServerOptions): Server => {
       store.keepAttachment(id);
     },
     newId: () => identifiers.attachment(),
-    fetchImage: options.fetchImage ?? (async (url, signal) => fetch(url, { signal })),
+    fetchImage: (url, signal) => fetcher(url, { signal }),
   });
   const coreTools: readonly Tool[] = [
     createAskTool(turns),
