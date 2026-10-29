@@ -50,6 +50,7 @@ export type Turns = {
   readonly stop: (turn: TurnId, cut: Cut | undefined) => StopState | undefined;
   readonly retry: (failed: TurnId) => Result<RetryStarted, "not_found" | "not_failed">;
   readonly ask: (fields: AskFields) => Result<Ask, "no_turn">;
+  readonly approve: (fields: AskFields) => Promise<boolean>;
   readonly recordStep: (kind: StepKind, facts: StepFacts) => boolean;
   readonly cancelAsk: (ask: AskId) => Result<Ask, "not_found">;
   readonly recover: () => void;
@@ -73,7 +74,7 @@ type Running = {
   readonly cancelWatchdog: Cancel;
   readonly cancelForcedStop: Cancel | undefined;
   readonly steps: ReadonlyMap<string, Step>;
-  readonly approvals: ReadonlyMap<AskId, string>;
+  readonly approvals: ReadonlyMap<AskId, (isAllowed: boolean) => void>;
 };
 
 const yes =
@@ -232,9 +233,9 @@ export const createTurns = (
   };
 
   const cancelApprovals = (state: Running): void => {
-    for (const [ask, key] of state.approvals) {
+    for (const [ask, decide] of state.approvals) {
       store.cancelAsk(ask);
-      engine.approve(state.id, key, false);
+      decide(false);
     }
   };
 
@@ -445,13 +446,9 @@ export const createTurns = (
           engine.approve(turn, event.key, false);
           return;
         }
-        endOpenMessage(turn);
-        const asked = store.startAsk(turn, event.fields);
-        store.setStatus(turn, approvalStatus);
-        change(turn, (latest) => ({
-          ...latest,
-          approvals: new Map([...latest.approvals, [toAskId(asked.id), event.key]]),
-        }));
+        waitForApproval(turn, event.fields, (isAllowed) => {
+          engine.approve(turn, event.key, isAllowed);
+        });
         return;
       }
       case "asked": {
@@ -590,12 +587,22 @@ export const createTurns = (
     startTurn(leadingMessages(pending));
   };
 
+  const waitForApproval = (turn: TurnId, fields: AskFields, decide: (isAllowed: boolean) => void): void => {
+    endOpenMessage(turn);
+    const asked = store.startAsk(turn, fields);
+    store.setStatus(turn, approvalStatus);
+    change(turn, (latest) => ({
+      ...latest,
+      approvals: new Map([...latest.approvals, [toAskId(asked.id), decide]]),
+    }));
+  };
+
   const answerApproval = (message: MessageId): boolean => {
     const state = running.get();
     const ask = store.answeredAsk(message);
-    const key = ask === undefined ? undefined : state?.approvals.get(ask);
+    const decide = ask === undefined ? undefined : state?.approvals.get(ask);
     const asked = ask === undefined ? undefined : store.findAsk(ask);
-    if (!state || ask === undefined || key === undefined || !asked) return false;
+    if (!state || ask === undefined || decide === undefined || !asked) return false;
     const answer = received.get().get(message) ?? store.messageText(message) ?? "";
     const isAllowed = isAllowing(answer, asked);
     const isChoice = isApprovalChoice(answer, asked);
@@ -606,7 +613,7 @@ export const createTurns = (
       approvals: new Map([...latest.approvals].filter(([waiting]) => waiting !== ask)),
     }));
     resetWatchdog(state.id);
-    engine.approve(state.id, key, isAllowed);
+    decide(isAllowed);
     return isChoice;
   };
 
@@ -663,6 +670,16 @@ export const createTurns = (
       return state ? askNow(state.id, fields) : fail("no_turn");
     },
 
+    approve: (fields) =>
+      new Promise((resolve) => {
+        const state = running.get();
+        if (state?.phase !== "running") {
+          resolve(false);
+          return;
+        }
+        waitForApproval(state.id, fields, resolve);
+      }),
+
     recordStep: (kind, facts) => {
       const state = running.get();
       if (!state) return false;
@@ -676,15 +693,15 @@ export const createTurns = (
       const before = store.findAsk(ask);
       const cancelled = store.cancelAsk(ask);
       const state = running.get();
-      const key = state?.approvals.get(ask);
-      if (state && key !== undefined && cancelled.ok) {
+      const decide = state?.approvals.get(ask);
+      if (state && decide !== undefined && cancelled.ok) {
         change(state.id, (latest) => ({
           ...latest,
           approvals: new Map([...latest.approvals].filter(([waiting]) => waiting !== ask)),
         }));
         store.setStatus(state.id, declinedStatus);
         resetWatchdog(state.id);
-        engine.approve(state.id, key, false);
+        decide(false);
         return cancelled;
       }
       if (before && !before.outcome && cancelled.ok) {

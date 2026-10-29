@@ -191,6 +191,8 @@ const nowPage = {
   markdown: "A busy fortnight at work, and training for the Valencia half marathon (as of 22 Oct).\n",
 };
 
+const seededVersion = "5d41402abc";
+
 type SeededPage = typeof alexBefore & { readonly note?: string };
 
 const shelfOf = (address: string): string => address.replace(/^memory:/u, "").split("/", 1)[0] ?? "";
@@ -1827,14 +1829,15 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.wait(900);
     const change = transcript.change();
-    agentCalls(transcript, "remember", {
+    agentCalls(transcript, "edit_page", {
       address: alexNow.address,
-      title: alexNow.title,
+      version: seededVersion,
+      old_text: "Taking things slow; you've been on two dates (as of 15 Oct).\n\n## Earlier\n\n",
+      new_text:
+        "Seeing each other a lot, and it's going really well (as of 26 Oct).\n\n## Earlier\n\n" +
+        "- 15 Oct: decided to take things slow.\n",
       gist: alexNow.gist,
       note: "Seeing each other a lot now",
-      aliases: alexNow.aliases,
-      links: alexNow.links,
-      body: alexNow.markdown,
     });
     memoryStep(
       transcript,
@@ -1875,7 +1878,7 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 36,
       title: "Forget that",
       summary:
-        "You ask Ari to forget part of a page. Ari rewrites the page without it, as an ordinary update, and " +
+        "You ask Ari to forget part of a page. Ari edits it out of the page, as an ordinary update, and " +
         "the Library shows the change first among what Ari changed lately, with Ari's note on it.",
       guarantees: ["G14", "G22"],
     });
@@ -1900,14 +1903,13 @@ const scenarios: readonly (() => Transcript)[] = [
     sendAndStart(transcript, "Please forget the bit about our first date.");
     transcript.wait(800);
     const change = transcript.change();
-    agentCalls(transcript, "remember", {
+    agentCalls(transcript, "edit_page", {
       address: alexForgotten.address,
-      title: alexForgotten.title,
-      gist: alexForgotten.gist,
+      version: seededVersion,
+      old_text: "\n- 12 Oct: first date, Dishoom Shoreditch.",
+      new_text: "",
       note: "Forgot the first date",
-      aliases: alexForgotten.aliases,
       links: alexForgotten.links,
-      body: alexForgotten.markdown,
     });
     memoryStep(
       transcript,
@@ -2790,7 +2792,7 @@ const scenarios: readonly (() => Transcript)[] = [
     sendAndStart(transcript, "Janki and I are off to Florence together, 6 to 9 November!");
     transcript.wait(700);
     const change = transcript.change();
-    agentCalls(transcript, "remember", {
+    agentCalls(transcript, "write_page", {
       address: florence.address,
       title: florence.title,
       gist: florence.gist,

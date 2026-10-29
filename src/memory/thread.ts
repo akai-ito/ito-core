@@ -8,6 +8,14 @@ const run = promisify(execFile);
 
 export type FileChange = { readonly file: string; readonly isDeleted: boolean };
 
+export type FileCommit = {
+  readonly commit: string;
+  readonly at: string;
+  readonly subject: string;
+  readonly body: string;
+  readonly isDeleted: boolean;
+};
+
 export type Thread = {
   readonly directory: string;
   readonly read: (file: string) => string | undefined;
@@ -17,6 +25,7 @@ export type Thread = {
     message: string,
   ) => Promise<Result<string, string>>;
   readonly readAt: (commit: string, file: string) => Promise<string | undefined>;
+  readonly history: (file: string, limit?: number) => Promise<readonly FileCommit[]>;
   readonly files: () => readonly string[];
   readonly head: () => Promise<string>;
   readonly changedFiles: (from: string, to: string) => Promise<readonly FileChange[]>;
@@ -99,6 +108,24 @@ export const openThread = async (directory: string): Promise<Thread> => {
       } catch {
         return;
       }
+    },
+    history: async (file, limit) => {
+      const listed = await git(
+        "log",
+        "--format=%x1e%H%x1f%cI%x1f%s%x1f%b%x1f",
+        "--name-status",
+        "--no-renames",
+        ...(limit === undefined ? [] : [`--max-count=${String(limit)}`]),
+        "--",
+        file,
+      );
+      return listed
+        .split("\u{1E}")
+        .filter((entry) => entry.trim() !== "")
+        .map((entry) => {
+          const [commit = "", at = "", subject = "", body = "", status = ""] = entry.split("\u{1F}", 5);
+          return { commit, at, subject, body: body.trim(), isDeleted: status.trimStart().startsWith("D") };
+        });
     },
     files: () => listFiles(directory),
     head: async () => {
