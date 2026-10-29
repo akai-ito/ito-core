@@ -83,5 +83,6 @@ types they don't recognise, and servers ignore unknown request fields.
 
 - `npm run generate` rewrites the transcripts from [tools/scenarios.ts](tools/scenarios.ts) and
   the types from the spec.
-- `npm run check:transcripts` checks every transcript against the spec and the guarantees it can
-  see: offsets, unique ids, exactly-once delivery, every turn ending.
+- `npm run check:transcripts` checks every transcript against the spec, with every object closed so
+  a typo can't pass, and against the guarantees table. Replaying them through the server checks the
+  rest.
