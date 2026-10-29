@@ -20,10 +20,37 @@ const foldedWords = (text: string): readonly string[] => wordsIn(text).map(({ te
 const isSame = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((word, index) => word === right[index]);
 
+const soundGroups: readonly string[] = ["aeiouyhw", "bfpv", "cgjkqsxz", "dt", "l", "mn", "r"];
+
+const toSound = (text: string): readonly string[] =>
+  (fold(text).match(/[a-z]/gu) ?? [])
+    .map((letter) => String(soundGroups.findIndex((group) => group.includes(letter))))
+    .filter((code, index, codes) => code !== codes[index - 1])
+    .filter((code, index) => index === 0 || code !== "0");
+
+const distance = (left: readonly string[], right: readonly string[]): number =>
+  left.reduce<readonly number[]>(
+    (row, letter, index) =>
+      right.reduce<readonly number[]>(
+        (next, other, column) => [
+          ...next,
+          Math.min((row[column + 1] ?? 0) + 1, (next[column] ?? 0) + 1, (row[column] ?? 0) + (letter === other ? 0 : 1)),
+        ],
+        [index + 1],
+      ),
+    Array.from({ length: right.length + 1 }, (_, column) => column),
+  )[right.length] ?? 0;
+
+export const soundsAlike = (heard: string, meant: string): boolean => {
+  const [left, right] = [toSound(heard), toSound(meant)];
+  return distance(left, right) <= Math.max(1, Math.floor(Math.max(left.length, right.length) / 3));
+};
+
 const toLearnt = (terms: readonly Term[]): readonly Learnt[] =>
   terms
     .flatMap(({ text, heard }) =>
       heard
+        .filter((mishearing) => soundsAlike(mishearing, text))
         .map((mishearing) => ({ heard: foldedWords(mishearing), meant: text }))
         .filter(({ heard: words }) => words.length > 0 && !isSame(words, foldedWords(text))),
     )

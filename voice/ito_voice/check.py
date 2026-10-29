@@ -60,7 +60,7 @@ background_sentences = [
     "We walked past it twice yesterday, and the dog wanted to stop every time.",
 ]
 test_voices = ["af_heart", "bf_emma", "am_michael", "bm_george"]
-strengths = [1.0, 2.0, 3.0]
+strengths = [0.5, 0.8, 2.0]
 pauses_ms = [300, 600, pause_ms]
 gate_window = heard_rate
 gate_every = 8
@@ -523,9 +523,12 @@ def check_vocabulary(report: Report, loaded: Models, vocabulary: Mapping[str, An
     speaker = loaded.speaker
     terms = to_terms(vocabulary)
     texts = list(dict.fromkeys(term.text for term in terms))
+    boosted_list = vocabulary.get("boosted")
+    boost = [text for text in boosted_list if isinstance(text, str)] if isinstance(boosted_list, list) else texts
     lines.append(
         f"Kokoro says each sentence in one of 4 voices, and Parakeet hears it without the vocabulary and boosted "
-        f"with it. Your memory has {len(texts)} vocabulary terms. This report shows no words from your memory: "
+        f"with it. Your memory has {len(texts)} vocabulary terms, and calls boost the {len(boost)} names among them "
+        "you've used lately. This report shows no words from your memory: "
         "the details file beside it, which stays on this box, has every sentence and what was heard."
     )
     built_in_vocabulary = sorted({term for _, expected in names for term in expected})
@@ -564,7 +567,24 @@ def check_vocabulary(report: Report, loaded: Models, vocabulary: Mapping[str, An
                 loaded,
                 title=f"Your {len(sample)} most used terms",
                 rendered=rendered,
-                vocabulary=texts,
+                vocabulary=boost,
+                private=True,
+            ).items()
+        }
+    with report.step(lines, "Everyday sentences with your names boosted"):
+        rendered = [
+            (text, [], render(speaker, text, test_voices[index % len(test_voices)]))
+            for index, text in enumerate(everyday)
+        ]
+        found |= {
+            f"everyday_{key}": value
+            for key, value in compare_boosting(
+                report,
+                lines,
+                loaded,
+                title="Everyday sentences, none of your names in them",
+                rendered=rendered,
+                vocabulary=boost,
                 private=True,
             ).items()
         }

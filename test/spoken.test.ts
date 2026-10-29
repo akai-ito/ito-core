@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Term } from "#memory/vocabulary.ts";
-import { correct } from "#voice/corrector.ts";
+import { correct, soundsAlike } from "#voice/corrector.ts";
 import { askAloud, createSentenceFeed, longestSpoken, secretAloud, spokenPart, toClauses } from "#voice/spoken.ts";
 
 const term = (text: string, kind: Term["kind"], heard: readonly string[] = []): Term => ({
@@ -30,6 +30,14 @@ describe("what Ari says on a call", () => {
       { offset: 28, length: 9, heard: "cutie panel" },
     ]);
     expect(correct("Cutie, I said.", vocabulary).text).toBe("QRT, I said.");
+  });
+
+  it("only trusts a learnt mishearing that sounds like the word it stands for", () => {
+    expect(soundsAlike("Bara", "Bora")).toBe(true);
+    expect(soundsAlike("cutie", "QRT")).toBe(true);
+    expect(soundsAlike("cutie panel", "QRT panel")).toBe(true);
+    expect(soundsAlike("wallets", "Ivona")).toBe(false);
+    expect(correct("I lost my wallets", [term("Ivona", "person", ["wallets"])]).text).toBe("I lost my wallets");
   });
 
   it("leaves words alone that aren't learnt mishearings, and counts offsets in UTF-16", () => {

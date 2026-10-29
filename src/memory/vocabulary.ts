@@ -20,6 +20,10 @@ export type Learned = { readonly meant: string; readonly heard: readonly string[
 
 export const vocabularyLimit = 300;
 
+export const boostLimit = 60;
+
+const names: ReadonlySet<Term["kind"]> = new Set(["person", "place"]);
+
 const phrasesPerTerm = 3;
 const longestPhrase = 100;
 const timesBeforeATerm = 3;
@@ -66,7 +70,7 @@ const escaped = (text: string): string => text.replaceAll(/[.*+?^${}()|[\]\\]/gu
 
 const notWord = String.raw`[^\p{L}\p{N}]`;
 
-const mentions = (term: string): RegExp => new RegExp(`(?:^|${notWord})${escaped(term)}(?:${notWord}|$)`, "iu");
+export const mentions = (term: string): RegExp => new RegExp(`(?:^|${notWord})${escaped(term)}(?:${notWord}|$)`, "iu");
 
 const toParagraphs = (markdown: string): readonly string[] =>
   markdown
@@ -149,3 +153,10 @@ export const toVocabulary = (
     .toSorted((left, right) => right.weight - left.weight)
     .slice(0, vocabularyLimit);
 };
+
+export const toBoosted = (terms: readonly Term[], isRecent: (term: Term) => boolean): readonly string[] =>
+  [
+    ...new Set(
+      terms.filter((term) => (names.has(term.kind) || term.heard.length > 0) && isRecent(term)).map(({ text }) => text),
+    ),
+  ].slice(0, boostLimit);

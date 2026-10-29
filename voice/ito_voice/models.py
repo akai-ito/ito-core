@@ -22,7 +22,8 @@ turn_seconds = 8
 vad_frame = 512
 speech_threshold = 0.5
 turn_threshold = 0.5
-boost_strength = 2.0
+boost_strength = 0.8
+boost_alpha = 0.5
 
 
 def choose_device() -> str:
@@ -93,7 +94,7 @@ def configure_recogniser(model: Any, phrases: Sequence[str], strength: float = b
             if phrases
             else None
         )
-        decoding.greedy.boosting_tree_alpha = 1.0 if phrases else 0.0
+        decoding.greedy.boosting_tree_alpha = boost_alpha if phrases else 0.0
     model.change_decoding_strategy(decoding, verbose=False)
     release_gpu_memory()
 

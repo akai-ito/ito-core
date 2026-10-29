@@ -107,7 +107,7 @@ describe("Ari's voice, from its sidecar", () => {
     expect(statuses()).toEqual([{ state: "ready" }]);
     expect(readLines(path.join(voice, "vocabulary.log"))).toEqual([[]]);
     const environment = readJson(path.join(voice, "environment"));
-    expect(readJson(vocabularyFile(data))).toEqual({ terms: [] });
+    expect(readJson(vocabularyFile(data))).toEqual({ terms: [], boosted: [] });
     expect(environment).toContain("HF_HOME");
     expect(environment).not.toContain("ITO_HOME");
     await expect(listVoices(server)).resolves.toMatchObject({
