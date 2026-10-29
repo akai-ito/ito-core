@@ -1,6 +1,6 @@
 export type Term = {
   readonly text: string;
-  readonly kind: "person" | "place" | "project" | "goal" | "topic" | "term";
+  readonly kind: "person" | "group" | "place" | "project" | "goal" | "topic" | "term";
   readonly weight: number;
   readonly phrases: readonly string[];
   readonly heard: readonly string[];
@@ -22,7 +22,7 @@ export const vocabularyLimit = 300;
 
 export const boostLimit = 60;
 
-const names: ReadonlySet<Term["kind"]> = new Set(["person", "place"]);
+const names: ReadonlySet<Term["kind"]> = new Set(["person", "group", "place"]);
 
 const phrasesPerTerm = 3;
 const longestPhrase = 100;
@@ -31,6 +31,7 @@ const learnedWeight = 0.5;
 
 const kinds: Readonly<Record<string, Term["kind"]>> = {
   people: "person",
+  groups: "group",
   places: "place",
   projects: "project",
   goals: "goal",

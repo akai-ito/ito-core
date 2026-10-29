@@ -144,7 +144,8 @@ export const createServer = (options: ServerOptions): Server => {
     if (!latest) return "";
     return latest.ended_at === undefined
       ? `<call>\n${talkRules}\n</call>`
-      : "<call>\nThe call has ended. Write as usual in the chat.\n</call>";
+      : "<call>\nThe call has ended, so they're reading the chat. Write as usual, and don't say you've put " +
+          "something in the chat: that's only for calls.\n</call>";
   };
   const engine = options.createEngine({
     settings: store,

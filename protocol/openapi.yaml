@@ -1285,13 +1285,19 @@ components:
         is_default: { description: True for the engine's default model., type: boolean }
         images: { description: Whether it can see photos you attach., type: boolean }
     Shelf:
-      description: A shelf in memory; `journal` holds one page per day.
-      enum: [people, goals, projects, places, topics, journal]
+      description: A shelf in memory; `people` holds one page per person, `groups` one per group of people, and `journal` one per day.
+      enum: [people, groups, goals, projects, places, topics, journal]
     Gist:
       description: |
         What the page is now, in one line, written by Ari and kept current with every change: a
         journal day's headline, who someone is to you, where a project stands. Absent until Ari
         has written one; Ari writes one for every page that lacks it, soon after the server starts.
+      type: string
+    Circle:
+      description: |
+        People pages only: who they are to you, in Ari's own words, such as `family`, `friends` or
+        `work`. Ari keeps it current and reuses the same words across people, so the app can group
+        people by it. Absent until Ari has given one.
       type: string
     MemoryPageSummary:
       type: object
@@ -1300,6 +1306,7 @@ components:
         address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
         title: { type: string }
         gist: { $ref: "#/components/schemas/Gist" }
+        circle: { $ref: "#/components/schemas/Circle" }
         changed_at: { $ref: "events.schema.json#/$defs/Timestamp" }
     MemoryLink:
       description: A page this one links to, as it is now.
@@ -1319,9 +1326,10 @@ components:
         address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
         title: { type: string }
         gist: { $ref: "#/components/schemas/Gist" }
+        circle: { $ref: "#/components/schemas/Circle" }
         shelf:
           description: Its shelf, or `portrait`, `now` or `helping-you` for the pages in mind.
-          enum: [portrait, now, helping-you, people, goals, projects, places, topics, journal]
+          enum: [portrait, now, helping-you, people, groups, goals, projects, places, topics, journal]
         aliases:
           description: Other names Ari knows it by.
           type: array

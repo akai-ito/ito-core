@@ -14,7 +14,7 @@ import { randomIdentifiers } from "#identifiers.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import { createMemory, type Memory, type MemoryOptions } from "#memory/memory.ts";
 import { openThread } from "#memory/thread.ts";
-import { ok } from "#result.ts";
+import { fail, ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import { createServer } from "#server.ts";
@@ -67,7 +67,12 @@ const call = async (memory: Memory, name: string, input: unknown): Promise<{ tex
 };
 
 const write = async (memory: Memory, input: Readonly<Record<string, unknown>>): Promise<{ text: string }> =>
-  call(memory, "write_page", { gist: "A page", note: "A change", ...input });
+  call(memory, "write_page", {
+    gist: "A page",
+    note: "A change",
+    ...(String(input.address).startsWith("memory:people/") && { circle: "friends" }),
+    ...input,
+  });
 
 const versionOf = async (memory: Memory, address: string): Promise<string> => {
   const read = await call(memory, "read_page", { address });
@@ -134,7 +139,9 @@ describe("memory", () => {
       gist: "Your partner",
     });
 
-    expect(read.text).toMatch(/^memory:people\/janki, version \w{10}\n---\n\{title: Janki, gist: A page\}\n---\n/u);
+    expect(read.text).toMatch(
+      /^memory:people\/janki, version \w{10}\n---\n\{title: Janki, gist: A page, circle: friends\}\n---\n/u,
+    );
     expect(read.text).toContain(
       "1  Your partner (as of 28 Oct).\n2  Florence together 6–9 Nov.\n3\n4  ## Earlier\n5\n6  - 2025: met in London.",
     );
@@ -306,22 +313,24 @@ describe("memory", () => {
 
   it("asks for a gist and a note with every new page, and a note with every edit", async () => {
     const { memory } = await openMemory();
-    const both =
-      "Give the page a gist: what it is now, in one line. Give a note: what this change does, in a few words.";
+    const gist = "Give the page a gist: what it is now, in one line.";
+    const note = "Give a note: what this change does, in a few words.";
+    const circle = "Give them a circle: who they are to the person, such as family, friends or work.";
 
     const bare = await call(memory, "write_page", { address: "memory:people/sam", title: "Sam", body: "A friend." });
     await write(memory, { address: "memory:people/sam", title: "Sam", body: "A friend." });
     const unnoted = await edit(memory, { address: "memory:people/sam", old_text: "A", new_text: "An old", note: "" });
     const journal = await call(memory, "journal", { text: "Ran with Sam." });
 
-    expect(bare).toEqual({ text: both, isError: true });
-    expect(unnoted).toEqual({ text: "Give a note: what this change does, in a few words.", isError: true });
-    expect(journal).toEqual({ text: both, isError: true });
+    expect(bare).toEqual({ text: `${gist} ${circle} ${note}`, isError: true });
+    expect(unnoted).toEqual({ text: note, isError: true });
+    expect(journal).toEqual({ text: `${gist} ${note}`, isError: true });
   });
 
   it("writes a gist for each page that arrives without one, in a commit that isn't a change", async () => {
     const prompts = createCell<readonly string[]>([]);
     const { memory, directory } = await openMemory((prompt) => {
+      if (!prompt.includes("no gist")) return Promise.resolve(ok({ people: [] }));
       prompts.update((current) => [...current, prompt]);
       return Promise.resolve(
         ok({
@@ -356,6 +365,86 @@ describe("memory", () => {
     expect(memory.recent().map(({ address }) => address)).toEqual(["memory:people/sam", "memory:places/dishoom"]);
   });
 
+  it("carries on past a gist request that fails, and asks again for each page left", async () => {
+    const asked = createCell<readonly string[]>([]);
+    const { memory, directory } = await openMemory((prompt) => {
+      if (!prompt.includes("no gist")) return Promise.resolve(ok({ people: [] }));
+      asked.update((current) => [...current, prompt]);
+      if (asked.get().length === 1) return Promise.resolve(fail("The model timed out."));
+      const addresses = prompt
+        .matchAll(/\((?<address>memory:[^)]+)\)/gu)
+        .map((match) => match.groups?.address)
+        .toArray();
+      return Promise.resolve(
+        ok({ gists: addresses.map((address) => ({ address, gist: `About ${String(address)}` })) }),
+      );
+    });
+    const thread = path.join(directory, "thread");
+    mkdirSync(path.join(thread, "topics"), { recursive: true });
+    for (const name of ["diving", "poems"]) {
+      writeFileSync(path.join(thread, "topics", `${name}.md`), `---\ntitle: ${name}\n---\n\nAll about ${name}.\n`);
+    }
+    git(thread, "add", "topics");
+    git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
+
+    await memory.sync();
+
+    await vi.waitFor(() => {
+      expect(memory.pages("topics").map(({ gist }) => gist)).toEqual([
+        "About memory:topics/diving",
+        "About memory:topics/poems",
+      ]);
+    });
+    expect(asked.get()).toHaveLength(3);
+  });
+
+  it("sorts people into circles once, and moves groups to their shelf with links that follow", async () => {
+    const asked = createCell<readonly string[]>([]);
+    const { memory, directory } = await openMemory((prompt) => {
+      if (prompt.includes("no gist")) return Promise.resolve(ok({ gists: [] }));
+      asked.update((current) => [...current, prompt]);
+      return Promise.resolve(
+        ok({
+          people: [
+            { address: "memory:people/bora", circle: "running club", is_group: false },
+            { address: "memory:people/ljubljana-running-group", circle: "", is_group: true },
+          ],
+        }),
+      );
+    });
+    const thread = path.join(directory, "thread");
+    mkdirSync(path.join(thread, "people"), { recursive: true });
+    mkdirSync(path.join(thread, "journal"), { recursive: true });
+    const files: Readonly<Record<string, string>> = {
+      "people/bora.md": "---\ntitle: Bora\ngist: Runs with you\n---\n\nYou run with Bora.\n",
+      "people/ljubljana-running-group.md":
+        "---\ntitle: The Ljubljana running group\ngist: Saturday runs\n---\n\nRuns.\n",
+      "journal/2026-10-17.md":
+        "---\ntitle: 17 October 2026\ngist: A run\nlinks: [memory:people/ljubljana-running-group]\n---\n\nRan.\n",
+    };
+    for (const [file, text] of Object.entries(files)) writeFileSync(path.join(thread, file), text);
+    git(thread, "add", "people", "journal");
+    git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
+
+    await memory.sync();
+
+    await vi.waitFor(() => {
+      expect(memory.pages("groups")).toMatchObject([
+        { address: "memory:groups/ljubljana-running-group", title: "The Ljubljana running group" },
+      ]);
+    });
+    expect(memory.pages("people")).toMatchObject([{ address: "memory:people/bora", circle: "running club" }]);
+    expect(memory.page("memory:journal/2026-10-17")).toMatchObject({
+      ok: true,
+      value: { links: [{ address: "memory:groups/ljubljana-running-group" }] },
+    });
+    expect(git(thread, "log", "-1", "--format=%s")).toBe("Sort people into circles, and move groups to their shelf\n");
+    expect(asked.get()).toHaveLength(1);
+    expect(asked.get()[0]).toContain("## Bora (memory:people/bora)\n\nRuns with you\n\nYou run with Bora.");
+    const recalled = await call(memory, "recall", { query: "Ljubljana running group" });
+    expect(recalled.text).toContain("(memory:groups/ljubljana-running-group,");
+  });
+
   it("asks the engine for gists only once the server is listening, so Codex starts with Ito's tools", async () => {
     const directory = mkdtempSync(path.join(home, "server-"));
     const thread = await openThread(path.join(directory, "thread"));
@@ -367,7 +456,8 @@ describe("memory", () => {
       embedder: wordEmbedder,
       timeZone: "UTC",
       createEngine: ({ callTool }) =>
-        createScriptEngine(systemClock, demoScripts, callTool, demoModels, () => {
+        createScriptEngine(systemClock, demoScripts, callTool, demoModels, (prompt) => {
+          if (!prompt.includes("no gist")) return Promise.resolve(ok({ people: [] }));
           asked.update((count) => count + 1);
           return Promise.resolve(ok({ gists: [{ address: "memory:people/sam", gist: "Runs with you" }] }));
         }),

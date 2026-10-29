@@ -165,6 +165,7 @@ const rememberAlex =
           address: alex,
           title: "Alex",
           gist: "Someone you're seeing; taking it slow",
+          circle: "dating",
           note: "Two dates so far",
           aliases: ["Alex R"],
           body: `Taking things slow; you've been on two dates (as of ${today}).`,

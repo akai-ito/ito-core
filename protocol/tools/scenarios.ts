@@ -193,7 +193,7 @@ const nowPage = {
 
 const seededVersion = "5d41402abc";
 
-type SeededPage = typeof alexBefore & { readonly note?: string };
+type SeededPage = typeof alexBefore & { readonly note?: string; readonly circle?: string };
 
 const shelfOf = (address: string): string => address.replace(/^memory:/u, "").split("/", 1)[0] ?? "";
 
@@ -211,6 +211,7 @@ const pageBody = (
   address: page.address,
   title: page.title,
   gist: page.gist,
+  ...(page.circle !== undefined && { circle: page.circle }),
   shelf: shelfOf(page.address),
   aliases: page.aliases,
   links: links.map((link) => linkTo(link)),
@@ -1955,6 +1956,7 @@ const scenarios: readonly (() => Transcript)[] = [
     memoryCall(transcript, "/v0/memory/shelves", {
       shelves: [
         { shelf: "people", count: 1 },
+        { shelf: "groups", count: 0 },
         { shelf: "goals", count: 0 },
         { shelf: "projects", count: 0 },
         { shelf: "places", count: 0 },
@@ -2753,7 +2755,8 @@ const scenarios: readonly (() => Transcript)[] = [
       summary:
         "You tell Ari about a trip. Ari starts a page for it and adds to today's journal, each with a line on " +
         "what the page is now and a note on what changed. The Library leads with those notes, lists journal " +
-        "days by their headlines, and shows the trip's linked page by its name.",
+        "days by their headlines, lists people with the circle Ari keeps for each, and shows the trip's " +
+        "linked page by its name.",
       guarantees: ["G22"],
     });
     const seededAt = "2026-10-27T18:00:00.000Z";
@@ -2765,6 +2768,7 @@ const scenarios: readonly (() => Transcript)[] = [
       links: [],
       markdown: "Your oldest friend; you met at school in Pune (as of 20 Oct).\n",
       note: "Oldest friend, from school",
+      circle: "friends",
     };
     const yesterday = {
       address: "memory:journal/2026-10-26",
@@ -2848,6 +2852,12 @@ const scenarios: readonly (() => Transcript)[] = [
       pages: [
         { ...today, gist: "Florence planned with Janki", changed_at: journaledAt },
         { address: yesterday.address, title: yesterday.title, gist: yesterday.gist, changed_at: seededAt },
+      ],
+    });
+    transcript.wait(2000);
+    memoryCall(transcript, "/v0/memory/pages?shelf=people", {
+      pages: [
+        { address: janki.address, title: janki.title, gist: janki.gist, circle: "friends", changed_at: seededAt },
       ],
     });
     transcript.wait(2000);
