@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { toTurnId } from "#conversation/ids.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { createServer } from "#server.ts";
@@ -85,21 +84,5 @@ describe("attachments", () => {
     const conflict = await send({ id: message, text: "Look", attachments: [second] });
     expect(conflict.statusCode).toBe(409);
     expect(conflict.json()).toMatchObject({ error: { code: "id_conflict" } });
-  });
-
-  it("refuse attachments on a secret answer", async () => {
-    const ask = server.store.startAsk(toTurnId("t_earlier"), {
-      kind: "question",
-      question: "Juno texted you a 6-digit code. What is it?",
-      options: [],
-      allows_text: true,
-      secret: true,
-    });
-    const id = randomUUID();
-    await upload(id, pngOfSize(4, 3), "image/png");
-    const refused = await send({ id: randomUUID(), text: "481516", answers: ask.id, attachments: [id] });
-    expect(refused.statusCode).toBe(400);
-    expect(refused.json()).toMatchObject({ error: { code: "invalid_request" } });
-    expect(JSON.stringify(server.store.snapshot("no_cursor"))).not.toContain("481516");
   });
 });

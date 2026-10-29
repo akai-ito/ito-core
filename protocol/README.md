@@ -31,7 +31,7 @@ sequenceDiagram
   App->>Server: POST /v0/messages {id, text}
   Server-->>App: 201 once the message is on disk
   Server-->>App: message.accepted, turn.started, step.started, turn.status, message.delta …
-  App->>Server: POST /v0/turns/{turn}/stop {cut}
+  App->>Server: POST /v0/turns/{turn}/stop
   Server-->>App: message.ended (stopped), turn.ended (stopped)
 ```
 

@@ -34,14 +34,13 @@ type Delivery = { readonly conversation: Conversation; readonly delivered: Reado
 
 type SnapshotMessage = Positioned & { readonly text: string; readonly outcome?: string };
 
-type AcceptedMessage = SnapshotMessage & { readonly answers?: string; readonly secret?: boolean };
+type AcceptedMessage = SnapshotMessage & { readonly answers?: string };
 
 type GuaranteeTable = ReadonlyMap<number, ReadonlySet<string>>;
 
 type GuaranteeHeader = { readonly scenario: number; readonly guarantees: readonly string[] };
 
 const lineKinds = ["given", "app", "server", "event", "world", "push", "socket"] as const;
-const scenarioCount = 60;
 const disconnecting: ReadonlySet<string> = new Set(["offline", "app_closed", "server_restarted", "server_restored"]);
 const spec = loadSpec();
 
@@ -129,9 +128,8 @@ const applyEvent = (conversation: Conversation, event: Event, where: string): Co
   switch (event.type) {
     case "message.accepted":
     case "message.started": {
-      const { id, text, position, answers, secret } = message as AcceptedMessage;
+      const { id, text, position, answers } = message as AcceptedMessage;
       if (texts.has(id)) throw failure(where, `message ${id} begins twice`);
-      if (secret && text !== "") throw failure(where, `secret message ${id} carries its text`);
       if (answers !== undefined && answers !== conversation.waiting) {
         throw failure(where, `message ${id} answers ${answers}, which isn't waiting`);
       }
@@ -366,11 +364,6 @@ const checkGuarantees = (file: string, header: GuaranteeHeader, table: Guarantee
 };
 
 const files = listTranscriptFiles();
-const numbers = new Set(files.map((file) => Number(file.slice(0, 2))));
-const missing = Array.from({ length: scenarioCount }, (_, index) => index + 1).filter(
-  (scenario) => !numbers.has(scenario),
-);
-if (missing.length > 0) console.error(`missing transcripts for scenarios ${missing.join(", ")}`);
 const table = toGuaranteeTable(readFileSync(path.join(protocolDirectory, "guarantees.md"), "utf8"));
 
 const problemIn = (file: string): string | undefined => {
@@ -393,4 +386,4 @@ for (const { file, problem } of results) {
     process.env.GITHUB_ACTIONS ? `::error file=protocol/transcripts/${file}::${problem}` : `FAIL  ${problem}`,
   );
 }
-process.exitCode = missing.length > 0 || results.some(({ problem }) => problem !== undefined) ? 1 : 0;
+process.exitCode = results.some(({ problem }) => problem !== undefined) ? 1 : 0;

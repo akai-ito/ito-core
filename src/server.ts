@@ -35,7 +35,6 @@ import { createNotifier, defaultReminderMs } from "#notifications/notifier.ts";
 import { createPresence } from "#notifications/presence.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
-import { createSecrets } from "#conversation/secrets.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
 import { packageVersion } from "#version.ts";
 
@@ -188,11 +187,9 @@ export const createServer = (options: ServerOptions): Server => {
       log,
     }) ?? noVoice("This server runs without a voice.");
   const attachments = createAttachments(store, path.join(options.dataDirectory, "attachments"));
-  const secrets = createSecrets();
   const turns = createTurns(store, engine, clock, identifiers, log, {
     limits: options.limits ?? defaultLimits,
     attachmentPath: attachments.pathOf,
-    secrets,
     trail: createTrail(host, launcher),
     moreNotes: () => motions.tickNote(),
   });
@@ -217,7 +214,6 @@ export const createServer = (options: ServerOptions): Server => {
     turns,
     attachments,
     voice,
-    vocabulary: () => memory.vocabulary(),
     voiceprints,
     chosenVoice: () => chosenVoice(store),
     identifiers,
@@ -262,7 +258,7 @@ export const createServer = (options: ServerOptions): Server => {
   logInfo.set((message, details) => {
     app.log.info(details, message);
   });
-  const doors = createDoors({ host, secrets, currentTurn: () => store.runningTurn()?.id, command: launcher });
+  const doors = createDoors({ host, currentTurn: () => store.runningTurn()?.id, command: launcher });
   const imageTool = createImageTool({
     attachments,
     keep: (id) => {

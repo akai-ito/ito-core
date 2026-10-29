@@ -37,7 +37,6 @@ export const toApprovalFields = (parameters: McpServerElicitationRequestParams):
     options: [{ label: "Allow", acts: true }, { label: "Don't" }],
     allows_text: true,
     ...(preview && { preview }),
-    secret: false,
   };
 };
 

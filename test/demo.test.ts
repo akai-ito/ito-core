@@ -60,7 +60,7 @@ describe("the demo engine", () => {
     expect(events.at(-1)).toEqual({ type: "ended" });
   });
 
-  it("asks a question, an approval or a secret on its keywords, then ends the turn", async () => {
+  it("asks a question or an approval on its keywords, then ends the turn", async () => {
     const asked = await runToEnd("Please ask me something");
     expect(asked.slice(-2)).toMatchObject([
       { type: "ask", fields: { kind: "question", question: "Which Juno did you mean?" } },
@@ -68,8 +68,6 @@ describe("the demo engine", () => {
     ]);
     const approval = await runToEnd("approve this");
     expect(approval.at(-2)).toMatchObject({ type: "ask", fields: { kind: "approval" } });
-    const secret = await runToEnd("a secret");
-    expect(secret.at(-2)).toMatchObject({ type: "ask", fields: { secret: true } });
     const busy = await runToEnd("a busy task");
     expect(busy.some((event) => event.type === "ask")).toBe(false);
   });
@@ -115,39 +113,57 @@ describe("the demo engine", () => {
   });
 });
 
+const openDemo = async (): Promise<{
+  readonly server: ReturnType<typeof createServer>;
+  readonly send: (text: string) => Promise<readonly Step[]>;
+  readonly close: () => Promise<void>;
+}> => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "ito-demo-"));
+  const server = createServer({
+    dataDirectory: home,
+    name: "demo",
+    embedder: wordEmbedder,
+    timeZone: "UTC",
+    createEngine: ({ callTool }) => createScriptEngine(systemClock, demoScripts, callTool),
+  });
+  await server.memory.ready;
+  const send = async (text: string): Promise<readonly Step[]> => {
+    const before = new Set(server.store.snapshot("no_cursor").event.steps.map(({ id }) => id));
+    const accepted = server.store.acceptMessage(toMessageId(randomUUID()), text);
+    if (!accepted.ok) throw new Error(accepted.failure);
+    server.turns.route(toMessageId(accepted.value.message.id), text);
+    await vi.waitFor(
+      () => {
+        const { messages, turn } = server.store.snapshot("no_cursor").event;
+        expect(messages.at(-1)).toMatchObject({ role: "agent", outcome: "completed" });
+        expect(turn).toBeNull();
+      },
+      { timeout: 15_000, interval: 100 },
+    );
+    return server.store.snapshot("no_cursor").event.steps.filter(({ id }) => !before.has(id));
+  };
+  return {
+    server,
+    send,
+    close: async () => {
+      await server.close();
+      rmSync(home, { recursive: true, force: true });
+    },
+  };
+};
+
 describe("the demo engine's memory", () => {
   it("writes Alex's page, moves the old state to Earlier the second time, and recalls it", async () => {
-    const home = mkdtempSync(path.join(os.tmpdir(), "ito-demo-memory-"));
-    const server = createServer({
-      dataDirectory: home,
-      name: "demo",
-      embedder: wordEmbedder,
-      timeZone: "UTC",
-      createEngine: ({ callTool }) => createScriptEngine(systemClock, demoScripts, callTool),
-    });
-    await server.memory.ready;
-    const send = async (text: string): Promise<readonly Step[]> => {
-      const before = new Set(server.store.snapshot("no_cursor").event.steps.map(({ id }) => id));
-      const accepted = server.store.acceptMessage(toMessageId(randomUUID()), text);
-      if (!accepted.ok) throw new Error(accepted.failure);
-      server.turns.route(toMessageId(accepted.value.message.id), text);
-      await vi.waitFor(
-        () => {
-          const { messages, turn } = server.store.snapshot("no_cursor").event;
-          expect(messages.at(-1)).toMatchObject({ role: "agent", outcome: "completed" });
-          expect(turn).toBeNull();
-        },
-        { timeout: 15_000, interval: 100 },
-      );
-      return server.store
-        .snapshot("no_cursor")
-        .event.steps.filter(({ id, kind }) => kind === "memory" && !before.has(id));
+    const { server, send, close } = await openDemo();
+    const memorySteps = async (text: string): Promise<readonly Step[]> => {
+      const steps = await send(text);
+      return steps.filter(({ kind }) => kind === "memory");
     };
 
     try {
-      const first = await send("remember Alex");
-      const second = await send("remember Alex again");
-      const recalled = await send("recall Alex");
+      const first = await memorySteps("remember Alex");
+      const second = await memorySteps("remember Alex again");
+      const recalled = await memorySteps("recall Alex");
       const change = await server.memory.change(second.find(({ action }) => action === "updated")?.change ?? "");
 
       expect(first.map(({ title }) => title)).toEqual(["Updated Alex", "Added to today's journal"]);
@@ -160,8 +176,26 @@ describe("the demo engine's memory", () => {
       ]);
       expect(change?.after).toContain("## Earlier");
     } finally {
-      await server.close();
-      rmSync(home, { recursive: true, force: true });
+      await close();
+    }
+  });
+});
+
+describe("the demo engine's things in motion", () => {
+  it("starts the Florence trip and the training block, and books the Uffizi", async () => {
+    const { server, send, close } = await openDemo();
+
+    try {
+      await send("start a trip");
+      await send("start my training");
+      await send("I booked it");
+
+      expect(server.store.listMotions().map(({ id, version, summary }) => ({ id, version, summary }))).toEqual([
+        { id: "florence-with-janki", version: 2, summary: "6–9 Nov · 3 to book" },
+        { id: "sub-20-5k", version: 1, summary: "Week 6 of 10 · intervals today" },
+      ]);
+    } finally {
+      await close();
     }
   });
 });

@@ -25,7 +25,7 @@ export const readChoice = (read: (key: string) => string | undefined): ModelChoi
   return saved === undefined ? undefined : (JSON.parse(saved) as ModelChoice);
 };
 
-export type AskFields = Pick<Ask, "kind" | "question" | "options" | "allows_text" | "secret"> & {
+export type AskFields = Pick<Ask, "kind" | "question" | "options" | "allows_text"> & {
   readonly preview?: string;
 };
 

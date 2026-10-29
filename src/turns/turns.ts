@@ -1,9 +1,8 @@
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import { toCommandError, toTurnError, toWatchdogError } from "#conversation/failures.ts";
-import { toAskId, toMessageId, type AskId, type MessageId, type TurnId } from "#conversation/ids.ts";
+import { toAskId, type AskId, type MessageId, type TurnId } from "#conversation/ids.ts";
 import { isAdjustingAfterRead, route, type Conversation } from "#conversation/routing.ts";
-import { createSecrets, type Secrets } from "#conversation/secrets.ts";
 import {
   adjustingStatus,
   approvalStatus,
@@ -16,12 +15,9 @@ import {
 import { toEndedStep, toStepTitle, toUpdatedStep, type Trail } from "#conversation/steps.ts";
 import type { AskFields, Engine, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Ask, Correction, Error as ErrorBody, Outcome, Status, Step, StepKind } from "#protocol/types.ts";
-import { blocksIn, toPlan, toTickNote, type Plan } from "#replies/blocks.ts";
+import type { Ask, Error as ErrorBody, Outcome, Status, Step, StepKind } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { PendingWork, Store } from "#store/store.ts";
-
-export type Cut = { readonly message: MessageId; readonly offset: number };
 
 export type StopState = { readonly state: "stopping" } | { readonly state: "ended"; readonly outcome: Outcome };
 
@@ -38,7 +34,6 @@ export type Log = (message: string, error: unknown) => void;
 export type TurnsOptions = {
   readonly limits?: Limits;
   readonly attachmentPath?: (id: string) => string;
-  readonly secrets?: Secrets;
   readonly trail?: Trail;
   readonly moreNotes?: () => string;
 };
@@ -46,9 +41,9 @@ export type TurnsOptions = {
 export type Info = (message: string, details: Readonly<Record<string, unknown>>) => void;
 
 export type Turns = {
-  readonly route: (message: MessageId, text: string, isSecret?: boolean) => void;
+  readonly route: (message: MessageId, text: string) => void;
   readonly amend: (message: MessageId, text: string, added: string) => void;
-  readonly stop: (turn: TurnId, cut: Cut | undefined) => StopState | undefined;
+  readonly stop: (turn: TurnId) => StopState | undefined;
   readonly retry: (failed: TurnId) => Result<RetryStarted, "not_found" | "not_failed">;
   readonly ask: (fields: AskFields) => Result<Ask, "no_turn">;
   readonly approve: (fields: AskFields) => Promise<boolean>;
@@ -64,12 +59,10 @@ type Writing = { readonly message: MessageId; readonly kind: "reply" | "note" };
 type Running = {
   readonly id: TurnId;
   readonly phase: "running" | "stopping" | "asking";
-  readonly cut: Cut | undefined;
   readonly writing: Writing | undefined;
   readonly hasStartedReply: boolean;
   readonly awaitingRead: readonly MessageId[];
   readonly buffered: string;
-  readonly held: string;
   readonly lastFlushAt: number | undefined;
   readonly cancelFlush: Cancel | undefined;
   readonly cancelWatchdog: Cancel;
@@ -99,13 +92,6 @@ const isOption = (answer: string, ask: Ask): boolean =>
 
 export const isApprovalChoice = (answer: string, ask: Ask): boolean => isAllowing(answer, ask) || isOption(answer, ask);
 
-export const toCorrectionNote = (text: string, corrections: readonly Correction[]): string =>
-  corrections.length === 0
-    ? ""
-    : `(Spoken. Words corrected from what was heard: ${corrections
-        .map(({ offset, length, heard }) => `heard “${heard}”, wrote ${text.slice(offset, offset + length)}`)
-        .join("; ")}. Either could be right.)`;
-
 export const defaultLimits: Limits = { watchdogMs: 60_000, forcedStopMs: 5000, coalesceMs: 100 };
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -133,13 +119,7 @@ export const createTurns = (
   clock: Clock,
   identifiers: Identifiers,
   log: Log,
-  {
-    limits = defaultLimits,
-    attachmentPath = (id: string) => id,
-    secrets = createSecrets(),
-    trail,
-    moreNotes = () => "",
-  }: TurnsOptions = {},
+  { limits = defaultLimits, attachmentPath = (id: string) => id, trail, moreNotes = () => "" }: TurnsOptions = {},
 ): Turns => {
   const running = createCell<Running | undefined>(undefined);
   const actor = createCell<Promise<void>>(Promise.resolve());
@@ -214,24 +194,7 @@ export const createTurns = (
     });
   };
 
-  const pushText = (turn: TurnId, text: string): void => {
-    const state = current(turn);
-    if (!state?.writing) return;
-    const combined = secrets.redact(state.held + text);
-    const cut = combined.length - secrets.unfinished(combined);
-    running.set({ ...state, held: combined.slice(cut) });
-    emitText(turn, combined.slice(0, cut));
-  };
-
-  const releaseHeld = (turn: TurnId): void => {
-    const state = current(turn);
-    if (!state?.held) return;
-    running.set({ ...state, held: "" });
-    emitText(turn, state.held);
-  };
-
   const endOpenMessage = (turn: TurnId): void => {
-    releaseHeld(turn);
     flush(turn);
     const state = current(turn);
     if (!state?.writing) return;
@@ -262,7 +225,7 @@ export const createTurns = (
   };
 
   const startStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.started" }>): void => {
-    const started = { kind: event.kind, facts: secrets.redactValue(event.facts) };
+    const started = { kind: event.kind, facts: event.facts };
     const { kind, facts } = trail?.toStart(started) ?? started;
     const title = toStepTitle(kind, facts, "present", trail);
     const step = store.startStep(turn, kind, title, facts);
@@ -273,7 +236,7 @@ export const createTurns = (
   const updateStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.updated" }>): void => {
     const step = current(turn)?.steps.get(event.key);
     if (!step) return;
-    const updated = toUpdatedStep(step, secrets.redactValue(event.facts), trail);
+    const updated = toUpdatedStep(step, event.facts, trail);
     store.updateStep(updated);
     changeSteps(turn, (steps) => new Map(steps).set(event.key, updated));
     if (!isSameStatus(statusOf(step), statusOf(updated))) store.setStatus(turn, statusOf(updated));
@@ -282,7 +245,7 @@ export const createTurns = (
   const endStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.ended" }>): void => {
     const step = current(turn)?.steps.get(event.key);
     if (!step) return;
-    const ended = { outcome: event.outcome, facts: secrets.redactValue(event.facts) };
+    const ended = { outcome: event.outcome, facts: event.facts };
     const { outcome, facts } = trail?.toEnd(step, ended) ?? ended;
     store.endStep(toEndedStep(step, outcome, facts, clock.now(), trail));
     changeSteps(turn, (steps) => new Map([...steps].filter(([key]) => key !== event.key)));
@@ -291,11 +254,7 @@ export const createTurns = (
   const finishStop = (turn: TurnId): void => {
     const state = current(turn);
     if (!state) return;
-    if (state.writing) {
-      const sent = sentLength(state);
-      const length = state.cut?.message === state.writing.message ? Math.min(state.cut.offset, sent) : sent;
-      store.endMessage(state.writing.message, "stopped", length);
-    }
+    if (state.writing) store.endMessage(state.writing.message, "stopped", sentLength(state));
     endOpenSteps(state, "stopped");
     cancelApprovals(state);
     store.endTurn(turn, "stopped");
@@ -303,7 +262,6 @@ export const createTurns = (
   };
 
   const failTurn = (turn: TurnId, error: ErrorBody): void => {
-    releaseHeld(turn);
     flush(turn);
     const state = current(turn);
     if (!state) return;
@@ -316,7 +274,6 @@ export const createTurns = (
   };
 
   const completeTurn = (turn: TurnId): void => {
-    releaseHeld(turn);
     flush(turn);
     const state = current(turn);
     if (!state) return;
@@ -364,8 +321,8 @@ export const createTurns = (
     const state = current(turn);
     if (state?.phase !== "running") return fail("no_turn");
     endOpenMessage(turn);
-    const asked = store.startAsk(turn, secrets.redactValue(fields));
-    change(turn, (latest) => ({ ...latest, phase: "asking", buffered: "", held: "" }));
+    const asked = store.startAsk(turn, fields);
+    change(turn, (latest) => ({ ...latest, phase: "asking", buffered: "" }));
     return ok(asked);
   };
 
@@ -418,13 +375,12 @@ export const createTurns = (
           writing: { message, kind: event.kind },
           hasStartedReply: state.hasStartedReply || event.kind === "reply",
           buffered: "",
-          held: "",
           lastFlushAt: undefined,
         });
         return;
       }
       case "text": {
-        if (!isQuiet) pushText(turn, event.text);
+        if (!isQuiet) emitText(turn, event.text);
         return;
       }
       case "text.ended": {
@@ -504,51 +460,25 @@ export const createTurns = (
     }
   };
 
-  const lostSecret =
-    "(Their answer was a secret, and the server restarted before you could read it. Ask for it again.)";
-
   const inputOf = (message: MessageId): Input => {
     const attached = store.messageAttachments(message).map((attachment) => ({
       kind: attachment.kind === "image" ? ("image" as const) : ("file" as const),
       name: attachment.name,
       source: attachmentPath(attachment.id),
     }));
-    const text = received.get().get(message) ?? store.messageText(message) ?? "";
-    const corrected = toCorrectionNote(text, store.messageSpoken(message)?.corrections ?? []);
     return {
       messageId: message,
-      text: text === "" && attached.length === 0 ? lostSecret : [text, corrected].filter(Boolean).join("\n\n"),
+      text: received.get().get(message) ?? store.messageText(message) ?? "",
       ...(attached.length > 0 && { attachments: attached }),
     };
   };
 
-  const withNotes = (inputs: readonly Input[], ticked: string): readonly Input[] => {
-    const pending = [...notes.get(), ticked].filter(Boolean);
+  const withNotes = (inputs: readonly Input[], noted: string): readonly Input[] => {
+    const pending = [...notes.get(), noted].filter(Boolean);
     const [first, ...rest] = inputs;
     if (!first || pending.length === 0) return inputs;
     notes.set([]);
     return [{ ...first, text: [...pending, first.text].join("\n\n") }, ...rest];
-  };
-
-  const planIn = (message: string, part: number): Plan | undefined => {
-    const text = store.messageText(toMessageId(message)) ?? "";
-    return toPlan(blocksIn(text)[part]);
-  };
-
-  const tickNote = (): string => {
-    const latest = new Map(
-      store.ticksSinceLastTurn().map((tick) => [`${tick.message} ${String(tick.part)} ${tick.item}`, tick]),
-    );
-    return toTickNote(
-      latest
-        .values()
-        .map(({ message, part, item, done }) => {
-          const plan = planIn(message, part);
-          const text = plan?.items.find(({ id }) => id === item)?.text ?? item;
-          return { plan: plan?.title ?? "your plan", item: text, done };
-        })
-        .toArray(),
-    );
   };
 
   const startTurn = (
@@ -556,17 +486,15 @@ export const createTurns = (
     retry?: { readonly turn: TurnId; readonly retryOf: TurnId },
   ): void => {
     const turn = retry?.turn ?? identifiers.turn();
-    const ticked = [tickNote(), moreNotes()].filter(Boolean).join("\n\n");
+    const noted = moreNotes();
     store.startTurn(turn, inputs, retry?.retryOf);
     running.set({
       id: turn,
       phase: "running",
-      cut: undefined,
       writing: undefined,
       hasStartedReply: false,
       awaitingRead: [],
       buffered: "",
-      held: "",
       lastFlushAt: undefined,
       cancelFlush: undefined,
       cancelWatchdog: armWatchdog(turn),
@@ -576,7 +504,7 @@ export const createTurns = (
     });
     const engineInputs = withNotes(
       inputs.map((message) => inputOf(message)),
-      ticked,
+      noted,
     );
     received.update((texts) => new Map([...texts].filter(([message]) => !inputs.includes(message))));
     void consume(turn, engine.start(turn, engineInputs));
@@ -666,8 +594,7 @@ export const createTurns = (
       });
     },
 
-    route: (message, text, isSecret = false) => {
-      if (isSecret) secrets.add(text);
+    route: (message, text) => {
       received.update((texts) => new Map([...texts, [message, text]]));
       void enqueue(() => routeMessage(message));
     },
@@ -720,16 +647,14 @@ export const createTurns = (
       return cancelled;
     },
 
-    stop: (turn, cut) => {
+    stop: (turn) => {
       const state = current(turn);
       if (state) {
         if (state.phase === "running") {
           running.set({
             ...state,
             phase: "stopping",
-            cut,
             buffered: "",
-            held: "",
             cancelForcedStop: clock.after(limits.forcedStopMs, () => {
               void forceStop(turn);
             }),

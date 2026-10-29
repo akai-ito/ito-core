@@ -27,7 +27,6 @@ const approval: Ask = {
   question: "Allow Google Calendar to create an event?",
   options: [{ label: "Allow", acts: true }, { label: "Don't" }],
   allows_text: true,
-  secret: false,
   at: "2026-10-28T08:00:00.000Z",
   position: 3,
 };
@@ -40,7 +39,6 @@ describe("an app's approval, from Codex to Ari and back", () => {
       options: [{ label: "Allow", acts: true }, { label: "Don't" }],
       allows_text: true,
       preview: "title: Call Mum\nstart: Sunday 1 November, 2pm",
-      secret: false,
     });
   });
 

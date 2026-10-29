@@ -59,7 +59,6 @@ const toAskPart = (ask: Ask): NonNullable<Notification["ask"]> => ({
   id: ask.id,
   options: ask.options.map((option) => option.label),
   allows_text: ask.allows_text,
-  secret: ask.secret,
 });
 
 export const toEnvelope = (

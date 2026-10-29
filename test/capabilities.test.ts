@@ -7,7 +7,6 @@ import { splitCommand } from "#capabilities/commands.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, onSetting, valuesSetting, type Host } from "#capabilities/host.ts";
 import { findInstalled } from "#capabilities/installed.ts";
-import { createSecrets } from "#conversation/secrets.ts";
 import type { Settings } from "#store/store.ts";
 import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
@@ -221,7 +220,7 @@ describe("the agent's doors to a capability", () => {
 
   it("runs a command from its words, and explains it on --help or a mistake", async () => {
     const { host } = await startHost(createMemorySettings(switchedOn({ token: "secret-1" })));
-    const doors = createDoors({ host, secrets: createSecrets(), currentTurn: () => "t_test", command: "ito" });
+    const doors = createDoors({ host, currentTurn: () => "t_test", command: "ito" });
 
     expect(await doors.command("echo", ["say", "--text", "hi"])).toEqual({ ok: true, value: "hi" });
     expect(await doors.command("echo", ["say", "--help"])).toEqual({
@@ -233,21 +232,5 @@ describe("the agent's doors to a capability", () => {
       failure: "There's no --txet here.\n\nito echo say: Says the text back.\n  --text <string> (required)",
     });
     expect(doors.tools().map(({ name }) => name)).toEqual(["echo_say"]);
-  });
-
-  it("keeps secret answers out of what a publishing operation receives", async () => {
-    const { host } = await startHost(createMemorySettings(switchedOn({ token: "secret-1" })));
-    const secrets = createSecrets();
-    secrets.add("hunter22");
-    const doors = createDoors({ host, secrets, currentTurn: () => "t_test", command: "ito" });
-
-    expect(await doors.command("echo", ["publish", "--text", "my code is hunter22"])).toEqual({
-      ok: true,
-      value: "my code is ••••••",
-    });
-    expect(await doors.command("echo", ["say", "--text", "my code is hunter22"])).toEqual({
-      ok: true,
-      value: "my code is hunter22",
-    });
   });
 });

@@ -18,7 +18,6 @@ import type {
   Ask,
   Attachment,
   Call,
-  Correction,
   Error as ErrorBody,
   Spoken,
   LiveTurn,
@@ -28,10 +27,8 @@ import type {
   Outcome,
   Snapshot,
   Status,
-  PlanTicked,
   Step,
   StepKind,
-  Tick,
   Topic,
   VoiceState,
 } from "#protocol/types.ts";
@@ -75,14 +72,9 @@ export type Page = {
 
 export type TopicFailure = { readonly code: "no_turn" } | { readonly code: "marked"; readonly topic: Topic };
 
-export type AcceptFailure =
-  "id_conflict" | "unknown_ask" | "unknown_attachment" | "attachment_taken" | "secret_attachments" | "call_not_on";
+export type AcceptFailure = "id_conflict" | "unknown_attachment" | "attachment_taken" | "call_not_on";
 
-export type SpokenInput = {
-  readonly call: string;
-  readonly audio?: string;
-  readonly corrections?: readonly Correction[];
-};
+export type SpokenInput = { readonly call: string; readonly audio?: string };
 
 export type StartedCall = { readonly call: Call; readonly isNew: boolean };
 
@@ -116,7 +108,6 @@ export type Store = Settings & {
   readonly acceptMessage: (
     id: MessageId,
     text: string,
-    answers?: AskId,
     attachments?: readonly string[],
     spoken?: SpokenInput,
   ) => Result<Accepted, AcceptFailure>;
@@ -124,7 +115,6 @@ export type Store = Settings & {
     id: MessageId,
     text: string,
     audio: string,
-    corrections: readonly Correction[],
   ) => Result<{ readonly message: Message; readonly replaced?: string }, "not_spoken" | "unknown_attachment">;
   readonly startCall: (id: string) => StartedCall;
   readonly endCall: (id: string, reason?: string) => Call | undefined;
@@ -144,9 +134,6 @@ export type Store = Settings & {
   readonly pairingCode: (hash: string) => PairingCode | undefined;
   readonly listMessages: (before: MessageId, limit: number) => Result<Page, "not_found">;
   readonly messageText: (message: MessageId) => string | undefined;
-  readonly findMessage: (message: MessageId) => Message | undefined;
-  readonly tickItem: (message: MessageId, tick: Tick) => readonly Tick[];
-  readonly ticksSinceLastTurn: () => readonly PlanTicked[];
   readonly recordMotion: (
     type: "motion.started" | "motion.changed" | "motion.finished",
     motion: Omit<Motion, "position"> & { readonly position?: number },
@@ -165,7 +152,6 @@ export type Store = Settings & {
   }[];
   readonly keepAttachment: (id: string) => void;
   readonly messageAttachments: (message: MessageId) => readonly Attachment[];
-  readonly messageSpoken: (message: MessageId) => Spoken | undefined;
   readonly answeredAsk: (message: MessageId) => AskId | undefined;
   readonly pendingWork: () => readonly PendingWork[];
   readonly runningTurn: () => StoredTurn | undefined;
@@ -216,10 +202,8 @@ type MessageRow = {
   readonly outcome: Outcome | null;
   readonly error: string | null;
   readonly answers: string | null;
-  readonly secret: number;
   readonly attachments: string | null;
   readonly spoken: string | null;
-  readonly ticks: string | null;
 };
 
 type AttachmentRow = { readonly body: string; readonly sha256: string; readonly message: string | null };
@@ -271,7 +255,6 @@ const toMessage = (row: MessageRow): Message =>
         at: row.at,
         position: row.position,
         ...(row.answers && { answers: row.answers }),
-        ...(row.secret === 1 && { secret: true }),
         ...(row.attachments && { attachments: JSON.parse(row.attachments) as Attachment[] }),
         ...(row.spoken && { spoken: JSON.parse(row.spoken) as Spoken }),
       }
@@ -286,7 +269,6 @@ const toMessage = (row: MessageRow): Message =>
         ...(row.ended_at && { ended_at: row.ended_at }),
         ...(row.outcome && { outcome: row.outcome }),
         ...(row.error && { error: JSON.parse(row.error) as ErrorBody }),
-        ...(row.ticks && { ticks: JSON.parse(row.ticks) as Tick[] }),
       };
 
 const toStoredTurn = (row: TurnRow): StoredTurn => ({
@@ -510,20 +492,17 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       };
     },
 
-    acceptMessage: (id, text, answers, attachments = [], spoken) =>
+    acceptMessage: (id, text, attachments = [], spoken) =>
       transaction(() => {
         const existing = messageRow(id);
         if (existing) {
           const message = toMessage(existing);
           const isSame =
-            (existing.secret === 1 || existing.text === text) &&
+            existing.text === text &&
             JSON.stringify((message.attachments ?? []).map((attachment) => attachment.id)) ===
               JSON.stringify(attachments);
           return isSame ? ok({ message, isNew: false }) : fail("id_conflict");
         }
-        const named = answers === undefined ? undefined : askRow(answers);
-        if (answers !== undefined && !named) return fail("unknown_ask");
-        if (named && toAsk(named).secret && attachments.length > 0) return fail("secret_attachments");
         const call = spoken ? callRow(spoken.call) : undefined;
         if (spoken && call?.ended !== 0) return fail("call_not_on");
         const audioRow = spoken?.audio === undefined ? undefined : attachmentRow(spoken.audio);
@@ -533,25 +512,18 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         if ([...attachedRows, audioRow].some((row) => row !== undefined && row.message !== null))
           return fail("attachment_taken");
         const attached = attachedRows.flatMap((row) => (row ? [JSON.parse(row.body) as Attachment] : []));
-        const isSecret = named !== undefined && toAsk(named).secret;
-        const waitingAsk = waitingRow();
-        const waiting = waitingAsk && !(spoken && toAsk(waitingAsk).secret) ? waitingAsk : undefined;
+        const waiting = waitingRow();
         const at = now();
         const message: Message = {
           id,
           role: "user",
-          text: isSecret ? "" : text,
+          text,
           at,
           position: nextSeq(),
           ...(waiting && { answers: toAsk(waiting).id }),
-          ...(isSecret && { secret: true }),
           ...(attached.length > 0 && { attachments: attached }),
           ...(spoken && {
-            spoken: {
-              call: spoken.call,
-              ...(audioRow && { audio: JSON.parse(audioRow.body) as Attachment }),
-              ...(spoken.corrections?.length && { corrections: [...spoken.corrections] }),
-            },
+            spoken: { call: spoken.call, ...(audioRow && { audio: JSON.parse(audioRow.body) as Attachment }) },
           }),
         };
         append({ id: identifiers.event(), type: "message.accepted", at, message });
@@ -559,7 +531,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         return ok({ message, isNew: true });
       }),
 
-    amendMessage: (id, text, audio, corrections) =>
+    amendMessage: (id, text, audio) =>
       transaction(() => {
         const row = messageRow(id);
         const before = row ? toMessage(row) : undefined;
@@ -569,11 +541,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         const message: Message = {
           ...before,
           text,
-          spoken: {
-            call: before.spoken.call,
-            audio: JSON.parse(audioRow.body) as Attachment,
-            ...(corrections.length > 0 && { corrections: [...corrections] }),
-          },
+          spoken: { call: before.spoken.call, audio: JSON.parse(audioRow.body) as Attachment },
         };
         append({ id: identifiers.event(), type: "message.amended", at: now(), message });
         return ok({ message, ...(before.spoken.audio && { replaced: before.spoken.audio.id }) });
@@ -664,28 +632,6 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     messageText: (message) => messageRow(message)?.text,
 
-    findMessage: (message) => {
-      const row = messageRow(message);
-      return row ? toMessage(row) : undefined;
-    },
-
-    tickItem: (message, { part, item, done }) =>
-      transaction(() => {
-        append({ id: identifiers.event(), type: "plan.ticked", at: now(), message, part, item, done });
-        const row = messageRow(message);
-        return row?.ticks ? (JSON.parse(row.ticks) as readonly Tick[]) : [];
-      }),
-
-    ticksSinceLastTurn: () =>
-      (
-        database
-          .prepare(
-            `SELECT body FROM events WHERE type = 'plan.ticked'
-             AND seq > COALESCE((SELECT MAX(seq) FROM events WHERE type = 'turn.started'), 0) ORDER BY seq`,
-          )
-          .all() as unknown as readonly { readonly body: string }[]
-      ).map((row) => JSON.parse(row.body) as PlanTicked),
-
     recordMotion: (type, given, note) =>
       transaction(() => {
         const latest = database.prepare("SELECT MAX(position) AS position FROM messages WHERE role = 'user'").get() as {
@@ -768,11 +714,6 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     answeredAsk: (message) => {
       const answers = messageRow(message)?.answers;
       return answers ? toAskId(answers) : undefined;
-    },
-
-    messageSpoken: (message) => {
-      const row = messageRow(message);
-      return row?.spoken ? (JSON.parse(row.spoken) as Spoken) : undefined;
     },
 
     messageAttachments: (message) => {
@@ -906,7 +847,6 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           options: fields.options,
           allows_text: fields.allows_text,
           ...(fields.preview && { preview: fields.preview }),
-          secret: fields.secret,
           at,
           position: nextSeq(),
         };

@@ -3,7 +3,6 @@ export type Term = {
   readonly kind: "person" | "group" | "place" | "project" | "goal" | "topic" | "term";
   readonly weight: number;
   readonly phrases: readonly string[];
-  readonly heard: readonly string[];
   readonly address?: string;
 };
 
@@ -12,11 +11,8 @@ export type VocabularyPage = {
   readonly shelf: string;
   readonly title: string;
   readonly aliases: readonly string[];
-  readonly heard: readonly string[];
   readonly markdown: string;
 };
-
-export type Learned = { readonly meant: string; readonly heard: readonly string[] };
 
 export const vocabularyLimit = 300;
 
@@ -27,7 +23,6 @@ const names: ReadonlySet<Term["kind"]> = new Set(["person", "group", "place"]);
 const phrasesPerTerm = 3;
 const longestPhrase = 100;
 const timesBeforeATerm = 3;
-const learnedWeight = 0.5;
 
 const kinds: Readonly<Record<string, Term["kind"]>> = {
   people: "person",
@@ -114,11 +109,7 @@ const countCapitals = (messages: readonly string[]): ReadonlyMap<string, number>
     .filter((word) => !ordinaryCapitals.has(word))
     .reduce((counts, word) => new Map([...counts, [word, (counts.get(word) ?? 0) + 1]]), new Map<string, number>());
 
-export const toVocabulary = (
-  pages: readonly VocabularyPage[],
-  messages: readonly string[],
-  learned: readonly Learned[],
-): readonly Term[] => {
+export const toVocabulary = (pages: readonly VocabularyPage[], messages: readonly string[]): readonly Term[] => {
   const shelved = pages
     .filter((page) => kinds[page.shelf] !== undefined)
     .toSorted((left, right) => left.address.localeCompare(right.address));
@@ -128,7 +119,6 @@ export const toVocabulary = (
       kind: kinds[page.shelf] ?? "term",
       weight: 1,
       phrases: [...phrasesFor(text, page, shelved, messages)],
-      heard: [...page.heard],
       address: page.address,
     })),
   );
@@ -141,23 +131,14 @@ export const toVocabulary = (
       kind: "term",
       weight: Math.min(0.9, 0.3 + 0.1 * count),
       phrases: [...phrasesFor(text, undefined, shelved, messages)],
-      heard: [],
     }));
-  const fromLearning = learned.map(({ meant, heard }): Term => ({
-    text: meant,
-    kind: "term",
-    weight: learnedWeight,
-    phrases: [...phrasesFor(meant, undefined, shelved, messages)],
-    heard: [...heard],
-  }));
-  return [...fromPages, ...fromConversation, ...fromLearning]
+  return [...fromPages, ...fromConversation]
     .toSorted((left, right) => right.weight - left.weight)
     .slice(0, vocabularyLimit);
 };
 
 export const toBoosted = (terms: readonly Term[], isRecent: (term: Term) => boolean): readonly string[] =>
-  [
-    ...new Set(
-      terms.filter((term) => (names.has(term.kind) || term.heard.length > 0) && isRecent(term)).map(({ text }) => text),
-    ),
-  ].slice(0, boostLimit);
+  [...new Set(terms.filter((term) => names.has(term.kind) && isRecent(term)).map(({ text }) => text))].slice(
+    0,
+    boostLimit,
+  );

@@ -21,7 +21,6 @@ export type Page = {
   readonly circle?: string;
   readonly aliases: readonly string[];
   readonly links: readonly string[];
-  readonly heard?: readonly string[];
   readonly markdown: string;
 };
 
@@ -73,26 +72,23 @@ export const parsePage = (text: string, fallbackTitle: string): Page => {
   const title = fields?.title;
   const gist = fields?.gist;
   const circle = fields?.circle;
-  const heard = strings(fields?.heard);
   return {
     title: typeof title === "string" ? title : fallbackTitle,
     ...(typeof gist === "string" && gist.trim() !== "" && { gist: gist.trim() }),
     ...(typeof circle === "string" && circle.trim() !== "" && { circle: circle.trim() }),
     aliases: strings(fields?.aliases),
     links: strings(fields?.links),
-    ...(heard.length > 0 && { heard }),
     markdown: text.replace(frontMatter, "").replace(/^\n+/u, ""),
   };
 };
 
-export const formatPage = ({ title, gist, circle, aliases, links, heard = [], markdown }: Page): string => {
+export const formatPage = ({ title, gist, circle, aliases, links, markdown }: Page): string => {
   const fields = {
     title,
     ...(gist !== undefined && { gist }),
     ...(circle !== undefined && { circle }),
     ...(aliases.length > 0 && { aliases }),
     ...(links.length > 0 && { links }),
-    ...(heard.length > 0 && { heard }),
   };
   return `---\n${toYaml(fields, { flowCollectionPadding: false, collectionStyle: "flow" }).trimEnd()}\n---\n\n${markdown.trim()}\n`;
 };

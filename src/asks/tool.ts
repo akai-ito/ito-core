@@ -52,7 +52,6 @@ export const toAskFields = (input: unknown): Result<AskFields, string> => {
         })),
     allows_text: valid.length === 0 || fieldOf(input, "allows_text") !== false,
     ...(isApproval && preview && { preview }),
-    secret: fieldOf(input, "secret") === true,
   });
 };
 
@@ -75,8 +74,7 @@ export const createAskTool = (turns: Asking): Tool => ({
     "detail. Before anything consequential, such as booking, buying, sending or deleting, ask for their " +
     "approval: kind approval, a preview of exactly what would happen, and acts: true on the option that goes " +
     "ahead. Apps that change things, such as a calendar or mail, ask for approval themselves when they run, so " +
-    "don't ask first for those. For a code or a password, set secret: their answer reaches you and is never stored. Asking ends " +
-    "your turn, and their answer arrives as their next message. Don't ask what you can find out yourself.",
+    "don't ask first for those. Never ask for a password or a code. Asking ends your turn, and their answer arrives as their next message. Don't ask what you can find out yourself.",
   inputSchema: {
     type: "object",
     properties: {
@@ -98,7 +96,6 @@ export const createAskTool = (turns: Asking): Tool => ({
       allows_text: { type: "boolean", description: "Whether they can type their own answer too. Defaults to true." },
       kind: { type: "string", enum: ["question", "approval"], description: "Defaults to question." },
       preview: { type: "string", description: "Approvals only: exactly what would happen." },
-      secret: { type: "boolean", description: "True for a code or a password." },
     },
     required: ["question"],
     additionalProperties: false,

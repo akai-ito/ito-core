@@ -279,7 +279,6 @@ describe("the Codex engine against the pinned codex app-server", () => {
         question: "Which Juno did you mean?",
         options: [{ label: "Clapham" }, { label: "Soho" }],
         allows_text: true,
-        secret: false,
       },
     ]);
     expect(events.filter((event) => event.type === "step.started")).toEqual([]);

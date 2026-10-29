@@ -42,8 +42,9 @@ Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code inste
 redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new` makes
 another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
 in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a timeout,
-*ask* a question, *approve* an approval, *secret* a secret question, *remember* writes a page and
-the journal in memory, and *recall* looks it up.
+*ask* a question, *approve* an approval, *remember* writes a page and the journal in memory,
+*recall* looks it up, *trip* and *training* start things in motion, and *booked* books the trip's
+Uffizi.
 
 Before reaching for your phone, check a real turn from the machine itself, with the server running
 and your token in `TOKEN`. The stream should show the turn start, statuses, the reply's text

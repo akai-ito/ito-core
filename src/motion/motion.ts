@@ -419,7 +419,6 @@ export const createMotions = ({
       options: [{ label: "Forget it", acts: true }, { label: "Keep it" }],
       allows_text: true,
       preview: `${motion.title}: ${reason}`,
-      secret: false,
     });
     if (!isAllowed) return ok(`They kept ${motion.title}, so nothing was forgotten.`);
     return memory.withThread(async (thread) => {

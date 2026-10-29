@@ -16,7 +16,7 @@
 {"at":4300,"socket":{"from":"server","frame":{"type":"heard","text":"Remind me to call Mum on Sunday at two.","final":true,"message":"m_0001_27022"}}}
 {"at":4300,"event":{"id":"e_0003_03247","type":"turn.started","at":"2026-10-28T08:00:04.300Z","turn":"t_0001_55604","inputs":["m_0001_27022"]}}
 {"at":4300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
-{"at":5500,"event":{"id":"e_0004_10819","type":"ask.started","at":"2026-10-28T08:00:05.500Z","ask":{"id":"a_0001_90821","turn":"t_0001_55604","kind":"approval","question":"Shall I add it to your calendar?","options":[{"label":"Add it","acts":true},{"label":"Leave it"}],"allows_text":false,"preview":"Calendar: Call Mum, Sunday 1 November, 2pm","secret":false,"at":"2026-10-28T08:00:05.500Z","position":4}}}
+{"at":5500,"event":{"id":"e_0004_10819","type":"ask.started","at":"2026-10-28T08:00:05.500Z","ask":{"id":"a_0001_90821","turn":"t_0001_55604","kind":"approval","question":"Shall I add it to your calendar?","options":[{"label":"Add it","acts":true},{"label":"Leave it"}],"allows_text":false,"preview":"Calendar: Call Mum, Sunday 1 November, 2pm","at":"2026-10-28T08:00:05.500Z","position":4}}}
 {"at":5500,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":5500,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Calendar: Call Mum, Sunday 1 November, 2pm."}}}
 {"at":5500,"socket":{"from":"server","audio_ms":250}}
@@ -34,7 +34,7 @@
 {"at":11000,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
 {"at":11000,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
 {"at":11000,"event":{"id":"e_0006_81417","type":"message.accepted","at":"2026-10-28T08:00:11.000Z","message":{"id":"m_0002_31819","role":"user","text":"Add it.","at":"2026-10-28T08:00:11.000Z","position":6,"answers":"a_0001_90821","spoken":{"call":"2b6b2969-78b4-40cb-93bb-62c352ce71df","audio":{"id":"f_0002_02124","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
-{"at":11000,"event":{"id":"e_0007_03177","type":"ask.ended","at":"2026-10-28T08:00:11.000Z","ask":{"id":"a_0001_90821","turn":"t_0001_55604","kind":"approval","question":"Shall I add it to your calendar?","options":[{"label":"Add it","acts":true},{"label":"Leave it"}],"allows_text":false,"preview":"Calendar: Call Mum, Sunday 1 November, 2pm","secret":false,"at":"2026-10-28T08:00:05.500Z","position":4,"ended_at":"2026-10-28T08:00:11.000Z","outcome":"answered","answer":"m_0002_31819"}}}
+{"at":11000,"event":{"id":"e_0007_03177","type":"ask.ended","at":"2026-10-28T08:00:11.000Z","ask":{"id":"a_0001_90821","turn":"t_0001_55604","kind":"approval","question":"Shall I add it to your calendar?","options":[{"label":"Add it","acts":true},{"label":"Leave it"}],"allows_text":false,"preview":"Calendar: Call Mum, Sunday 1 November, 2pm","at":"2026-10-28T08:00:05.500Z","position":4,"ended_at":"2026-10-28T08:00:11.000Z","outcome":"answered","answer":"m_0002_31819"}}}
 {"at":11000,"socket":{"from":"server","frame":{"type":"heard","text":"Add it.","final":true,"message":"m_0002_31819"}}}
 {"at":11000,"event":{"id":"e_0008_68704","type":"turn.started","at":"2026-10-28T08:00:11.000Z","turn":"t_0002_78935","inputs":["m_0002_31819"]}}
 {"at":11000,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}

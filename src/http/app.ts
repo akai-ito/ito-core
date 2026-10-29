@@ -17,7 +17,6 @@ import { registerCapabilities } from "#http/capabilities.ts";
 import { registerMemory } from "#http/memory.ts";
 import { registerMotion } from "#http/motion.ts";
 import type { Motions } from "#motion/motion.ts";
-import { registerReplies } from "#http/replies.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
@@ -29,7 +28,7 @@ import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
 import type { Presence } from "#notifications/presence.ts";
-import type { Error as ErrorBody, Presence as PresenceBody, RegisterDevice, StopTurn } from "#protocol/types.ts";
+import type { Error as ErrorBody, Presence as PresenceBody, RegisterDevice } from "#protocol/types.ts";
 import type { Store } from "#store/store.ts";
 import { toRetryFailure, type Turns } from "#turns/turns.ts";
 
@@ -67,12 +66,7 @@ const tooLargeAttachment = toCommandError(
   "That file is larger than Ito accepts.",
 );
 
-type SendBody = {
-  readonly id: string;
-  readonly text?: string;
-  readonly answers?: string;
-  readonly attachments?: readonly string[];
-};
+type SendBody = { readonly id: string; readonly text?: string; readonly attachments?: readonly string[] };
 
 const maxReplay = 2000;
 const bodyLimitBytes = 256 * 1024;
@@ -174,9 +168,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerCapabilities(app, host, schemaFor);
   registerMemory(app, memory, schemaFor);
   registerMotion(app, motions, schemaFor);
-  registerReplies(app, store, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
-  registerTalk(app, { store, attachments, memory, voice, calls, voiceprints, schemaFor });
+  registerTalk(app, { store, attachments, voice, calls, voiceprints, schemaFor });
   registerStream(app, { store, calls, voice, protocol });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
@@ -197,18 +190,10 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   );
 
   app.post<{ Body: SendBody }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text = "", answers, attachments: attached = [] } = request.body;
-    const accepted = store.acceptMessage(
-      toMessageId(id),
-      text,
-      answers === undefined ? undefined : toAskId(answers),
-      attached,
-    );
+    const { id, text = "", attachments: attached = [] } = request.body;
+    const accepted = store.acceptMessage(toMessageId(id), text, attached);
     if (!accepted.ok) {
       switch (accepted.failure) {
-        case "unknown_ask": {
-          return reply.code(400).send(toErrorResult("invalid_request", `No ask ${String(answers)}.`));
-        }
         case "unknown_attachment": {
           return reply
             .code(400)
@@ -222,9 +207,6 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         case "attachment_taken": {
           return reply.code(400).send(toErrorResult("invalid_request", "An attachment belongs to one message."));
         }
-        case "secret_attachments": {
-          return reply.code(400).send(toErrorResult("invalid_request", "A secret answer can't carry attachments."));
-        }
         case "call_not_on": {
           return reply.code(400).send(toErrorResult("invalid_request", "That call isn't on."));
         }
@@ -237,7 +219,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         }
       }
     }
-    if (accepted.value.isNew) turns.route(toMessageId(id), text, accepted.value.message.secret === true);
+    if (accepted.value.isNew) turns.route(toMessageId(id), text);
     return reply.code(accepted.value.isNew ? 201 : 200).send({ message: accepted.value.message });
   });
 
@@ -262,13 +244,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     },
   );
 
-  app.post<{ Params: { readonly turn: string }; Body: StopTurn | undefined }>(
+  app.post<{ Params: { readonly turn: string } }>(
     "/v0/turns/:turn/stop",
     { schema: schemaFor("stopTurn") },
     async (request, reply) => {
       const { turn } = request.params;
-      const cut = request.body?.cut;
-      const state = turns.stop(toTurnId(turn), cut && { message: toMessageId(cut.message), offset: cut.offset });
+      const state = turns.stop(toTurnId(turn));
       if (!state)
         return reply.code(404).send(toErrorResult("not_found", `No turn ${turn}.`, "That turn isn't on the server."));
       return state.state === "stopping"

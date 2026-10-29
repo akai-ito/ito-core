@@ -521,25 +521,4 @@ describe("memory", () => {
 
     expect(memory.boosted(await memory.vocabulary())).toEqual(["Bora", "Ljubljana"]);
   });
-
-  it("learns how a name is misheard, and keeps it when Ari edits the page", async () => {
-    const { memory } = await openMemory();
-    await write(memory, { address: "memory:people/bora", title: "Bora", body: "You run with Bora." });
-
-    const learnt = await memory.learn([
-      { heard: "Bara", meant: "bora" },
-      { heard: "cutie", meant: "QRT" },
-    ]);
-    await edit(memory, { address: "memory:people/bora", old_text: "Bora.", new_text: "Bora on Saturdays." });
-    const terms = await memory.vocabulary();
-
-    expect(learnt).toEqual([
-      { heard: "Bara", meant: "bora", address: "memory:people/bora" },
-      { heard: "cutie", meant: "QRT" },
-    ]);
-    expect(terms).toMatchObject([
-      { text: "Bora", kind: "person", heard: ["Bara"], phrases: ["You run with Bora on Saturdays."] },
-      { text: "QRT", kind: "term", heard: ["cutie"] },
-    ]);
-  });
 });

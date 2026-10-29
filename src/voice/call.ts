@@ -3,10 +3,8 @@ import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import { toMessageId, type MessageId } from "#conversation/ids.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Term } from "#memory/vocabulary.ts";
 import type { Store } from "#store/store.ts";
 import type { Info, Log, Turns } from "#turns/turns.ts";
-import { correct } from "#voice/corrector.ts";
 import { heardRate, toWav, type Heard, type Listening, type VoiceLoop } from "#voice/loop.ts";
 import type { Voiceprints } from "#voice/voiceprints.ts";
 import { askAloud, createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
@@ -38,7 +36,6 @@ export type CallOptions = {
   readonly turns: Turns;
   readonly attachments: Attachments;
   readonly voice: VoiceLoop;
-  readonly vocabulary: () => Promise<readonly Term[]>;
   readonly voiceprints: Voiceprints;
   readonly chosenVoice: () => string;
   readonly identifiers: Identifiers;
@@ -224,7 +221,6 @@ export const createCallStream = (options: CallOptions): CallStream => {
         case "call.audio_deleted":
         case "voice.status":
         case "topic.started":
-        case "plan.ticked":
         case "motion.started":
         case "motion.changed":
         case "motion.finished":
@@ -235,48 +231,42 @@ export const createCallStream = (options: CallOptions): CallStream => {
       }
     });
 
-  const join = async (earlier: Joinable, text: string, pcm: Uint8Array): Promise<MessageId | undefined> => {
+  const join = (earlier: Joinable, text: string, pcm: Uint8Array): void => {
     const raw = `${earlier.raw} ${text}`;
     const whole = Buffer.concat([earlier.pcm, pcm]);
-    const vocabulary = await options.vocabulary();
-    const corrected = correct(raw, vocabulary);
     const recording = identifiers.attachment();
     const saved = attachments.save(recording, "turn.wav", "audio/wav", Buffer.from(toWav(whole, heardRate)));
-    if (!saved.ok) return undefined;
-    const amended = store.amendMessage(earlier.message, corrected.text, recording, corrected.corrections);
+    if (!saved.ok) return;
+    const amended = store.amendMessage(earlier.message, raw, recording);
     if (!amended.ok) {
       log("A spoken turn couldn't join the one before it", amended.failure);
-      return undefined;
+      return;
     }
     if (amended.value.replaced !== undefined) attachments.remove(amended.value.replaced);
     joinable.set({ message: earlier.message, raw, pcm: whole });
-    turns.amend(earlier.message, corrected.text, correct(text, vocabulary).text);
-    send({ type: "heard", text: corrected.text, final: true, message: earlier.message });
+    turns.amend(earlier.message, raw, text);
+    send({ type: "heard", text: raw, final: true, message: earlier.message });
     if (isAgentWorking.get() && state.get() === "turn_ended") moveTo("working");
-    return earlier.message;
   };
 
-  const post = async (text: string, pcm: Uint8Array): Promise<MessageId | undefined> => {
+  const post = (text: string, pcm: Uint8Array): void => {
     const earlier = joinable.get();
-    if (earlier) return join(earlier, text, pcm);
-    const corrected = correct(text, await options.vocabulary());
+    if (earlier) {
+      join(earlier, text, pcm);
+      return;
+    }
     const recording = identifiers.attachment();
     const saved = attachments.save(recording, "turn.wav", "audio/wav", Buffer.from(toWav(pcm, heardRate)));
-    if (!saved.ok) return undefined;
+    if (!saved.ok) return;
     const message = identifiers.message();
-    const accepted = store.acceptMessage(message, corrected.text, undefined, [], {
-      call,
-      audio: recording,
-      corrections: corrected.corrections,
-    });
+    const accepted = store.acceptMessage(message, text, [], { call, audio: recording });
     if (!accepted.ok) {
       log("A spoken turn couldn't become a message", accepted.failure);
-      return undefined;
+      return;
     }
-    turns.route(message, corrected.text);
+    turns.route(message, text);
     joinable.set({ message, raw: text, pcm });
-    send({ type: "heard", text: corrected.text, final: true, message });
-    return message;
+    send({ type: "heard", text, final: true, message });
   };
 
   const fail = async (reason: string): Promise<void> => {
@@ -299,7 +289,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
       case "turn": {
         lastHeard.set(undefined);
         moveTo("turn_ended");
-        void post(heard.text, heard.pcm);
+        post(heard.text, heard.pcm);
         return;
       }
       case "dropped": {

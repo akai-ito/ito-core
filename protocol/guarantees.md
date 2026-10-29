@@ -15,30 +15,28 @@ where the protocol has to make it possible, marked *App*.
 | G4 | **Exact resume.** Every event carries a cursor. Reconnecting with the last cursor the app applied delivers every later event once: nothing missing, nothing repeated, including reply text streamed in the meantime. | 2, 11, 13 |
 | G5 | **An honest reset.** When the server can't continue from a cursor (too old, restored from a backup, a different server), it says so and sends a fresh snapshot. It never resumes from the wrong place. Ids are never reused, even after a restore. | 14 |
 | G6 | **Turns outlive connections.** A turn runs to its end whether or not any app is connected. Only Stop, a failure or a restart ends it early. | 13 |
-| G7 | **Text only grows.** Reply text streams as appended pieces and is never revised. A finished message's text is exactly what was streamed, or exactly what was on screen when you tapped Stop. Stop cuts only a message still being written; one that already finished keeps all its text. | 5, 7, 8, 11 |
+| G7 | **Text only grows.** Reply text streams as appended pieces and is never revised. A finished message's text is exactly what was streamed, and a stopped message keeps everything it had streamed. | 5, 7, 8, 11 |
 | G8 | **Every turn ends, with a reason.** Completed, stopped, interrupted by a restart, or failed with a typed error. Nothing is left "still writing", and live status never outlives its turn. A turn that fails or is cut off before writing a reply still leaves one, empty and carrying the reason, so the conversation itself shows what happened. | 4, 6, 14, 15 |
 | G9 | **Stop jumps every queue.** Stop is a command of its own, addressed to one turn, safe to repeat, and handled ahead of everything else on both sides: never behind a send, a steer or a reconnect. It is confirmed only once the agent has really stopped. | 7, 55 |
 | G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17, 37, 42, 43, 44, 49 |
 | G11 | **The token stays secret.** It travels only over HTTPS (loopback excepted, for development), is never logged and is never sent back. | 1, 31 |
 | G12 | **Versioned and tolerant.** The server states its protocol version before asking for the token. Both sides ignore what they don't recognise. A major mismatch says which side to update. | 1 |
-| G13 | **Several apps, one conversation.** An iPhone and a Mac can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2, 30, 41 |
+| G13 | **Several apps, one conversation.** Several devices can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2, 30, 41 |
 | G14 | **The agent's steps are kept.** Every step the agent takes (thinking, a search, a command, an edit, a tool, a plan) streams as it happens and is stored in the conversation, in order with the messages, so it comes back in snapshots, in history and on every app. Every step ends with an outcome; a step still running when its turn ends, ends with the turn. | 4, 7, 9, 15, 16, 17, 34, 35, 36 |
 | G15 | **Notified only while you're away.** The server pushes when a reply finishes, when a turn fails, when the agent asks you something, and once more for an ask still waiting after three hours, and never for progress or notes. Nothing is pushed while any of your devices is looking at the conversation with a live stream. | 18, 21, 24, 26 |
 | G16 | **The agent's asks wait for you.** Asking ends its turn, and the ask waits as long as it takes, through the app closing, the phone going offline and the server restarting. Your next message answers it, whichever way you write it, and only you can cancel it. Nothing happens on the agent's side until you answer. | 19, 20, 21, 22, 23, 24 |
-| G17 | **Secrets stay out of the conversation.** The answer to a secret ask reaches the agent and nothing else: it never enters the server's log, a snapshot, history, a notification or a response. | 25 |
 | G18 | **Notifications are private.** The text of every notification is encrypted on the server with a key the device made, so Apple's push service carries only ciphertext. | 18, 21, 24, 26 |
 | G19 | **Attachments stay as you sent them.** A photo or file is uploaded once, under an id the app chooses, so a retry never makes a second copy. Its bytes never change, every app can fetch them, and the agent works on its own copy, so nothing it does changes what you sent. | 27, 28, 29, 30 |
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
 | G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
 | G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36, 57 |
-| G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. What you teach the vocabulary corrects how names are heard, never what they're called. | 38, 40, 41 |
+| G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. | 38, 40, 41 |
 | G24 | **Talk only when the server can talk.** The server says whether it can hold a call, meaning it can listen and speak with your names loaded, and when it can't, why in a line to show. It says so on the event stream as soon as that changes. There's no worse fallback: while the voice isn't ready, the app doesn't offer Talk. | 43, 44, 49 |
-| G25 | **The server hears your turns.** Each turn you finish becomes one spoken message, posted by the server with its recording and the words it corrected from what it has learnt, and shown live as you speak. If you carry on before Ari begins to answer, your words join that message. Muting ends a turn you're in the middle of, as said so far. Nothing you say while muted is heard, and nothing you say answers a secret ask: secrets are typed. | 38, 39, 45, 48, 51, 52, 56, 61 |
+| G25 | **The server hears your turns.** Each turn you finish becomes one spoken message, posted by the server with its recording, and shown live as you speak. If you carry on before Ari begins to answer, your words join that message. Muting ends a turn you're in the middle of, as said so far. Nothing you say while muted is heard. | 38, 45, 48, 51, 56, 61 |
 | G26 | **Ari's voice gives way to yours.** Ari speaks only what comes before a line holding `---`, a sentence at a time with its caption, and stops when you talk over it: your own voice, for more than half a second. Its echo never counts, and while it speaks nothing else becomes a turn. On a call, asks are said aloud with their choices. Silence while it works is covered by the phone's tone; Ari says what it's doing only after a long quiet, once. | 38, 45, 50, 51 |
 | G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
 | G28 | **An app asks before it acts.** When an app's action needs your approval, it waits inside the running turn, which carries on once you answer. Your next message answers it: Allow, or a plain yes, lets it run; anything else doesn't, and your words reach the agent. Stop cancels it. | 53, 54, 55 |
 | G29 | **Topics mark where the subject changed.** When you change the subject, Ari puts a label of a few plain words on the message that changed it, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
-| G30 | **Ticks are kept.** A tick on an item in a reply's plan is kept on the server, reaches every app, and comes with the message in snapshots and history. The agent hears of it with your next message. Ticking an item to the state it's already in changes nothing. | 59 |
 | G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Forgetting a thing asks you first. | 62, 63, 64 |
 
@@ -97,16 +95,12 @@ where the protocol has to make it possible, marked *App*.
 ### 7 · [Stop](transcripts/07-stop.jsonl)
 
 - Stop jumps every queue. (G9)
-- Stop says where the reply was cut on screen. The stopped message keeps exactly that and is marked
-  stopped, so no reconnect ever brings back more. (G7)
+- The stopped message keeps everything it had streamed and is marked stopped, so every app,
+  snapshot and history page agrees. (G7)
 - Once the server has the Stop, no more text for that turn is sent.
 - The server confirms the stop only after the agent has stopped. If the agent doesn't stop in time,
   the server forces it.
 - A message sent while a turn is stopping waits, and starts the next turn. (G3)
-- A Stop that arrives after the reply already finished changes nothing.
-- When the screen lags behind the server, Stop cuts the message still being written, at as much of
-  it as was on screen (nothing, if it hadn't appeared yet). A reply that already finished keeps all
-  its text, so every app, snapshot and history page agrees. (G7)
 - A Stop while a step runs ends the step too, as stopped. A step that didn't complete keeps its
   present-tense title. (G14)
 
@@ -237,12 +231,6 @@ where the protocol has to make it possible, marked *App*.
   "Still waiting on one thing: " and the question. Then nothing more. (G15, G16, G18)
 - With you looking, nothing is pushed. (G15)
 
-### 25 · [A secret](transcripts/25-a-secret.jsonl)
-
-- A secret ask's answer, sent naming the ask, reaches the agent, while the conversation keeps an
-  empty message marked `secret`: in the stream, in the send's response, and in snapshots and
-  history. (G17)
-
 ### 26 · [Turning on notifications](transcripts/26-turning-on-notifications.jsonl)
 
 - The app registers the device with its push token, its APNs environment and a notification key it
@@ -331,12 +319,6 @@ where the protocol has to make it possible, marked *App*.
 - Ari's note and reply are spoken a sentence at a time up to the `---` line, each `saying` with
   an id the phone answers with `played`. (G26)
 
-### 39 · [Ari learns a name](transcripts/39-ari-learns-a-name.jsonl)
-
-- A mishearing you fix from the chat joins the matching page's `heard` list, never its names; a word
-  no page names becomes a term of its own. The server then corrects both in your turns, by offset
-  into the corrected text. (G25)
-
 ### 40 · [Delete a call's audio](transcripts/40-delete-a-call-s-audio.jsonl)
 
 - Deleting a call's audio removes the recordings, keeps the words, and is an event every app
@@ -366,7 +348,7 @@ where the protocol has to make it possible, marked *App*.
 ### 45 · [Talking over Ari](transcripts/45-talking-over-ari.jsonl)
 
 - Speaking while Ari's voice plays stops it at once with `stop_playback`; the phone answers each
-  dropped sentence with `played` and `cut`, and your words become the next turn. (G25, G26)
+  dropped sentence with `played`, and your words become the next turn. (G25, G26)
 
 ### 46 · [A blip in the signal](transcripts/46-a-blip-in-the-signal.jsonl)
 
@@ -397,11 +379,6 @@ where the protocol has to make it possible, marked *App*.
 
 - An ask during a call is spoken: an approval's preview in a line, the question, then its choices;
   the next spoken turn answers it. (G25, G26)
-
-### 52 · [A code on a call](transcripts/52-a-code-on-a-call.jsonl)
-
-- A secret ask is never answered by voice: the server says to type it in the chat, a spoken turn
-  stays an ordinary message, and the ask waits for the typed answer. (G25)
 
 ### 53 · [An app asks first](transcripts/53-an-app-asks-first.jsonl)
 
@@ -435,12 +412,11 @@ where the protocol has to make it possible, marked *App*.
 - Snapshots and history carry the topics on their messages, windowed as calls are. Coming back to a
   subject reuses its label. (G29)
 
-### 59 · [A plan you can tick](transcripts/59-a-plan-you-can-tick.jsonl)
+### 59 · [Blocks in a reply](transcripts/59-blocks-in-a-reply.jsonl)
 
 - A reply's `ari:` blocks travel in its Markdown text; the app draws them, and shows a block it
-  doesn't know as its fenced text.
-- A tick names the plan by its index among the reply's blocks and the item by its id; the message
-  keeps each item's latest state in `ticks`. (G30)
+  doesn't know as its fenced text. A list stays Markdown.
+- Tapping one of a reply's choices sends its label as an ordinary message.
 
 ### 60 · [Pictures Ari found](transcripts/60-pictures-ari-found.jsonl)
 

@@ -35,8 +35,8 @@
 {"at":7000,"socket":{"from":"server","frame":{"type":"heard","text":"Actually, can we move it to Thursday?","final":true,"message":"m_0003_51829"}}}
 {"at":7000,"event":{"id":"e_0010_32985","type":"turn.started","at":"2026-10-27T07:40:07.000Z","turn":"t_0002_55430","inputs":["m_0003_51829"]}}
 {"at":7000,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
-{"at":7050,"socket":{"from":"app","frame":{"type":"played","id":"s1","cut":true}}}
-{"at":7050,"socket":{"from":"app","frame":{"type":"played","id":"s2","cut":true}}}
+{"at":7050,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
+{"at":7050,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
 {"at":7950,"event":{"id":"e_0011_93146","type":"turn.status","at":"2026-10-27T07:40:07.950Z","turn":"t_0002_55430","kind":"writing","label":"Writing"}}
 {"at":7950,"event":{"id":"e_0012_85834","type":"message.started","at":"2026-10-27T07:40:07.950Z","message":{"id":"m_0004_30759","role":"agent","kind":"reply","turn":"t_0002_55430","text":"","at":"2026-10-27T07:40:07.950Z","position":12}}}
 {"at":7950,"event":{"id":"e_0013_60723","type":"message.delta","at":"2026-10-27T07:40:07.950Z","message":"m_0004_30759","offset":0,"text":"I'll ask Maya for Thursday."}}
