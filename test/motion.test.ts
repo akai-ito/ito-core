@@ -11,6 +11,7 @@ import { createMemory, type Memory } from "#memory/memory.ts";
 import { createKinds } from "#motion/kinds.ts";
 import { createMotions, type Motions } from "#motion/motion.ts";
 import { florenceId, florenceTrip } from "#protocol/tools/florence.ts";
+import { sub20Id, sub20Training } from "#protocol/tools/sub20.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
 import { openDatabase } from "#store/database.ts";
 import { createMemoryStore } from "#store/memory.ts";
@@ -254,6 +255,24 @@ describe("things in motion", () => {
     expect(asked()[0]).toMatchObject({ kind: "approval", question: "Forget Florence with Janki?" });
     expect(motions.list()).toEqual([]);
     expect(existsSync(path.join(thread, "motion", florenceId))).toBe(false);
+  });
+
+  it("keeps a training block, with ticks on sessions in any week", async () => {
+    const { motions } = await openMotions();
+
+    const started = await call(motions, "start_motion", {
+      id: sub20Id,
+      kind: "training",
+      title: "Sub-20 5K",
+      summary: "Week 6 of 10 · intervals today",
+      content: sub20Training,
+      note: "Started the block",
+    });
+    const ticked = motions.patchState(sub20Id, { sessions: { "wed-intervals": { done: true } } });
+
+    expect(started.isError).toBeUndefined();
+    expect(ticked).toEqual({ ok: true, value: { sessions: { "wed-intervals": { done: true } } } });
+    expect(motions.tickNote()).toBe("(Since your last reply: in Sub-20 5K, you ticked Intervals.)");
   });
 
   it("lets recall find a trip by what's in it", async () => {

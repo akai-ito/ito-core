@@ -199,8 +199,28 @@ export const mergePatch = (target: unknown, patch: unknown): unknown => {
   );
 };
 
+const itemsInField = (value: unknown, field: string): readonly (readonly [string, Item])[] => {
+  if (isList(value)) {
+    return value.flatMap((item) => [
+      [field, item] as const,
+      ...Object.entries(item).flatMap(([child, nested]) => itemsInField(nested, child)),
+    ]);
+  }
+  return [];
+};
+
+export const itemsByField = (content: Fields): ReadonlyMap<string, readonly Item[]> => {
+  const pairs = Object.entries(content).flatMap(([field, value]) => itemsInField(value, field));
+  return new Map(
+    [...new Set(pairs.map(([field]) => field))].map((field) => [
+      field,
+      pairs.filter(([other]) => other === field).map(([, item]) => item),
+    ]),
+  );
+};
+
 export const strayIds = (state: Fields, content: Fields): readonly string[] => {
-  const lists = listsOf(content);
+  const lists = itemsByField(content);
   return Object.entries(state).flatMap(([list, entries]) => {
     const ids = new Set((lists.get(list) ?? []).map((item) => item.id));
     return isObject(entries) ? Object.keys(entries).filter((id) => !ids.has(id)) : [];
@@ -208,7 +228,7 @@ export const strayIds = (state: Fields, content: Fields): readonly string[] => {
 };
 
 export const pruneState = (state: Fields, content: Fields): Fields => {
-  const lists = listsOf(content);
+  const lists = itemsByField(content);
   return Object.fromEntries(
     Object.entries(state)
       .map(([list, entries]) => {

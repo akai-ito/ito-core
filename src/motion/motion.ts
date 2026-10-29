@@ -6,6 +6,7 @@ import type { Memory } from "#memory/memory.ts";
 import type { Thread } from "#memory/thread.ts";
 import {
   applyChanges,
+  itemsByField,
   listsOf,
   mergePatch,
   pruneState,
@@ -120,7 +121,7 @@ const answer = (result: Result<string, string>): ToolResult =>
   result.ok ? { text: result.value } : failed(result.failure);
 
 const tickedIn = (content: Fields, state: Fields): readonly string[] => {
-  const lists = listsOf(content);
+  const lists = itemsByField(content);
   return Object.entries(state)
     .flatMap(([list, entries]) =>
       Object.entries(isObject(entries) ? entries : {}).map(([item, tick]) => ({
@@ -282,7 +283,7 @@ export const createMotions = ({
       const id = textOf(input, "id");
       if (!idPattern.test(id)) return fail("Give it an id of lowercase words joined by dashes, such as florence-trip.");
       const kind = textOf(input, "kind");
-      if (!kinds.isKind(kind)) return fail(`${kind || "That"} isn't a kind of thing yet: use trip.`);
+      if (!kinds.isKind(kind)) return fail(`${kind || "That"} isn't a kind of thing yet: use trip or training.`);
       const title = textOf(input, "title");
       const note = textOf(input, "note");
       if (title === "" || note === "") return fail("Give it a title and a note.");
@@ -450,7 +451,7 @@ export const createMotions = ({
         type: "object",
         properties: {
           id: { type: "string", description: "Lowercase words and dashes, such as florence-with-janki." },
-          kind: { type: "string", enum: ["trip"] },
+          kind: { type: "string", enum: ["trip", "training"] },
           title: { type: "string", description: "Such as Florence with Janki." },
           summary: { type: "string", description: "Where it stands, in one line, such as “6–9 Nov · 4 to book”." },
           content: { type: "object", description: "The whole content, as its kind describes." },

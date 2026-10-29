@@ -100,6 +100,36 @@ where they're staying, and what's left to do.
 - **To do** is what's left, and the summary counts it.
 - Times are local to the trip's time zone: `08:15`, `2026-11-08T09:12`.
 
+## Training
+
+A training block towards a goal, such as a sub-20 5K: the goal, results so far, and each week's
+sessions.
+
+```json
+{
+  "goal": { "title": "Sub-20 5K", "target": "19:59", "by": "2026-11-30" },
+  "weeks": [
+    {
+      "id": "week-6",
+      "start": "2026-10-26",
+      "focus": "Speed",
+      "note": "Two hard days, so keep the easy runs easy.",
+      "sessions": [
+        { "id": "wed-intervals", "date": "2026-10-28", "kind": "intervals", "title": "Intervals", "detail": "6 × 800 m at 3:50/km · 90 s jog · 2 km warm-up", "done": false }
+      ]
+    }
+  ],
+  "results": [{ "id": "parkrun-oct-24", "date": "2026-10-24", "result": "20:41", "note": "Windy" }]
+}
+```
+
+- **Sessions** are `easy`, `intervals`, `tempo`, `long`, `strength`, `race` or `rest`. When they
+  tell you how one went, tick it and keep their words in `how`.
+- **Each week** has a line from you in `note`: what matters this week, updated as it goes.
+- **Results** are timed efforts towards the goal, oldest first, such as a parkrun. Add one whenever
+  they tell you a time.
+- The summary says where the block is: "Week 6 of 10 · intervals today".
+
 ## Photos
 
 Real photos, chosen well, used freely: this is what the person would do themselves.

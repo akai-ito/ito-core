@@ -5,7 +5,7 @@ import formats from "ajv-formats";
 import { protocolDirectory, type Schemas } from "#protocol/schemas.ts";
 import { fail, ok, type Result } from "#result.ts";
 
-export const kindNames = ["trip"] as const;
+export const kindNames = ["trip", "training"] as const;
 
 export type Kind = (typeof kindNames)[number];
 
@@ -20,6 +20,7 @@ const shown = 3;
 
 const definitions: Readonly<Record<Kind, { readonly content: string; readonly state: string }>> = {
   trip: { content: "Trip", state: "TripState" },
+  training: { content: "Training", state: "TrainingState" },
 };
 
 const toProblem = ({ instancePath, message = "isn't right", params }: ErrorObject): string => {

@@ -824,9 +824,7 @@ export const createTranscript = (header: Header): Transcript => {
   ): { readonly motion: Motion; readonly change: MotionChange } => {
     const { order, byId } = project(log.get());
     const position =
-      order
-        .map((id) => byId.get(id))
-        .findLast((message) => message?.role === "user")?.position ?? nextPosition();
+      order.map((id) => byId.get(id)).findLast((message) => message?.role === "user")?.position ?? nextPosition();
     const before = motions.get().get(given.id);
     const at = timestamp();
     const motion: Motion = {
