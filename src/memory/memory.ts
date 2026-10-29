@@ -760,7 +760,7 @@ export const createMemory = ({
       isClosed.set(true);
       pushTimer.get()?.();
       await ready;
-      await writes.get();
+      await serially(() => Promise.resolve());
     },
   };
 };
