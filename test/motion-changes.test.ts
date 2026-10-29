@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadSchemas } from "#protocol/schemas.ts";
+import { loadSchemas, protocolDirectory } from "#protocol/schemas.ts";
 import { createKinds } from "#motion/kinds.ts";
 import {
   applyChanges,
   danglingIds,
+  listFields,
   mergePatch,
   pruneState,
   strayIds,
@@ -76,6 +79,37 @@ describe("changing a thing in motion by id", () => {
       "book-uffizi",
       "pisa-train",
     ]);
+  });
+
+  it("treats only list fields as lists, so an empty field of words can be set", () => {
+    const withWho: Applied = { card, content: { ...trip, who: [] } };
+
+    expect(applyChanges("florence", withWho, [{ set: "florence", fields: { who: ["Janki"] } }])).toMatchObject({
+      ok: true,
+      value: { content: { who: ["Janki"] } },
+    });
+    expect(applyChanges("florence", withWho, [{ add: { id: "x" }, to: "who" }])).toEqual({
+      ok: false,
+      failure: "There's no list who.",
+    });
+  });
+
+  it("knows every list the kinds' schemas hold", () => {
+    const motion = JSON.parse(readFileSync(path.join(protocolDirectory, "motion.schema.json"), "utf8")) as {
+      readonly $defs: Readonly<Record<string, { readonly properties?: Readonly<Record<string, unknown>> }>>;
+    };
+    const itemLists = Object.values(motion.$defs).flatMap(({ properties = {} }) =>
+      Object.entries(properties)
+        .filter(([, value]) => {
+          const reference = (value as { readonly items?: { readonly $ref?: string } }).items?.$ref ?? "";
+          const target = motion.$defs[reference.replace("#/$defs/", "")] as
+            { readonly required?: readonly string[] } | undefined;
+          return target?.required?.includes("id") === true;
+        })
+        .map(([field]) => field),
+    );
+
+    expect(new Set(itemLists)).toEqual(listFields);
   });
 
   it("applies all of a change or none of it, and says which part failed", () => {

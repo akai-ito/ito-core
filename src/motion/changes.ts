@@ -23,14 +23,26 @@ const isObject = (value: unknown): value is Fields =>
 
 const isItem = (value: unknown): value is Item => isObject(value) && typeof value.id === "string";
 
-const isList = (value: unknown): value is readonly Item[] =>
-  Array.isArray(value) && value.every((item) => isItem(item));
+export const listFields: ReadonlySet<string> = new Set([
+  "days",
+  "stops",
+  "places",
+  "travel",
+  "stays",
+  "todo",
+  "weeks",
+  "sessions",
+  "results",
+]);
+
+const isList = (value: unknown, field: string): value is readonly Item[] =>
+  listFields.has(field) && Array.isArray(value) && value.every((item) => isItem(item));
 
 const rebuildItem = (item: Item, lists: Lists): Item =>
   Object.fromEntries(
     Object.entries(item).map(([field, value]) => [
       field,
-      isList(value)
+      isList(value, field)
         ? lists(
             item.id,
             value.map((child) => rebuildItem(child, lists)),
@@ -43,7 +55,7 @@ const rebuild = (content: Fields, lists: Lists): Fields =>
   Object.fromEntries(
     Object.entries(content).map(([field, value]) => [
       field,
-      isList(value)
+      isList(value, field)
         ? lists(
             field,
             value.map((item) => rebuildItem(item, lists)),
@@ -53,14 +65,14 @@ const rebuild = (content: Fields, lists: Lists): Fields =>
   );
 
 const listsInItem = (item: Item): readonly (readonly [string, readonly Item[]])[] =>
-  Object.values(item)
-    .filter((value) => isList(value))
-    .flatMap((items) => [[item.id, items] as const, ...items.flatMap((child) => listsInItem(child))]);
+  Object.entries(item)
+    .filter((entry): entry is [string, readonly Item[]] => isList(entry[1], entry[0]))
+    .flatMap(([, items]) => [[item.id, items] as const, ...items.flatMap((child) => listsInItem(child))]);
 
 export const listsOf = (content: Fields): ReadonlyMap<string, readonly Item[]> =>
   new Map(
     Object.entries(content).flatMap(([field, value]) =>
-      isList(value) ? [[field, value] as const, ...value.flatMap((item) => listsInItem(item))] : [],
+      isList(value, field) ? [[field, value] as const, ...value.flatMap((item) => listsInItem(item))] : [],
     ),
   );
 
@@ -106,7 +118,7 @@ const setItem = (applied: Applied, id: string, fields: Fields): Result<Applied, 
     .flatMap((items) => items)
     .find((item) => item.id === id);
   if (!target) return fail(`There's no item ${id}.`);
-  const listed = Object.keys(fields).find((field) => isList(target[field]) || isList(fields[field]));
+  const listed = Object.keys(fields).find((field) => listFields.has(field));
   if (listed !== undefined) return fail(`${listed} in ${id} is a list: change it with add, move and remove.`);
   const content = rebuild(applied.content, (_, items) =>
     items.map((item) => (item.id === id ? (withoutNulls(withFields(item, fields)) as Item) : item)),
@@ -200,7 +212,7 @@ export const mergePatch = (target: unknown, patch: unknown): unknown => {
 };
 
 const itemsInField = (value: unknown, field: string): readonly (readonly [string, Item])[] => {
-  if (isList(value)) {
+  if (isList(value, field)) {
     return value.flatMap((item) => [
       [field, item] as const,
       ...Object.entries(item).flatMap(([child, nested]) => itemsInField(nested, child)),

@@ -129,7 +129,12 @@ export const openThread = async (directory: string): Promise<Thread> => {
         .filter((entry) => entry.trim() !== "")
         .map((entry) => {
           const [commit = "", at = "", subject = "", body = "", status = ""] = entry.split("\u{1F}", 5);
-          return { commit, at, subject, body: body.trim(), isDeleted: status.trimStart().startsWith("D") };
+          const statuses = status
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+          const isDeleted = statuses.length > 0 && statuses.every((line) => line.startsWith("D"));
+          return { commit, at, subject, body: body.trim(), isDeleted };
         });
     },
     files: () => listFiles(directory),

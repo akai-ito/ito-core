@@ -154,7 +154,10 @@ export const createMemoryStore = (database: DatabaseSync): MemoryStore => {
       });
     },
     clearChunks: () => {
-      database.exec("DELETE FROM memory_text; DELETE FROM memory_chunks;");
+      database.exec(
+        `DELETE FROM memory_text WHERE rowid IN (SELECT id FROM memory_chunks WHERE address NOT LIKE 'motion:%');
+         DELETE FROM memory_chunks WHERE address NOT LIKE 'motion:%';`,
+      );
     },
     chunks: () =>
       (database.prepare("SELECT * FROM memory_chunks").all() as unknown as readonly ChunkRow[]).map((row) =>

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Clock } from "#clock.ts";
 import type { AskFields, StepFacts } from "#engine/engine.ts";
@@ -122,18 +123,21 @@ const versionOf = async (thread: Thread, id: string): Promise<number> => {
 const answer = (result: Result<string, string>): ToolResult =>
   result.ok ? { text: result.value } : failed(result.failure);
 
-const tickedIn = (content: Fields, state: Fields): readonly string[] => {
+const doneIn = (state: Fields, list: string, item: string): unknown => {
+  const entries = state[list];
+  return isObject(entries) ? fieldOf(entries[item], "done") : undefined;
+};
+
+const tickedIn = (content: Fields, before: Fields, after: Fields): readonly string[] => {
   const lists = itemsByField(content);
-  return Object.entries(state)
-    .flatMap(([list, entries]) =>
-      Object.entries(isObject(entries) ? entries : {}).map(([item, tick]) => ({
-        written: lists.get(list)?.find((candidate) => candidate.id === item),
-        item,
-        done: fieldOf(tick, "done"),
-      })),
-    )
-    .filter(({ written, done }) => typeof done === "boolean" && written?.done !== done)
-    .map(({ written, item, done }) => `${done === true ? "ticked" : "unticked"} ${nameOfItem(written, item)}`);
+  return Object.entries(after)
+    .flatMap(([list, entries]) => Object.keys(isObject(entries) ? entries : {}).map((item) => ({ list, item })))
+    .filter(({ list, item }) => typeof doneIn(after, list, item) === "boolean")
+    .filter(({ list, item }) => doneIn(after, list, item) !== doneIn(before, list, item))
+    .map(({ list, item }) => {
+      const written = lists.get(list)?.find((candidate) => candidate.id === item);
+      return `${doneIn(after, list, item) === true ? "ticked" : "unticked"} ${nameOfItem(written, item)}`;
+    });
 };
 
 const toChanges = (given: unknown): readonly Change[] => (Array.isArray(given) ? (given as readonly Change[]) : []);
@@ -149,6 +153,7 @@ export const createMotions = ({
   info,
 }: MotionOptions): Motions => {
   const saved = createCell<ReadonlyMap<string, Saved>>(new Map());
+  const indexing = createCell<Promise<void>>(Promise.resolve());
 
   const remember = (id: string, thing: Saved | undefined): void => {
     saved.update(
@@ -205,6 +210,7 @@ export const createMotions = ({
   ): Promise<Result<undefined, string>> => {
     const used = new Set(photosIn(thing.content));
     const pictures = [...used]
+      .filter((attachment) => !existsSync(path.join(thread.directory, pictureFile(id, attachment))))
       .filter((attachment) => existsSync(picturePath(attachment)))
       .map((attachment) => ({ file: pictureFile(id, attachment), text: readFileSync(picturePath(attachment)) }));
     const before = readNow(thread, id);
@@ -247,6 +253,22 @@ export const createMotions = ({
     };
   };
 
+  const queueIndex = (id: string, thing: Saved | undefined): void => {
+    void indexing.update(async (previous) => {
+      await previous;
+      await index(id, thing);
+    });
+  };
+
+  const readVersion = async (id: string, version: number): Promise<Saved | undefined> => {
+    try {
+      return await memory.withThread((thread) => readAt(thread, id, version));
+    } catch (error) {
+      info("An earlier version of a thing in motion couldn't be read", { motion: id, error: String(error) });
+      return undefined;
+    }
+  };
+
   const record = (
     type: "motion.started" | "motion.changed" | "motion.finished",
     id: string,
@@ -259,7 +281,7 @@ export const createMotions = ({
     const state = store.motionState(id);
     const pruned = pruneState(state, thing.content);
     if (JSON.stringify(pruned) !== JSON.stringify(state)) store.setMotionState(id, pruned);
-    void index(id, thing);
+    queueIndex(id, thing);
     return motion;
   };
 
@@ -393,11 +415,14 @@ export const createMotions = ({
     });
     if (!isAllowed) return ok(`They kept ${motion.title}, so nothing was forgotten.`);
     return memory.withThread(async (thread) => {
-      const removed = await thread.writeFiles([], `Forget ${motion.title}: ${reason}`, [folderOf(id)]);
-      if (!removed.ok) return fail(removed.failure);
+      if (!store.findMotion(id)) return ok(`${motion.title} is already forgotten.`);
+      if (readNow(thread, id)) {
+        const removed = await thread.writeFiles([], `Forget ${motion.title}: ${reason}`, [folderOf(id)]);
+        if (!removed.ok) return fail(removed.failure);
+      }
       store.removeMotion(id);
       remember(id, undefined);
-      void index(id, undefined);
+      queueIndex(id, undefined);
       step("forgotten", motion);
       return ok(`Forgot ${motion.title}.`);
     });
@@ -581,7 +606,7 @@ export const createMotions = ({
       info("Things in motion couldn't be read as the server started", { error: String(error) });
       return;
     }
-    for (const [id, thing] of saved.get()) await index(id, thing);
+    for (const [id, thing] of saved.get()) queueIndex(id, thing);
   })();
 
   return {
@@ -591,8 +616,7 @@ export const createMotions = ({
     detail: async (id, version) => {
       const motion = store.findMotion(id);
       if (!motion) return fail({ code: "not_found", detail: `There's no thing ${id} in motion.` });
-      const thing =
-        version === undefined ? saved.get().get(id) : await memory.withThread((thread) => readAt(thread, id, version));
+      const thing = version === undefined ? saved.get().get(id) : await readVersion(id, version);
       if (!thing) return fail({ code: "not_found", detail: `${motion.title} has no version ${String(version)}.` });
       return ok({
         motion,
@@ -628,10 +652,13 @@ export const createMotions = ({
     },
     tickNote: () => {
       const ticks = store
-        .motionsTickedSinceLastTurn()
-        .map((id) => ({ id, thing: saved.get().get(id) }))
-        .filter((entry): entry is { readonly id: string; readonly thing: Saved } => entry.thing !== undefined)
-        .map(({ id, thing }) => ({ title: thing.card.title, said: tickedIn(thing.content, store.motionState(id)) }))
+        .motionTicksSinceLastTurn()
+        .map(({ motion, before, after }) => ({ thing: saved.get().get(motion), before, after }))
+        .filter(
+          (entry): entry is { readonly thing: Saved; readonly before: Fields; readonly after: Fields } =>
+            entry.thing !== undefined,
+        )
+        .map(({ thing, before, after }) => ({ title: thing.card.title, said: tickedIn(thing.content, before, after) }))
         .filter(({ said }) => said.length > 0)
         .map(({ title, said }) => `in ${title}, you ${said.join(", ")}`);
       return ticks.length === 0 ? "" : `(Since your last reply: ${ticks.join("; ")}.)`;

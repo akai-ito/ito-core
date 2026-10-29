@@ -222,6 +222,30 @@ describe("things in motion", () => {
     expect(store.motionState(florenceId)).toEqual({});
   });
 
+  it("tells Ari only of ticks since its last turn", async () => {
+    const { motions, store } = await openMotions();
+    await startFlorence(motions);
+    motions.patchState(florenceId, { todo: { "book-pisa": { done: true } } });
+    store.startTurn(randomIdentifiers.turn(), []);
+
+    motions.patchState(florenceId, { todo: { "book-duomo": { done: true } } });
+
+    expect(motions.tickNote()).toBe(
+      "(Since your last reply: in Florence with Janki, you ticked Book the Duomo climb.)",
+    );
+  });
+
+  it("counts versions right after a change that drops a picture", async () => {
+    const { motions, thread } = await openMotions();
+    await startFlorence(motions);
+
+    await call(motions, "change_motion", { ...bookUffizi, changes: [{ set: florenceId, fields: { cover: null } }] });
+    const next = await call(motions, "change_motion", { ...bookUffizi, version: 2 });
+
+    expect(existsSync(path.join(thread, "motion", florenceId, "pictures", cover))).toBe(false);
+    expect(next).toEqual({ text: "Saved Florence with Janki, now at version 3." });
+  });
+
   it("brings back an earlier version as a new change, and finishes the trip into Done", async () => {
     const { motions } = await openMotions();
     await startFlorence(motions);

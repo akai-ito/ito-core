@@ -158,7 +158,11 @@ export type Store = Settings & {
   readonly listMotions: () => readonly Motion[];
   readonly motionChanges: (motion: string, limit: number) => readonly MotionChange[];
   readonly motionState: (motion: string) => Readonly<Record<string, unknown>>;
-  readonly motionsTickedSinceLastTurn: () => readonly string[];
+  readonly motionTicksSinceLastTurn: () => readonly {
+    readonly motion: string;
+    readonly before: Readonly<Record<string, unknown>>;
+    readonly after: Readonly<Record<string, unknown>>;
+  }[];
   readonly keepAttachment: (id: string) => void;
   readonly messageAttachments: (message: MessageId) => readonly Attachment[];
   readonly messageSpoken: (message: MessageId) => Spoken | undefined;
@@ -728,15 +732,34 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       return row ? (JSON.parse(row.state) as Readonly<Record<string, unknown>>) : {};
     },
 
-    motionsTickedSinceLastTurn: () =>
-      (
+    motionTicksSinceLastTurn: () => {
+      const since = (
+        database.prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM events WHERE type = 'turn.started'").get() as {
+          readonly seq: number;
+        }
+      ).seq;
+      const latestState = (motion: string, comparison: "<=" | ">"): Readonly<Record<string, unknown>> | undefined => {
+        const row = database
+          .prepare(
+            `SELECT json_extract(body, '$.state') AS state FROM events WHERE type = 'motion.state'
+             AND json_extract(body, '$.motion') = ? AND seq ${comparison} ? ORDER BY seq DESC LIMIT 1`,
+          )
+          .get(motion, since) as { readonly state: string } | undefined;
+        return row ? (JSON.parse(row.state) as Readonly<Record<string, unknown>>) : undefined;
+      };
+      return (
         database
           .prepare(
-            `SELECT DISTINCT json_extract(body, '$.motion') AS motion FROM events WHERE type = 'motion.state'
-             AND seq > COALESCE((SELECT MAX(seq) FROM events WHERE type = 'turn.started'), 0) ORDER BY seq`,
+            `SELECT DISTINCT json_extract(body, '$.motion') AS motion FROM events
+             WHERE type = 'motion.state' AND seq > ? ORDER BY seq`,
           )
-          .all() as unknown as readonly { readonly motion: string }[]
-      ).map((row) => row.motion),
+          .all(since) as unknown as readonly { readonly motion: string }[]
+      ).map(({ motion }) => ({
+        motion,
+        before: latestState(motion, "<=") ?? {},
+        after: latestState(motion, ">") ?? {},
+      }));
+    },
 
     keepAttachment: (id) => {
       database.prepare("UPDATE attachments SET kept = 1 WHERE id = ?").run(id);
