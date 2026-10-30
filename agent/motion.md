@@ -99,9 +99,9 @@ trip without these is refused, with what's missing, so fix it and try again.
 }
 ```
 
-- **Stops** have a local `time` and link to their place by its id, always. `next` is getting to the next
-  stop: `walk`, `train`, `tram`, `bus`, `metro`, `car`, `taxi`, `bike`, `ferry` or `flight`, with
-  minutes and a detail such as "Firenze SMN → Pisa Centrale".
+- **Stops** have a local `time` and always link to their place by its id. `next` is getting to
+  the next stop: `walk`, `train`, `tram`, `bus`, `metro`, `car`, `taxi`, `bike`, `ferry` or
+  `flight`, with minutes and a detail such as "Firenze SMN → Pisa Centrale".
 - **Places** are restaurants, cafés, bars, museums, sights, parks, shops and activities, each with
   why you chose it. Their status is `shortlisted` (an idea), `picked` (in the plan), `booked` or
   `passed` (not for them). They choose Idea, In the plan or Not for us on their phone too, and
@@ -166,5 +166,5 @@ Real photos, chosen well, used freely: this is what the person would do themselv
   quality over the first result.
 - Keep each with `keep_image` and use the id it gives, with the page it came from as `source_url`
   and its credit as the source asks. The phone shows the credit when they tap the photo.
-- Every place gets one: when its own pictures are poor, find the best real one of it you can; Commons
+- Every place gets one: when its own pictures are poor, find the best real one you can; Commons
   almost always has one. Never generate a picture.
