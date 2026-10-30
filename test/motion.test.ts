@@ -311,7 +311,23 @@ describe("things in motion", () => {
     expect(motions.tickNote()).toBe("(Since your last reply: in Sub-20 5K, you ticked Intervals.)");
   });
 
-  it("keeps the thing up with your ticks at once, quietly, gathering ticks in quick succession", async () => {
+  it("takes your choice for a place, but leaves booking to Ari", async () => {
+    const { motions } = await openMotions();
+    await startFlorence(motions);
+
+    const picked = motions.patchState(florenceId, { places: { boboli: { status: "picked" } } });
+    const booked = motions.patchState(florenceId, { places: { mario: { status: "booked" } } });
+    const passed = motions.patchState(florenceId, { places: { "pitti-place": { status: "passed" } } });
+
+    expect(picked).toEqual({ ok: true, value: { places: { boboli: { status: "picked" } } } });
+    expect(booked).toMatchObject({ ok: false, failure: { code: "invalid" } });
+    expect(passed.ok).toBe(true);
+    expect(motions.tickNote()).toBe(
+      "(Since your last reply: in Florence with Janki, you put Boboli Gardens in the plan, passed on Pitti Palace.)",
+    );
+  });
+
+  it("keeps the thing up with your taps at once, quietly, gathering taps in quick succession", async () => {
     const prompts = createCell<readonly string[]>([]);
     const { motions, clock } = await openMotions([], (prompt) => {
       prompts.update((current) => [...current, prompt]);
@@ -330,7 +346,7 @@ describe("things in motion", () => {
 
     motions.patchState(florenceId, { todo: { "book-pisa": { done: true } } });
     clock.moveTo(clock.now() + 1000);
-    motions.patchState(florenceId, { todo: { "book-duomo": { done: true } } });
+    motions.patchState(florenceId, { places: { boboli: { status: "picked" } } });
     clock.runNext(clock.now() + 3000);
 
     await vi.waitFor(() => {
@@ -338,7 +354,7 @@ describe("things in motion", () => {
     });
     const detail = await motions.detail(florenceId);
     expect(prompts.get()).toHaveLength(1);
-    expect(prompts.get()[0]).toContain("They just ticked Pisa train tickets, ticked Book the Duomo climb in it");
+    expect(prompts.get()[0]).toContain("they just ticked Pisa train tickets, put Boboli Gardens in the plan.");
     expect(detail.ok && detail.value.changes[0]).toMatchObject({ version: 2, note: "Pisa train booked" });
     expect(JSON.stringify(detail.ok && detail.value.content)).toContain('"booking":{"status":"booked"}');
   });

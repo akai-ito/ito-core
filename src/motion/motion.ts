@@ -127,16 +127,43 @@ const doneIn = (state: Fields, list: string, item: string): unknown => {
   return isObject(entries) ? fieldOf(entries[item], "done") : undefined;
 };
 
-const tickedIn = (content: Fields, before: Fields, after: Fields): readonly string[] => {
+const choicesIn = (state: Fields): Fields => (isObject(state.places) ? state.places : {});
+
+const choiceIn = (state: Fields, place: string): unknown => fieldOf(choicesIn(state)[place], "status");
+
+const toChoice = (status: unknown, name: string): string => {
+  switch (status) {
+    case "picked": {
+      return `put ${name} in the plan`;
+    }
+    case "shortlisted": {
+      return `made ${name} just an idea`;
+    }
+    case "passed": {
+      return `passed on ${name}`;
+    }
+    default: {
+      return `took back the choice for ${name}`;
+    }
+  }
+};
+
+const tapsIn = (content: Fields, before: Fields, after: Fields): readonly string[] => {
   const lists = itemsByField(content);
-  return Object.entries(after)
+  const nameIn = (list: string, item: string): string =>
+    nameOfItem(
+      lists.get(list)?.find((candidate) => candidate.id === item),
+      item,
+    );
+  const ticks = Object.entries(after)
     .flatMap(([list, entries]) => Object.keys(isObject(entries) ? entries : {}).map((item) => ({ list, item })))
     .filter(({ list, item }) => typeof doneIn(after, list, item) === "boolean")
     .filter(({ list, item }) => doneIn(after, list, item) !== doneIn(before, list, item))
-    .map(({ list, item }) => {
-      const written = lists.get(list)?.find((candidate) => candidate.id === item);
-      return `${doneIn(after, list, item) === true ? "ticked" : "unticked"} ${nameOfItem(written, item)}`;
-    });
+    .map(({ list, item }) => `${doneIn(after, list, item) === true ? "ticked" : "unticked"} ${nameIn(list, item)}`);
+  const choices = [...new Set([...Object.keys(choicesIn(before)), ...Object.keys(choicesIn(after))])]
+    .filter((place) => choiceIn(after, place) !== choiceIn(before, place))
+    .map((place) => toChoice(choiceIn(after, place), nameIn("places", place)));
+  return [...ticks, ...choices];
 };
 
 const toChanges = (given: unknown): readonly Change[] => (Array.isArray(given) ? (given as readonly Change[]) : []);
@@ -441,7 +468,7 @@ export const createMotions = ({
       "content:",
       JSON.stringify(thing.content, undefined, 2),
       ...(Object.keys(state).length > 0
-        ? ["their ticks, which win over the content's own:", JSON.stringify(state)]
+        ? ["their ticks and choices, which win over the content's own, except a booked place:", JSON.stringify(state)]
         : []),
       ...(isLatest && notes.length > 0 ? ["what changed lately:", ...notes] : []),
     ].join("\n");
@@ -530,7 +557,7 @@ export const createMotions = ({
       name: "read_motion",
       title: "Read a thing in motion",
       description:
-        "Read a thing in motion: its content with every id, its version, the person's ticks and what changed " +
+        "Read a thing in motion: its content with every id, its version, the person's ticks and choices, what changed " +
         "lately. Read it before you change it. Give a version to read it as it was then.",
       inputSchema: {
         type: "object",
@@ -602,8 +629,8 @@ export const createMotions = ({
     const motion = store.findMotion(id);
     if (!complete || !thing || !motion || isClosed.get()) return;
     const state = store.motionState(id);
-    const ticked = tickedIn(thing.content, before, state);
-    if (ticked.length === 0) return;
+    const taps = tapsIn(thing.content, before, state);
+    if (taps.length === 0) return;
     const prompt = toReactionPrompt({
       id,
       kind: thing.kind,
@@ -612,12 +639,12 @@ export const createMotions = ({
       version: motion.version,
       content: thing.content,
       state,
-      ticked,
+      taps,
     });
     const answered = await complete(prompt, reactionSchema);
     const reaction = answered.ok ? toReaction(answered.value) : undefined;
     if (!reaction || isClosed.get()) {
-      info("Ari couldn't keep a thing in motion up with a tick", {
+      info("Ari couldn't keep a thing in motion up with a tap", {
         motion: id,
         error: answered.ok ? "Its answer wasn't a change." : answered.failure,
       });
@@ -631,10 +658,10 @@ export const createMotions = ({
       version: motion.version,
       changes: changes.length > 0 ? changes : [{ set: id, fields: { summary } }],
       summary,
-      note: reaction.note || "Kept up with your tick",
+      note: reaction.note || "Kept up with your tap",
     });
     if (!changed.ok)
-      info("A thing in motion couldn't take Ari's change after a tick", { motion: id, error: changed.failure });
+      info("A thing in motion couldn't take Ari's change after a tap", { motion: id, error: changed.failure });
   };
 
   const reactLater = (id: string, before: Fields): void => {
@@ -647,7 +674,7 @@ export const createMotions = ({
         try {
           await react(id, earlier?.before ?? before);
         } catch (error) {
-          info("Ari couldn't keep a thing in motion up with a tick", { motion: id, error: String(error) });
+          info("Ari couldn't keep a thing in motion up with a tap", { motion: id, error: String(error) });
         }
       })();
     });
@@ -726,7 +753,7 @@ export const createMotions = ({
           (entry): entry is { readonly thing: Saved; readonly before: Fields; readonly after: Fields } =>
             entry.thing !== undefined,
         )
-        .map(({ thing, before, after }) => ({ title: thing.card.title, said: tickedIn(thing.content, before, after) }))
+        .map(({ thing, before, after }) => ({ title: thing.card.title, said: tapsIn(thing.content, before, after) }))
         .filter(({ said }) => said.length > 0)
         .map(({ title, said }) => `in ${title}, you ${said.join(", ")}`);
       return ticks.length === 0 ? "" : `(Since your last reply: ${ticks.join("; ")}.)`;

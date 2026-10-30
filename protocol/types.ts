@@ -579,14 +579,16 @@ export interface paths {
     options?: never;
     head?: never;
     /**
-     * Tick items in a thing
+     * Tick items in a thing, or choose for its places
      * @description A JSON Merge Patch (RFC 7386) on the state, keyed by item ids, such as
-     *     `{"todo": {"book-uffizi": {"done": true}}}`, sent as `application/merge-patch+json` or
-     *     `application/json`. Its kind in [the motion schema](motion.schema.json) says which keys the
-     *     state has. Every app hears `motion.state`. A few seconds later, gathering ticks made in
-     *     quick succession, Ari keeps the thing up with them, such as marking what a to-do books as
-     *     booked or writing the week's line: that's an ordinary `motion.changed`, with no chat
-     *     message. Ari also hears of the ticks with your next message. Sending the same patch twice
+     *     `{"todo": {"book-uffizi": {"done": true}}}` or
+     *     `{"places": {"pitti-place": {"status": "picked"}}}`, sent as `application/merge-patch+json`
+     *     or `application/json`; `null` takes a tick or a choice back. Its kind in
+     *     [the motion schema](motion.schema.json) says which keys the state has. Every app hears
+     *     `motion.state`. A few seconds later, gathering taps made in quick succession, Ari keeps the
+     *     thing up with them, such as marking what a to-do books as booked, fitting a place you put
+     *     in the plan into a day or writing the week's line: that's an ordinary `motion.changed`, with
+     *     no chat message. Ari also hears of them with your next message. Sending the same patch twice
      *     changes nothing.
      */
     patch: operations["patchMotionState"];

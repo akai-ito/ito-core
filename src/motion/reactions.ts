@@ -23,18 +23,22 @@ export type Reacting = {
   readonly version: number;
   readonly content: Fields;
   readonly state: Fields;
-  readonly ticked: readonly string[];
+  readonly taps: readonly string[];
 };
 
-export const toReactionPrompt = ({ id, kind, title, summary, version, content, state, ticked }: Reacting): string =>
+export const toReactionPrompt = ({ id, kind, title, summary, version, content, state, taps }: Reacting): string =>
   [
-    `You keep "${title}" (${id}, a ${kind}) in motion for the person. They just ${ticked.join(", ")} in it, on`,
-    "their phone. Keep the thing true to that, quietly: nothing you write here goes into the chat.",
+    `You keep "${title}" (${id}, a ${kind}) in motion for the person. On their phone, they just ${taps.join(", ")}.`,
+    "Keep the thing true to that, quietly: nothing you write here goes into the chat.",
     "",
     "- Mark what a ticked to-do is about as booked, such as its stop, leg or place, and undo that for an untick.",
+    "- Fit a place they put in the plan into the day it suits best, as a stop at a sensible time that names the",
+    "  place, and set the place to picked.",
+    "- Take a place they made an idea again, or passed on, out of the days, with anything only about it, such as",
+    "  its to-do, and set the place to shortlisted or passed.",
     "- For a training session, set the week's note to a line on how the week is going and what's next.",
     "- Keep the summary current: what's left counts their ticks.",
-    "- Change nothing else. If nothing follows from their ticks, give an empty list and the summary as it is.",
+    "- Change nothing else. If nothing follows from what they did, give an empty list and the summary as it is.",
     "",
     "Answer with changes_json: a JSON array of changes, each one of {set: id, fields: {…}}, {add: item, to: list,",
     'after?: id}, {move: id, to?: list, after?: id} or {remove: id}; a list is named by its field, such as "todo",',
@@ -44,7 +48,7 @@ export const toReactionPrompt = ({ id, kind, title, summary, version, content, s
     `The thing, at version ${String(version)}, with every id:`,
     JSON.stringify(content, undefined, 2),
     "",
-    `Their ticks, which win over the content's own: ${JSON.stringify(state)}`,
+    `Their ticks and choices, which win over the content's own: ${JSON.stringify(state)}`,
     `Its summary now: ${summary}`,
   ].join("\n");
 

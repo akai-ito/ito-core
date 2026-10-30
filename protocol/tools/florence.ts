@@ -106,6 +106,16 @@ export const florenceTrip = (cover: string): Readonly<Record<string, unknown>> =
       status: "shortlisted",
       location: { lat: 43.7731, lon: 11.256 },
     },
+    {
+      id: "boboli",
+      name: "Boboli Gardens",
+      category: "park",
+      why: "Fountains and grottoes on the hill behind the Pitti, with the city below.",
+      status: "shortlisted",
+      hours: "8:15–18:30",
+      price: "€10",
+      location: { lat: 43.7629, lon: 11.2489 },
+    },
   ],
   travel: [
     {

@@ -9,8 +9,8 @@ import { florenceId, florenceTrip } from "./florence.ts";
 import { sub20Id, sub20Training } from "./sub20.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.14";
-const serverVersion = "0.14.0";
+const protocol = "0.15";
+const serverVersion = "0.15.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -2960,7 +2960,8 @@ const scenarios: readonly (() => Transcript)[] = [
       summary:
         "You tell Ari you booked the Uffizi. Ari reads the trip and changes it by id, citing the version it read: " +
         "the to-do is ticked, the stop is booked and the pinned line counts one fewer. You tick the Pisa train " +
-        "yourself, every app hears it, and Ari learns of it with your next message. The trip shows what changed.",
+        "yourself and put the Boboli Gardens in the plan; every app hears it, a few seconds later Ari quietly fits " +
+        "the gardens into Saturday, and it learns of both with your next message. The trip shows what changed.",
       guarantees: ["G32"],
     });
     transcript.begin("2026-10-29T09:00:00.000Z");
@@ -3013,38 +3014,64 @@ const scenarios: readonly (() => Transcript)[] = [
     );
     transcript.endTurn("completed");
     transcript.wait(5 * 60 * 1000);
-    const state = transcript.patchMotion(florenceId, { todo: { "book-pisa": { done: true } } });
+    transcript.patchMotion(florenceId, { todo: { "book-pisa": { done: true } } });
+    transcript.wait(1500);
+    const state = transcript.patchMotion(florenceId, { places: { boboli: { status: "picked" } } });
+    const gardens = { id: "boboli-stop", title: "Boboli Gardens", time: "15:30", place: "boboli" };
+    const fitted = "Fitted the Boboli Gardens into Saturday";
+    transcript.world("ari_keeps_up", {
+      changes: [
+        { add: gardens, to: "sat", after: "pitti" },
+        { set: "boboli", fields: { status: "picked" } },
+      ],
+      summary: "6–9 Nov · 2 to book",
+      note: fitted,
+    });
     transcript.wait(3000);
+    const keptUp = transcript.motion(
+      "changed",
+      { ...florenceCard, cover, version: 3, summary: "6–9 Nov · 2 to book" },
+      fitted,
+    );
+    transcript.wait(2000);
+    const trip = florenceTrip(cover);
     memoryCall(transcript, `/v0/motion/${florenceId}`, {
-      motion: changed.motion,
+      motion: keptUp.motion,
       content: {
-        ...florenceTrip(cover),
-        days: (florenceTrip(cover).days as readonly Readonly<Record<string, unknown>>[]).map((day) =>
+        ...trip,
+        days: (trip.days as readonly Readonly<Record<string, unknown>>[]).map((day) =>
           day.id === "sat"
             ? {
                 ...day,
-                stops: (day.stops as readonly Readonly<Record<string, unknown>>[]).map((stop) =>
-                  stop.id === "uffizi" ? { ...stop, booking: { status: "booked", ref: "UF-2291" } } : stop,
-                ),
+                stops: [
+                  ...(day.stops as readonly Readonly<Record<string, unknown>>[]).map((stop) =>
+                    stop.id === "uffizi" ? { ...stop, booking: { status: "booked", ref: "UF-2291" } } : stop,
+                  ),
+                  gardens,
+                ],
               }
             : day,
         ),
-        places: (florenceTrip(cover).places as readonly Readonly<Record<string, unknown>>[]).map((place) =>
-          place.id === "uffizi-place"
-            ? { ...place, status: "booked", booking: { status: "booked", ref: "UF-2291" } }
-            : place,
-        ),
-        todo: (florenceTrip(cover).todo as readonly Readonly<Record<string, unknown>>[]).map((item) =>
+        places: (trip.places as readonly Readonly<Record<string, unknown>>[]).map((place) => {
+          if (place.id === "uffizi-place") {
+            return { ...place, status: "booked", booking: { status: "booked", ref: "UF-2291" } };
+          }
+          return place.id === "boboli" ? { ...place, status: "picked" } : place;
+        }),
+        todo: (trip.todo as readonly Readonly<Record<string, unknown>>[]).map((item) =>
           item.id === "book-uffizi" ? { ...item, done: true } : item,
         ),
       },
       state,
-      changes: [changed.change, started.change],
+      changes: [keptUp.change, changed.change, started.change],
     });
     transcript.wait(2000);
     sendAndStart(transcript, "Thanks! What's left?");
     transcript.wait(900);
-    writeWhole(transcript, "The Duomo climb and the Pitti Palace. The Pisa train's ticked off.");
+    writeWhole(
+      transcript,
+      "The Duomo climb and the Pitti Palace. The Pisa train's ticked off, and the gardens follow the Pitti.",
+    );
     transcript.endTurn("completed");
     return transcript;
   },
