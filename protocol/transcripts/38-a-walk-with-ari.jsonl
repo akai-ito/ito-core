@@ -27,6 +27,7 @@
 {"at":9100,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":9100,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Let me check what I have on Bora."}}}
 {"at":9100,"socket":{"from":"server","audio_ms":250}}
+{"at":9100,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":9400,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
 {"at":9400,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
 {"at":10600,"event":{"id":"e_0010_65478","type":"turn.status","at":"2026-10-26T07:30:10.600Z","turn":"t_0001_25434","kind":"writing","label":"Writing"}}
@@ -35,8 +36,10 @@
 {"at":10600,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":10600,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"She wants one more round on your design before the panel sits in November."}}}
 {"at":10600,"socket":{"from":"server","audio_ms":250}}
+{"at":10600,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
 {"at":10600,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"I've put what she asked for in the chat."}}}
 {"at":10600,"socket":{"from":"server","audio_ms":250}}
+{"at":10600,"socket":{"from":"server","frame":{"type":"said","id":"s3"}}}
 {"at":10600,"event":{"id":"e_0013_59762","type":"message.ended","at":"2026-10-26T07:30:10.600Z","message":"m_0003_60545","outcome":"completed","length":165}}
 {"at":10600,"event":{"id":"e_0014_69065","type":"turn.ended","at":"2026-10-26T07:30:10.600Z","turn":"t_0001_25434","outcome":"completed"}}
 {"at":15600,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}

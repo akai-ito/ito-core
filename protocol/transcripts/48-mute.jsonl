@@ -26,6 +26,7 @@
 {"at":5200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":5200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"It's just after nine there."}}}
 {"at":5200,"socket":{"from":"server","audio_ms":250}}
+{"at":5200,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":5200,"event":{"id":"e_0008_24075","type":"turn.ended","at":"2026-10-27T09:05:05.200Z","turn":"t_0001_09837","outcome":"completed"}}
 {"at":5900,"socket":{"from":"app","frame":{"type":"unmute"}}}
 {"at":6700,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
@@ -45,6 +46,7 @@
 {"at":9600,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":9600,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Any time."}}}
 {"at":9600,"socket":{"from":"server","audio_ms":250}}
+{"at":9600,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
 {"at":9600,"event":{"id":"e_0015_89042","type":"turn.ended","at":"2026-10-27T09:05:09.600Z","turn":"t_0002_88030","outcome":"completed"}}
 {"at":11100,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
 {"at":11100,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}

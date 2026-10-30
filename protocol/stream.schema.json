@@ -34,6 +34,9 @@
           "$ref": "#/$defs/Saying"
         },
         {
+          "$ref": "#/$defs/Said"
+        },
+        {
           "$ref": "#/$defs/StopPlayback"
         },
         {
@@ -134,7 +137,7 @@
     },
     "Saying": {
       "title": "saying",
-      "description": "The sentence Ari is about to speak, for captions; its audio follows in the next binary frames. Answer with `played` once it has played.",
+      "description": "The sentence Ari is about to speak, for captions. Its audio follows in binary frames, then `said`.",
       "type": "object",
       "required": ["type", "id", "text"],
       "properties": {
@@ -147,6 +150,20 @@
         "text": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "Said": {
+      "title": "said",
+      "description": "All of a sentence's audio has been sent. Answer with `played` once it has played.",
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "const": "said"
+        },
+        "id": {
+          "$ref": "#/$defs/SentenceId"
         }
       }
     },

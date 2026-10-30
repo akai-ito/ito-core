@@ -22,9 +22,11 @@
 {"at":6200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"It's on Wednesday at ten."}}}
 {"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":6200,"event":{"id":"e_0007_68001","type":"message.ended","at":"2026-10-27T07:40:06.200Z","message":"m_0002_10070","outcome":"completed","length":59}}
 {"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Maya and Bora will both be there."}}}
 {"at":6200,"socket":{"from":"server","audio_ms":250}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
 {"at":6200,"event":{"id":"e_0008_83582","type":"turn.ended","at":"2026-10-27T07:40:06.200Z","turn":"t_0001_31388","outcome":"completed"}}
 {"at":7000,"world":"you_say","text":"Actually, can we move it to Thursday?"}
 {"at":7000,"socket":{"from":"app","audio":"walk-follow-up.pcm"}}
@@ -44,6 +46,7 @@
 {"at":7950,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":7950,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"I'll ask Maya for Thursday."}}}
 {"at":7950,"socket":{"from":"server","audio_ms":250}}
+{"at":7950,"socket":{"from":"server","frame":{"type":"said","id":"s3"}}}
 {"at":7950,"event":{"id":"e_0015_49236","type":"turn.ended","at":"2026-10-27T07:40:07.950Z","turn":"t_0002_55430","outcome":"completed"}}
 {"at":9950,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}
 {"at":9950,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}

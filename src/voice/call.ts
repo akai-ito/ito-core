@@ -15,6 +15,7 @@ export type ToApp =
   | { readonly type: "state"; readonly state: CallState }
   | { readonly type: "heard"; readonly text: string; readonly final: boolean; readonly message?: string }
   | { readonly type: "saying"; readonly id: string; readonly text: string }
+  | { readonly type: "said"; readonly id: string }
   | { readonly type: "stop_playback" }
   | { readonly type: "problem"; readonly reason: string };
 
@@ -142,6 +143,7 @@ export const createCallStream = (options: CallOptions): CallStream => {
       moveTo("speaking");
       send({ type: "saying", id: next.id, text: next.text });
       socket.get()?.sendAudio(spoken.value);
+      send({ type: "said", id: next.id });
     } else {
       log("Ari couldn't say a sentence on a call", spoken.failure);
     }

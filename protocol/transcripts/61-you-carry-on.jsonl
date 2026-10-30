@@ -29,9 +29,11 @@
 {"at":7200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":7200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Stay put, I'd say: four days is short."}}}
 {"at":7200,"socket":{"from":"server","audio_ms":250}}
+{"at":7200,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":7200,"event":{"id":"e_0008_83208","type":"message.ended","at":"2026-10-29T08:00:07.200Z","message":"m_0002_04269","outcome":"completed","length":77}}
 {"at":7200,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Pisa's an easy morning if you want it."}}}
 {"at":7200,"socket":{"from":"server","audio_ms":250}}
+{"at":7200,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
 {"at":7200,"event":{"id":"e_0009_48556","type":"turn.ended","at":"2026-10-29T08:00:07.200Z","turn":"t_0001_93450","outcome":"completed"}}
 {"at":11200,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
 {"at":13200,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
