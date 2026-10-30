@@ -2742,9 +2742,10 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 58,
       title: "Topics",
       summary:
-        "Last night you planned Florence, then asked about Bora. Ari marked each change of subject with a quiet " +
-        "label on the message that changed it, and none for a follow-up. In the morning the snapshot carries " +
-        "both labels, and when you come back to Florence, Ari marks it with the same label.",
+        "Last night you planned Florence, then asked about Bora. After each turn, Ito marked each change of " +
+        "subject with a quiet label on the message that changed it, and none for a follow-up. In the morning the " +
+        "snapshot carries both labels, and when you come back to Florence, the label arrives just after the reply " +
+        "and is the same as before.",
       guarantees: ["G29"],
     });
     transcript.time("2026-10-27T19:00:00.000Z");
@@ -2768,12 +2769,11 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.wait(3000);
     const back = sendAndStart(transcript, "Back to Florence: which day should we do the Uffizi?");
-    transcript.wait(700);
-    agentCalls(transcript, "mark_topic", { label: "Florence trip" });
-    transcript.topic("Florence trip", back.user);
-    transcript.wait(300);
+    transcript.world("topic_decided", { label: "Florence trip" });
+    transcript.wait(1000);
     writeWhole(transcript, "The first morning, before it gets busy. Book the 8:15 slot.");
     transcript.endTurn("completed");
+    transcript.topic("Florence trip", back.user);
     return transcript;
   },
 

@@ -168,6 +168,12 @@ export const startMockModel = async (): Promise<MockModel> => {
       response.end();
       return;
     }
+    if (scenario === "aside") {
+      await say(send, JSON.stringify({ changed: false, label: "", labels: [] }), "final_answer");
+      await send("response.completed", { response: { id: nextId("resp"), usage } });
+      response.end();
+      return;
+    }
     if (scenario === "json") {
       await say(
         send,
@@ -218,11 +224,7 @@ export const startMockModel = async (): Promise<MockModel> => {
       sendJson(response, 404, { error: { message: "not found" } });
       return;
     }
-    latestDeveloperTexts.set(textsOf(body, "developer"));
     const texts = textsOf(body, "user");
-    latestUserTexts.set(texts);
-    latestImages.set(imagesIn(body));
-    latestToolOutputs.set(toolOutputsOf(body));
     const run = body as
       | {
           readonly model?: string;
@@ -230,12 +232,20 @@ export const startMockModel = async (): Promise<MockModel> => {
           readonly text?: { readonly format?: { readonly type?: string } };
         }
       | undefined;
+    const scenario = markerPattern.exec(texts.findLast((text) => markerPattern.test(text)) ?? "")?.groups?.scenario;
+    if (scenario !== "json" && run?.text?.format?.type === "json_schema") {
+      await stream(response, "aside", false, false, "");
+      return;
+    }
+    latestDeveloperTexts.set(textsOf(body, "developer"));
+    latestUserTexts.set(texts);
+    latestImages.set(imagesIn(body));
+    latestToolOutputs.set(toolOutputsOf(body));
     latestFormat.set(run?.text?.format?.type);
     latestRun.set({
       ...(run?.model !== undefined && { model: run.model }),
       ...(run?.reasoning?.effort !== undefined && { effort: run.reasoning.effort }),
     });
-    const scenario = markerPattern.exec(texts.findLast((text) => markerPattern.test(text)) ?? "")?.groups?.scenario;
     if (scenario === "signedout") {
       sendJson(response, 401, { error: { message: "Missing bearer or basic authentication in header" } });
       return;

@@ -58,7 +58,8 @@ request that shows its own `Authorization` header uses the token it names.
 | `web_has` | the web serves the picture at `url` |
 | `agent_calls` | the agent calls one of Ito's tools: `tool` and `input`, and what it `returns` where it matters |
 | `you_approve` | you approve the `code` a capability's connection showed, at the provider; the server picks up the token at its next poll, within 5 seconds |
-| `ari_keeps_up` | what Ari will answer when the server asks it, aside, to keep a thing up with your ticks: its `changes`, `summary` and `note` |
+| `ari_keeps_up` | what Ari will answer when the server asks it, aside, to keep a thing up with your ticks and choices: its `changes`, `summary` and `note` |
+| `topic_decided` | what the quick model will answer when the server asks it, after the turn, whether the subject changed: the new topic's `label` |
 
 ## Ids
 

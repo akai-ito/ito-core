@@ -69,12 +69,14 @@ export type SteerOutcome = "taken" | "refused";
 
 export type JsonSchema = Readonly<Record<string, unknown>>;
 
+export type Complete = (prompt: string, schema: JsonSchema, choice?: ModelChoice) => Promise<Result<unknown, string>>;
+
 export type Engine = {
   readonly start: (turn: TurnId, inputs: readonly Input[]) => AsyncIterable<EngineEvent>;
   readonly steer: (turn: TurnId, input: Input) => Promise<SteerOutcome>;
   readonly interrupt: (turn: TurnId) => Promise<void>;
   readonly approve: (turn: TurnId, key: string, isAllowed: boolean) => void;
-  readonly complete: (prompt: string, schema: JsonSchema) => Promise<Result<unknown, string>>;
+  readonly complete: Complete;
   readonly restart: () => Promise<void>;
   readonly refresh: () => Promise<void>;
   readonly models: () => Promise<Result<readonly ModelOption[], string>>;

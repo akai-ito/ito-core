@@ -36,7 +36,7 @@ where the protocol has to make it possible, marked *App*.
 | G26 | **Ari's voice gives way to yours.** Ari speaks only what comes before a line holding `---`, a sentence at a time with its caption, and stops when you talk over it: your own voice, for more than half a second. Its echo never counts, and while it speaks nothing else becomes a turn. On a call, asks are said aloud with their choices. Silence while it works is covered by the phone's tone; Ari says what it's doing only after a long quiet, once. | 38, 45, 50, 51 |
 | G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
 | G28 | **An app asks before it acts.** When an app's action needs your approval, it waits inside the running turn, which carries on once you answer. Your next message answers it: Allow, or a plain yes, lets it run; anything else doesn't, and your words reach the agent. Stop cancels it. | 53, 54, 55 |
-| G29 | **Topics mark where the subject changed.** When you change the subject, Ari puts a label of a few plain words on the message that changed it, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
+| G29 | **Topics mark where the subject changed.** When you change the subject, Ito puts a label of a few plain words on the message that changed it, just after the turn, typed or spoken, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
 | G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Forgetting a thing asks you first. | 62, 63, 64 |
 
@@ -410,7 +410,8 @@ where the protocol has to make it possible, marked *App*.
 
 ### 58 · [Topics](transcripts/58-topics.jsonl)
 
-- A topic is a label on the message that changed the subject; a follow-up gets none. (G29)
+- A topic is a label on the message that changed the subject, arriving just after the turn ends; a
+  follow-up gets none. (G29)
 - Snapshots and history carry the topics on their messages, windowed as calls are. Coming back to a
   subject reuses its label. (G29)
 

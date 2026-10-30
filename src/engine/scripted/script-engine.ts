@@ -2,10 +2,10 @@ import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import type { TurnId } from "#conversation/ids.ts";
-import type { Engine, EngineEvent, Input, JsonSchema, SteerOutcome } from "#engine/engine.ts";
+import type { Complete, Engine, EngineEvent, Input, SteerOutcome } from "#engine/engine.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import type { ModelOption } from "#protocol/types.ts";
-import { fail, ok, type Result } from "#result.ts";
+import { fail, ok } from "#result.ts";
 import type { ToolResult } from "#tools/mcp.ts";
 
 export type CallTool = (name: string, input: unknown) => Promise<ToolResult>;
@@ -24,8 +24,6 @@ export type TurnScript = {
 };
 
 export type ScriptSource = (turn: TurnId, inputs: readonly Input[], now: number) => TurnScript;
-
-export type Complete = (prompt: string, schema: JsonSchema) => Promise<Result<unknown, string>>;
 
 type Scheduled = { readonly at: number; readonly event: EngineEvent; readonly cancel: Cancel };
 

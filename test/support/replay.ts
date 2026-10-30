@@ -7,7 +7,8 @@ import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/prom
 import { createCell } from "#cell.ts";
 import { createCannedVoice, type CannedVoice, type YouSay } from "./canned-voice.ts";
 import { openCallSocket, type Arrived, type CallSocket } from "./call-socket.ts";
-import { createScriptEngine, type Complete } from "#engine/scripted/script-engine.ts";
+import type { Complete } from "#engine/engine.ts";
+import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import { fail as failed, ok } from "#result.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
@@ -150,9 +151,12 @@ export const replay = async (name: string): Promise<void> => {
   const web = createCell<ReadonlyMap<string, string>>(new Map());
   const asides = createCell<readonly unknown[]>([]);
 
-  const complete: Complete = () => {
-    const [next, ...rest] = asides.get();
-    asides.set(rest);
+  const complete: Complete = (_prompt, schema) => {
+    const required = Array.isArray(schema.required) ? (schema.required as readonly string[]) : [];
+    const fits = (aside: unknown): boolean =>
+      typeof aside === "object" && aside !== null && required.every((field) => Object.hasOwn(aside, field));
+    const next = asides.get().find((aside) => fits(aside));
+    asides.update((current) => current.filter((aside) => aside !== next));
     return Promise.resolve(next === undefined ? failed("The transcript has Ari answer nothing aside here.") : ok(next));
   };
 
@@ -432,6 +436,12 @@ export const replay = async (name: string): Promise<void> => {
           readonly note: string;
         };
         asides.update((current) => [...current, { changes_json: JSON.stringify(changes), summary, note }]);
+        await advance(time);
+        return;
+      }
+      case "topic_decided": {
+        const { label } = step as unknown as { readonly label: string };
+        asides.update((current) => [...current, { changed: true, label }]);
         await advance(time);
         return;
       }
