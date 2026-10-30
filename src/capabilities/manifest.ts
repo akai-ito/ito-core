@@ -53,7 +53,14 @@ export type CallResult = { readonly text: string; readonly data?: Readonly<Recor
 
 export type Status = { readonly state: "ok" | "needs_you"; readonly detail?: string };
 
-export type Server = { readonly version: string; readonly engine: string };
+export type Server = { readonly version: string; readonly engine: string; readonly workspace: string };
+
+export type Approval = {
+  readonly question: string;
+  readonly preview: string;
+  readonly options: readonly { readonly label: string; readonly acts?: true }[];
+  readonly pictures?: readonly string[];
+};
 
 export const isComplete = (manifest: Manifest, values: Values): boolean =>
   manifest.setup.every((field) => field.optional === true || (values[field.name] ?? "") !== "");

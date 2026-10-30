@@ -5,6 +5,8 @@ import { runCapability } from "#sdk/runtime.ts";
 
 const nothing = z.object({});
 
+const pictures = z.array(z.string()).optional();
+
 const say = defineOperation({
   name: "say",
   title: "Say something back",
@@ -77,6 +79,25 @@ const complain = defineOperation({
   },
 });
 
+const ask = defineOperation({
+  name: "ask",
+  title: "Ask first",
+  running: "Asking",
+  done: "Asked",
+  description: "Asks the person before it echoes.",
+  input: z.object({ pictures }),
+  run: async (input, { approve }) => {
+    const approved = await approve({
+      question: "Echo it?",
+      preview: "It'll say hi.",
+      options: [{ label: "Echo", acts: true }, { label: "Don't" }],
+      pictures: input.pictures ?? [],
+    });
+    if (!approved.ok) return approved;
+    return ok({ text: approved.value ? "They said yes." : "They said no." });
+  },
+});
+
 const heartbeat = setInterval(Date.now, 60_000);
 
 runCapability(
@@ -101,7 +122,7 @@ runCapability(
       },
       { name: "loud", kind: "toggle", title: "Loud", optional: true },
     ],
-    operations: [say, inspect, crash, wait, complain],
+    operations: [say, inspect, crash, wait, complain, ask],
     skill: "Use echo to hear yourself.",
     uses: { hosts: [], folders: [] },
     start: ({ values }) => {

@@ -14,8 +14,7 @@ runCapability(
     check: (values) => Promise.resolve(rejected.has(String(values.token)) ? "GitHub rejected that token." : undefined),
     operations: reports.operations.map((operation) => ({
       ...operation,
-      run: () =>
-        Promise.resolve(ok({ text: "Reported as a new issue: https://github.com/akai-ito/ito-core/issues/1" })),
+      run: () => Promise.resolve(ok({ text: "Filed as issue #1: https://github.com/akai-ito/ito-core/issues/1" })),
     })),
   }),
 );

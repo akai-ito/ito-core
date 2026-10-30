@@ -998,9 +998,9 @@ export interface components {
      *       "id": "reports",
      *       "kind": "hand",
      *       "title": "Reports",
-     *       "summary": "Files the gaps Ari hits as public issues on Ito's repositories.",
+     *       "summary": "Takes your feedback, and what Ari couldn't do, to Ito's developers as public GitHub issues.",
      *       "symbol": "exclamationmark.bubble",
-     *       "version": "0.1",
+     *       "version": "0.2",
      *       "state": "needs_you",
      *       "detail": "GitHub rejected the token.",
      *       "fields": [
@@ -1008,15 +1008,18 @@ export interface components {
      *           "name": "token",
      *           "kind": "secret",
      *           "title": "GitHub token",
-     *           "description": "A fine-grained token for akai-ito/ito-core, with Issues set to read and write.",
+     *           "description": "Connect GitHub, so Reports files issues on akai-ito/ito-core as you.",
      *           "set": true
      *         }
      *       ],
      *       "uses": {
      *         "hosts": [
-     *           "api.github.com"
+     *           "api.github.com",
+     *           "github.com"
      *         ],
-     *         "folders": []
+     *         "folders": [
+     *           "uploads"
+     *         ]
      *       }
      *     }
      */
@@ -1361,6 +1364,8 @@ export interface components {
       allows_text: boolean;
       /** @description Approvals only: what would happen, in plain text, to show before you agree. */
       preview?: string;
+      /** @description Approvals only: pictures that would leave the box if you agree, such as a report's screenshots, to show with the preview. Fetch each with `GET /v0/attachments/{attachment}`. */
+      attachments?: components["schemas"]["AttachmentId"][];
       at: components["schemas"]["Timestamp"];
       position: components["schemas"]["Position"];
       /** @description When it was answered or cancelled. */
@@ -1456,7 +1461,7 @@ export interface components {
       query?: string;
       /** @description `web_search`: every query, when there were several. */
       queries?: string[];
-      /** @description `web_search`: the page opened or searched within. `tool`: what the tool made, such as the issue a gap report opened or added to. */
+      /** @description `web_search`: the page opened or searched within. `tool`: what the tool made, such as the issue a report opened or added to. */
       url?: string;
       /** @description `web_search`: the words looked for on a page. */
       pattern?: string;
@@ -2425,7 +2430,7 @@ export interface operations {
            *       "capabilities": [
            *         {
            *           "id": "reports",
-           *           "version": "0.1"
+           *           "version": "0.2"
            *         }
            *       ]
            *     }

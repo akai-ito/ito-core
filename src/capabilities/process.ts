@@ -24,6 +24,7 @@ export type CapabilityProcessOptions = {
   readonly entry: string;
   readonly folder: string;
   readonly onStatus: (status: Status) => void;
+  readonly onApprove: (approval: unknown) => Promise<Result<boolean, string>>;
   readonly onLog: (line: string) => void;
 };
 
@@ -45,6 +46,7 @@ export const startCapabilityProcess = async ({
   entry,
   folder,
   onStatus,
+  onApprove,
   onLog,
 }: CapabilityProcessOptions): Promise<Result<CapabilityProcess, string>> => {
   mkdirSync(folder, { recursive: true });
@@ -55,6 +57,11 @@ export const startCapabilityProcess = async ({
     environment: passedEnvironment(["NODE_EXTRA_CA_CERTS"]),
     onNotification: ({ method, parameters }) => {
       if (method === "status") onStatus(parameters as Status);
+    },
+    onRequest: async ({ method, parameters }) => {
+      if (method !== "approve") return fail({ code: -32_601, message: `Ito doesn't handle ${method}.` });
+      const approved = await onApprove(parameters);
+      return approved.ok ? ok({ approved: approved.value }) : fail({ code: 1, message: approved.failure });
     },
     onLine: onLog,
     closedMessage: `${id} stopped.`,

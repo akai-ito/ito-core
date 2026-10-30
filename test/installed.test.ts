@@ -24,7 +24,7 @@ describe("the capabilities installed with the server", () => {
     const database = openDatabase(path.join(home, "ito.db"));
     const host = createHost({
       installed: demoInstalled,
-      server: { version: "0.0.0", engine: "Codex test" },
+      server: { version: "0.0.0", engine: "Codex test", workspace: path.join(home, "workspace") },
       settings: createStore(database, systemClock, randomIdentifiers),
       folders: home,
       clock: systemClock,

@@ -4,6 +4,7 @@ import type { Cancel, Clock } from "#clock.ts";
 import {
   isComplete,
   toValues,
+  type Approval,
   type CallResult,
   type Manifest,
   type Server,
@@ -64,6 +65,7 @@ export type HostOptions = {
   readonly clock: Clock;
   readonly info: Info;
   readonly fetch?: Fetch;
+  readonly approve?: (approval: Approval) => Promise<Result<boolean, string>>;
 };
 
 type Runner = {
@@ -121,6 +123,28 @@ const unavailable = (title: string, { state, detail = "it isn't working" }: Capa
   }
 };
 
+const isText = (value: unknown): value is string => typeof value === "string" && value.trim() !== "";
+
+const toApproval = (given: unknown): Approval | undefined => {
+  const { question, preview, options, pictures } = (given ?? {}) as Readonly<Record<string, unknown>>;
+  const choices = Array.isArray(options) ? (options as readonly Readonly<Record<string, unknown>>[]) : [];
+  const files = Array.isArray(pictures) ? (pictures as readonly unknown[]) : [];
+  const isShaped =
+    isText(question) &&
+    isText(preview) &&
+    choices.every((choice) => isText(choice.label)) &&
+    choices.filter((choice) => choice.acts === true).length === 1 &&
+    files.every((file) => isText(file));
+  return isShaped
+    ? {
+        question,
+        preview,
+        options: choices.map(({ label, acts }) => ({ label: String(label), ...(acts === true && { acts }) })),
+        pictures: files,
+      }
+    : undefined;
+};
+
 const notFound = (id: string): Result<never, HostFailure> =>
   fail({ code: "not_found", detail: `No capability called ${id} is installed.` });
 
@@ -132,6 +156,7 @@ export const createHost = ({
   clock,
   info,
   fetch: fetcher = fetch,
+  approve = () => Promise.resolve(fail("Nothing here can ask the person.")),
 }: HostOptions): Host => {
   const runners = createCell<ReadonlyMap<string, Runner>>(new Map(installed.map(({ id }) => [id, idle])));
   const connecting = createCell<ReadonlyMap<string, AbortController>>(new Map());
@@ -186,6 +211,10 @@ export const createHost = ({
       folder: path.join(folders, id),
       onStatus: (status) => {
         if (isRunner) update(id, (runner) => ({ ...runner, status }));
+      },
+      onApprove: (given) => {
+        const approval = toApproval(given);
+        return approval ? approve(approval) : Promise.resolve(fail("That isn't an approval Ito can show."));
       },
       onLog: (line) => {
         info("A capability wrote to its log", { capability: id, line });

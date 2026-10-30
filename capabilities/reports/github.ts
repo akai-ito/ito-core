@@ -1,18 +1,21 @@
-import type { IssueText } from "./gap.ts";
 import { fail, ok, type Result } from "#result.ts";
 
 export type Issue = { readonly number: number; readonly url: string };
 
+export type OpenIssue = Issue & { readonly title: string; readonly updatedAt: string };
+
 export type GitHub = {
-  readonly findIssue: (text: string) => Promise<Result<Issue | undefined, string>>;
-  readonly openIssue: (issue: IssueText) => Promise<Result<Issue, string>>;
+  readonly openIssue: (title: string, body: string) => Promise<Result<Issue, string>>;
   readonly comment: (issue: number, body: string) => Promise<Result<string, string>>;
+  readonly openIssues: () => Promise<Result<readonly OpenIssue[], string>>;
+  readonly storeMedia: (path: string, bytes: Buffer) => Promise<Result<string, string>>;
   readonly checkAccess: () => Promise<string | undefined>;
 };
 
 export type GitHubOptions = {
   readonly apiUrl: string;
   readonly repository: string;
+  readonly mediaRepository: string;
   readonly token: string;
   readonly userAgent: string;
 };
@@ -20,13 +23,18 @@ export type GitHubOptions = {
 type IssueRow = {
   readonly number: number;
   readonly html_url: string;
-  readonly body?: string | null;
+  readonly title?: string;
+  readonly updated_at?: string;
   readonly pull_request?: unknown;
 };
 
 type CommentRow = { readonly html_url: string };
 
-export const gapLabel = "gap";
+type ContentRow = { readonly content?: { readonly download_url?: string }; readonly download_url?: string };
+
+export const reportLabel = "from-ari";
+
+const listedIssues = 30;
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -43,13 +51,11 @@ const describeFailure = async (response: Response): Promise<string> => {
   return `GitHub answered ${String(response.status)}${message ? `: ${message}` : ""}.`;
 };
 
-const toIssue = (row: IssueRow): Issue => ({ number: row.number, url: row.html_url });
-
 export const isRejectedToken = (failure: string): boolean => failure.startsWith("GitHub answered 401");
 
-export const createGitHub = ({ apiUrl, repository, token, userAgent }: GitHubOptions): GitHub => {
+export const createGitHub = ({ apiUrl, repository, mediaRepository, token, userAgent }: GitHubOptions): GitHub => {
   const send = (method: string, path: string, body?: unknown): Promise<Response> =>
-    fetch(`${apiUrl}/repos/${repository}${path}`, {
+    fetch(`${apiUrl}/repos/${path}`, {
       method,
       headers: {
         accept: "application/vnd.github+json",
@@ -71,24 +77,54 @@ export const createGitHub = ({ apiUrl, repository, token, userAgent }: GitHubOpt
   };
 
   return {
-    findIssue: async (text) => {
-      const listed = await request<readonly IssueRow[]>("GET", `/issues?labels=${gapLabel}&state=open&per_page=100`);
-      if (!listed.ok) return listed;
-      const found = listed.value.find((row) => row.pull_request === undefined && row.body?.includes(text));
-      return ok(found && toIssue(found));
-    },
-    openIssue: async ({ title, body }) => {
-      await request("POST", "/labels", { name: gapLabel, color: "c5def5", description: "A gap Ari reported" });
-      const opened = await request<IssueRow>("POST", "/issues", { title, body, labels: [gapLabel] });
-      return opened.ok ? ok(toIssue(opened.value)) : opened;
+    openIssue: async (title, body) => {
+      await request("POST", `${repository}/labels`, {
+        name: reportLabel,
+        color: "c5def5",
+        description: "Reported through Ari, as the person approved it",
+      });
+      const opened = await request<IssueRow>("POST", `${repository}/issues`, { title, body, labels: [reportLabel] });
+      return opened.ok ? ok({ number: opened.value.number, url: opened.value.html_url }) : opened;
     },
     comment: async (issue, body) => {
-      const commented = await request<CommentRow>("POST", `/issues/${String(issue)}/comments`, { body });
+      const commented = await request<CommentRow>("POST", `${repository}/issues/${String(issue)}/comments`, { body });
       return commented.ok ? ok(commented.value.html_url) : commented;
+    },
+    openIssues: async () => {
+      const listed = await request<readonly IssueRow[]>(
+        "GET",
+        `${repository}/issues?state=open&sort=updated&per_page=${String(listedIssues)}`,
+      );
+      return listed.ok
+        ? ok(
+            listed.value
+              .filter((row) => row.pull_request === undefined)
+              .map((row) => ({
+                number: row.number,
+                url: row.html_url,
+                title: row.title ?? "",
+                updatedAt: row.updated_at ?? "",
+              })),
+          )
+        : listed;
+    },
+    storeMedia: async (path, bytes) => {
+      const where = `${mediaRepository}/contents/${path}`;
+      const stored = await request<ContentRow>("PUT", where, {
+        message: "Add a screenshot for a report",
+        content: bytes.toString("base64"),
+      });
+      const found =
+        stored.ok || !stored.failure.startsWith("GitHub answered 422")
+          ? stored
+          : await request<ContentRow>("GET", where);
+      if (!found.ok) return found;
+      const url = found.value.content?.download_url ?? found.value.download_url;
+      return url ? ok(url) : fail(`GitHub didn't say where ${path} is.`);
     },
     checkAccess: async () => {
       try {
-        const { status } = await send("GET", "");
+        const { status } = await send("GET", repository);
         if (status === 401) return "GitHub rejected that token.";
         if (status === 403 || status === 404) return `That token can't reach ${repository}.`;
         return status < 300 ? undefined : `GitHub answered ${String(status)}.`;

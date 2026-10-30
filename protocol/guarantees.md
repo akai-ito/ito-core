@@ -35,7 +35,7 @@ where the protocol has to make it possible, marked *App*.
 | G25 | **The server hears your turns.** Each turn you finish becomes one spoken message, posted by the server with its recording, and shown live as you speak. If you carry on before Ari begins to answer, your words join that message. Muting ends a turn you're in the middle of, as said so far. Nothing you say while muted is heard. | 38, 45, 48, 51, 56, 61 |
 | G26 | **Ari's voice gives way to yours.** Ari speaks only what comes before a line holding `---`, a sentence at a time with its caption, and stops when you talk over it: your own voice, for more than half a second. Its echo never counts, and while it speaks nothing else becomes a turn. On a call, asks are said aloud with their choices. Silence while it works is covered by the phone's tone; Ari says what it's doing only after a long quiet, once. | 38, 45, 50, 51 |
 | G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
-| G28 | **An app asks before it acts.** When an app's action needs your approval, it waits inside the running turn, which carries on once you answer. Your next message answers it: Allow, or a plain yes, lets it run; anything else doesn't, and your words reach the agent. Stop cancels it. | 53, 54, 55 |
+| G28 | **An app asks before it acts.** When an app's action, or a capability's such as filing a report, needs your approval, it waits inside the running turn, which carries on once you answer. An approval that would send your pictures out shows them. Your next message answers it: Allow, or a plain yes, lets it run; anything else doesn't, and your words reach the agent. Stop cancels it. | 17, 53, 54, 55 |
 | G29 | **Topics mark where the subject changed.** When you change the subject, Ito puts a label of a few plain words on the message that changed it, just after the turn, typed or spoken, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
 | G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Ari can't start or change a trip without a cover, a photo for every place and every stop at its place, or any thing with a title over 28 characters. Forgetting a thing asks you first. | 62, 63, 64 |
@@ -180,13 +180,13 @@ where the protocol has to make it possible, marked *App*.
 - A plan is a step that stays open while the agent works through it. Each update carries every
   item's state, and the plan ends with the turn. (G14)
 
-### 17 · [Reporting a gap](transcripts/17-reporting-a-gap.jsonl)
+### 17 · [Reporting what you noticed](transcripts/17-reporting-a-gap.jsonl)
 
-- When the agent can't find something out, it reports the gap to Ito. The report is a `tool` step
-  titled by what it did ("Reporting it to Ito", then "Reported it to Ito", or "Added to an Ito
-  issue" when it adds to an existing one), and its `url` links the issue. (G10, G14)
-- A command that couldn't fetch the page still ran: it's completed, with its exit code and
-  output. (G14)
+- A report is a `tool` step titled by what it does ("Reporting it to Ito", then "Reported it to
+  Ito"), and its `url` links the issue it opened or the comment it added. (G10, G14)
+- Nothing is filed before you agree: the report waits inside the turn as an approval whose
+  `preview` is the draft and whose `attachments` are the screenshots it would make public. (G28)
+- A follow-up adds to the issue it belongs to rather than opening another.
 
 ### 18 · [A reply while you're away](transcripts/18-a-reply-while-you-re-away.jsonl)
 
