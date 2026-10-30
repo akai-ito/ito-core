@@ -67,6 +67,8 @@ const recentNotes = 5;
 
 const changesShown = 20;
 
+const longestTitle = 28;
+
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
@@ -167,6 +169,31 @@ const tapsIn = (content: Fields, before: Fields, after: Fields): readonly string
 };
 
 const toChanges = (given: unknown): readonly Change[] => (Array.isArray(given) ? (given as readonly Change[]) : []);
+
+const missingIn = (kind: Kind, title: string, content: Fields): readonly string[] => {
+  const items = itemsByField(content);
+  const without = (field: string, isThere: (item: Fields) => boolean): string =>
+    (items.get(field) ?? [])
+      .filter((item) => !isThere(item))
+      .map(({ id }) => id)
+      .join(", ");
+  const unphotographed = kind === "trip" ? without("places", (place) => isObject(place.photo)) : "";
+  const unplaced = kind === "trip" ? without("stops", (stop) => typeof stop.place === "string") : "";
+  return [
+    ...([...new Intl.Segmenter().segment(title)].length > longestTitle
+      ? [`a title of ${String(longestTitle)} characters or fewer, with the rest in the summary`]
+      : []),
+    ...(kind === "trip" && !isObject(content.cover) ? ["a cover"] : []),
+    ...(unphotographed === "" ? [] : [`a photo for the places ${unphotographed}`]),
+    ...(unplaced === "" ? [] : [`a place for the stops ${unplaced}`]),
+  ];
+};
+
+const unfinished = (title: string, missing: readonly string[]): Result<never, string> =>
+  fail(
+    `${title} isn't made properly yet: it needs ${missing.join("; ")}. Every trip gets these, even a small or ` +
+      "test one: find photos with keep_image, add the places, and try again.",
+  );
 
 export const createMotions = ({
   memory,
@@ -352,6 +379,8 @@ export const createMotions = ({
       if (!isObject(content)) return fail("Give the whole content, as its kind describes.");
       const valid = checked(kind, id, content);
       if (!valid.ok) return valid;
+      const missing = missingIn(kind, title, content);
+      if (missing.length > 0) return unfinished(title, missing);
       const thing: Saved = {
         kind,
         card: { title, summary: lineOf(input, "summary"), pinned: true },
@@ -362,7 +391,7 @@ export const createMotions = ({
       return written.ok ? ok(record("motion.started", id, thing, 1, note)) : written;
     });
 
-  const change = (input: unknown): Promise<Result<Motion, string>> =>
+  const change = (input: unknown, isWhole = true): Promise<Result<Motion, string>> =>
     memory.withThread(async (thread) => {
       const id = lineOf(input, "id");
       const note = lineOf(input, "note");
@@ -394,6 +423,8 @@ export const createMotions = ({
         return fail(`${current.card.title} already says exactly that.`);
       const valid = checked(current.kind, id, thing.content);
       if (!valid.ok) return valid;
+      const missing = isWhole ? missingIn(current.kind, thing.card.title, thing.content) : [];
+      if (missing.length > 0) return unfinished(thing.card.title, missing);
       const written = await write(thread, id, thing, `${thing.card.title}: ${note}`);
       return written.ok ? ok(record("motion.changed", id, thing, version + 1, note)) : written;
     });
@@ -505,14 +536,18 @@ export const createMotions = ({
       description:
         "Start something going on that the person will come back to, such as a trip being planned: a plan with " +
         "several steps that will outlast this conversation, or whenever they ask you to pin something. Give its " +
-        "whole content once, as the Things in motion skill describes for its kind, with an id on every item. It's " +
-        "pinned above their chat until it's done.",
+        "whole content once, as the Things in motion skill describes for its kind, with an id on every item. A " +
+        "trip needs a cover, a photo for every place and a place for every stop. It's pinned above their chat " +
+        "until it's done.",
       inputSchema: {
         type: "object",
         properties: {
           id: { type: "string", description: "Lowercase words and dashes, such as florence-with-janki." },
           kind: { type: "string", enum: ["trip", "training"] },
-          title: { type: "string", description: "Such as Florence with Janki." },
+          title: {
+            type: "string",
+            description: "Short, 28 characters at most, such as Florence with Janki; the rest goes in the summary.",
+          },
           summary: { type: "string", description: "Where it stands, in one line, such as “6–9 Nov · 4 to book”." },
           content: { type: "object", description: "The whole content, as its kind describes." },
           note: { type: "string", description: "What you did, in a few words, such as “Started the trip”." },
@@ -653,13 +688,16 @@ export const createMotions = ({
     const changes = Array.isArray(reaction.changes) ? (reaction.changes as readonly unknown[]) : [];
     const summary = reaction.summary || thing.card.summary;
     if (changes.length === 0 && summary === thing.card.summary) return;
-    const changed = await change({
-      id,
-      version: motion.version,
-      changes: changes.length > 0 ? changes : [{ set: id, fields: { summary } }],
-      summary,
-      note: reaction.note || "Kept up with your tap",
-    });
+    const changed = await change(
+      {
+        id,
+        version: motion.version,
+        changes: changes.length > 0 ? changes : [{ set: id, fields: { summary } }],
+        summary,
+        note: reaction.note || "Kept up with your tap",
+      },
+      false,
+    );
     if (!changed.ok)
       info("A thing in motion couldn't take Ari's change after a tap", { motion: id, error: changed.failure });
   };

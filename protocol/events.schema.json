@@ -1369,7 +1369,7 @@
           "examples": ["trip"]
         },
         "title": {
-          "description": "Such as \"Florence with Janki\".",
+          "description": "Short, such as \"Florence with Janki\": Ari keeps it to 28 characters or fewer.",
           "type": "string",
           "minLength": 1
         },

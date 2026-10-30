@@ -10,7 +10,7 @@ import { wordEmbedder } from "#memory/embedder.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
 import { createKinds } from "#motion/kinds.ts";
 import { createMotions, type Motions } from "#motion/motion.ts";
-import { florenceId, florenceTrip } from "#protocol/tools/florence.ts";
+import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "#protocol/tools/florence.ts";
 import { sub20Id, sub20Training } from "#protocol/tools/sub20.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
 import { ok, type Result } from "#result.ts";
@@ -23,6 +23,12 @@ const home = mkdtempSync(path.join(os.tmpdir(), "ito-motion-"));
 const memories = createCell<readonly Memory[]>([]);
 const schemas = loadSchemas();
 const cover = "f_0001_04217";
+
+const photo = "f_0002_04218";
+
+const pictures = Object.fromEntries(
+  florencePictures.map((name) => [name, name === "cover" ? cover : photo]),
+) as FlorencePictures;
 
 type Opened = {
   readonly motions: Motions;
@@ -103,7 +109,7 @@ const startFlorence = (motions: Motions): Promise<{ text: string; isError?: bool
     kind: "trip",
     title: "Florence with Janki",
     summary: "6–9 Nov · 4 to book",
-    content: florenceTrip(cover),
+    content: florenceTrip(pictures),
     note: "Started the trip",
   });
 
@@ -196,7 +202,7 @@ describe("things in motion", () => {
     });
     const emptied = await call(motions, "change_motion", {
       ...bookUffizi,
-      changes: ["fri", "sat", "sun", "book-uffizi"].map((id) => ({ remove: id })),
+      changes: ["fri", "sat", "sun", "book-uffizi", "book-duomo", "book-pisa"].map((id) => ({ remove: id })),
     });
 
     expect(misshapen).toEqual({
@@ -206,6 +212,39 @@ describe("things in motion", () => {
     expect(emptied.text).toMatch(/^That would remove more than half/u);
     expect(unpinned).toEqual({
       text: "A thing's title and summary are text, and pinned is true or false.",
+      isError: true,
+    });
+    expect(motions.list()[0]?.version).toBe(1);
+  });
+
+  it("refuses a trip that isn't made properly, naming what's missing", async () => {
+    const { motions } = await openMotions();
+    const uncovered = Object.fromEntries(Object.entries(florenceTrip(pictures)).filter(([field]) => field !== "cover"));
+
+    const started = await call(motions, "start_motion", {
+      id: florenceId,
+      kind: "trip",
+      title: "Florence with Janki",
+      summary: "6–9 Nov · 4 to book",
+      content: uncovered,
+      note: "Started the trip",
+    });
+    await startFlorence(motions);
+    const changed = await call(motions, "change_motion", {
+      ...bookUffizi,
+      changes: [
+        { set: florenceId, fields: { title: "Florence (a test; nothing booked)" } },
+        { set: "boboli", fields: { photo: null } },
+        { set: "tower", fields: { place: null } },
+      ],
+    });
+
+    expect(started.text).toMatch(/^Florence with Janki isn't made properly yet: it needs a cover\. /u);
+    expect(changed).toEqual({
+      text:
+        "Florence (a test; nothing booked) isn't made properly yet: it needs a title of 28 characters or fewer, " +
+        "with the rest in the summary; a photo for the places boboli; a place for the stops tower. Every trip " +
+        "gets these, even a small or test one: find photos with keep_image, add the places, and try again.",
       isError: true,
     });
     expect(motions.list()[0]?.version).toBe(1);
@@ -246,7 +285,13 @@ describe("things in motion", () => {
     const { motions, thread } = await openMotions();
     await startFlorence(motions);
 
-    await call(motions, "change_motion", { ...bookUffizi, changes: [{ set: florenceId, fields: { cover: null } }] });
+    const bridge = {
+      attachment: photo,
+      alt: "The Ponte Vecchio at dusk",
+      source_url: "https://commons.wikimedia.org/wiki/File:Ponte_Vecchio.jpg",
+      credit: "Wikimedia Commons, CC BY-SA 4.0",
+    };
+    await call(motions, "change_motion", { ...bookUffizi, changes: [{ set: florenceId, fields: { cover: bridge } }] });
     const next = await call(motions, "change_motion", { ...bookUffizi, version: 2 });
 
     expect(existsSync(path.join(thread, "motion", florenceId, "pictures", cover))).toBe(false);

@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
+import type { Fetch } from "#capabilities/connect.ts";
 import { createCell } from "#cell.ts";
 import type { AskFields, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { Act, CallTool, ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
-import { florenceId, florenceTrip } from "#protocol/tools/florence.ts";
+import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "#protocol/tools/florence.ts";
 import { sub20Id, sub20Training } from "#protocol/tools/sub20.ts";
 
 const pieceMs = 70;
@@ -187,14 +189,30 @@ type Script = { readonly events: readonly TimedEvent[]; readonly acts?: readonly
 const motionLine = (id: string): string =>
   ["```ari:motion", JSON.stringify({ motion: id, change: 1 }), "```"].join("\n");
 
+const demoPictures = "https://example.org/ito-demo/";
+
+const demoPicture = new URL("../../../protocol/transcripts/files/riverside.jpg", import.meta.url);
+
+export const withDemoPictures =
+  (fetcher: Fetch): Fetch =>
+  (url, init) =>
+    url.startsWith(demoPictures)
+      ? Promise.resolve(new Response(readFileSync(demoPicture), { headers: { "Content-Type": "image/jpeg" } }))
+      : fetcher(url, init);
+
 const startTrip: Act["act"] = async (callTool) => {
-  const trip = Object.fromEntries(Object.entries(florenceTrip("")).filter(([field]) => field !== "cover"));
+  const kept = await Promise.all(
+    florencePictures.map(async (name) => {
+      const picture = await callTool("keep_image", { url: `${demoPictures}${name}.jpg` });
+      return [name, String(picture.structured?.attachment)];
+    }),
+  );
   await callTool("start_motion", {
     id: florenceId,
     kind: "trip",
     title: "Florence with Janki",
     summary: "6–9 Nov · 4 to book",
-    content: trip,
+    content: florenceTrip(Object.fromEntries(kept) as FlorencePictures),
     note: "Started the trip",
   });
 };

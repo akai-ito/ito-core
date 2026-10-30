@@ -1855,7 +1855,7 @@ export interface components {
        * @example trip
        */
       kind: string;
-      /** @description Such as "Florence with Janki". */
+      /** @description Short, such as "Florence with Janki": Ari keeps it to 28 characters or fewer. */
       title: string;
       /** @description Where it stands, in one line, for the pinned line and the In motion tab, such as "6–9 Nov · 3 to book". Ari keeps it current with every change. */
       summary: string;

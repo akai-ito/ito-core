@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
 import { toMessageId, toTurnId } from "#conversation/ids.ts";
 import type { EngineEvent } from "#engine/engine.ts";
-import { demoScripts } from "#engine/scripted/demo.ts";
+import { demoScripts, withDemoPictures } from "#engine/scripted/demo.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { systemClock } from "#clock.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
@@ -124,6 +124,7 @@ const openDemo = async (): Promise<{
     name: "demo",
     embedder: wordEmbedder,
     timeZone: "UTC",
+    fetch: withDemoPictures(fetch),
     createEngine: ({ callTool }) => createScriptEngine(systemClock, demoScripts, callTool),
   });
   await server.memory.ready;
@@ -194,6 +195,7 @@ describe("the demo engine's things in motion", () => {
         { id: "florence-with-janki", version: 2, summary: "6–9 Nov · 3 to book" },
         { id: "sub-20-5k", version: 1, summary: "Week 6 of 10 · intervals today" },
       ]);
+      expect(server.store.findMotion("florence-with-janki")?.cover).toMatch(/^f_/u);
     } finally {
       await close();
     }

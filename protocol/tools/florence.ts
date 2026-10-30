@@ -1,23 +1,44 @@
 export const florenceId = "florence-with-janki";
 
-export const florenceCover = {
-  alt: "The Duomo above Florence's rooftops at dusk",
-  source_url: "https://commons.wikimedia.org/wiki/File:Florence_Duomo_at_dusk.jpg",
-  credit: "Wikimedia Commons, CC BY-SA 4.0",
-};
+export const florencePictures = [
+  "cover",
+  "florence-airport",
+  "duomo-place",
+  "mario",
+  "uffizi-place",
+  "pitti-place",
+  "boboli",
+  "firenze-smn",
+  "leaning-tower",
+] as const;
 
-export const florenceTrip = (cover: string): Readonly<Record<string, unknown>> => ({
+export type FlorencePictures = Readonly<Record<(typeof florencePictures)[number], string>>;
+
+const photo = (attachment: string, alt: string, file: string): Readonly<Record<string, string>> => ({
+  attachment,
+  alt,
+  source_url: `https://commons.wikimedia.org/wiki/File:${file}`,
+  credit: "Wikimedia Commons, CC BY-SA 4.0",
+});
+
+export const florenceTrip = (pictures: FlorencePictures): Readonly<Record<string, unknown>> => ({
   destination: "Florence",
   dates: { start: "2026-11-06", end: "2026-11-09" },
   timezone: "Europe/Rome",
   who: ["Janki"],
-  cover: { attachment: cover, ...florenceCover },
+  cover: photo(pictures.cover, "The Duomo above Florence's rooftops at dusk", "Florence_Duomo_at_dusk.jpg"),
   days: [
     {
       id: "fri",
       date: "2026-11-06",
       stops: [
-        { id: "land", title: "Land at Florence airport", time: "14:20", next: { mode: "tram", minutes: 25 } },
+        {
+          id: "land",
+          title: "Land at Florence airport",
+          time: "14:20",
+          place: "florence-airport",
+          next: { mode: "tram", minutes: 25 },
+        },
         {
           id: "duomo",
           title: "The Duomo",
@@ -59,33 +80,45 @@ export const florenceTrip = (cover: string): Readonly<Record<string, unknown>> =
           id: "pisa-train",
           title: "Train to Pisa",
           time: "09:12",
+          place: "firenze-smn",
           booking: { status: "to_book" },
           next: { mode: "train", minutes: 60, detail: "Firenze SMN → Pisa Centrale" },
         },
-        { id: "tower", title: "The Leaning Tower", time: "10:30" },
+        { id: "tower", title: "The Leaning Tower", time: "10:30", place: "leaning-tower" },
       ],
     },
   ],
   places: [
     {
+      id: "florence-airport",
+      name: "Florence Airport",
+      category: "other",
+      why: "Peretola, 25 minutes from the centre on the T2 tram.",
+      status: "picked",
+      location: { lat: 43.81, lon: 11.2051 },
+      photo: photo(pictures["florence-airport"], "The terminal at Florence Airport", "Florence_Airport_terminal.jpg"),
+    },
+    {
       id: "mario",
       name: "Trattoria Mario",
       category: "restaurant",
       why: "Family-run since 1953: bistecca and ribollita at shared tables.",
-      status: "shortlisted",
+      status: "picked",
       hours: "Dinner from 19:30",
       price: "€€",
       location: { lat: 43.7765, lon: 11.2535 },
+      photo: photo(pictures.mario, "Shared tables at Trattoria Mario", "Trattoria_Mario_Florence.jpg"),
     },
     {
       id: "uffizi-place",
       name: "Uffizi Gallery",
       category: "museum",
       why: "Botticelli and Caravaggio; go at 8:15, before the groups.",
-      status: "shortlisted",
+      status: "picked",
       hours: "8:15–18:30",
       price: "€25",
       location: { lat: 43.7678, lon: 11.2553 },
+      photo: photo(pictures["uffizi-place"], "The Uffizi's long courtyard", "Uffizi_courtyard.jpg"),
       booking: { status: "to_book", url: "https://www.uffizi.it/en/tickets" },
     },
     {
@@ -93,18 +126,20 @@ export const florenceTrip = (cover: string): Readonly<Record<string, unknown>> =
       name: "Pitti Palace",
       category: "museum",
       why: "Raphael and Titian, then the Boboli Gardens behind.",
-      status: "shortlisted",
+      status: "picked",
       hours: "8:15–18:50",
       price: "€16",
       location: { lat: 43.7768, lon: 11.2586 },
+      photo: photo(pictures["pitti-place"], "The Pitti Palace's rusticated front", "Palazzo_Pitti_facade.jpg"),
     },
     {
       id: "duomo-place",
       name: "The Duomo",
       category: "sight",
       why: "Climb Brunelleschi's dome for the city at your feet.",
-      status: "shortlisted",
+      status: "picked",
       location: { lat: 43.7731, lon: 11.256 },
+      photo: photo(pictures["duomo-place"], "Brunelleschi's dome from the bell tower", "Duomo_dome_from_campanile.jpg"),
     },
     {
       id: "boboli",
@@ -115,6 +150,27 @@ export const florenceTrip = (cover: string): Readonly<Record<string, unknown>> =
       hours: "8:15–18:30",
       price: "€10",
       location: { lat: 43.7629, lon: 11.2489 },
+      photo: photo(pictures.boboli, "The amphitheatre in the Boboli Gardens", "Boboli_amphitheatre.jpg"),
+    },
+    {
+      id: "firenze-smn",
+      name: "Firenze Santa Maria Novella",
+      category: "other",
+      why: "The main station: trains to Pisa every half hour.",
+      status: "picked",
+      location: { lat: 43.7764, lon: 11.2479 },
+      photo: photo(pictures["firenze-smn"], "The hall of Santa Maria Novella station", "Firenze_SMN_hall.jpg"),
+    },
+    {
+      id: "leaning-tower",
+      name: "The Leaning Tower",
+      category: "sight",
+      why: "Climb the 251 steps for the tilt and the view over the Field of Miracles.",
+      status: "picked",
+      hours: "9:00–20:00",
+      price: "€20",
+      location: { lat: 43.723, lon: 10.3966 },
+      photo: photo(pictures["leaning-tower"], "The Leaning Tower against a blue sky", "Leaning_Tower_of_Pisa.jpg"),
     },
   ],
   travel: [
