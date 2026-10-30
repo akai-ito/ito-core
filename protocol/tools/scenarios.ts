@@ -5,7 +5,7 @@ import { loadSpec } from "./spec.ts";
 import { transcriptDirectory } from "./transcript-files.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import { defaultVoice, voices } from "#voice/voices.ts";
-import { florenceId, florenceTrip } from "./florence.ts";
+import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "./florence.ts";
 import { sub20Id, sub20Training } from "./sub20.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
@@ -279,16 +279,20 @@ const motionStep = (
 const motionLine = (id: string, version: number): string =>
   ["```ari:motion", JSON.stringify({ motion: id, change: version }), "```"].join("\n");
 
-const startFlorence = (transcript: Transcript, cover: string): ReturnType<Transcript["motion"]> => {
+const startFlorence = (transcript: Transcript, pictures: FlorencePictures): ReturnType<Transcript["motion"]> => {
   agentCalls(transcript, "start_motion", {
     id: florenceId,
     kind: florenceCard.kind,
     title: florenceCard.title,
     summary: florenceCard.summary,
-    content: florenceTrip(cover),
+    content: florenceTrip(pictures),
     note: "Started the trip",
   });
-  const started = transcript.motion("started", { ...florenceCard, cover, version: 1 }, "Started the trip");
+  const started = transcript.motion(
+    "started",
+    { ...florenceCard, cover: pictures.cover, version: 1 },
+    "Started the trip",
+  );
   motionStep(transcript, "started", started.motion, {
     title: "Starting Florence with Janki",
     endedTitle: "Started Florence with Janki",
@@ -312,15 +316,20 @@ const withWeekNote = (week: string, note: string): Readonly<Record<string, unkno
   weeks: (sub20Training.weeks as readonly TrainingWeek[]).map((each) => (each.id === week ? { ...each, note } : each)),
 });
 
-const findFlorenceCover = (transcript: Transcript): string => {
-  transcript.step("web_search", searching("Florence Duomo photograph"));
+const findFlorencePictures = (transcript: Transcript): FlorencePictures => {
+  transcript.step("web_search", searching("Florence Duomo, Uffizi, Pitti and Pisa photographs"));
   transcript.wait(1500);
   transcript.endStep();
-  const url = "https://upload.wikimedia.org/wikipedia/commons/florence-duomo-dusk.jpg";
-  transcript.world("web_has", { url, file: "riverside.jpg" });
-  const cover = transcript.keptImage("riverside.jpg", "florence-duomo-dusk.jpg");
-  agentCalls(transcript, "keep_image", { url }, { attachment: cover });
-  return cover;
+  return Object.fromEntries(
+    florencePictures.map((name) => {
+      const url = `https://upload.wikimedia.org/wikipedia/commons/florence-${name}.jpg`;
+      transcript.world("web_has", { url, file: "riverside.jpg" });
+      const attachment = transcript.keptImage("riverside.jpg", `florence-${name}.jpg`);
+      agentCalls(transcript, "keep_image", { url }, { attachment });
+      transcript.wait(200);
+      return [name, attachment];
+    }),
+  ) as FlorencePictures;
 };
 
 const spokenWav = { "Content-Type": "audio/wav", "Content-Length": "12044" };
@@ -2911,9 +2920,10 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 62,
       title: "A trip in motion",
       summary:
-        "You ask Ari to plan a weekend. Ari finds a cover photo, starts the trip as a thing in motion with its days, " +
-        "places, travel, stay and to-do list, and answers in a line with a compact line under it. The trip is " +
-        "pinned; the app lists it, opens it, and fetches its photo from the server.",
+        "You ask Ari to plan a weekend. Ari finds a cover and a photo for every place, starts the trip as a thing " +
+        "in motion with its days, places, travel, stay and to-do list, every stop at its place, and answers in a " +
+        "line with a compact line under it. The trip is pinned; the app lists it, opens it, and fetches its cover " +
+        "from the server.",
       guarantees: ["G32"],
     });
     transcript.begin("2026-10-29T09:00:00.000Z");
@@ -2924,9 +2934,9 @@ const scenarios: readonly (() => Transcript)[] = [
       "Can you plan Florence with Janki? 6 to 9 November. Good food, the Uffizi, maybe Pisa for a day.",
     );
     transcript.wait(800);
-    const cover = findFlorenceCover(transcript);
+    const pictures = findFlorencePictures(transcript);
     transcript.wait(2500);
-    const { motion, change } = startFlorence(transcript, cover);
+    const { motion, change } = startFlorence(transcript, pictures);
     transcript.wait(400);
     writeWhole(
       transcript,
@@ -2943,12 +2953,12 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(1500);
     memoryCall(transcript, `/v0/motion/${florenceId}`, {
       motion,
-      content: florenceTrip(cover),
+      content: florenceTrip(pictures),
       state: {},
       changes: [change],
     });
     transcript.wait(300);
-    transcript.fetchAttachment(cover);
+    transcript.fetchAttachment(pictures.cover);
     return transcript;
   },
 
@@ -2969,9 +2979,9 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(transcript, "Can you plan Florence with Janki? 6 to 9 November.");
     transcript.wait(800);
-    const cover = findFlorenceCover(transcript);
+    const pictures = findFlorencePictures(transcript);
     transcript.wait(2000);
-    const started = startFlorence(transcript, cover);
+    const started = startFlorence(transcript, pictures);
     transcript.wait(400);
     writeWhole(transcript, `Here's a first shape, in In motion.\n\n${motionLine(florenceId, 1)}`);
     transcript.endTurn("completed");
@@ -2994,7 +3004,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     const changed = transcript.motion(
       "changed",
-      { ...florenceCard, cover, version: 2, summary: "6–9 Nov · 3 to book" },
+      { ...florenceCard, cover: pictures.cover, version: 2, summary: "6–9 Nov · 3 to book" },
       note,
     );
     motionStep(
@@ -3030,11 +3040,11 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(3000);
     const keptUp = transcript.motion(
       "changed",
-      { ...florenceCard, cover, version: 3, summary: "6–9 Nov · 2 to book" },
+      { ...florenceCard, cover: pictures.cover, version: 3, summary: "6–9 Nov · 2 to book" },
       fitted,
     );
     transcript.wait(2000);
-    const trip = florenceTrip(cover);
+    const trip = florenceTrip(pictures);
     memoryCall(transcript, `/v0/motion/${florenceId}`, {
       motion: keptUp.motion,
       content: {

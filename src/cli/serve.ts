@@ -10,7 +10,7 @@ import { tokenMessage } from "#cli/token.ts";
 import { systemClock } from "#clock.ts";
 import { createCodexEngine } from "#engine/codex/codex-engine.ts";
 import { modelSetting } from "#engine/engine.ts";
-import { demoScripts } from "#engine/scripted/demo.ts";
+import { demoScripts, withDemoPictures } from "#engine/scripted/demo.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { createToken, hashToken, tokenSetting } from "#http/auth.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -103,6 +103,7 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
     createEngine: toEngineFactory(engine, paths),
     name,
     capabilities: engine === "demo" ? demoInstalled : installed,
+    ...(engine === "demo" && { fetch: withDemoPictures(fetch) }),
     logger: { level: "info", redact: ["req.headers.authorization"] },
   });
   await server.app.listen({
