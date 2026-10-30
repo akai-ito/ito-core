@@ -17,7 +17,7 @@ import { chosenVoice } from "#voice/voices.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
 import { createImageTool } from "#replies/images.ts";
 import type { Fetch } from "#capabilities/connect.ts";
-import { createTopicTool } from "#topics/tool.ts";
+import { createTopics } from "#topics/topics.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import { withCheckedInput } from "#tools/input.ts";
@@ -197,6 +197,18 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     complete: (prompt, schema) => engine.complete(prompt, schema),
   });
+  const topics = createTopics({
+    store,
+    complete: async (prompt, schema, choice) => {
+      await listening;
+      return engine.complete(prompt, schema, choice);
+    },
+    models: async () => {
+      await listening;
+      return engine.models();
+    },
+    info,
+  });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
     store,
@@ -235,6 +247,12 @@ export const createServer = (options: ServerOptions): Server => {
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     logger: options.logger ?? false,
   });
+  const listening = new Promise<void>((resolve) => {
+    app.addHook("onListen", (done) => {
+      resolve();
+      done();
+    });
+  });
   logError.set((message, error) => {
     app.log.error({ err: error }, message);
   });
@@ -250,13 +268,7 @@ export const createServer = (options: ServerOptions): Server => {
     newId: () => identifiers.attachment(),
     fetchImage: (url, signal) => fetcher(url, { signal }),
   });
-  const coreTools: readonly Tool[] = [
-    createAskTool(turns),
-    createTopicTool(store),
-    imageTool,
-    ...memory.tools,
-    ...motions.tools,
-  ];
+  const coreTools: readonly Tool[] = [createAskTool(turns), imageTool, ...memory.tools, ...motions.tools];
   const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()].map((tool) => withCheckedInput(tool));
   const callTool = async (name: string, input: unknown): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
@@ -284,6 +296,7 @@ export const createServer = (options: ServerOptions): Server => {
   const shutdown = async (): Promise<void> => {
     compaction.get()?.();
     motions.close();
+    topics.close();
     notifier.close();
     await app.close();
     await turns.close();

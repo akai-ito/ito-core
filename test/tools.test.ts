@@ -69,7 +69,6 @@ describe("Ito's tools over MCP", () => {
       result: {
         tools: [
           { name: "ask" },
-          { name: "mark_topic" },
           { name: "keep_image" },
           { name: "recall" },
           { name: "read_page" },
@@ -94,8 +93,8 @@ describe("Ito's tools over MCP", () => {
   });
 
   it("checks a call's input against the tool's schema before the tool sees it", async () => {
-    expect(await rpc("tools/call", { name: "mark_topic", arguments: { label: 3 } })).toMatchObject({
-      result: { content: [{ type: "text", text: "label must be string." }], isError: true },
+    expect(await rpc("tools/call", { name: "keep_image", arguments: { url: 3 } })).toMatchObject({
+      result: { content: [{ type: "text", text: "url must be string." }], isError: true },
     });
     expect(await rpc("tools/call", { name: "read_motion", arguments: { id: "trip", colour: "red" } })).toMatchObject({
       result: { content: [{ type: "text", text: "There's no colour here." }], isError: true },

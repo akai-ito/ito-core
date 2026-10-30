@@ -778,7 +778,6 @@ export const createTranscript = (header: Header): Transcript => {
     wait(1);
     const turnId = startTurn([userMessageId]);
     wait(300);
-    if (topic !== undefined) markTopic(topic, userMessageId);
     step("thinking", { title: "Thinking it through", endedTitle: "Thought it through" });
     wait(1500);
     const agentMessageId = reply();
@@ -787,6 +786,7 @@ export const createTranscript = (header: Header): Transcript => {
     endMessage("completed");
     wait(1);
     endTurn("completed");
+    if (topic !== undefined) markTopic(topic, userMessageId);
     return { user: userMessageId, agent: agentMessageId, turn: turnId };
   };
 

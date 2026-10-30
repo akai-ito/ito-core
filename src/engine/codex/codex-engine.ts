@@ -514,7 +514,7 @@ export const createCodexEngine = ({
       respond?.(isAllowed);
     },
 
-    complete: async (prompt, schema) => {
+    complete: async (prompt, schema, choice) => {
       const opened = await ensureSession();
       if (!opened.ok) return fail(opened.failure.detail);
       const { process } = opened.value;
@@ -532,7 +532,7 @@ export const createCodexEngine = ({
         threadId,
         input: [{ type: "text", text: prompt, text_elements: [] }],
         outputSchema: schema as JsonValue,
-        ...readChoice(settings.setting),
+        ...(choice ?? readChoice(settings.setting)),
       });
       if (!turn.ok)
         sideJobs

@@ -70,7 +70,12 @@ export type Page = {
   readonly hasMore: boolean;
 };
 
-export type TopicFailure = { readonly code: "no_turn" } | { readonly code: "marked"; readonly topic: Topic };
+export type Exchange = {
+  readonly turn: TurnId;
+  readonly position: number;
+  readonly said: string;
+  readonly answered: string;
+};
 
 export type AcceptFailure = "id_conflict" | "unknown_attachment" | "attachment_taken" | "call_not_on";
 
@@ -121,7 +126,9 @@ export type Store = Settings & {
   readonly deleteCallAudio: (id: string) => DeletedAudio | undefined;
   readonly recordVoiceStatus: (state: VoiceState, reason?: string) => void;
   readonly latestCall: () => Call | undefined;
-  readonly markTopic: (label: string) => Result<Topic, TopicFailure>;
+  readonly exchanges: (through: TurnId | undefined, limit: number) => readonly Exchange[];
+  readonly listTopics: () => readonly Topic[];
+  readonly startTopic: (position: number, label: string) => Result<Topic, "marked">;
   readonly saveAttachment: (attachment: Attachment, sha256: string) => Result<SavedAttachment, "id_conflict">;
   readonly findAttachment: (id: string) => { readonly attachment: Attachment; readonly sha256: string } | undefined;
   readonly unattachedBefore: (before: string) => readonly string[];
@@ -589,17 +596,30 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         return { call: deleted, audio };
       }),
 
-    markTopic: (label) =>
+    exchanges: (through, limit) => {
+      const until = through === undefined ? Number.MAX_SAFE_INTEGER : (turnRow(through)?.position ?? -1);
+      const rows = database
+        .prepare("SELECT * FROM turns WHERE outcome IS NOT NULL AND position <= ? ORDER BY position DESC LIMIT ?")
+        .all(until, limit) as unknown as readonly TurnRow[];
+      return rows.toReversed().map((row) => {
+        const inputs = parseIds(row.inputs).flatMap((id) => messageRow(id) ?? []);
+        const replies = database
+          .prepare("SELECT text FROM messages WHERE turn = ? AND kind = 'reply' ORDER BY position")
+          .all(row.id) as unknown as readonly { readonly text: string }[];
+        return {
+          turn: toTurnId(row.id),
+          position: inputs[0]?.position ?? row.position,
+          said: inputs.map(({ text }) => text).join("\n\n"),
+          answered: replies.map(({ text }) => text).join("\n\n"),
+        };
+      });
+    },
+
+    listTopics: () => topicsFrom(0),
+
+    startTopic: (position, label) =>
       transaction(() => {
-        const running = database
-          .prepare("SELECT * FROM turns WHERE outcome IS NULL ORDER BY position DESC LIMIT 1")
-          .get() as TurnRow | undefined;
-        if (!running) return fail({ code: "no_turn" });
-        const [first] = toStoredTurn(running).inputs;
-        const position = (first && messageRow(first)?.position) ?? running.position;
-        const marked = database.prepare("SELECT body FROM topics WHERE position = ?").get(position) as
-          { readonly body: string } | undefined;
-        if (marked) return fail({ code: "marked", topic: JSON.parse(marked.body) as Topic });
+        if (database.prepare("SELECT id FROM topics WHERE position = ?").get(position)) return fail("marked");
         const at = now();
         const topic: Topic = { id: identifiers.topic(), label, position, at };
         append({ id: identifiers.event(), type: "topic.started", at, topic });
