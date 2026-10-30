@@ -14,7 +14,9 @@ export type FakeGitHub = {
   readonly apiUrl: string;
   readonly token: string;
   readonly repository: string;
+  readonly mediaRepository: string;
   readonly issues: () => readonly FakeIssue[];
+  readonly media: () => ReadonlyMap<string, Buffer>;
   readonly labels: () => readonly string[];
   readonly close: () => Promise<void>;
 };
@@ -37,7 +39,10 @@ const stringOf = (value: unknown): string => (typeof value === "string" ? value 
 export const startFakeGitHub = async (): Promise<FakeGitHub> => {
   const token = "github_pat_fake";
   const repository = "akai-ito/ito-core";
+  const mediaRepository = "akai-ito/report-media";
   const issues = createCell<readonly FakeIssue[]>([]);
+  const media = createCell<ReadonlyMap<string, Buffer>>(new Map());
+  const rawUrl = (file: string): string => `https://raw.githubusercontent.com/${mediaRepository}/main/${file}`;
   const labels = createCell<readonly string[]>([]);
   const site = `https://github.com/${repository}`;
 
@@ -48,6 +53,27 @@ export const startFakeGitHub = async (): Promise<FakeGitHub> => {
       return;
     }
     const url = new URL(request.url ?? "/", "http://localhost");
+    const mediaFile = url.pathname.startsWith(`/repos/${mediaRepository}/contents/`)
+      ? url.pathname.slice(`/repos/${mediaRepository}/contents/`.length)
+      : undefined;
+    if (mediaFile !== undefined) {
+      const isThere = media.get().has(mediaFile);
+      if (request.method === "GET") {
+        sendJson(
+          response,
+          isThere ? 200 : 404,
+          isThere ? { download_url: rawUrl(mediaFile) } : { message: "Not Found" },
+        );
+        return;
+      }
+      if (isThere) {
+        sendJson(response, 422, { message: 'Invalid request. "sha" wasn\'t supplied.' });
+        return;
+      }
+      media.update((current) => new Map([...current, [mediaFile, Buffer.from(stringOf(body.content), "base64")]]));
+      sendJson(response, 201, { content: { download_url: rawUrl(mediaFile) } });
+      return;
+    }
     const route = `${request.method ?? ""} ${url.pathname.replace(`/repos/${repository}`, "")}`;
     const commentsOn = /^POST \/issues\/(?<number>\d+)\/comments$/u.exec(route)?.groups?.number;
     switch (commentsOn ? "POST /issues/:number/comments" : route) {
@@ -56,16 +82,18 @@ export const startFakeGitHub = async (): Promise<FakeGitHub> => {
         return;
       }
       case "GET /issues": {
-        const label = url.searchParams.get("labels") ?? "";
-        const listed = issues.get().filter((issue) => issue.labels.includes(label));
         sendJson(
           response,
           200,
-          listed.map((issue) => ({
-            number: issue.number,
-            html_url: `${site}/issues/${String(issue.number)}`,
-            body: issue.body,
-          })),
+          issues
+            .get()
+            .toReversed()
+            .map((issue) => ({
+              number: issue.number,
+              title: issue.title,
+              html_url: `${site}/issues/${String(issue.number)}`,
+              updated_at: "2026-10-30T09:00:00Z",
+            })),
         );
         return;
       }
@@ -121,7 +149,9 @@ export const startFakeGitHub = async (): Promise<FakeGitHub> => {
     apiUrl: `http://127.0.0.1:${String(address.port)}`,
     token,
     repository,
+    mediaRepository,
     issues: () => issues.get(),
+    media: () => media.get(),
     labels: () => labels.get(),
     close: async () => {
       server.closeAllConnections();

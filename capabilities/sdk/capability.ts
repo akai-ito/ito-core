@@ -1,9 +1,9 @@
 import { z } from "zod";
-import type { CallResult, Manifest, Server, Status, Values } from "#capabilities/manifest.ts";
+import type { Approval, CallResult, Manifest, Server, Status, Values } from "#capabilities/manifest.ts";
 import type { Result } from "#result.ts";
 
 export { fail, ok, type Result } from "#result.ts";
-export type { CallResult, Field, Server, Status, Values } from "#capabilities/manifest.ts";
+export type { Approval, CallResult, Field, Server, Status, Values } from "#capabilities/manifest.ts";
 
 export type Context = {
   readonly values: Values;
@@ -12,7 +12,11 @@ export type Context = {
   readonly status: (status: Status) => void;
 };
 
-export type CallContext = Context & { readonly turn?: string; readonly signal: AbortSignal };
+export type CallContext = Context & {
+  readonly turn?: string;
+  readonly signal: AbortSignal;
+  readonly approve: (approval: Approval) => Promise<Result<boolean, string>>;
+};
 
 export type Operation<Input extends z.ZodObject = z.ZodObject> = {
   readonly name: string;

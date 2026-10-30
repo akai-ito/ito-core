@@ -65,8 +65,15 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
   const at = Date.parse(event.at);
   switch (event.type) {
     case "ask.started": {
-      const { id, kind, question, options, allows_text, preview } = event.ask;
-      const fields = { kind, question, options, allows_text, ...(preview && { preview }) };
+      const { id, kind, question, options, allows_text, preview, attachments } = event.ask;
+      const fields = {
+        kind,
+        question,
+        options,
+        allows_text,
+        ...(preview && { preview }),
+        ...(attachments && { attachments }),
+      };
       return approvals.has(id)
         ? { at, event: { type: "approval", key: id, fields } }
         : { at, event: { type: "ask", fields } };

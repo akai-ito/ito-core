@@ -68,6 +68,7 @@ type AskFields = {
   readonly options?: readonly AskOption[];
   readonly allowsText?: boolean;
   readonly preview?: string;
+  readonly attachments?: readonly string[];
 };
 
 type Device = { readonly id: string; readonly isLooking: boolean };
@@ -1178,6 +1179,7 @@ export const createTranscript = (header: Header): Transcript => {
       options: [...options],
       allows_text: fields.allowsText ?? true,
       ...(fields.preview && { preview: fields.preview }),
+      ...(fields.attachments && { attachments: [...fields.attachments] }),
       at: timestamp(),
       position: nextPosition(),
     };

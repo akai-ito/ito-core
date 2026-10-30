@@ -17,6 +17,7 @@ import { chosenVoice } from "#voice/voices.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
 import { createImageTool } from "#replies/images.ts";
 import type { Fetch } from "#capabilities/connect.ts";
+import { createCapabilityApprovals } from "#capabilities/approvals.ts";
 import { createTopics } from "#topics/topics.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
@@ -128,9 +129,14 @@ export const createServer = (options: ServerOptions): Server => {
     fetch: fetcher,
     settings: store,
     folders: path.join(options.dataDirectory, "capabilities"),
-    server: { version: packageVersion(), engine: `Codex ${codexVersion()}` },
+    server: {
+      version: packageVersion(),
+      engine: `Codex ${codexVersion()}`,
+      workspace: path.join(options.dataDirectory, "workspace"),
+    },
     clock,
     info,
+    approve: createCapabilityApprovals({ store, approve: (fields) => turns.approve(fields) }),
   });
   const launcher = writeLauncher(path.join(options.dataDirectory, "bin", "ito"));
   const skills = (): string =>

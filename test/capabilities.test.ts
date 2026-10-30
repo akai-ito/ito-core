@@ -1,13 +1,22 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { createAttachments } from "#attachments/attachments.ts";
 import { createCell } from "#cell.ts";
+import { createCapabilityApprovals } from "#capabilities/approvals.ts";
 import { splitCommand } from "#capabilities/commands.ts";
 import type { Fetch } from "#capabilities/connect.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, onSetting, valuesSetting, type Host } from "#capabilities/host.ts";
-import type { Settings } from "#store/store.ts";
+import type { Approval } from "#capabilities/manifest.ts";
+import { systemClock } from "#clock.ts";
+import { toMessageId, toTurnId } from "#conversation/ids.ts";
+import type { AskFields } from "#engine/engine.ts";
+import { randomIdentifiers } from "#identifiers.ts";
+import { ok, type Result } from "#result.ts";
+import { openDatabase } from "#store/database.ts";
+import { createStore, type Settings } from "#store/store.ts";
 import { testCapability } from "./support/test-capabilities.ts";
 import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
@@ -35,11 +44,12 @@ const startHost = async (
   settings: Settings,
   clock: VirtualClock = createVirtualClock(0),
   fetcher: Fetch = () => Promise.reject(new Error("No provider here.")),
+  approve?: (approval: Approval) => Promise<Result<boolean, string>>,
 ): Promise<{ readonly host: Host; readonly folder: string }> => {
   const folders = mkdtempSync(path.join(home, "folders-"));
   const host = createHost({
     installed,
-    server: { version: "0.6.0", engine: "Codex test" },
+    server: { version: "0.6.0", engine: "Codex test", workspace: path.join(home, "workspace") },
     settings,
     folders,
     clock,
@@ -47,6 +57,7 @@ const startHost = async (
     info: (message) => {
       logged.update((current) => [...current, message]);
     },
+    ...(approve && { approve }),
   });
   hosts.update((current) => [...current, host]);
   await host.ready;
@@ -147,6 +158,31 @@ describe("capability host", () => {
     await host.call("echo", "complain", {});
 
     expect(host.find("echo")).toMatchObject({ state: "needs_you", detail: "The token stopped working." });
+  });
+
+  it("lets a capability ask the person through Ito, and gives it their answer", async () => {
+    const asked = createCell<readonly Approval[]>([]);
+    const { host } = await startHost(
+      createMemorySettings(switchedOn({ token: "secret-1" })),
+      undefined,
+      undefined,
+      (approval) => {
+        asked.update((current) => [...current, approval]);
+        return Promise.resolve(ok(true));
+      },
+    );
+
+    const answered = await host.call("echo", "ask", { pictures: ["/home/you/.ito/workspace/uploads/shelves.png"] });
+
+    expect(answered).toMatchObject({ ok: true, value: { text: "They said yes." } });
+    expect(asked.get()).toEqual([
+      {
+        question: "Echo it?",
+        preview: "It'll say hi.",
+        options: [{ label: "Echo", acts: true }, { label: "Don't" }],
+        pictures: ["/home/you/.ito/workspace/uploads/shelves.png"],
+      },
+    ]);
   });
 
   it("restarts a crashed capability with backoff, and gives up after five crashes in ten minutes", async () => {
@@ -291,5 +327,50 @@ describe("the agent's doors to a capability", () => {
     expect([first, second]).toMatchObject([{ value: { code: "CODE-1" } }, { value: { code: "CODE-2" } }]);
     expect(host.find("echo")?.values).toEqual({});
     expect(await host.connect("nothing")).toMatchObject({ ok: false, failure: { code: "not_found" } });
+  });
+});
+
+describe("a capability asking first", () => {
+  it("shows the pictures it would send, and only ones the person sent", async () => {
+    const directory = mkdtempSync(path.join(home, "asking-"));
+    const store = createStore(openDatabase(path.join(directory, "ito.db")), systemClock, randomIdentifiers);
+    const shot = Buffer.from("a screenshot of the Library");
+    createAttachments(store, path.join(directory, "attachments")).save("f_shot", "shelves.png", "image/png", shot);
+    store.acceptMessage(toMessageId("m_look"), "The shelves look clipped", ["f_shot"]);
+    store.startTurn(toTurnId("t_look"), [toMessageId("m_look")]);
+    writeFileSync(path.join(directory, "shelves.png"), shot);
+    writeFileSync(path.join(directory, "elsewhere.png"), "a picture they never sent");
+    const asked = createCell<readonly AskFields[]>([]);
+    const approve = createCapabilityApprovals({
+      store,
+      approve: (fields) => {
+        asked.update((current) => [...current, fields]);
+        return Promise.resolve(true);
+      },
+    });
+    const approval = {
+      question: "File this on GitHub?",
+      preview: "Shelves",
+      options: [{ label: "File it", acts: true as const }],
+    };
+
+    const sent = await approve({ ...approval, pictures: [path.join(directory, "shelves.png")] });
+    const stranger = await approve({ ...approval, pictures: [path.join(directory, "elsewhere.png")] });
+
+    expect(sent).toEqual({ ok: true, value: true });
+    expect(asked.get()).toEqual([
+      {
+        kind: "approval",
+        question: "File this on GitHub?",
+        options: [{ label: "File it", acts: true }],
+        allows_text: true,
+        preview: "Shelves",
+        attachments: ["f_shot"],
+      },
+    ]);
+    expect(stranger).toEqual({
+      ok: false,
+      failure: "Only pictures the person sent can go out, and elsewhere.png isn't one.",
+    });
   });
 });

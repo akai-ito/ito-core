@@ -134,13 +134,13 @@ const reports = (state: string, isTokenSet: boolean, detail?: string): Readonly<
   id: "reports",
   kind: "hand",
   title: "Reports",
-  summary: "Files the gaps Ari hits as public issues on Ito's repositories.",
+  summary: "Takes your feedback, and what Ari couldn't do, to Ito's developers as public GitHub issues.",
   symbol: "exclamationmark.bubble",
-  version: "0.1",
+  version: "0.2",
   state,
   ...(detail !== undefined && { detail }),
   fields: [{ ...reportsTokenField, set: isTokenSet }],
-  uses: { hosts: ["api.github.com", "github.com"], folders: [] },
+  uses: { hosts: ["api.github.com", "github.com"], folders: ["uploads"] },
 });
 
 const capabilityCall = (
@@ -1046,51 +1046,84 @@ const scenarios: readonly (() => Transcript)[] = [
     const transcript = createTranscript({
       name: "17-reporting-a-gap",
       scenario: 17,
-      title: "Reporting a gap",
+      title: "Reporting what you noticed",
       summary:
-        "The agent can't load a page it needs, so it gives its best answer, reports the gap to Ito and says so " +
-        "in one line. Reports is a capability that's switched on, and the report is a tool step titled by " +
-        "what it did, linking the issue it opened.",
-      guarantees: ["G10", "G14"],
+        "You send a screenshot and ask Ari to pass on what bothers you. Ari drafts a report in your words, and it " +
+        "waits inside the turn as an approval showing the draft and the screenshot it would attach. You file it, " +
+        "and the tool step links the issue. Later you add a thought, and Ari adds it to the same issue.",
+      guarantees: ["G10", "G14", "G28"],
     });
     yesterday(transcript);
     transcript.begin(todayAt, { cursor: "latest" });
     transcript.world("capability_on", { capability: "reports", values: { token: "github_pat_example" } });
     transcript.connect();
     transcript.wait(2000);
-    sendAndStart(transcript, "What time does the Battersea parkrun start?");
-    transcript.wait(300);
-    transcript.step("web_search", searching("Battersea parkrun start time"));
+    const shot = transcript.upload("library-shelves.png");
+    transcript.wait(200);
+    const noticed = transcript.send(
+      "The Library shelves just show cut-off page names. Can you pass that on? I'd rather each had an icon.",
+      { attachments: [shot] },
+    );
+    transcript.startTurn([noticed]);
     transcript.wait(900);
-    transcript.step("command", {
-      title: "Fetching a web page",
-      endedTitle: "Fetched a web page",
-      fields: { command: "curl -sf https://www.parkrun.org.uk/battersea/", cwd: "/home/you/.ito/workspace" },
-    });
-    transcript.wait(700);
-    transcript.endStep({ fields: { exit_code: 22, output: "curl: (22) The requested URL returned error: 403\n" } });
+    const title = "Library shelves need icons, not clipped names";
+    const body =
+      "The Library's shelf cards show fragments of page titles that end in ellipses, so they read like search " +
+      "results rather than places to browse.\n\nA distinct icon for each shelf, in the app's own style, with " +
+      "its name and count, would tell them apart at a glance.";
+    const reporting = { title: "Reporting it to Ito", endedTitle: "Reported it to Ito" };
     transcript.step("tool", {
-      title: "Reporting it to Ito",
-      endedTitle: "Reported it to Ito",
+      ...reporting,
       fields: {
         capability: "reports",
         operation: "report",
         arguments: {
-          capability: "web search",
-          operation: "open a page",
-          tried: "Fetched the parkrun event page to read the start time",
-          failed: "The page answered 403 to every fetch",
-          would_help: "A browser that can load pages behind bot protection",
+          title,
+          body,
+          screenshots: [{ file: "uploads/library-shelves.png", shows: "the Library shelves" }],
         },
       },
     });
-    transcript.wait(1200);
-    transcript.endStep({ fields: { url: "https://github.com/akai-ito/ito-core/issues/42" } });
-    writeWhole(
-      transcript,
-      "Most parkruns start at 9:00, but I couldn't load Battersea's event page to confirm it, and I've " +
-        "reported that. Check the page before you go.",
-    );
+    transcript.wait(300);
+    transcript.approval({
+      question: "File this on GitHub?",
+      preview: [title, "", body, "", "Screenshots: the Library shelves", "Public, on akai-ito/ito-core."].join("\n"),
+      options: [{ label: "File it", acts: true }, { label: "Don't" }],
+      attachments: [shot],
+    });
+    transcript.wait(6000);
+    const filed = transcript.send("File it");
+    transcript.read(filed);
+    transcript.status("working", "Going ahead");
+    transcript.wait(1500);
+    const issue = "https://github.com/akai-ito/ito-core/issues/42";
+    transcript.endStep({ fields: { url: issue } });
+    writeWhole(transcript, `Filed, with your screenshot: [${title}](${issue}).`);
+    transcript.endTurn("completed");
+    transcript.wait(5 * 60 * 1000);
+    const more = transcript.send("Actually, no description is fine too: just the icon, the name and the count.");
+    transcript.startTurn([more]);
+    transcript.wait(700);
+    const addition =
+      "An icon with the shelf's name and count, and no description at all, would be just as good: better than " +
+      "filler or a clipped list.";
+    transcript.step("tool", {
+      ...reporting,
+      fields: { capability: "reports", operation: "report", arguments: { body: addition, issue: 42 } },
+    });
+    transcript.wait(300);
+    transcript.approval({
+      question: "Add this to issue #42 on GitHub?",
+      preview: [addition, "", "Public, on akai-ito/ito-core#42."].join("\n"),
+      options: [{ label: "Add it", acts: true }, { label: "Don't" }],
+    });
+    transcript.wait(4000);
+    const added = transcript.send("Add it");
+    transcript.read(added);
+    transcript.status("working", "Going ahead");
+    transcript.wait(1000);
+    transcript.endStep({ fields: { url: `${issue}#issuecomment-6510000001` } });
+    writeWhole(transcript, "Added to the same issue.");
     transcript.endTurn("completed");
     return transcript;
   },
@@ -1695,7 +1728,7 @@ const scenarios: readonly (() => Transcript)[] = [
         protocol,
         agent: { name: "Ari" },
         setup: { notifications: false, memory_backup: false },
-        capabilities: [{ id: "reports", version: "0.1" }],
+        capabilities: [{ id: "reports", version: "0.2" }],
       },
       { headers: { "Ito-Protocol": protocol } },
     );

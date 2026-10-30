@@ -158,7 +158,7 @@ paths:
                   effort: low
                   account: { kind: chatgpt, plan: plus, email_domain: example.com }
                 setup: { notifications: true, memory_backup: true }
-                capabilities: [{ id: reports, version: "0.1" }]
+                capabilities: [{ id: reports, version: "0.2" }]
         "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/events:
@@ -1486,18 +1486,18 @@ components:
         id: reports
         kind: hand
         title: Reports
-        summary: Files the gaps Ari hits as public issues on Ito's repositories.
+        summary: Takes your feedback, and what Ari couldn't do, to Ito's developers as public GitHub issues.
         symbol: exclamationmark.bubble
-        version: "0.1"
+        version: "0.2"
         state: needs_you
         detail: GitHub rejected the token.
         fields:
           - name: token
             kind: secret
             title: GitHub token
-            description: A fine-grained token for akai-ito/ito-core, with Issues set to read and write.
+            description: Connect GitHub, so Reports files issues on akai-ito/ito-core as you.
             set: true
-        uses: { hosts: [api.github.com], folders: [] }
+        uses: { hosts: [api.github.com, github.com], folders: [uploads] }
     CapabilityField:
       description: |
         One field of a setup sheet. A `secret` never comes back: `set` says whether one is saved.

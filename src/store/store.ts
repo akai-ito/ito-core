@@ -131,6 +131,7 @@ export type Store = Settings & {
   readonly startTopic: (position: number, label: string) => Result<Topic, "marked">;
   readonly saveAttachment: (attachment: Attachment, sha256: string) => Result<SavedAttachment, "id_conflict">;
   readonly findAttachment: (id: string) => { readonly attachment: Attachment; readonly sha256: string } | undefined;
+  readonly sentAttachment: (sha256: string) => string | undefined;
   readonly unattachedBefore: (before: string) => readonly string[];
   readonly deleteAttachment: (id: string) => void;
   readonly pairedTokenHashes: () => readonly string[];
@@ -867,6 +868,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           options: fields.options,
           allows_text: fields.allows_text,
           ...(fields.preview && { preview: fields.preview }),
+          ...(fields.attachments && fields.attachments.length > 0 && { attachments: [...fields.attachments] }),
           at,
           position: nextSeq(),
         };
@@ -953,6 +955,12 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       const row = attachmentRow(id);
       return row ? { attachment: JSON.parse(row.body) as Attachment, sha256: row.sha256 } : undefined;
     },
+
+    sentAttachment: (sha256) =>
+      (
+        database.prepare("SELECT id FROM attachments WHERE sha256 = ? AND message IS NOT NULL LIMIT 1").get(sha256) as
+          { readonly id: string } | undefined
+      )?.id,
 
     unattachedBefore: (before) =>
       (

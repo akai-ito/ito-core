@@ -380,7 +380,7 @@
           }
         },
         "url": {
-          "description": "`web_search`: the page opened or searched within. `tool`: what the tool made, such as the issue a gap report opened or added to.",
+          "description": "`web_search`: the page opened or searched within. `tool`: what the tool made, such as the issue a report opened or added to.",
           "type": "string"
         },
         "pattern": {
@@ -605,6 +605,14 @@
           "description": "Approvals only: what would happen, in plain text, to show before you agree.",
           "type": "string",
           "minLength": 1
+        },
+        "attachments": {
+          "description": "Approvals only: pictures that would leave the box if you agree, such as a report's screenshots, to show with the preview. Fetch each with `GET /v0/attachments/{attachment}`.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/AttachmentId"
+          }
         },
         "at": {
           "$ref": "#/$defs/Timestamp"

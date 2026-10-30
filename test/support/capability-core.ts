@@ -4,6 +4,7 @@ import { createCell } from "#cell.ts";
 import {
   fail,
   ok,
+  type Approval,
   type CallResult,
   type Capability,
   type Result,
@@ -24,9 +25,18 @@ export type TestCore = {
 
 type Reply = { readonly result?: unknown; readonly error?: { readonly message: string } };
 
-export const testServer: Server = { version: "0.0.0-test", engine: "codex test" };
+export const testServer: Server = { version: "0.0.0-test", engine: "codex test", workspace: "/tmp/ito-test-workspace" };
 
-export const createTestCore = (capability: Capability, folder = "/tmp/ito-test-capability"): TestCore => {
+export type TestCoreOptions = {
+  readonly folder?: string;
+  readonly server?: Server;
+  readonly approve?: (approval: Approval) => boolean;
+};
+
+export const createTestCore = (
+  capability: Capability,
+  { folder = "/tmp/ito-test-capability", server = testServer, approve = () => false }: TestCoreOptions = {},
+): TestCore => {
   const toCapability = new PassThrough();
   const fromCapability = new PassThrough();
   const nextId = createCell(1);
@@ -42,6 +52,11 @@ export const createTestCore = (capability: Capability, folder = "/tmp/ito-test-c
     };
     const { params: status } = message;
     if (status && message.method === "status") statuses.update((current) => [...current, status]);
+    if (message.method === "approve" && message.id !== undefined) {
+      const approved = approve(message.params as unknown as Approval);
+      toCapability.write(`${JSON.stringify({ id: message.id, result: { approved } })}\n`);
+      return;
+    }
     if (message.id === undefined) return;
     waiting.get().get(message.id)?.(message);
   });
@@ -59,7 +74,7 @@ export const createTestCore = (capability: Capability, folder = "/tmp/ito-test-c
       return (reply.result as { readonly manifest: Readonly<Record<string, unknown>> }).manifest;
     },
     start: async (values) => {
-      const reply = await request("start", { values, folder, server: testServer });
+      const reply = await request("start", { values, folder, server });
       return reply.error ? fail(reply.error.message) : ok(undefined);
     },
     check: async (values) => {

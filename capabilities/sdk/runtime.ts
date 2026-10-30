@@ -1,6 +1,6 @@
 import type { Readable, Writable } from "node:stream";
 import { createCell } from "#cell.ts";
-import type { Server, Status, Values } from "#capabilities/manifest.ts";
+import type { Approval, Server, Status, Values } from "#capabilities/manifest.ts";
 import { createConnection, type IncomingRequest, type RequestId, type RpcFailure } from "#json-rpc.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { toManifest, type Capability, type Context } from "./capability.ts";
@@ -15,7 +15,7 @@ const refused = (message: string): Result<never, RpcFailure> => fail({ code: 1, 
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const noServer: Server = { version: "", engine: "" };
+const noServer: Server = { version: "", engine: "", workspace: "" };
 
 const processStreams: Streams = {
   input: process.stdin,
@@ -37,6 +37,11 @@ export const runCapability = (capability: Capability, { input, output, onClose }
   };
 
   const contextOf = ({ values, folder, server }: Started): Context => ({ values, folder, server, status });
+
+  const approve = async (approval: Approval): Promise<Result<boolean, string>> => {
+    const answered = await connection.request("approve", approval);
+    return answered.ok ? ok(parametersOf(answered.value).approved === true) : fail(answered.failure.message);
+  };
 
   const start = async (parameters: Parameters): Promise<Result<unknown, RpcFailure>> => {
     const given: Started = {
@@ -74,6 +79,7 @@ export const runCapability = (capability: Capability, { input, output, onClose }
         ...contextOf(current),
         ...(turn !== undefined && { turn }),
         signal: controller.signal,
+        approve,
       });
       if (controller.signal.aborted) return refused("Cancelled.");
       return result.ok ? ok(result.value) : refused(result.failure);
