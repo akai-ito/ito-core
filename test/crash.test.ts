@@ -174,10 +174,17 @@ describe("a crash mid-reply", () => {
       [valuesSetting("reports"), JSON.stringify({ token: "github_pat_crash_test" })],
     ]);
     const server = await startIto(await findFreePort());
+    // Every process with its parent, since only Linux's ps can filter by parent (--ppid).
     const reportsChild = (): number | undefined => {
-      const children = execFileSync("ps", ["-o", "pid=,args=", "--ppid", String(server.pid)], { encoding: "utf8" });
-      const line = children.split("\n").find((child) => child.includes(path.join("capabilities", "reports")));
-      return line === undefined ? undefined : Number(line.trim().split(" ", 1)[0]);
+      const processes = execFileSync("ps", ["-A", "-o", "pid=,ppid=,args="], { encoding: "utf8" });
+      const child = processes
+        .split("\n")
+        .map((line) => line.trim().split(/\s+/))
+        .find(
+          ([, parent, ...command]) =>
+            Number(parent) === server.pid && command.join(" ").includes(path.join("capabilities", "reports")),
+        );
+      return child === undefined ? undefined : Number(child[0]);
     };
     await vi.waitFor(() => {
       expect(reportsChild()).toBeDefined();
