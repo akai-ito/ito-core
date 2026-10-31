@@ -17,6 +17,8 @@ export type FakeMail = {
   readonly hold: (account: string, count: number) => void;
   readonly expectDrafts: (ids: readonly string[]) => void;
   readonly drafts: () => readonly Draft[];
+  readonly send: (account: string, mail: Mail) => void;
+  readonly breakReading: () => void;
 };
 
 type Box = { readonly inbox: readonly Mail[]; readonly watchers: ReadonlySet<(mail: Mail) => void> };
@@ -30,6 +32,8 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const boxes = createCell<ReadonlyMap<string, Box>>(new Map());
   const draftIds = createCell<readonly string[]>([]);
   const saved = createCell<readonly Draft[]>([]);
+  const sentMail = createCell<ReadonlyMap<string, readonly Mail[]>>(new Map());
+  const isBroken = createCell(false);
 
   const boxOf = (account: string): Box => boxes.get().get(account) ?? { inbox: [], watchers: new Set() };
 
@@ -64,7 +68,8 @@ export const createFakeMail = (now: () => string): FakeMail => {
         }));
       };
     },
-    recent: () => Promise.resolve(ok(boxOf(account).inbox)),
+    recent: () =>
+      Promise.resolve(isBroken.get() ? fail("The mail server refused the sign-in.") : ok(boxOf(account).inbox)),
     read: (messageId) => {
       const found = boxOf(account).inbox.find((mail) => mail.messageId === messageId);
       return Promise.resolve(found ? ok(found) : fail("That mail isn't in this account any more."));
@@ -83,7 +88,7 @@ export const createFakeMail = (now: () => string): FakeMail => {
     removeDraft: () => Promise.resolve(ok(undefined)),
     file: () => Promise.resolve(ok(undefined)),
     unsubscribe: () => Promise.resolve(ok("posted" as const)),
-    sent: () => Promise.resolve(ok([])),
+    sent: () => Promise.resolve(ok(sentMail.get().get(account) ?? [])),
     close: () => Promise.resolve(),
   });
 
@@ -114,5 +119,11 @@ export const createFakeMail = (now: () => string): FakeMail => {
       draftIds.set(ids);
     },
     drafts: () => saved.get(),
+    send: (account, mail) => {
+      sentMail.update((all) => new Map([...all, [account, [...(all.get(account) ?? []), mail]]]));
+    },
+    breakReading: () => {
+      isBroken.set(true);
+    },
   };
 };

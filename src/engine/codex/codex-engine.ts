@@ -20,6 +20,7 @@ import {
   effortSetting,
   modelSetting,
   readChoice,
+  restartedDetail,
   type Engine,
   type EngineEvent,
   type EngineFailureCode,
@@ -385,7 +386,7 @@ export const createCodexEngine = ({
 
   const detachSession = (): Opening | undefined => {
     generation.update((count) => count + 1);
-    failSideJobs("Codex restarted before it answered.");
+    failSideJobs(restartedDetail);
     const opening = session.get();
     session.set(undefined);
     openThreadId.set(undefined);

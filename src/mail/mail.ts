@@ -12,6 +12,7 @@ import {
   type Filing,
   type Mail,
   type MailSource,
+  type SavedWatermark,
   type SourceOptions,
 } from "#mail/imap.ts";
 import { createOutlookToken } from "#mail/outlook.ts";
@@ -31,7 +32,7 @@ export type Progress = (read: number, total: number) => void;
 export type Mailbox = {
   readonly tools: readonly Tool[];
   readonly check: (account: Account, values: Values) => Promise<CheckResult>;
-  readonly catchUp: (onProgress: Progress) => Promise<void>;
+  readonly catchUp: (onProgress: Progress) => Promise<Result<undefined, string>>;
   readonly hasSource: () => boolean;
   readonly close: () => Promise<void>;
 };
@@ -65,6 +66,8 @@ type FiledUndo = { readonly kind: "mail_filed"; readonly account: string; readon
 type BlockedUndo = { readonly kind: "mail_blocked"; readonly sender: string };
 
 export const blockedSetting = "mail_blocked";
+
+export const watermarkSetting = "mail_watermark";
 
 const accounts: readonly Account[] = ["icloud", "outlook", "gmail"];
 
@@ -240,6 +243,7 @@ export const createMailbox = ({
 }: MailOptions): Mailbox => {
   const connections = createCell<ReadonlyMap<Account, Connection>>(new Map());
   const arrivals = createCell<Promise<void>>(Promise.resolve());
+  const restored = createCell<ReadonlySet<string>>(new Set());
   const sentSince = createCell(toTimestamp(clock.now() - dayMs));
   const sentTimer = createCell<Cancel | undefined>(undefined);
   const isClosed = createCell(false);
@@ -309,20 +313,29 @@ export const createMailbox = ({
     return { decision: "work", reason: "The attention pass couldn't judge it.", confidence: 0 };
   };
 
+  const binBlocked = async ({ account, source }: Connection, mail: Mail): Promise<boolean> => {
+    const filed = await source.file(mail.messageId, "bin");
+    if (!filed.ok) {
+      info("A blocked sender's mail couldn't be binned, so Kumo reads it", { error: filed.failure });
+      return false;
+    }
+    desk.addDone({
+      text: `Binned a mail from ${senderOf(mail)}, whom you blocked`,
+      reason: "A blocked sender",
+      mail: mailReference(account, mail),
+      quiet: true,
+      undo: { kind: "mail_filed", account, id: mail.messageId, back: "inbox" } satisfies FiledUndo,
+    });
+    return true;
+  };
+
   const arrive = async (connection: Connection, mail: Mail): Promise<void> => {
-    const { account, source } = connection;
-    if (isBlocked(mail.from.address)) {
-      const filed = await source.file(mail.messageId, "bin");
-      if (!filed.ok) info("A blocked sender's mail couldn't be binned", { error: filed.failure });
-      desk.addDone({
-        text: `Binned a mail from ${senderOf(mail)}, whom you blocked`,
-        reason: "A blocked sender",
-        mail: mailReference(account, mail),
-        quiet: true,
-        undo: { kind: "mail_filed", account, id: mail.messageId, back: "inbox" } satisfies FiledUndo,
-      });
+    const { account } = connection;
+    if (restored.get().has(mail.messageId)) {
+      restored.update((current) => new Set([...current].filter((id) => id !== mail.messageId)));
       return;
     }
+    if (isBlocked(mail.from.address) && (await binBlocked(connection, mail))) return;
     const judged = await judge(account, mail);
     if (judged.decision === "quiet") {
       desk.addDone({
@@ -333,7 +346,14 @@ export const createMailbox = ({
       });
       return;
     }
-    await work(workPrompt(account, mail, judged));
+    const done = await work(workPrompt(account, mail, judged));
+    if (done.ok) return;
+    desk.addDone({
+      text: `Couldn't look at "${mail.subject}" from ${senderOf(mail)}; it's still in your inbox`,
+      reason: done.failure,
+      mail: mailReference(account, mail),
+      quiet: false,
+    });
   };
 
   const onMail = (connection: Connection, mail: Mail): void => {
@@ -360,7 +380,18 @@ export const createMailbox = ({
         connections.update((all) => new Map([...all].filter(([key]) => key !== account)));
       }
       if (!config) continue;
-      const source = createSource({ account, user: config.user, auth: config.auth, logger });
+      const markKey = `${watermarkSetting}:${account}:${config.user}`;
+      const saved = store.setting(markKey);
+      const source = createSource({
+        account,
+        user: config.user,
+        auth: config.auth,
+        logger,
+        ...(saved !== undefined && { watermark: JSON.parse(saved) as SavedWatermark }),
+        onWatermark: (watermark) => {
+          store.setSetting(markKey, JSON.stringify(watermark));
+        },
+      });
       const watching = createCell<Connection | undefined>(undefined);
       const stop = source.watch((mail) => {
         const connection = watching.get();
@@ -376,8 +407,8 @@ export const createMailbox = ({
 
   const matches = (card: Card, account: string, sent: Mail): boolean => {
     const { draft } = card;
-    if (draft?.account !== account) return false;
-    if (draft.in_reply_to !== undefined && sent.inReplyTo === draft.in_reply_to) return true;
+    if (draft?.account !== account || sent.date < card.at) return false;
+    if (draft.in_reply_to !== undefined) return sent.inReplyTo === draft.in_reply_to;
     return (
       sent.subject.trim() === draft.subject.trim() &&
       sent.to.some(({ address }) => draft.to.some((wanted) => wanted.toLowerCase() === address.toLowerCase()))
@@ -481,9 +512,9 @@ export const createMailbox = ({
     }
     if (!isFiledUndo(payload)) return ok(undefined);
     const connection = connectionOf(payload.account);
-    return connection
-      ? connection.source.file(payload.id, payload.back)
-      : fail(`${payload.account} mail isn't set up any more.`);
+    if (!connection) return fail(`${payload.account} mail isn't set up any more.`);
+    if (payload.back === "inbox") restored.update((current) => new Set([...current, payload.id]));
+    return connection.source.file(payload.id, payload.back);
   });
 
   const withSource = async (
@@ -737,12 +768,12 @@ export const createMailbox = ({
     }
   };
 
-  const catchUp = async (onProgress: Progress): Promise<void> => {
+  const catchUp = async (onProgress: Progress): Promise<Result<undefined, string>> => {
     const since = toTimestamp(clock.now() - catchUpDays * dayMs);
-    const readRecent = async ({ account, source }: Connection): Promise<readonly string[]> => {
+    const readRecent = async ({ account, source }: Connection): Promise<Result<readonly string[], string>> => {
       const recent = await source.recent(since);
       if (!recent.ok) info("Recent mail couldn't be read", { account, error: recent.failure });
-      return recent.ok ? recent.value.map((mail) => summarise(account, mail)) : [];
+      return recent.ok ? ok(recent.value.map((mail) => summarise(account, mail))) : recent;
     };
     const read = await Promise.all(
       connections
@@ -750,14 +781,19 @@ export const createMailbox = ({
         .values()
         .map((connection) => readRecent(connection)),
     );
-    const lines = read.flat();
+    const [unread = "No mail is set up."] = read.flatMap((result) => (result.ok ? [] : result.failure));
+    if (read.every((result) => !result.ok)) return fail(unread);
+    const lines = read.flatMap((result) => (result.ok ? result.value : []));
     onProgress(0, lines.length);
     const parts = Math.ceil(lines.length / chunkSize);
     const indexes = Array.from({ length: parts }, (_, index) => index);
+    const failures = createCell(0);
     for (const index of indexes) {
-      await work(catchUpPrompt(lines.slice(index * chunkSize, (index + 1) * chunkSize), index + 1, parts));
+      const done = await work(catchUpPrompt(lines.slice(index * chunkSize, (index + 1) * chunkSize), index + 1, parts));
+      if (!done.ok) failures.update((count) => count + 1);
       if (index + 1 < parts) onProgress((index + 1) * chunkSize, lines.length);
     }
+    if (parts > 0 && failures.get() === parts) return fail("Kumo couldn't read any of it.");
     const sent = await Promise.all(
       connections
         .get()
@@ -769,6 +805,7 @@ export const createMailbox = ({
     );
     const sample = sent.flat().slice(-sentSample);
     if (sample.length > 0) await work(voicePrompt(sample));
+    return ok(undefined);
   };
 
   const unsubscribe = host.subscribe(reconcile);
@@ -784,15 +821,13 @@ export const createMailbox = ({
       isClosed.set(true);
       unsubscribe();
       sentTimer.get()?.();
+      for (const { stop } of connections.get().values()) stop();
       await arrivals.get();
       await Promise.all(
         connections
           .get()
           .values()
-          .map(async ({ stop, source }) => {
-            stop();
-            await source.close();
-          }),
+          .map(({ source }) => source.close()),
       );
     },
   };

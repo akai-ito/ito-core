@@ -55,7 +55,11 @@ export type SourceOptions = {
   readonly smtp?: Endpoint;
   readonly fetch?: typeof fetch;
   readonly logger?: (message: string, details: Readonly<Record<string, unknown>>) => void;
+  readonly watermark?: SavedWatermark;
+  readonly onWatermark?: (watermark: SavedWatermark) => void;
 };
+
+export type SavedWatermark = { readonly uidValidity: string; readonly next: number };
 
 type Folders = {
   readonly inbox: string;
@@ -267,9 +271,10 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   };
 
   const toMailFrom = async (message: FetchMessageObject, folder: string): Promise<Mail | undefined> => {
-    if (message.source === undefined) return undefined;
+    const raw = message.source ?? message.headers;
+    if (raw === undefined) return undefined;
     const receivedAt = toIso(message.internalDate);
-    return parseMail(message.source, {
+    return parseMail(raw, {
       account,
       folder,
       uid: message.uid,
@@ -282,10 +287,12 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     client: ImapFlow,
     folder: string,
     range: string | SearchObject,
+    isHeadersOnly = false,
   ): Promise<readonly Mail[]> => {
     if (range === "") return [];
     const mails = createCell<readonly Mail[]>([]);
-    const messages = client.fetch(range, { uid: true, flags: true, internalDate: true, source: true }, { uid: true });
+    const part = isHeadersOnly ? { headers: true } : { source: true };
+    const messages = client.fetch(range, { uid: true, flags: true, internalDate: true, ...part }, { uid: true });
     for await (const message of messages) {
       const mail = await toMailFrom(message, folder);
       if (mail !== undefined) mails.update((current) => [...current, mail]);
@@ -303,6 +310,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     folders: readonly string[],
     query: SearchObject,
     newest?: number,
+    isHeadersOnly = false,
   ): Promise<Result<readonly Mail[], string>> => {
     const collected = createCell<readonly Mail[]>([]);
     for (const folder of folders) {
@@ -311,7 +319,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
         if (!uids.ok) return uids;
         const chosen =
           newest === undefined ? uids.value : uids.value.toSorted((left, right) => right - left).slice(0, newest);
-        return ok(await fetchMails(client, folder, toUidSet(chosen)));
+        return ok(await fetchMails(client, folder, toUidSet(chosen), isHeadersOnly));
       });
       if (!found.ok) return found;
       collected.update((current) => [...current, ...found.value]);
@@ -446,7 +454,14 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     const current = createCell<ImapFlow | undefined>(undefined);
     const retry = createCell<Cancel | undefined>(undefined);
     const attempts = createCell(0);
-    const watermark = createCell<Watermark | undefined>(undefined);
+    const saved = options.watermark;
+    const watermark = createCell<Watermark | undefined>(
+      saved === undefined ? undefined : { uidValidity: BigInt(saved.uidValidity), next: saved.next },
+    );
+    const setMark = (next: Watermark): void => {
+      watermark.set(next);
+      options.onWatermark?.({ uidValidity: next.uidValidity.toString(), next: next.next });
+    };
     const queue = createCell<Promise<void>>(Promise.resolve());
 
     const idle = async (client: ImapFlow): Promise<void> => {
@@ -464,7 +479,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       const mails = await fetchMails(client, inboxPath, `${String(mark.next)}:*`);
       const arrived = mails.filter((mail) => mail.uid >= mark.next).toSorted((left, right) => left.uid - right.uid);
       const last = arrived.at(-1);
-      if (last !== undefined) watermark.set({ ...mark, next: last.uid + 1 });
+      if (last !== undefined) setMark({ ...mark, next: last.uid + 1 });
       for (const mail of arrived) {
         if (isStopped.get()) return;
         try {
@@ -501,7 +516,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       const mailbox = await client.mailboxOpen(inboxPath);
       const mark = watermark.get();
       if (mark?.uidValidity !== mailbox.uidValidity) {
-        watermark.set({ uidValidity: mailbox.uidValidity, next: mailbox.uidNext });
+        setMark({ uidValidity: mailbox.uidValidity, next: mailbox.uidNext });
       }
       attempts.set(0);
       client.on("exists", () => {
@@ -560,7 +575,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       const query = sinceQuery(since);
       if (!query.ok) return query;
       const { inbox, archive } = opened.folders;
-      const mails = await mailsIn(opened.client, present([inbox, archive]), query.value);
+      const mails = await mailsIn(opened.client, present([inbox, archive]), query.value, undefined, true);
       return mails.ok ? ok(mails.value.filter((mail) => !mail.flags.includes("\\Draft")).toSorted(byDate)) : mails;
     });
 
@@ -612,14 +627,15 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     run("saving the draft", async (opened) => {
       const { drafts } = opened.folders;
       if (drafts === undefined) return fail("This account has no Drafts folder.");
-      if (letter.replaces !== undefined) {
-        const removed = await deleteDraft(opened, letter.replaces);
-        if (!removed.ok) return removed;
-      }
       const messageId = `${randomUUID()}@${domainOf(letter.from.address)}`;
       const mime = await toDraftMime(letter, messageId, new Date());
       const appended = await opened.client.append(drafts, mime, ["\\Draft", "\\Seen"]);
-      return appended === false ? fail("The mail server didn't keep the draft.") : ok({ messageId });
+      if (appended === false) return fail("The mail server didn't keep the draft.");
+      if (letter.replaces !== undefined) {
+        const removed = await deleteDraft(opened, letter.replaces);
+        if (!removed.ok) log("The draft it replaces couldn't be removed", { reason: removed.failure });
+      }
+      return ok({ messageId });
     });
 
   const removeDraft: MailSource["removeDraft"] = (messageId) =>

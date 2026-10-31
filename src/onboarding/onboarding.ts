@@ -23,7 +23,7 @@ export type GettingStartedOptions = {
   readonly store: Pick<Store, "onboarding" | "setOnboarding" | "setting" | "setSetting">;
   readonly identifiers: Pick<Identifiers, "belief">;
   readonly work: (prompt: string) => Promise<Result<string, string>>;
-  readonly catchUp: (onProgress: (read: number, total: number) => void) => Promise<void>;
+  readonly catchUp: (onProgress: (read: number, total: number) => void) => Promise<Result<undefined, string>>;
   readonly hasMail: () => boolean;
   readonly onSources: (listener: () => void) => () => void;
   readonly onAdded: (listener: (item: CalendarItem) => void) => void;
@@ -82,16 +82,26 @@ export const createGettingStarted = ({
 
   const read = async (): Promise<void> => {
     const before = new Set(motionIds());
+    beliefs.set([]);
+    added.set([]);
     isReading.set(true);
-    try {
-      await catchUp((mailsRead, total) => {
-        if (!isDone())
+    const readAll = async (): Promise<Result<undefined, string>> => {
+      try {
+        return await catchUp((mailsRead, total) => {
+          if (isDone()) return;
           store.setOnboarding({ state: "reading", progress: { mails_read: mailsRead, mails_total: total } });
-      });
-    } finally {
-      isReading.set(false);
-    }
+        });
+      } finally {
+        isReading.set(false);
+      }
+    };
+    const caughtUp = await readAll();
     if (isDone()) return;
+    if (!caughtUp.ok) {
+      info("The catch-up couldn't read the mail, so it will try again", { error: caughtUp.failure });
+      store.setOnboarding({ state: "reading" });
+      return;
+    }
     store.setOnboarding({
       state: "ready",
       proposal: {
@@ -146,7 +156,7 @@ export const createGettingStarted = ({
         const text = textOf(input, "text").trim();
         const page = textOf(input, "page").trim();
         if (text === "" || !pagePattern.test(page)) return Promise.resolve(failed("Give the belief and its page."));
-        if (isDone()) return Promise.resolve(failed("Getting started is over."));
+        if (!isReading.get()) return Promise.resolve(failed("Beliefs are only for the catch-up, while it reads."));
         const belief: Belief = { id: identifiers.belief(), text, page };
         beliefs.update((current) => [...current, belief]);
         return Promise.resolve({ text: `Noted ${belief.id} to check with them.` });
@@ -158,9 +168,11 @@ export const createGettingStarted = ({
     tools,
     state: () => store.onboarding(),
     begin: () => {
-      if (isDone() || store.setting(askedSetting) !== undefined) return;
-      store.setSetting(askedSetting, "true");
-      void work(questionPrompt);
+      if (isDone()) return;
+      if (store.setting(askedSetting) === undefined) {
+        store.setSetting(askedSetting, "true");
+        void work(questionPrompt);
+      }
       startReading();
     },
     answer: (id, given) => {
