@@ -83,3 +83,5 @@ export type Engine = {
   readonly models: () => Promise<Result<readonly ModelOption[], string>>;
   readonly close: () => Promise<void>;
 };
+
+export const restartedDetail = "Codex restarted before it answered.";

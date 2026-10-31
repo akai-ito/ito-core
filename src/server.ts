@@ -25,7 +25,7 @@ import type { Tool, ToolResult } from "#tools/mcp.ts";
 import { withCheckedInput } from "#tools/input.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
-import type { Engine, ToolServer } from "#engine/engine.ts";
+import { restartedDetail, type Engine, type ToolServer } from "#engine/engine.ts";
 import { createApp } from "#http/app.ts";
 import { createGate, createToken, tokenSetting } from "#http/auth.ts";
 import { leadOf } from "#http/settings.ts";
@@ -55,7 +55,7 @@ import type { Values } from "#capabilities/manifest.ts";
 import { toSources } from "#sources/sources.ts";
 import { createMailbox, type CreateMailSource, type Mailbox } from "#mail/mail.ts";
 import { createQuickChoice } from "#engine/quick-model.ts";
-import { inToolContext } from "#tools/context.ts";
+import { contextRun, inToolContext } from "#tools/context.ts";
 
 export type ServerOptions = {
   readonly dataDirectory: string;
@@ -273,9 +273,18 @@ export const createServer = (options: ServerOptions): Server => {
     },
     info,
   });
+  const touchedRuns = createCell<ReadonlySet<string>>(new Set());
   const runWork = async (prompt: string): Promise<Result<string, string>> => {
     await listening.get();
-    const done = await engine.work(`${workRules}\n\n${prompt}`, randomUUID());
+    const attempt = async (retries: number): Promise<Result<string, string>> => {
+      const run = randomUUID();
+      const done = await engine.work(`${workRules}\n\n${prompt}`, run);
+      const isTouched = touchedRuns.get().has(run);
+      touchedRuns.update((runs) => new Set([...runs].filter((other) => other !== run)));
+      const isCutOff = !done.ok && done.failure === restartedDetail && !isTouched;
+      return isCutOff && retries > 0 ? attempt(retries - 1) : done;
+    };
+    const done = await attempt(2);
     if (!done.ok) info("Kumo's background work didn't finish", { error: done.failure });
     return done;
   };
@@ -539,7 +548,16 @@ export const createServer = (options: ServerOptions): Server => {
       },
     },
   ];
-  const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()].map((tool) => withCheckedInput(tool));
+  const noteRun = (tool: Tool): Tool => ({
+    ...tool,
+    call: (input) => {
+      const run = contextRun();
+      if (run !== undefined) touchedRuns.update((runs) => new Set([...runs, run]));
+      return tool.call(input);
+    },
+  });
+  const allTools = (): readonly Tool[] =>
+    [...coreTools, ...doors.tools()].map((tool) => noteRun(withCheckedInput(tool)));
   const callTool = async (name: string, input: unknown, run?: string): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
     return tool
