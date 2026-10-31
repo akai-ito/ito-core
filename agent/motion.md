@@ -1,6 +1,6 @@
 ---
 name: things-in-motion
-description: "Start and keep things in motion, such as a trip being planned: when to start one, a trip's shape, changing it by id, photos, and what the person sees."
+description: "Start and keep things in motion, such as a trip, a job search, a dinner or a refund: when to start one, each kind's shape, changing it by id, photos, and what the person sees."
 ---
 
 # Things in motion
@@ -8,6 +8,9 @@ description: "Start and keep things in motion, such as a trip being planned: whe
 A thing in motion is something going on that you keep for the person while it lasts, such as a
 trip being planned. Their phone pins it above the chat, lists it in In motion, and draws it as a
 widget made for its kind. It holds the detail, so your replies stay short.
+
+Its kind is one of: a `trip`, a `training` block, a `pursuit` (a job search, a flat hunt), an
+`occasion` (a dinner, an appointment) or a `case` (the boiler, a refund).
 
 ## When to start one
 
@@ -156,6 +159,80 @@ sessions.
 - **Results** are timed efforts towards the goal, oldest first, such as a parkrun. Add one whenever
   they tell you a time.
 - The summary says where the block is: "Week 6 of 10 · intervals today".
+
+## Pursuits
+
+One outcome, with several options moving through stages: a job search, a flat hunt, a raise, a
+hire.
+
+```json
+{
+  "after": "A senior AI role in London that ships to real users, by January.",
+  "play": ["No firms that only want dashboards", "Never below £140k base", "One polite reply to recruiters, then silence"],
+  "options": [
+    {
+      "id": "qrt",
+      "name": "Senior AI Engineer",
+      "org": "QRT",
+      "stage": "Interviews",
+      "people": [{ "name": "Poppy", "role": "recruiter", "page": "memory:people/poppy" }],
+      "next": { "text": "Second round with the team lead", "at": "2026-11-04T14:00" },
+      "waiting_on": { "who": "Poppy", "since": "2026-10-30" }
+    }
+  ]
+}
+```
+
+- **What you're after** (`after`) and **How you play it** (`play`, one rule a line) come from
+  what they say, in their words where you can. Follow the rules for them, and when something comes
+  up the rules don't cover, ask, then add their answer as a rule.
+- **Options** go best first. Each has its `stage` in a word or two, such as "Screened" or
+  "Interviews", the people in it, its `next` step and when, and who it's `waiting_on` since when.
+  Move the stage as it moves, and drop `waiting_on` once they answer.
+- The summary says where it stands: "3 live · QRT second round Tue".
+
+## Occasions
+
+A dated event with people and prep: an appointment, a birthday, a dinner, a wedding.
+
+```json
+{
+  "start": "2026-11-14T19:30",
+  "end": "2026-11-14T22:30",
+  "timezone": "Europe/London",
+  "where": "Brat, Shoreditch",
+  "people": [{ "name": "Poppy", "page": "memory:people/poppy" }],
+  "prep": [{ "id": "book-table", "text": "Book a table for four", "done": false }],
+  "check_in": true
+}
+```
+
+- `start` and `end` are local to its time zone. A birthday is `all_day`.
+- **Prep** is what to do before, oldest first, as to-dos they tick on their phone.
+- Set `check_in` when you should ask how it went, such as after an interview or a first date, and
+  schedule that look with `schedule` for after it ends.
+- Finish it once it's past and nothing after it is left.
+
+## Cases
+
+A problem with back-and-forth until it's resolved: the boiler, a refund, a visa.
+
+```json
+{
+  "problem": "The boiler loses pressure every few days.",
+  "status": "Engineer booked for Tuesday",
+  "waiting_on": { "who": "British Gas", "since": "2026-10-28" },
+  "timeline": [{ "id": "first-call", "at": "2026-10-28", "text": "Called British Gas; they'll send an engineer." }],
+  "next": { "text": "Engineer visit", "at": "2026-11-03T08:00" }
+}
+```
+
+- `status` is where it stands now, in a line. Keep it true with every change.
+- **The timeline** is the back-and-forth, oldest first: a dated entry for each call, mail or
+  visit, as it happens.
+- `waiting_on` says who it's waiting on and since when, so a stalled case shows; `next` is the next
+  step.
+- Finish it once it's resolved.
 
 ## Photos
 

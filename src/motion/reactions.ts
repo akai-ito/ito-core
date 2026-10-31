@@ -28,7 +28,8 @@ export type Reacting = {
 
 export const toReactionPrompt = ({ id, kind, title, summary, version, content, state, taps }: Reacting): string =>
   [
-    `You keep "${title}" (${id}, a ${kind}) in motion for the person. On their phone, they just ${taps.join(", ")}.`,
+    `You keep "${title}" (${id}, ${/^[aeiou]/u.test(kind) ? "an" : "a"} ${kind}) in motion for the person. On ` +
+      `their phone, they just ${taps.join(", ")}.`,
     "Keep the thing true to that, quietly: nothing you write here goes into the chat.",
     "",
     "- Mark what a ticked to-do is about as booked, such as its stop, leg or place, and undo that for an untick.",

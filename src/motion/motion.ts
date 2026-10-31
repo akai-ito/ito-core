@@ -18,7 +18,7 @@ import {
   type Change,
   type Fields,
 } from "#motion/changes.ts";
-import type { Kind, Kinds } from "#motion/kinds.ts";
+import { kindNames, type Kind, type Kinds } from "#motion/kinds.ts";
 import type { Motion, MotionChange } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
@@ -68,6 +68,8 @@ const recentNotes = 5;
 const changesShown = 20;
 
 const longestTitle = 28;
+
+const kindList = `${kindNames.slice(0, -1).join(", ")} or ${kindNames.at(-1) ?? ""}`;
 
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
 
@@ -189,10 +191,12 @@ const missingIn = (kind: Kind, title: string, content: Fields): readonly string[
   ];
 };
 
-const unfinished = (title: string, missing: readonly string[]): Result<never, string> =>
+const unfinished = (kind: Kind, title: string, missing: readonly string[]): Result<never, string> =>
   fail(
-    `${title} isn't made properly yet: it needs ${missing.join("; ")}. Every trip gets these, even a small or ` +
-      "test one: find photos with keep_image, add the places, and try again.",
+    `${title} isn't made properly yet: it needs ${missing.join("; ")}.` +
+      (kind === "trip"
+        ? " Every trip gets these, even a small or test one: find photos with keep_image, add the places, and try again."
+        : " Fix that and try again."),
   );
 
 export const createMotions = ({
@@ -368,7 +372,7 @@ export const createMotions = ({
       const id = lineOf(input, "id");
       if (!idPattern.test(id)) return fail("Give it an id of lowercase words joined by dashes, such as florence-trip.");
       const kind = lineOf(input, "kind");
-      if (!kinds.isKind(kind)) return fail(`${kind || "That"} isn't a kind of thing yet: use trip or training.`);
+      if (!kinds.isKind(kind)) return fail(`${kind || "That"} isn't a kind of thing yet: use ${kindList}.`);
       const title = lineOf(input, "title");
       const note = lineOf(input, "note");
       if (title === "" || note === "") return fail("Give it a title and a note.");
@@ -380,7 +384,7 @@ export const createMotions = ({
       const valid = checked(kind, id, content);
       if (!valid.ok) return valid;
       const missing = missingIn(kind, title, content);
-      if (missing.length > 0) return unfinished(title, missing);
+      if (missing.length > 0) return unfinished(kind, title, missing);
       const thing: Saved = {
         kind,
         card: { title, summary: lineOf(input, "summary"), pinned: true },
@@ -424,7 +428,7 @@ export const createMotions = ({
       const valid = checked(current.kind, id, thing.content);
       if (!valid.ok) return valid;
       const missing = isWhole ? missingIn(current.kind, thing.card.title, thing.content) : [];
-      if (missing.length > 0) return unfinished(thing.card.title, missing);
+      if (missing.length > 0) return unfinished(current.kind, thing.card.title, missing);
       const written = await write(thread, id, thing, `${thing.card.title}: ${note}`);
       return written.ok ? ok(record("motion.changed", id, thing, version + 1, note)) : written;
     });
@@ -534,16 +538,16 @@ export const createMotions = ({
       name: "start_motion",
       title: "Start a thing in motion",
       description:
-        "Start something going on that the person will come back to, such as a trip being planned: a plan with " +
-        "several steps that will outlast this conversation, or whenever they ask you to pin something. Give its " +
-        "whole content once, as the Things in motion skill describes for its kind, with an id on every item. A " +
-        "trip needs a cover, a photo for every place and a place for every stop. It's pinned above their chat " +
-        "until it's done.",
+        "Start something going on that the person will come back to, such as a trip being planned, a job search, a " +
+        "dinner or a refund: a plan with several steps that will outlast this conversation, or whenever they ask " +
+        "you to pin something. Give its whole content once, as the Things in motion skill describes for its kind, " +
+        "with an id on every item. A trip needs a cover, a photo for every place and a place for every stop. It's " +
+        "pinned above their chat until it's done.",
       inputSchema: {
         type: "object",
         properties: {
           id: { type: "string", description: "Lowercase words and dashes, such as florence-with-janki." },
-          kind: { type: "string", enum: ["trip", "training"] },
+          kind: { type: "string", enum: [...kindNames] },
           title: {
             type: "string",
             description: "Short, 28 characters at most, such as Florence with Janki; the rest goes in the summary.",

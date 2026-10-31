@@ -117,7 +117,8 @@ export const icloudCalendar = (values: Values): CalendarSource =>
 
 const motionSkill: OwnSkill = {
   id: "things-in-motion",
-  summary: "starting and keeping things in motion, such as a trip being planned, and finding their photos",
+  summary:
+    "starting and keeping things in motion, such as a trip, a job search, a dinner or a refund, and finding photos",
   text: readFileSync(new URL("../agent/motion.md", import.meta.url), "utf8"),
 };
 

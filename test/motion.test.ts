@@ -124,6 +124,35 @@ const bookUffizi = {
   note: "Booked the Uffizi, 8:15 Saturday",
 };
 
+const jobSearch = {
+  after: "A senior AI role in London that ships to real users, by January.",
+  play: ["No firms that only want dashboards", "Never below £140k base"],
+  options: [
+    {
+      id: "qrt",
+      name: "Senior AI Engineer",
+      org: "QRT",
+      stage: "Screened",
+      people: [{ name: "Poppy", role: "recruiter", page: "memory:people/poppy" }],
+      next: { text: "First round with the team lead", at: "2026-11-04T14:00" },
+      waiting_on: { who: "Poppy", since: "2026-10-30" },
+    },
+    { id: "helsing", name: "ML Engineer", org: "Helsing", stage: "Applied", people: [] },
+  ],
+};
+
+const dinner = {
+  start: "2026-11-14T19:30",
+  timezone: "Europe/London",
+  where: "Brat, Shoreditch",
+  people: [{ name: "Poppy" }],
+  prep: [
+    { id: "book-table", text: "Book a table for four", done: false },
+    { id: "buy-present", text: "Buy Poppy's present", done: false },
+  ],
+  check_in: true,
+};
+
 const git = (directory: string, ...arguments_: readonly string[]): string =>
   execFileSync("git", ["-C", directory, ...arguments_], { encoding: "utf8" });
 
@@ -354,6 +383,75 @@ describe("things in motion", () => {
     expect(started.isError).toBeUndefined();
     expect(ticked).toEqual({ ok: true, value: { sessions: { "w6-wed": { done: true } } } });
     expect(motions.tickNote()).toBe("(Since your last reply: in Sub-20 5K, you ticked Intervals.)");
+  });
+
+  it("keeps a pursuit, moving its options through their stages", async () => {
+    const { motions } = await openMotions();
+    const start = { id: "job-search", kind: "pursuit", summary: "2 live", content: jobSearch, note: "Started it" };
+
+    const long = await call(motions, "start_motion", { ...start, title: "A senior AI role in London by January" });
+    const started = await call(motions, "start_motion", { ...start, title: "Job search" });
+    const moved = await call(motions, "change_motion", {
+      id: "job-search",
+      version: 1,
+      changes: [{ set: "qrt", fields: { stage: "Interviews", waiting_on: null } }],
+      summary: "2 live · QRT interviews",
+      note: "QRT moved you to interviews",
+    });
+    const detail = await motions.detail("job-search");
+
+    expect(long).toEqual({
+      text:
+        "A senior AI role in London by January isn't made properly yet: it needs a title of 28 characters or " +
+        "fewer, with the rest in the summary. Fix that and try again.",
+      isError: true,
+    });
+    expect(started).toEqual({ text: "Started Job search as job-search, at version 1." });
+    expect(moved).toEqual({ text: "Saved Job search, now at version 2." });
+    expect(detail).toMatchObject({
+      ok: true,
+      value: {
+        motion: { kind: "pursuit", version: 2, summary: "2 live · QRT interviews" },
+        content: {
+          options: [
+            { id: "qrt", stage: "Interviews" },
+            { id: "helsing", stage: "Applied" },
+          ],
+        },
+      },
+    });
+    expect(JSON.stringify(detail.ok && detail.value.content)).not.toContain("waiting_on");
+    expect(motions.inMindText()).toContain("- Job search (job-search, pursuit): 2 live · QRT interviews");
+  });
+
+  it("keeps an occasion, with your ticks on its prep, and keeps it up with them", async () => {
+    const prompts = createCell<readonly string[]>([]);
+    const { motions, clock } = await openMotions([], (prompt) => {
+      prompts.update((current) => [...current, prompt]);
+      return Promise.resolve(ok({ changes_json: "[]", summary: "Sat 14 Nov · 1 to do", note: "Table booked" }));
+    });
+
+    const started = await call(motions, "start_motion", {
+      id: "dinner-for-poppy",
+      kind: "occasion",
+      title: "Dinner for Poppy",
+      summary: "Sat 14 Nov · 2 to do",
+      content: dinner,
+      note: "Planned the dinner",
+    });
+    const ticked = motions.patchState("dinner-for-poppy", { prep: { "book-table": { done: true } } });
+    clock.runNext(clock.now() + 3000);
+
+    expect(started.isError).toBeUndefined();
+    expect(ticked).toEqual({ ok: true, value: { prep: { "book-table": { done: true } } } });
+    expect(motions.tickNote()).toBe("(Since your last reply: in Dinner for Poppy, you ticked Book a table for four.)");
+    await vi.waitFor(() => {
+      expect(motions.list()[0]).toMatchObject({ version: 2, summary: "Sat 14 Nov · 1 to do" });
+    });
+    expect(prompts.get()[0]).toContain(
+      'You keep "Dinner for Poppy" (dinner-for-poppy, an occasion) in motion for the person. On their phone, they ' +
+        "just ticked Book a table for four.",
+    );
   });
 
   it("takes your choice for a place, but leaves booking to Ari", async () => {
