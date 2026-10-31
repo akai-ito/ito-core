@@ -1,0 +1,31 @@
+Return-Path: <bounce-77ab@mailer.fieldnotes.example>
+Received: from mailer.fieldnotes.example (mailer.fieldnotes.example [198.51.100.40])
+	by mx.example.com with ESMTPS id 9c0d1e2f3a
+	for <sam@example.com>; Thu, 23 Oct 2026 11:30:04 +0000 (UTC)
+From: Field Notes <hello@news.fieldnotes.example>
+To: sam@example.com
+Subject: This week: autumn trails and a map you can fold
+Date: Thu, 23 Oct 2026 07:30:00 -0400
+Message-ID: <20261023113000.77ab.weekly@mailer.fieldnotes.example>
+List-Id: Field Notes weekly <weekly.news.fieldnotes.example>
+List-Unsubscribe: <mailto:leave-77ab@news.fieldnotes.example?subject=unsubscribe%2077ab>,
+ <https://news.fieldnotes.example/u/77ab?list=weekly&sig=Zm9v>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Precedence: bulk
+Feedback-ID: weekly:fieldnotes
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<!doctype html>
+<html>
+<head><style>p { color: #333333; }</style></head>
+<body>
+<h1>Autumn trails</h1>
+<p>Three walks that are best in late October, while the leaves are at their peak.</p>
+<p>And a paper map that folds down to the size of a phone.</p>
+<p><a href="https://fieldnotes.example/trails">Read the trails</a></p>
+<p style="font-size:11px">You get this because you signed up at fieldnotes.example.
+<a href="https://news.fieldnotes.example/u/77ab?list=weekly&amp;sig=Zm9v">Unsubscribe</a></p>
+</body>
+</html>
