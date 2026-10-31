@@ -45,6 +45,9 @@ import type { Result } from "#result.ts";
 import { createDesk } from "#desk/desk.ts";
 import { createBriefings } from "#desk/briefing.ts";
 import { createWorkTools } from "#work/tools.ts";
+import { createJobs, type Jobs } from "#jobs/jobs.ts";
+import { registerJobs } from "#http/jobs.ts";
+import { createJobStore } from "#store/jobs.ts";
 import { createCalendar, type Calendar } from "#calendar/calendar.ts";
 import { createCalendarSource, type CalendarSource } from "#calendar/caldav.ts";
 import type { Values } from "#capabilities/manifest.ts";
@@ -93,6 +96,7 @@ export type Server = {
   readonly host: Host;
   readonly memory: Memory;
   readonly motions: Motions;
+  readonly jobs: Jobs;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
   readonly calendar: Calendar;
@@ -217,7 +221,8 @@ export const createServer = (options: ServerOptions): Server => {
     tools: toolServer,
     skills,
     instructions: () => voiceText.replaceAll("{lead}", () => leadOf(store)) + skills(),
-    inMind: () => [memory.inMindText(), motions.inMindText(), callContext()].filter(Boolean).join("\n\n"),
+    inMind: () =>
+      [memory.inMindText(), motions.inMindText(), jobs.inMindText(), callContext()].filter(Boolean).join("\n\n"),
     callTool: (name, input) => callTool(name, input),
   });
   host.subscribe(() => {
@@ -272,6 +277,14 @@ export const createServer = (options: ServerOptions): Server => {
     return done;
   };
   const desk = createDesk({ store, identifiers, clock, work: runWork, info });
+  const jobs = createJobs({
+    store: createJobStore(database),
+    isMotion: (id) => store.findMotion(id) !== undefined,
+    clock,
+    identifiers,
+    work: runWork,
+    info,
+  });
   const timeZone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
@@ -304,6 +317,9 @@ export const createServer = (options: ServerOptions): Server => {
     ...(options.createMailSource && { createSource: options.createMailSource }),
   });
   const calendar = createCalendar({ host, desk, clock, timeZone, info, createSource: calendarSourceFor });
+  calendar.onEventEnded((uid) => {
+    jobs.onEventEnded(uid);
+  });
   const isBusy = (): boolean => calendar.isBusy();
   const briefings = createBriefings({
     store,
@@ -391,6 +407,7 @@ export const createServer = (options: ServerOptions): Server => {
       },
     }),
     ...calendar.tools,
+    ...jobs.tools,
     ...mail.tools,
     {
       name: "show_mail",
@@ -476,6 +493,7 @@ export const createServer = (options: ServerOptions): Server => {
   store.subscribe(({ event }) => {
     if (event.type === "turn.ended") memory.indexConversation();
   });
+  registerJobs(app, { jobs, schemas });
   registerTools(app, {
     token: toolsToken,
     tools: allTools,
@@ -497,6 +515,7 @@ export const createServer = (options: ServerOptions): Server => {
     motions.close();
     topics.close();
     briefings.close();
+    jobs.close();
     calendar.close();
     await mail.close();
     notifier.close();
@@ -520,6 +539,7 @@ export const createServer = (options: ServerOptions): Server => {
     host,
     memory,
     motions,
+    jobs,
     voice,
     calls,
     calendar,
