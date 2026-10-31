@@ -49,6 +49,8 @@ import { createCalendar, type Calendar } from "#calendar/calendar.ts";
 import { createCalendarSource, type CalendarSource } from "#calendar/caldav.ts";
 import type { Values } from "#capabilities/manifest.ts";
 import { toSources } from "#sources/sources.ts";
+import { createMailbox, type CreateMailSource, type Mailbox } from "#mail/mail.ts";
+import { createQuickChoice } from "#engine/quick-model.ts";
 import { inToolContext } from "#tools/context.ts";
 
 export type ServerOptions = {
@@ -67,6 +69,7 @@ export type ServerOptions = {
   readonly timeZone?: string;
   readonly fetch?: Fetch;
   readonly createCalendarSource?: (values: Values) => CalendarSource;
+  readonly createMailSource?: CreateMailSource;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
@@ -93,6 +96,7 @@ export type Server = {
   readonly voice: VoiceLoop;
   readonly calls: Calls;
   readonly calendar: Calendar;
+  readonly mail: Mailbox;
   readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
@@ -156,14 +160,16 @@ export const createServer = (options: ServerOptions): Server => {
       const calendar = calendarSourceFor(values);
       const checked = await calendar.check();
       if (!checked.ok) return { problem: checked.failure };
+      const mailChecked = await mail.check("icloud", values);
+      if (mailChecked.problem !== undefined) return mailChecked;
       const kumo = await calendar.ensureKumo();
       const count = checked.value.calendars.filter(({ isKumo }) => !isKumo).length;
       return kumo.ok
-        ? { summary: `Connected: ${String(count)} calendars. Kumo's calendar added.` }
+        ? { summary: `Connected: Mail and ${String(count)} calendars. Kumo's calendar added.` }
         : { problem: kumo.failure };
     },
-    outlook: () => Promise.resolve({ problem: "Outlook isn't ready on this box yet." }),
-    gmail: () => Promise.resolve({ problem: "Gmail isn't ready on this box yet." }),
+    outlook: (values) => mail.check("outlook", values),
+    gmail: (values) => mail.check("gmail", values),
   });
   const host = createHost({
     installed: [...(options.capabilities ?? []), ...sources],
@@ -280,6 +286,22 @@ export const createServer = (options: ServerOptions): Server => {
     log,
   });
   const presence = createPresence();
+  const urgentPost = createCell(false);
+  const mail = createMailbox({
+    host,
+    store,
+    desk,
+    clock,
+    fetch: fetcher,
+    complete: quickComplete,
+    quickChoice: createQuickChoice(async () => {
+      await listening.get();
+      return engine.models();
+    }),
+    work: runWork,
+    info,
+    ...(options.createMailSource && { createSource: options.createMailSource }),
+  });
   const calendar = createCalendar({ host, desk, clock, timeZone, info, createSource: calendarSourceFor });
   const isBusy = (): boolean => calendar.isBusy();
   const briefings = createBriefings({
@@ -305,6 +327,7 @@ export const createServer = (options: ServerOptions): Server => {
     reminderMs: push.reminderMs,
     timeZone,
     isBusy,
+    isUrgentPost: () => urgentPost.get(),
   });
 
   const app = createApp({
@@ -359,8 +382,46 @@ export const createServer = (options: ServerOptions): Server => {
     imageTool,
     ...memory.tools,
     ...motions.tools,
-    ...createWorkTools({ store, desk }),
+    ...createWorkTools({
+      store,
+      desk,
+      markUrgent: (isUrgent) => {
+        urgentPost.set(isUrgent);
+      },
+    }),
     ...calendar.tools,
+    ...mail.tools,
+    {
+      name: "show_mail",
+      title: "Show a sample mail's work",
+      audience: "hidden",
+      description: "Put a sample draft on the Desk and post a line, for the demo.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      call: () => {
+        desk.addCard({
+          kind: "draft",
+          title: "Note to Hotel Orto",
+          options: [{ label: "Drop it" }],
+          allows_text: true,
+          draft: {
+            account: "icloud",
+            from: "you@icloud.com",
+            to: ["reservations@hotelorto.it"],
+            subject: "Re: Booking confirmed: 20–23 November",
+            body:
+              "Hi! We land at 22:10 on the 20th, so we'll reach you around 23:00, after reception closes. Could " +
+              "you leave the keys for us, or tell us how late check-in works? Thanks",
+            message_id: `demo-${String(clock.now())}@ito.local`,
+            in_reply_to: "confirm-48213@hotelorto.it",
+          },
+        });
+        store.postMessage(
+          "Hotel Orto confirmed you for 20–23 Nov. One snag: you land 22:10 and check-in closes 22:00, so I " +
+            "drafted a note.",
+        );
+        return Promise.resolve({ text: "Put a sample draft on the Desk." });
+      },
+    },
     {
       name: "show_invite",
       title: "Show a sample invite",
@@ -436,6 +497,7 @@ export const createServer = (options: ServerOptions): Server => {
     topics.close();
     briefings.close();
     calendar.close();
+    await mail.close();
     notifier.close();
     await app.close();
     await turns.close();
@@ -460,6 +522,7 @@ export const createServer = (options: ServerOptions): Server => {
     voice,
     calls,
     calendar,
+    mail,
     callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();

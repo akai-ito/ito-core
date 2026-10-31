@@ -279,6 +279,10 @@ const showInvite: Act["act"] = async (callTool) => {
   await callTool("show_invite", {});
 };
 
+const showMail: Act["act"] = async (callTool) => {
+  await callTool("show_mail", {});
+};
+
 const briefNow: Act["act"] = async (callTool) => {
   await callTool("brief_now", {});
 };
@@ -289,6 +293,7 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
     { pattern: /\btimes\b/u, act: offerTimes, said: "Pick the times that are clear at work; they're on your Desk." },
     { pattern: /\bbriefing\b/u, act: briefNow, said: "Your briefing is at the top of the Desk." },
     { pattern: /\binvite\b/u, act: showInvite, said: "Poppy's invite is on your Desk." },
+    { pattern: /\bmail\b/u, act: showMail, said: "A booking came in; there's a draft for you on the Desk." },
   ].find(({ pattern }) => pattern.test(text));
   if (!chosen) return undefined;
   const actAt = lastAt(start) + 300;

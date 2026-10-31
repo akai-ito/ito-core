@@ -19,6 +19,8 @@ export const outlookScope = "https://outlook.office.com/IMAP.AccessAsUser.All of
 
 const microsoft = "https://login.microsoftonline.com/consumers/oauth2/v2.0";
 
+export const outlookTokenUrl = `${microsoft}/token`;
+
 const icloud: Manifest = {
   id: icloudSource,
   version: "0.1",
@@ -77,7 +79,7 @@ const outlook: Manifest = {
         kind: "oauth_device",
         title: "Open Microsoft",
         deviceUrl: `${microsoft}/devicecode`,
-        tokenUrl: `${microsoft}/token`,
+        tokenUrl: outlookTokenUrl,
         clientId: outlookClientId,
         scope: outlookScope,
       },

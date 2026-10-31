@@ -14,6 +14,7 @@ import { fail as failed, ok, type Result } from "#result.ts";
 import { fieldOf } from "#tools/input.ts";
 import { createCalendarSource } from "#calendar/caldav.ts";
 import { startFakeCalDav } from "./fake-caldav.ts";
+import { createFakeMail, type ArrivingMail } from "./fake-mail.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
 import type { Attachment } from "#protocol/types.ts";
@@ -96,6 +97,20 @@ const toInviteIcs = (
 type WorkPlan = {
   readonly calls: readonly { readonly tool: string; readonly input: unknown }[];
   readonly post?: string;
+};
+
+const draftIdsOf = (transcript: Transcript): readonly string[] => {
+  const given = new Set(
+    transcript.given.flatMap((event) =>
+      event.type === "desk.changed" ? event.desk.waiting.flatMap((card) => card.draft?.message_id ?? []) : [],
+    ),
+  );
+  const seen = transcript.steps.flatMap((step) =>
+    "event" in step && step.event.type === "desk.changed"
+      ? step.event.desk.waiting.flatMap((card) => card.draft?.message_id ?? [])
+      : [],
+  );
+  return [...new Set(seen)].reduce<readonly string[]>((kept, id) => (given.has(id) ? kept : [...kept, id]), []);
 };
 
 const fail = (message: string): never => {
@@ -183,6 +198,8 @@ export const replay = async (name: string): Promise<void> => {
   const response = createCell<Promise<Received> | undefined>(undefined);
   const apns = await startFakeApns();
   const caldav = await startFakeCalDav();
+  const mail = createFakeMail(() => new Date(clock.now()).toISOString());
+  mail.expectDrafts(draftIdsOf(transcript));
   const deviceKey = createCell<DeviceKey | undefined>(undefined);
   const tokens = createCell<ReadonlyMap<string, string>>(new Map());
   const voiceReadiness = createCell<Readiness>({ state: "ready" });
@@ -260,6 +277,7 @@ export const replay = async (name: string): Promise<void> => {
           appPassword: String(values.app_password),
           serverUrl: caldav.serverUrl,
         }),
+      createMailSource: mail.create,
       createEngine: () =>
         createScriptEngine(clock, scripts, undefined, demoModels, complete, (_prompt, run) => work(run)),
       name: "studio",
@@ -520,6 +538,28 @@ export const replay = async (name: string): Promise<void> => {
         caldav.seed("Home", `${invite.uid}.ics`, toInviteIcs(invite, caldav.alias));
         await live.get()?.server.calendar.refresh();
         await settle();
+        return;
+      }
+      case "mail_arrives": {
+        await advance(time);
+        mail.arrive(step as unknown as ArrivingMail);
+        await settle();
+        return;
+      }
+      case "attention_decides": {
+        const { decision, reason, confidence } = step as unknown as {
+          readonly decision: string;
+          readonly reason: string;
+          readonly confidence: number;
+        };
+        asides.update((current) => [...current, { decision, reason, confidence }]);
+        await advance(time);
+        return;
+      }
+      case "inbox_holds": {
+        const { account, count } = step as unknown as { readonly account: string; readonly count: number };
+        mail.hold(account, count);
+        await advance(time);
         return;
       }
       case "kumo_works": {

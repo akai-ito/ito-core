@@ -1,0 +1,47 @@
+Return-Path: <noreply@stays.example>
+Received: from out-12.stays.example (out-12.stays.example [203.0.113.12])
+	by mx.example.com with ESMTPS id 4f1c2a7b9d
+	for <sam@example.com>; Tue, 28 Oct 2026 09:14:02 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=stays.example; s=s2026;
+	h=from:to:subject:date:message-id:mime-version; bh=47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=;
+	b=dGhpcyBpcyBub3QgYSByZWFsIHNpZ25hdHVyZQ==
+From: "Stays" <noreply@stays.example>
+Reply-To: Hôtel du Lac <reservations@hoteldulac.example>
+To: Sam Rivera <sam@example.com>
+Subject: =?UTF-8?Q?Your_booking_is_confirmed_=E2=80=93_H=C3=B4tel_du_Lac=2C_Annecy?=
+Date: Tue, 28 Oct 2026 09:14:00 +0000
+Message-ID: <confirm.4471-2290.20261028091400@stays.example>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="=_stays_b1"
+
+--=_stays_b1
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+Hi Sam,
+
+Your booking at H=C3=B4tel du Lac is confirmed.
+
+Confirmation number: 4471-2290
+Check-in: Friday 14 November 2026, from 15:00
+Check-out: Sunday 16 November 2026, until 11:00
+Room: Double room with lake view
+Total: =E2=82=AC312.00 (paid)
+
+Manage your booking: https://stays.example/manage/4471-2290
+
+--=_stays_b1
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+<!doctype html><html><body style=3D"font-family:sans-serif">
+<p>Hi Sam,</p>
+<p>Your booking at <b>H=C3=B4tel du Lac</b> is confirmed.</p>
+<table><tr><td>Confirmation number</td><td>4471-2290</td></tr>
+<tr><td>Check-in</td><td>Friday 14 November 2026, from 15:00</td></tr>
+<tr><td>Check-out</td><td>Sunday 16 November 2026, until 11:00</td></tr>
+<tr><td>Total</td><td>=E2=82=AC312.00 (paid)</td></tr></table>
+<p><a href=3D"https://stays.example/manage/4471-2290">Manage your booking</a></p>
+</body></html>
+
+--=_stays_b1--
