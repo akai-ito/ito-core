@@ -12,6 +12,8 @@ import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import { fail as failed, ok, type Result } from "#result.ts";
 import { fieldOf } from "#tools/input.ts";
+import { createCalendarSource } from "#calendar/caldav.ts";
+import { startFakeCalDav } from "./fake-caldav.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
 import type { Attachment } from "#protocol/types.ts";
@@ -56,6 +58,40 @@ type DeviceKey = { readonly id: string; readonly notificationKey: string };
 const apnsKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
   .privateKey.export({ type: "pkcs8", format: "pem" })
   .toString();
+
+const icsTime = (iso: string): string => iso.replaceAll(/[-:]/gu, "").replace(/\.\d{3}/u, "");
+
+const toInviteIcs = (
+  invite: {
+    readonly uid: string;
+    readonly title: string;
+    readonly start: string;
+    readonly end: string;
+    readonly location?: string;
+    readonly organizer: string;
+  },
+  me: string,
+): string => {
+  const organizer = /^(?<name>.*?)\s*<(?<email>[^>]+)>$/u.exec(invite.organizer)?.groups;
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Ito//Replay//EN",
+    "BEGIN:VEVENT",
+    `UID:${invite.uid}`,
+    `DTSTAMP:${icsTime(invite.start)}`,
+    `DTSTART:${icsTime(invite.start)}`,
+    `DTEND:${icsTime(invite.end)}`,
+    `SUMMARY:${invite.title}`,
+    ...(invite.location === undefined ? [] : [`LOCATION:${invite.location}`]),
+    "STATUS:CONFIRMED",
+    `ORGANIZER;CN=${organizer?.name ?? ""}:mailto:${organizer?.email ?? invite.organizer}`,
+    `ATTENDEE;CN=Divy;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${me}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+    "",
+  ].join("\r\n");
+};
 
 type WorkPlan = {
   readonly calls: readonly { readonly tool: string; readonly input: unknown }[];
@@ -146,6 +182,7 @@ export const replay = async (name: string): Promise<void> => {
   const stream = createCell<EventStream | undefined>(undefined);
   const response = createCell<Promise<Received> | undefined>(undefined);
   const apns = await startFakeApns();
+  const caldav = await startFakeCalDav();
   const deviceKey = createCell<DeviceKey | undefined>(undefined);
   const tokens = createCell<ReadonlyMap<string, string>>(new Map());
   const voiceReadiness = createCell<Readiness>({ state: "ready" });
@@ -217,6 +254,12 @@ export const replay = async (name: string): Promise<void> => {
       fetch: fetchFromWorld,
       embedder: wordEmbedder,
       dataDirectory: directory,
+      createCalendarSource: (values) =>
+        createCalendarSource({
+          appleId: String(values.apple_id),
+          appPassword: String(values.app_password),
+          serverUrl: caldav.serverUrl,
+        }),
       createEngine: () =>
         createScriptEngine(clock, scripts, undefined, demoModels, complete, (_prompt, run) => work(run)),
       name: "studio",
@@ -464,6 +507,21 @@ export const replay = async (name: string): Promise<void> => {
         await advance(time);
         return;
       }
+      case "invite_arrives": {
+        const invite = step as unknown as {
+          readonly uid: string;
+          readonly title: string;
+          readonly start: string;
+          readonly end: string;
+          readonly location?: string;
+          readonly organizer: string;
+        };
+        await advance(time);
+        caldav.seed("Home", `${invite.uid}.ics`, toInviteIcs(invite, caldav.alias));
+        await live.get()?.server.calendar.refresh();
+        await settle();
+        return;
+      }
       case "kumo_works": {
         const { calls, post } = step as unknown as WorkPlan;
         plans.update((current) => [...current, { calls, ...(post !== undefined && { post }) }]);
@@ -617,6 +675,7 @@ export const replay = async (name: string): Promise<void> => {
     await stopServer();
     await seeded.close();
     await apns.close();
+    await caldav.close();
     rmSync(directory, { recursive: true, force: true });
   }
 };

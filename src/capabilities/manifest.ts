@@ -37,7 +37,7 @@ export type Operation = {
 export type Manifest = {
   readonly id: string;
   readonly version: string;
-  readonly kind: "domain" | "hand";
+  readonly kind: "domain" | "hand" | "source";
   readonly title: string;
   readonly symbol?: string;
   readonly summary: string;

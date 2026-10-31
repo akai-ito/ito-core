@@ -102,8 +102,7 @@ export const registerCapabilities = (
     { schema: schemaFor("checkCapability") },
     async (request, reply) => {
       const checked = await host.check(request.params.capability, request.body.values);
-      if (!checked.ok) return refuse(reply, checked.failure);
-      return checked.value === undefined ? {} : { problem: checked.value };
+      return checked.ok ? checked.value : refuse(reply, checked.failure);
     },
   );
 };

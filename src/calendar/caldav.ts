@@ -457,7 +457,7 @@ export const createCalendarSource = (options: ICloudOptions): CalendarSource => 
 
     create: (calendar, event) => {
       if (calendar.readOnly) return Promise.resolve(fail(`${calendar.name} is read-only.`));
-      const uid = randomUUID().toUpperCase();
+      const uid = event.uid ?? randomUUID().toUpperCase();
       const ics = toIcs(event, uid, Date.now());
       if (!ics.ok) return Promise.resolve(ics);
       const url = new URL(`${uid}.ics`, withSlash(calendar.url)).href;

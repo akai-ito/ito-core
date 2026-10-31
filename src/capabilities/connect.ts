@@ -134,7 +134,16 @@ export const awaitToken = (
     const next = toPoll(answered.value, intervalMs);
     switch (next.kind) {
       case "token": {
-        return ok(next.token);
+        const refresh = textOf(answered.value.refresh_token);
+        return ok(
+          refresh === undefined
+            ? next.token
+            : JSON.stringify({
+                access_token: next.token,
+                refresh_token: refresh,
+                expires_at: clock.now() + secondsOf(answered.value.expires_in, 3600) * 1000,
+              }),
+        );
       }
       case "pending": {
         return poll(next.intervalMs);

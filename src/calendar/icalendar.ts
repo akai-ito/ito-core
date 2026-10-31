@@ -32,6 +32,7 @@ export type CalendarEvent = {
 };
 
 export type NewCalendarEvent = {
+  readonly uid?: string;
   readonly title: string;
   readonly start: string;
   readonly end: string;

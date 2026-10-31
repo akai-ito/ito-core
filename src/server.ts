@@ -45,6 +45,10 @@ import type { Result } from "#result.ts";
 import { createDesk } from "#desk/desk.ts";
 import { createBriefings } from "#desk/briefing.ts";
 import { createWorkTools } from "#work/tools.ts";
+import { createCalendar, type Calendar } from "#calendar/calendar.ts";
+import { createCalendarSource, type CalendarSource } from "#calendar/caldav.ts";
+import type { Values } from "#capabilities/manifest.ts";
+import { toSources } from "#sources/sources.ts";
 import { inToolContext } from "#tools/context.ts";
 
 export type ServerOptions = {
@@ -62,6 +66,7 @@ export type ServerOptions = {
   readonly createVoice?: (context: VoiceContext) => VoiceLoop;
   readonly timeZone?: string;
   readonly fetch?: Fetch;
+  readonly createCalendarSource?: (values: Values) => CalendarSource;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
@@ -87,6 +92,7 @@ export type Server = {
   readonly motions: Motions;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
+  readonly calendar: Calendar;
   readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
@@ -97,7 +103,13 @@ const talkRules = readFileSync(new URL("../agent/talk.md", import.meta.url), "ut
 
 const workRules = readFileSync(new URL("../agent/work.md", import.meta.url), "utf8").trim();
 
-const isBusy = (): boolean => false;
+const textValue = (values: Values, name: string): string => {
+  const value = values[name];
+  return typeof value === "string" ? value.trim() : "";
+};
+
+export const icloudCalendar = (values: Values): CalendarSource =>
+  createCalendarSource({ appleId: textValue(values, "apple_id"), appPassword: textValue(values, "app_password") });
 
 const motionSkill: OwnSkill = {
   id: "things-in-motion",
@@ -138,8 +150,23 @@ export const createServer = (options: ServerOptions): Server => {
     return { url: `${origin}${toolsPath}`, origin, token: toolsToken };
   };
   const fetcher = options.fetch ?? fetch;
+  const calendarSourceFor = options.createCalendarSource ?? icloudCalendar;
+  const sources = toSources({
+    icloud: async (values) => {
+      const calendar = calendarSourceFor(values);
+      const checked = await calendar.check();
+      if (!checked.ok) return { problem: checked.failure };
+      const kumo = await calendar.ensureKumo();
+      const count = checked.value.calendars.filter(({ isKumo }) => !isKumo).length;
+      return kumo.ok
+        ? { summary: `Connected: ${String(count)} calendars. Kumo's calendar added.` }
+        : { problem: kumo.failure };
+    },
+    outlook: () => Promise.resolve({ problem: "Outlook isn't ready on this box yet." }),
+    gmail: () => Promise.resolve({ problem: "Gmail isn't ready on this box yet." }),
+  });
   const host = createHost({
-    installed: options.capabilities ?? [],
+    installed: [...(options.capabilities ?? []), ...sources],
     fetch: fetcher,
     settings: store,
     folders: path.join(options.dataDirectory, "capabilities"),
@@ -253,6 +280,8 @@ export const createServer = (options: ServerOptions): Server => {
     log,
   });
   const presence = createPresence();
+  const calendar = createCalendar({ host, desk, clock, timeZone, info, createSource: calendarSourceFor });
+  const isBusy = (): boolean => calendar.isBusy();
   const briefings = createBriefings({
     store,
     desk,
@@ -296,6 +325,7 @@ export const createServer = (options: ServerOptions): Server => {
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     desk,
+    calendar,
     onLeadRenamed: () => {
       void engine.refresh();
     },
@@ -330,6 +360,38 @@ export const createServer = (options: ServerOptions): Server => {
     ...memory.tools,
     ...motions.tools,
     ...createWorkTools({ store, desk }),
+    ...calendar.tools,
+    {
+      name: "show_invite",
+      title: "Show a sample invite",
+      audience: "hidden",
+      description: "Put a sample invite on the Desk, for the demo.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      call: () => {
+        const start = toTimestamp(clock.now() + 26 * 60 * 60 * 1000);
+        const end = toTimestamp(clock.now() + 27.5 * 60 * 60 * 1000);
+        desk.addCard({
+          kind: "invite",
+          title: "QRT technical, tomorrow",
+          options: [{ label: "Accept", acts: true }, { label: "Maybe" }, { label: "Decline" }],
+          allows_text: false,
+          invite: {
+            event: {
+              id: identifiers.calendarItem(),
+              uid: `demo-${start}@ito.local`,
+              title: "QRT technical",
+              start,
+              end,
+              all_day: false,
+              location: "Microsoft Teams",
+              calendar: { name: "Home", kumo: false },
+              status: "tentative",
+            },
+          },
+        });
+        return Promise.resolve({ text: "Put a sample invite on the Desk." });
+      },
+    },
     {
       name: "brief_now",
       title: "Write the briefing now",
@@ -373,6 +435,7 @@ export const createServer = (options: ServerOptions): Server => {
     motions.close();
     topics.close();
     briefings.close();
+    calendar.close();
     notifier.close();
     await app.close();
     await turns.close();
@@ -396,6 +459,7 @@ export const createServer = (options: ServerOptions): Server => {
     motions,
     voice,
     calls,
+    calendar,
     callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();
