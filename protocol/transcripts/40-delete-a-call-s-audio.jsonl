@@ -1,7 +1,7 @@
 {"transcript":"40-delete-a-call-s-audio","start":"2026-10-26T19:00:00.000Z","scenario":40,"title":"Delete a call's audio","summary":"After a journalling walk you delete the call's recordings from its block. The words stay in the conversation, and every app learns the audio is gone.","guarantees":["G23"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-26T19:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-26T19:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[]}}}
 {"at":1000,"app":{"method":"PUT","path":"/v0/calls/77429675-c07e-4b87-aa08-044fa314791d"}}
 {"at":1000,"event":{"id":"e_0001_71071","type":"call.started","at":"2026-10-26T19:00:01.000Z","call":{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1}}}
 {"at":1000,"server":{"status":201,"body":{"call":{"id":"77429675-c07e-4b87-aa08-044fa314791d","started_at":"2026-10-26T19:00:01.000Z","position":1}}}}

@@ -1,7 +1,7 @@
 {"transcript":"60-pictures-ari-found","start":"2026-10-28T13:00:00.000Z","scenario":60,"title":"Pictures Ari found","summary":"You ask what somewhere looks like. Ari finds a photo on the web and keeps it on the server, then shows it in its reply with its source and credit. The app fetches it from the server, never from the site.","guarantees":["G31"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-28T13:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T13:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[]}}}
 {"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"486c34a5-fffa-4b19-9774-2274b8460478","text":"What does the Lungarno look like at dusk?"}}}
 {"at":2000,"event":{"id":"e_0001_92448","type":"message.accepted","at":"2026-10-28T13:00:02.000Z","message":{"id":"486c34a5-fffa-4b19-9774-2274b8460478","role":"user","text":"What does the Lungarno look like at dusk?","at":"2026-10-28T13:00:02.000Z","position":1}}}
 {"at":2000,"server":{"status":201,"body":{"message":{"id":"486c34a5-fffa-4b19-9774-2274b8460478","role":"user","text":"What does the Lungarno look like at dusk?","at":"2026-10-28T13:00:02.000Z","position":1}}}}

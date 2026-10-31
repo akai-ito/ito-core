@@ -1,7 +1,7 @@
 {"transcript":"61-you-carry-on","start":"2026-10-29T08:00:00.000Z","scenario":61,"title":"You carry on","summary":"You pause mid-thought long enough for your turn to end, then carry on before Ari has begun to answer. Your new words join the message you'd just spoken, with one recording of both parts, and Ari answers the whole thought once.","guarantees":["G25"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-29T08:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-29T08:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[]}}}
 {"at":1000,"app":{"method":"PUT","path":"/v0/calls/48431fb8-9240-4a85-9dda-79ec5229413c"}}
 {"at":1000,"event":{"id":"e_0001_39114","type":"call.started","at":"2026-10-29T08:00:01.000Z","call":{"id":"48431fb8-9240-4a85-9dda-79ec5229413c","started_at":"2026-10-29T08:00:01.000Z","position":1}}}
 {"at":1000,"server":{"status":201,"body":{"call":{"id":"48431fb8-9240-4a85-9dda-79ec5229413c","started_at":"2026-10-29T08:00:01.000Z","position":1}}}}

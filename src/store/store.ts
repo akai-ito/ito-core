@@ -18,6 +18,7 @@ import type {
   Ask,
   Attachment,
   Call,
+  Desk,
   Error as ErrorBody,
   Spoken,
   LiveTurn,
@@ -451,6 +452,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
   const compactedThrough = (): number => Number(readSetting(compactedSetting) ?? 0);
 
+  const currentDesk = (): Desk => {
+    const row = database.prepare("SELECT body FROM desk WHERE id = 1").get() as { readonly body: string } | undefined;
+    return row ? (JSON.parse(row.body) as Desk) : { coming_up: [], waiting: [] };
+  };
+
   return {
     subscribe: (listener) => {
       listeners.update((current) => new Set([...current, listener]));
@@ -496,6 +502,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           topics: [...topicsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
           turn: turn ? toLiveTurn(turn) : null,
           next: next.map((row) => row.message),
+          desk: currentDesk(),
         },
       };
     },

@@ -5,13 +5,19 @@ import { isImage, readDimensions } from "#attachments/media.ts";
 import { createCell } from "#cell.ts";
 import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
 import { mergePatch } from "#motion/changes.ts";
+import { toLevel } from "#notifications/manners.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import type {
   Ask,
   AskKind,
   Attachment,
   AskOption,
+  Briefing,
+  CalendarItem,
   Call,
+  Card,
+  Desk,
+  Onboarding,
   Topic,
   Error as ErrorBody,
   LiveTurn,
@@ -58,7 +64,12 @@ type SendOptions = {
   readonly id?: string;
   readonly isLost?: boolean;
   readonly attachments?: readonly string[];
+  readonly done?: string;
 };
+
+type NewCard = Omit<Card, "id" | "at">;
+
+type NewCalendarItem = Omit<CalendarItem, "id">;
 
 type UploadOptions = { readonly id?: string; readonly name?: string; readonly isLost?: boolean };
 
@@ -134,6 +145,21 @@ export type Transcript = {
   readonly showPairingCode: (code: string) => void;
   readonly pair: (code: string, deviceName: string, token: string) => void;
   readonly listMessages: (before: string, limit: number) => void;
+  readonly post: (text: string) => string;
+  readonly desk: () => Desk;
+  readonly getDesk: () => void;
+  readonly calendarItem: (item: NewCalendarItem) => CalendarItem;
+  readonly comingUp: (items: readonly CalendarItem[]) => void;
+  readonly brief: (briefing: Omit<Briefing, "id" | "at">) => Briefing;
+  readonly readBriefing: () => void;
+  readonly addCard: (card: NewCard) => Card;
+  readonly answerCard: (card: string, answer: Fields) => void;
+  readonly settleCard: (card: string, replacement?: Partial<Card>) => void;
+  readonly onboarding: (state: Onboarding) => void;
+  readonly belief: () => string;
+  readonly eventUid: () => string;
+  readonly answerBelief: (belief: string, answer: Fields) => void;
+  readonly finishOnboarding: () => void;
   readonly startCall: () => string;
   readonly endCall: (call: string) => void;
   readonly deleteCallAudio: (call: string) => void;
@@ -163,7 +189,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p" | "k" | "d" | "j" | "b" | "v" | "n";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -237,6 +263,7 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
   const { order, byId } = projection;
   switch (event.type) {
     case "message.accepted":
+    case "message.posted":
     case "message.started": {
       const message = event.message as Message;
       return { ...projection, order: [...order, message.id], byId: new Map(byId).set(message.id, message) };
@@ -362,7 +389,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacfp]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfpkdjbvn]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -380,6 +407,12 @@ const toCounters = (log: readonly Event[]): Counters => {
     c: highest("c"),
     f: highest("f"),
     p: highest("p"),
+    k: highest("k"),
+    d: highest("d"),
+    j: highest("j"),
+    b: highest("b"),
+    v: highest("v"),
+    n: highest("n"),
   };
 };
 
@@ -390,7 +423,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({
     boot: 1,
-    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0 },
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0, k: 0, d: 0, j: 0, b: 0, v: 0, n: 0 },
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
@@ -414,6 +447,9 @@ export const createTranscript = (header: Header): Transcript => {
   const device = createCell<Device | undefined>(undefined);
   const attachments = createCell<ReadonlyMap<string, Attachment>>(new Map());
   const pairingCodes = createCell<ReadonlySet<string>>(new Set());
+  const deskState = createCell<Desk>({ coming_up: [], waiting: [] });
+  const onboardingState = createCell<Onboarding>({ state: "done" });
+  const lastSounded = createCell<number | undefined>(undefined);
 
   const timestamp = (): string => new Date(now.get()).toISOString();
 
@@ -535,6 +571,8 @@ export const createTranscript = (header: Header): Transcript => {
         topics: between(topics, positionBefore(order, byId, order.length - messagesPerSnapshot) + 1),
         turn: turn.get() ?? null,
         next: next.get(),
+        desk: deskState.get(),
+        ...(onboardingState.get().state !== "done" && { onboarding: onboardingState.get() }),
       },
     });
     cursor.set(latest);
@@ -578,9 +616,17 @@ export const createTranscript = (header: Header): Transcript => {
     return running;
   };
 
-  const push = (level: "active" | "time-sensitive", notification: Notification): void => {
+  const push = (wanted: "passive" | "active" | "time-sensitive", notification: Notification): void => {
     const current = device.get();
     if (!current || start.get() === undefined || (current.isLooking && isConnected.get())) return;
+    const level = toLevel({
+      wanted,
+      now: now.get(),
+      lastSounded: lastSounded.get(),
+      localHour: new Date(now.get()).getUTCHours(),
+      isBusy: false,
+    });
+    if (level !== "passive") lastSounded.set(now.get());
     addStep({ push: { device: current.id, level, notification } });
   };
 
@@ -1096,6 +1142,7 @@ export const createTranscript = (header: Header): Transcript => {
         id,
         text,
         ...(attached.length > 0 && { attachments: attached }),
+        ...(options.done !== undefined && { done: options.done }),
       },
     });
     const isKnown = project(log.get()).byId.has(id);
@@ -1120,6 +1167,7 @@ export const createTranscript = (header: Header): Transcript => {
           at: timestamp(),
           position: nextPosition(),
           ...(answering && { answers: answering }),
+          ...(options.done !== undefined && { done: options.done }),
           ...(attached.length > 0 && {
             attachments: attached.map((attachment) => {
               const found = attachments.get().get(attachment);
@@ -1365,6 +1413,114 @@ export const createTranscript = (header: Header): Transcript => {
     });
   };
 
+  const post = (text: string): string => {
+    const id = newId("m");
+    emit("message.posted", {
+      message: { id, role: "agent", kind: "post", text, at: timestamp(), position: nextPosition() },
+    });
+    push("active", { kind: "post", text: toFirstLine(withoutBlocks(text)), message: id });
+    return id;
+  };
+
+  const changeDesk = (change: (desk: Desk) => Desk): void => {
+    const after = change(deskState.get());
+    if (JSON.stringify(after) === JSON.stringify(deskState.get())) return;
+    deskState.set(after);
+    emit("desk.changed", { desk: after });
+  };
+
+  const getDesk = (): void => {
+    request("GET", "/v0/desk");
+    response(200, deskState.get());
+  };
+
+  const calendarItem = (item: NewCalendarItem): CalendarItem => ({ id: newId("v"), ...item });
+
+  const comingUp = (items: readonly CalendarItem[]): void => {
+    changeDesk((desk) => ({ ...desk, coming_up: [...items] }));
+  };
+
+  const brief = (given: Omit<Briefing, "id" | "at">): Briefing => {
+    const briefing: Briefing = { id: newId("b"), at: timestamp(), ...given };
+    changeDesk((desk) => ({ ...desk, briefing }));
+    push("passive", { kind: "briefing", text: briefing.lines[0]?.text ?? "" });
+    return briefing;
+  };
+
+  const readBriefing = (): void => {
+    const briefing = deskState.get().briefing;
+    if (!briefing) throw new Error("no briefing to read");
+    request("POST", `/v0/desk/briefing/${briefing.id}/read`);
+    changeDesk((desk) => ({ ...desk, briefing: { ...briefing, read_at: timestamp() } }));
+    response(204, undefined);
+  };
+
+  const addCard = (given: NewCard): Card => {
+    const card: Card = { id: newId("k"), at: timestamp(), ...given };
+    changeDesk((desk) => ({ ...desk, waiting: [...desk.waiting, card] }));
+    push("active", { kind: "card", text: card.title, card: card.id });
+    return card;
+  };
+
+  const cardById = (id: string): Card => {
+    const found = deskState.get().waiting.find((card) => card.id === id);
+    if (!found) throw new Error(`no card ${id}`);
+    return found;
+  };
+
+  const answerCard = (id: string, answer: Fields): void => {
+    request("POST", `/v0/desk/cards/${id}/answer`, { body: answer });
+    const working: Card = { ...cardById(id), state: "working" };
+    changeDesk((desk) => ({ ...desk, waiting: desk.waiting.map((card) => (card.id === id ? working : card)) }));
+    response(202, { card: working });
+  };
+
+  const settleCard = (id: string, replacement?: Partial<Card>): void => {
+    const card = cardById(id);
+    changeDesk((desk) => ({
+      ...desk,
+      waiting: desk.waiting.flatMap((waitingCard) => {
+        if (waitingCard.id !== id) return [waitingCard];
+        if (!replacement) return [];
+        const merged: Card = { ...card, ...replacement };
+        return [Object.fromEntries(Object.entries(merged).filter(([field]) => field !== "state")) as Card];
+      }),
+    }));
+  };
+
+  const onboarding = (state: Onboarding): void => {
+    onboardingState.set(state);
+    emit("onboarding.changed", { onboarding: state });
+  };
+
+  const belief = (): string => newId("n");
+
+  const eventUid = (): string => newId("v");
+
+  const answerBelief = (id: string, answer: Fields): void => {
+    request("POST", `/v0/onboarding/beliefs/${id}`, { body: answer });
+    response(202, undefined);
+    const current = onboardingState.get();
+    const proposal = current.proposal;
+    if (!proposal) throw new Error("no proposal to answer");
+    onboarding({
+      ...current,
+      proposal: {
+        ...proposal,
+        beliefs: proposal.beliefs.map((held) =>
+          held.id === id ? { ...held, answer: answer.answer === "true" ? "true" : "corrected" } : held,
+        ),
+      },
+    });
+  };
+
+  const finishOnboarding = (): void => {
+    request("POST", "/v0/onboarding/done");
+    const finished: Onboarding = { state: "done" };
+    onboarding(finished);
+    response(200, finished);
+  };
+
   const restart = (): void => {
     disconnect("server_restarted");
     const registered = device.get();
@@ -1475,6 +1631,21 @@ export const createTranscript = (header: Header): Transcript => {
     showPairingCode,
     pair,
     listMessages,
+    post,
+    desk: () => deskState.get(),
+    getDesk,
+    calendarItem,
+    comingUp,
+    brief,
+    readBriefing,
+    addCard,
+    answerCard,
+    settleCard,
+    onboarding,
+    belief,
+    eventUid,
+    answerBelief,
+    finishOnboarding,
     restart,
     restore,
     toJsonl,

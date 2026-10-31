@@ -1,4 +1,4 @@
-{"transcript":"18-a-reply-while-you-re-away","start":"2026-10-12T08:41:00.000Z","scenario":18,"title":"A reply while you're away","summary":"You send two messages and leave. The first reply reaches your lock screen as a notification with its first line, Markdown stripped; the second turn fails, and that arrives too. Opening Ari catches up.","guarantees":["G15","G18"],"app":{"cursor":"e_0009_53115"}}
+{"transcript":"18-a-reply-while-you-re-away","start":"2026-10-12T08:41:00.000Z","scenario":18,"title":"A reply while you're away","summary":"You send two messages and leave. The first reply reaches your lock screen as a notification with its first line, Markdown stripped; the second turn fails, and that arrives too. Opening Ari catches up.","guarantees":["G15","G18","G38"],"app":{"cursor":"e_0009_53115"}}
 {"given":{"id":"e_0001_71529","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"dfbbdf74-22ad-485a-8020-e54a243e67c9","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z","position":1}}}
 {"given":{"id":"e_0002_78506","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_09876","inputs":["dfbbdf74-22ad-485a-8020-e54a243e67c9"]}}
 {"given":{"id":"e_0003_25570","type":"step.started","at":"2026-10-11T21:14:00.301Z","step":{"id":"s_0001_18669","turn":"t_0001_09876","kind":"thinking","title":"Thinking it through","at":"2026-10-11T21:14:00.301Z","position":3}}}
@@ -26,7 +26,7 @@
 {"at":3200,"server":{"status":204}}
 {"at":3200,"world":"app_closed"}
 {"at":7020,"push":{"device":"545b5899-36cc-430d-9929-31d5e4f3bb14","level":"active","notification":{"kind":"reply","text":"Here's a shape for Saturday:","turn":"t_0002_04934","message":"m_0002_88780"}}}
-{"at":67320,"push":{"device":"545b5899-36cc-430d-9929-31d5e4f3bb14","level":"active","notification":{"kind":"failed","text":"Couldn't finish: The model service isn't responding right now.","turn":"t_0003_72432"}}}
+{"at":67320,"push":{"device":"545b5899-36cc-430d-9929-31d5e4f3bb14","level":"passive","notification":{"kind":"failed","text":"Couldn't finish: The model service isn't responding right now.","turn":"t_0003_72432"}}}
 {"at":1267320,"world":"app_opened","from":"notification","turn":"t_0002_04934"}
 {"at":1267320,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0013_53042"}}}
 {"at":1267320,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}

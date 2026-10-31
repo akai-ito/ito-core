@@ -1,4 +1,4 @@
-{"transcript":"21-an-ask-while-you-re-away","start":"2026-10-12T08:41:00.000Z","scenario":21,"title":"An ask while you're away","summary":"The agent asks while you're away, so the ask arrives as a time-sensitive notification carrying its options. Answering from the notification is an ordinary send naming the ask; the agent carries on, and its reply notifies you too.","guarantees":["G15","G16","G18"],"app":{"cursor":"e_0009_44525"}}
+{"transcript":"21-an-ask-while-you-re-away","start":"2026-10-12T08:41:00.000Z","scenario":21,"title":"An ask while you're away","summary":"The agent asks while you're away, so the ask arrives as a time-sensitive notification carrying its options. Answering from the notification is an ordinary send naming the ask; the agent carries on, and its reply notifies you too.","guarantees":["G15","G16","G18","G38"],"app":{"cursor":"e_0009_44525"}}
 {"given":{"id":"e_0001_58443","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"1bd73a2b-843b-434b-8684-07a7bdf3a934","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z","position":1}}}
 {"given":{"id":"e_0002_76799","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_55713","inputs":["1bd73a2b-843b-434b-8684-07a7bdf3a934"]}}
 {"given":{"id":"e_0003_21201","type":"step.started","at":"2026-10-11T21:14:00.301Z","step":{"id":"s_0001_69692","turn":"t_0001_55713","kind":"thinking","title":"Thinking it through","at":"2026-10-11T21:14:00.301Z","position":3}}}
@@ -25,7 +25,7 @@
 {"at":93900,"world":"notification_answered","ask":"a_0001_13084","option":"Soho"}
 {"at":93900,"app":{"method":"POST","path":"/v0/messages","body":{"id":"c2432f00-720f-4baf-bdd8-2d81439ca44f","text":"Soho"}}}
 {"at":93900,"server":{"status":201,"body":{"message":{"id":"c2432f00-720f-4baf-bdd8-2d81439ca44f","role":"user","text":"Soho","at":"2026-10-12T08:42:33.900Z","position":17,"answers":"a_0001_13084"}}}}
-{"at":96120,"push":{"device":"504252c6-5d89-4892-b963-78bd21dcb66c","level":"active","notification":{"kind":"reply","text":"Booked: Juno in Soho, Friday at 8, a table for two.","turn":"t_0003_21200","message":"m_0002_06693"}}}
+{"at":96120,"push":{"device":"504252c6-5d89-4892-b963-78bd21dcb66c","level":"passive","notification":{"kind":"reply","text":"Booked: Juno in Soho, Friday at 8, a table for two.","turn":"t_0003_21200","message":"m_0002_06693"}}}
 {"at":696120,"world":"app_opened","from":"notification"}
 {"at":696120,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0011_75098"}}}
 {"at":696120,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}

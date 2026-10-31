@@ -50,7 +50,10 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "motion.changed":
     case "motion.finished":
     case "motion.state":
-    case "motion.removed": {
+    case "motion.removed":
+    case "message.posted":
+    case "desk.changed":
+    case "onboarding.changed": {
       return false;
     }
   }
@@ -95,7 +98,7 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
       return { at, event: { type: "step.ended", key: step.id, outcome, facts: factsOf(step) } };
     }
     case "message.started": {
-      return { at, event: { type: "text.started", kind: event.message.kind ?? "reply" } };
+      return { at, event: { type: "text.started", kind: event.message.kind === "note" ? "note" : "reply" } };
     }
     case "message.delta": {
       return { at, event: { type: "text", text: event.text } };
@@ -127,7 +130,10 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
     case "motion.changed":
     case "motion.finished":
     case "motion.state":
-    case "motion.removed": {
+    case "motion.removed":
+    case "message.posted":
+    case "desk.changed":
+    case "onboarding.changed": {
       return;
     }
   }

@@ -1,0 +1,19 @@
+{"transcript":"68-the-morning-briefing","start":"2026-11-11T07:00:00.000Z","scenario":68,"title":"The morning briefing","summary":"Your morning starts no earlier than 07:30. At the first calm moment after it, with nothing on your calendar, Kumo writes the briefing and sends it as a quiet notification. You open Ito; the app says it was seen, and by 14:00 the box has dropped it from the Desk.","guarantees":["G33","G38"],"app":{}}
+{"at":0,"app":{"method":"PUT","path":"/v0/devices/2ca70b03-7220-4743-9164-7aa28acbc028","body":{"apns_token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","environment":"production","notification_key":"MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="}}}
+{"at":0,"server":{"status":201,"body":{"device":{"id":"2ca70b03-7220-4743-9164-7aa28acbc028","environment":"production","key_id":"861009ec","registered_at":"2026-11-11T07:00:00.000Z"}}}}
+{"at":0,"app":{"method":"PUT","path":"/v0/briefing","body":{"not_before":"07:30"}}}
+{"at":0,"server":{"status":200,"headers":{"Ito-Protocol":"0.16"},"body":{"not_before":"07:30"}}}
+{"at":1740000,"world":"briefing_written","lines":[{"text":"QRT moved Thursday's technical to 2pm; your calendar has it."},{"text":"Body: easy 30 minutes or rest; big afternoon."}],"handled":4}
+{"at":1800000,"push":{"device":"2ca70b03-7220-4743-9164-7aa28acbc028","level":"passive","notification":{"kind":"briefing","text":"QRT moved Thursday's technical to 2pm; your calendar has it."}}}
+{"at":2340000,"world":"app_opened"}
+{"at":2340000,"app":{"method":"GET","path":"/v0/events"}}
+{"at":2340000,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":2340000,"event":{"id":"e_0001_50461","type":"snapshot","at":"2026-11-11T07:39:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[],"briefing":{"id":"b_0001_12620","at":"2026-11-11T07:30:00.000Z","kind":"morning","lines":[{"text":"QRT moved Thursday's technical to 2pm; your calendar has it."},{"text":"Body: easy 30 minutes or rest; big afternoon."}],"handled":4}}}}
+{"at":2340000,"app":{"method":"PUT","path":"/v0/devices/2ca70b03-7220-4743-9164-7aa28acbc028/presence","body":{"looking":true}}}
+{"at":2340000,"server":{"status":204}}
+{"at":2341500,"app":{"method":"POST","path":"/v0/desk/briefing/b_0001_12620/read"}}
+{"at":2341500,"event":{"id":"e_0002_82769","type":"desk.changed","at":"2026-11-11T07:39:01.500Z","desk":{"coming_up":[],"waiting":[],"briefing":{"id":"b_0001_12620","at":"2026-11-11T07:30:00.000Z","kind":"morning","lines":[{"text":"QRT moved Thursday's technical to 2pm; your calendar has it."},{"text":"Body: easy 30 minutes or rest; big afternoon."}],"handled":4,"read_at":"2026-11-11T07:39:01.500Z"}}}}
+{"at":2341500,"server":{"status":204}}
+{"at":2341500,"world":"app_closed"}
+{"at":2341500,"app":{"method":"PUT","path":"/v0/devices/2ca70b03-7220-4743-9164-7aa28acbc028/presence","body":{"looking":false}}}
+{"at":2341500,"server":{"status":204}}

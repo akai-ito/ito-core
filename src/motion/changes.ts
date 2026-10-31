@@ -33,6 +33,9 @@ export const listFields: ReadonlySet<string> = new Set([
   "weeks",
   "sessions",
   "results",
+  "options",
+  "prep",
+  "timeline",
 ]);
 
 const isList = (value: unknown, field: string): value is readonly Item[] =>

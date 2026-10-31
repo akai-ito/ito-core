@@ -1,7 +1,7 @@
 {"transcript":"51-asked-on-a-call","start":"2026-10-28T08:00:00.000Z","scenario":51,"title":"Asked on a call","summary":"On a call, Ari asks for approval: the server says the preview, the question and the choices aloud, and your next words answer it, so the reminder is added without looking at the phone.","guarantees":["G25","G26"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-28T08:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T08:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[]}}}
 {"at":1000,"app":{"method":"PUT","path":"/v0/calls/2b6b2969-78b4-40cb-93bb-62c352ce71df"}}
 {"at":1000,"event":{"id":"e_0001_93484","type":"call.started","at":"2026-10-28T08:00:01.000Z","call":{"id":"2b6b2969-78b4-40cb-93bb-62c352ce71df","started_at":"2026-10-28T08:00:01.000Z","position":1}}}
 {"at":1000,"server":{"status":201,"body":{"call":{"id":"2b6b2969-78b4-40cb-93bb-62c352ce71df","started_at":"2026-10-28T08:00:01.000Z","position":1}}}}

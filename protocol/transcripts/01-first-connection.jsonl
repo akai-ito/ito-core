@@ -1,10 +1,10 @@
 {"transcript":"01-first-connection","start":"2026-10-12T08:41:00.000Z","scenario":1,"title":"First connection","summary":"Ari checks which protocol the server speaks, is refused a mistyped token, then connects with the right one and receives a snapshot of an empty conversation.","guarantees":["G11","G12"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/.well-known/ito"}}
-{"at":40,"server":{"status":200,"headers":{"Ito-Protocol":"0.15"},"body":{"product":"ito","protocol":["0.15"]}}}
+{"at":40,"server":{"status":200,"headers":{"Ito-Protocol":"0.16"},"body":{"product":"ito","protocol":["0.16"]}}}
 {"at":60,"app":{"method":"GET","path":"/v0/server","headers":{"Authorization":"Bearer ito_example_mistyped_token_0000000000000000000"}}}
-{"at":100,"server":{"status":401,"headers":{"Ito-Protocol":"0.15"},"body":{"error":{"code":"token_rejected","message":"The server didn't accept this token.","detail":"Use the token ito serve printed, or run ito token new."}}}}
+{"at":100,"server":{"status":401,"headers":{"Ito-Protocol":"0.16"},"body":{"error":{"code":"token_rejected","message":"The server didn't accept this token.","detail":"Use the token ito serve printed, or run ito token new."}}}}
 {"at":9100,"app":{"method":"GET","path":"/v0/server","headers":{"Authorization":"Bearer ito_example_not_a_real_token_00000000000000000000"}}}
-{"at":9140,"server":{"status":200,"headers":{"Ito-Protocol":"0.15"},"body":{"name":"studio","version":"0.15.0","protocol":"0.15","agent":{"name":"Ari"},"setup":{"notifications":false,"memory_backup":false},"capabilities":[]}}}
+{"at":9140,"server":{"status":200,"headers":{"Ito-Protocol":"0.16"},"body":{"name":"studio","version":"0.16.0","protocol":"0.16","lead":{"name":"Kumo"},"agent":{},"briefing":{"not_before":"07:30"},"setup":{"notifications":false,"memory_backup":false},"capabilities":[]}}}
 {"at":9150,"app":{"method":"GET","path":"/v0/events","headers":{"Authorization":"Bearer ito_example_not_a_real_token_00000000000000000000"}}}
 {"at":9150,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":9150,"event":{"type":"snapshot","at":"2026-10-12T08:41:09.150Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
+{"at":9150,"event":{"type":"snapshot","at":"2026-10-12T08:41:09.150Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[]}}}

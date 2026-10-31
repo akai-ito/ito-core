@@ -27,7 +27,7 @@ export type NotifierOptions = {
   readonly apns: Apns;
   readonly clock: Clock;
   readonly presence: Presence;
-  readonly agentName: string;
+  readonly agentName: () => string;
   readonly log: Log;
   readonly reminderMs: number;
 };
@@ -51,6 +51,15 @@ const fallbackText = (kind: Notification["kind"], agentName: string): string => 
     }
     case "reminder": {
       return `${agentName} is still waiting on you`;
+    }
+    case "post": {
+      return `${agentName} has news`;
+    }
+    case "card": {
+      return `Something is waiting on you`;
+    }
+    case "briefing": {
+      return `Your morning briefing`;
     }
   }
 };
@@ -91,7 +100,11 @@ export const createNotifier = ({
 
   const deliver = async (notification: Notification, level: PushLevel): Promise<void> => {
     for (const device of store.devices()) {
-      const sent = await apns.send(device, toEnvelope(notification, level, device, agentName), clock.now() + expiryMs);
+      const sent = await apns.send(
+        device,
+        toEnvelope(notification, level, device, agentName()),
+        clock.now() + expiryMs,
+      );
       if (!sent.ok) log("A notification didn't go out", sent.failure);
       else if (sent.value === "gone") store.removeDevice(device.id);
     }
