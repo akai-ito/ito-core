@@ -48,6 +48,7 @@ import { createWorkTools } from "#work/tools.ts";
 import { createJobs, type Jobs } from "#jobs/jobs.ts";
 import { registerJobs } from "#http/jobs.ts";
 import { createJobStore } from "#store/jobs.ts";
+import { createGettingStarted } from "#onboarding/onboarding.ts";
 import { createCalendar, type Calendar } from "#calendar/calendar.ts";
 import { createCalendarSource, type CalendarSource } from "#calendar/caldav.ts";
 import type { Values } from "#capabilities/manifest.ts";
@@ -85,7 +86,7 @@ export type EngineContext = {
   readonly skills: () => string;
   readonly instructions: () => string;
   readonly inMind: () => string;
-  readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
+  readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
 };
 
 export type Server = {
@@ -222,8 +223,10 @@ export const createServer = (options: ServerOptions): Server => {
     skills,
     instructions: () => voiceText.replaceAll("{lead}", () => leadOf(store)) + skills(),
     inMind: () =>
-      [memory.inMindText(), motions.inMindText(), jobs.inMindText(), callContext()].filter(Boolean).join("\n\n"),
-    callTool: (name, input) => callTool(name, input),
+      [memory.inMindText(), motions.inMindText(), jobs.inMindText(), gettingStarted.inMindText(), callContext()]
+        .filter(Boolean)
+        .join("\n\n"),
+    callTool: (name, input, run) => callTool(name, input, run),
   });
   host.subscribe(() => {
     void engine.refresh();
@@ -320,6 +323,17 @@ export const createServer = (options: ServerOptions): Server => {
   calendar.onEventEnded((uid) => {
     jobs.onEventEnded(uid);
   });
+  const gettingStarted = createGettingStarted({
+    store,
+    identifiers,
+    work: runWork,
+    catchUp: mail.catchUp,
+    hasMail: mail.hasSource,
+    onSources: (listener) => host.subscribe(listener),
+    onAdded: calendar.onAdded,
+    motionIds: () => motions.list().map(({ id }) => id),
+    info,
+  });
   const isBusy = (): boolean => calendar.isBusy();
   const briefings = createBriefings({
     store,
@@ -366,6 +380,7 @@ export const createServer = (options: ServerOptions): Server => {
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     desk,
     calendar,
+    gettingStarted,
     onLeadRenamed: () => {
       void engine.refresh();
     },
@@ -409,6 +424,47 @@ export const createServer = (options: ServerOptions): Server => {
     ...calendar.tools,
     ...jobs.tools,
     ...mail.tools,
+    ...gettingStarted.tools,
+    {
+      name: "show_getting_started",
+      title: "Show what getting started found",
+      audience: "hidden",
+      description: "Finish a sample catch-up with a belief and a booking, for the demo.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      call: () => {
+        if (gettingStarted.state().state === "done") return Promise.resolve({ text: "Getting started is done." });
+        const start = toTimestamp(clock.now() + 25 * dayMs);
+        const end = toTimestamp(clock.now() + 25 * dayMs + 2.5 * 60 * 60 * 1000);
+        store.setOnboarding({ state: "reading", progress: { mails_read: 40, mails_total: 40 } });
+        store.setOnboarding({
+          state: "ready",
+          proposal: {
+            beliefs: [
+              {
+                id: identifiers.belief(),
+                text: "You're training for a sub-20 5K, with parkrun on Saturdays.",
+                page: "memory:now",
+              },
+            ],
+            added: [
+              {
+                id: identifiers.calendarItem(),
+                uid: `demo-flights-${start}@ito.local`,
+                title: "Flights to Valencia",
+                start,
+                end,
+                all_day: false,
+                location: "Gatwick North",
+                calendar: { name: "Home", kumo: false },
+                status: "confirmed",
+              },
+            ],
+            motions: [],
+          },
+        });
+        return Promise.resolve({ text: "Showed what getting started found." });
+      },
+    },
     {
       name: "show_mail",
       title: "Show a sample mail's work",
@@ -516,6 +572,7 @@ export const createServer = (options: ServerOptions): Server => {
     topics.close();
     briefings.close();
     jobs.close();
+    gettingStarted.close();
     calendar.close();
     await mail.close();
     notifier.close();

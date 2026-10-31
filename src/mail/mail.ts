@@ -756,7 +756,7 @@ export const createMailbox = ({
     const indexes = Array.from({ length: parts }, (_, index) => index);
     for (const index of indexes) {
       await work(catchUpPrompt(lines.slice(index * chunkSize, (index + 1) * chunkSize), index + 1, parts));
-      onProgress(Math.min(lines.length, (index + 1) * chunkSize), lines.length);
+      if (index + 1 < parts) onProgress((index + 1) * chunkSize, lines.length);
     }
     const sent = await Promise.all(
       connections

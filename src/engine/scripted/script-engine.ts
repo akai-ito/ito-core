@@ -8,7 +8,7 @@ import type { ModelOption } from "#protocol/types.ts";
 import { fail, ok } from "#result.ts";
 import type { ToolResult } from "#tools/mcp.ts";
 
-export type CallTool = (name: string, input: unknown) => Promise<ToolResult>;
+export type CallTool = (name: string, input: unknown, run?: string) => Promise<ToolResult>;
 
 export type Act = { readonly at: number; readonly act: (callTool: CallTool) => Promise<void> };
 

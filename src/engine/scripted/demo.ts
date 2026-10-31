@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Fetch } from "#capabilities/connect.ts";
 import { createCell } from "#cell.ts";
-import type { AskFields, Complete, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
+import type { AskFields, Complete, Engine, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import { fail, ok } from "#result.ts";
 import type { Act, CallTool, ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
 import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "#protocol/tools/florence.ts";
@@ -283,6 +283,10 @@ const showMail: Act["act"] = async (callTool) => {
   await callTool("show_mail", {});
 };
 
+const showGettingStarted: Act["act"] = async (callTool) => {
+  await callTool("show_getting_started", {});
+};
+
 const briefNow: Act["act"] = async (callTool) => {
   await callTool("brief_now", {});
 };
@@ -294,12 +298,21 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
     { pattern: /\bbriefing\b/u, act: briefNow, said: "Your briefing is at the top of the Desk." },
     { pattern: /\binvite\b/u, act: showInvite, said: "Poppy's invite is on your Desk." },
     { pattern: /\bmail\b/u, act: showMail, said: "A booking came in; there's a draft for you on the Desk." },
+    { pattern: /\bstart\b/u, act: showGettingStarted, said: "I've read your mail. Here's what I found." },
   ].find(({ pattern }) => pattern.test(text));
   if (!chosen) return undefined;
   const actAt = lastAt(start) + 300;
   const reply = writeMessage("reply", chosen.said, actAt + 1200);
   return { events: [...start, ...reply, ending(reply, { type: "ended" })], acts: [{ at: actAt, act: chosen.act }] };
 };
+
+export const demoWork =
+  (callTool: CallTool): Engine["work"] =>
+  async (prompt, run) => {
+    if (!prompt.includes("Post your first question")) return fail("The demo does no background work.");
+    await callTool("post", { text: "While I read: what would make the next month a good one for you?" }, run);
+    return ok("Asked.");
+  };
 
 export const demoAnswers: Complete = (_prompt, schema) => {
   const fields = Object.keys(schema.properties ?? {});
