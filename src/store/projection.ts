@@ -13,8 +13,8 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       const { message } = event;
       database
         .prepare(
-          `INSERT INTO messages (id, position, role, text, at, answers, attachments, spoken)
-            VALUES (?, ?, 'user', ?, ?, ?, ?, ?)`,
+          `INSERT INTO messages (id, position, role, text, at, answers, attachments, spoken, done)
+            VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           message.id,
@@ -24,6 +24,7 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
           message.answers ?? null,
           message.attachments?.length ? toJson(message.attachments) : null,
           message.spoken ? toJson(message.spoken) : null,
+          message.done ?? null,
         );
       const attached = [...(message.attachments ?? []), ...(message.spoken?.audio ? [message.spoken.audio] : [])];
       for (const attachment of attached) {

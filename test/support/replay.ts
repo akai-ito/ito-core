@@ -10,7 +10,8 @@ import { openCallSocket, type Arrived, type CallSocket } from "./call-socket.ts"
 import type { Complete } from "#engine/engine.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { demoModels } from "#engine/scripted/models.ts";
-import { fail as failed, ok } from "#result.ts";
+import { fail as failed, ok, type Result } from "#result.ts";
+import { fieldOf } from "#tools/input.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
 import type { Attachment } from "#protocol/types.ts";
@@ -55,6 +56,11 @@ type DeviceKey = { readonly id: string; readonly notificationKey: string };
 const apnsKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
   .privateKey.export({ type: "pkcs8", format: "pem" })
   .toString();
+
+type WorkPlan = {
+  readonly calls: readonly { readonly tool: string; readonly input: unknown }[];
+  readonly post?: string;
+};
 
 const fail = (message: string): never => {
   throw new Error(message);
@@ -153,11 +159,29 @@ export const replay = async (name: string): Promise<void> => {
 
   const complete: Complete = (_prompt, schema) => {
     const required = Array.isArray(schema.required) ? (schema.required as readonly string[]) : [];
+    const known = Object.keys(schema.properties ?? {});
     const fits = (aside: unknown): boolean =>
-      typeof aside === "object" && aside !== null && required.every((field) => Object.hasOwn(aside, field));
+      typeof aside === "object" &&
+      aside !== null &&
+      required.every((field) => Object.hasOwn(aside, field)) &&
+      Object.keys(aside).every((field) => known.includes(field));
     const next = asides.get().find((aside) => fits(aside));
     asides.update((current) => current.filter((aside) => aside !== next));
     return Promise.resolve(next === undefined ? failed("The transcript has Ari answer nothing aside here.") : ok(next));
+  };
+
+  const plans = createCell<readonly WorkPlan[]>([]);
+
+  const work = async (run: string): Promise<Result<string, string>> => {
+    const [plan] = plans.get();
+    if (!plan) return failed("The transcript has Kumo do nothing in the background here.");
+    plans.update((current) => current.slice(1));
+    const server = live.get()?.server;
+    for (const { tool, input } of plan.calls) {
+      await server?.callTool(tool, ids.translate(withLiveVersion(input)), run);
+    }
+    if (plan.post !== undefined) await server?.callTool("post", { text: plan.post }, run);
+    return ok("Done.");
   };
 
   const isApproved = createCell(false);
@@ -193,7 +217,8 @@ export const replay = async (name: string): Promise<void> => {
       fetch: fetchFromWorld,
       embedder: wordEmbedder,
       dataDirectory: directory,
-      createEngine: () => createScriptEngine(clock, scripts, undefined, demoModels, complete),
+      createEngine: () =>
+        createScriptEngine(clock, scripts, undefined, demoModels, complete, (_prompt, run) => work(run)),
       name: "studio",
 
       clock,
@@ -436,6 +461,27 @@ export const replay = async (name: string): Promise<void> => {
           readonly note: string;
         };
         asides.update((current) => [...current, { changes_json: JSON.stringify(changes), summary, note }]);
+        await advance(time);
+        return;
+      }
+      case "kumo_works": {
+        const { calls, post } = step as unknown as WorkPlan;
+        plans.update((current) => [...current, { calls, ...(post !== undefined && { post }) }]);
+        await advance(time);
+        return;
+      }
+      case "briefing_written": {
+        const { lines, handled } = step as unknown as { readonly lines: readonly unknown[]; readonly handled: number };
+        asides.update((current) => [
+          ...current,
+          {
+            lines: lines.map((line) => ({
+              text: fieldOf(line, "text"),
+              card: ids.translate(fieldOf(line, "card") ?? ""),
+            })),
+            handled,
+          },
+        ]);
         await advance(time);
         return;
       }

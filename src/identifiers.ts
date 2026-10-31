@@ -23,6 +23,12 @@ export type Identifiers = {
   readonly change: () => ChangeId;
   readonly attachment: () => string;
   readonly topic: () => string;
+  readonly card: () => string;
+  readonly done: () => string;
+  readonly job: () => string;
+  readonly briefing: () => string;
+  readonly calendarItem: () => string;
+  readonly belief: () => string;
 };
 
 const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -40,4 +46,10 @@ export const randomIdentifiers: Identifiers = {
   change: () => toChangeId(`c_${randomText()}`),
   attachment: () => `f_${randomText()}`,
   topic: () => `p_${randomText()}`,
+  card: () => `k_${randomText()}`,
+  done: () => `d_${randomText()}`,
+  job: () => `j_${randomText()}`,
+  briefing: () => `b_${randomText()}`,
+  calendarItem: () => `v_${randomText()}`,
+  belief: () => `n_${randomText()}`,
 };

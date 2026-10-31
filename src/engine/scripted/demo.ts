@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import type { Fetch } from "#capabilities/connect.ts";
 import { createCell } from "#cell.ts";
-import type { AskFields, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
+import type { AskFields, Complete, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
+import { fail, ok } from "#result.ts";
 import type { Act, CallTool, ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
 import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "#protocol/tools/florence.ts";
 import { sub20Id, sub20Training } from "#protocol/tools/sub20.ts";
@@ -245,6 +246,68 @@ const bookUffizi: Act["act"] = async (callTool) => {
   });
 };
 
+const fillDesk: Act["act"] = async (callTool) => {
+  await callTool("add_card", {
+    kind: "question",
+    title: "Binned a Revolut mail",
+    text: 'Binned "Your account update" from Revolut as a promotion. Right?',
+    options: [{ label: "Right", acts: true }, { label: "Keep it" }],
+    allows_text: true,
+  });
+  await callTool("add_card", {
+    kind: "offer",
+    title: "Italian practice?",
+    text: "Italian keeps coming up. Want a 15-minute lesson on Tuesday and Thursday evenings?",
+    options: [{ label: "Yes", acts: true }, { label: "Not now" }],
+  });
+};
+
+const offerTimes: Act["act"] = async (callTool) => {
+  await callTool("add_card", {
+    kind: "times",
+    title: "Times for a call with Citadel",
+    purpose: "A first call with Sarah at Citadel",
+    slots: [
+      { start: "2026-11-13T09:00:00.000Z", end: "2026-11-13T09:30:00.000Z", note: "WFH day" },
+      { start: "2026-11-13T12:30:00.000Z", end: "2026-11-13T13:00:00.000Z", note: "WFH day" },
+      { start: "2026-11-14T17:30:00.000Z", end: "2026-11-14T18:00:00.000Z" },
+    ],
+  });
+};
+
+const briefNow: Act["act"] = async (callTool) => {
+  await callTool("brief_now", {});
+};
+
+const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {
+  const chosen = [
+    { pattern: /\bdesk\b/u, act: fillDesk, said: "I've put a question and an offer on your Desk." },
+    { pattern: /\btimes\b/u, act: offerTimes, said: "Pick the times that are clear at work; they're on your Desk." },
+    { pattern: /\bbriefing\b/u, act: briefNow, said: "Your briefing is at the top of the Desk." },
+  ].find(({ pattern }) => pattern.test(text));
+  if (!chosen) return undefined;
+  const actAt = lastAt(start) + 300;
+  const reply = writeMessage("reply", chosen.said, actAt + 1200);
+  return { events: [...start, ...reply, ending(reply, { type: "ended" })], acts: [{ at: actAt, act: chosen.act }] };
+};
+
+export const demoAnswers: Complete = (_prompt, schema) => {
+  const fields = Object.keys(schema.properties ?? {});
+  if (fields.includes("lines")) {
+    return Promise.resolve(
+      ok({
+        lines: [
+          { text: "Poppy sent the Teams link for Thursday; it's on the event.", card: "" },
+          { text: "Body: easy 30 minutes or rest; big afternoon.", card: "" },
+        ],
+        handled: 9,
+      }),
+    );
+  }
+  if (fields.includes("changed")) return Promise.resolve(ok({ changed: false, label: "" }));
+  return Promise.resolve(fail("The demo answers nothing for that."));
+};
+
 const motionScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {
   const chosen = [
     { pattern: /\btrip\b/u, act: startTrip, said: `I've started Florence with Janki.\n\n${motionLine(florenceId)}` },
@@ -280,7 +343,7 @@ const scriptFor = (inputs: readonly Input[], now: number): Script => {
   const opened = opening(text, now);
   const start = text.includes("busy") ? [...opened, ...busyTrail(lastAt(opened) + 300)] : opened;
   if (text.includes("silent")) return { events: start };
-  const remembering = memoryScript(text, start, now) ?? motionScript(text, start);
+  const remembering = memoryScript(text, start, now) ?? motionScript(text, start) ?? deskScript(text, start);
   if (remembering) return remembering;
   const fields = askFor(text);
   if (fields) {

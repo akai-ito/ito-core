@@ -9,7 +9,7 @@ import { tokenMessage } from "#cli/token.ts";
 import { systemClock } from "#clock.ts";
 import { createCodexEngine } from "#engine/codex/codex-engine.ts";
 import { modelSetting } from "#engine/engine.ts";
-import { demoScripts, withDemoPictures } from "#engine/scripted/demo.ts";
+import { demoAnswers, demoScripts, withDemoPictures } from "#engine/scripted/demo.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { createToken, hashToken, tokenSetting } from "#http/auth.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -58,7 +58,7 @@ const toEngineFactory = (engine: EngineName, paths: Paths): ServerOptions["creat
   engine === "demo"
     ? ({ settings, callTool }: EngineContext) => {
         settings.setSetting(modelSetting, "demo");
-        return createScriptEngine(systemClock, demoScripts, callTool);
+        return createScriptEngine(systemClock, demoScripts, callTool, undefined, demoAnswers);
       }
     : ({ settings, log, info, tools, instructions, inMind }: EngineContext) =>
         createCodexEngine({

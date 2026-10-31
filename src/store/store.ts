@@ -19,6 +19,7 @@ import type {
   Attachment,
   Call,
   Desk,
+  DoneEntry,
   Error as ErrorBody,
   Spoken,
   LiveTurn,
@@ -80,6 +81,8 @@ export type Exchange = {
 
 export type AcceptFailure = "id_conflict" | "unknown_attachment" | "attachment_taken" | "call_not_on";
 
+export type DonePage = { readonly entries: readonly DoneEntry[]; readonly hasMore: boolean };
+
 export type SpokenInput = { readonly call: string; readonly audio?: string };
 
 export type StartedCall = { readonly call: Call; readonly isNew: boolean };
@@ -116,7 +119,16 @@ export type Store = Settings & {
     text: string,
     attachments?: readonly string[],
     spoken?: SpokenInput,
+    done?: string,
   ) => Result<Accepted, AcceptFailure>;
+  readonly postMessage: (text: string) => Message;
+  readonly postsSince: (at: string) => readonly Message[];
+  readonly desk: () => Desk;
+  readonly setDesk: (desk: Desk) => void;
+  readonly addDone: (entry: DoneEntry, undoWith?: unknown) => void;
+  readonly listDone: (before: string | undefined, limit: number) => DonePage;
+  readonly findDone: (id: string) => { readonly entry: DoneEntry; readonly payload: unknown } | undefined;
+  readonly replaceDone: (entry: DoneEntry) => void;
   readonly amendMessage: (
     id: MessageId,
     text: string,
@@ -203,7 +215,7 @@ type MessageRow = {
   readonly id: string;
   readonly position: number;
   readonly role: "user" | "agent";
-  readonly kind: MessageKind | null;
+  readonly kind: MessageKind | "post" | null;
   readonly turn: string | null;
   readonly text: string;
   readonly at: string;
@@ -213,6 +225,7 @@ type MessageRow = {
   readonly answers: string | null;
   readonly attachments: string | null;
   readonly spoken: string | null;
+  readonly done: string | null;
 };
 
 type AttachmentRow = { readonly body: string; readonly sha256: string; readonly message: string | null };
@@ -266,12 +279,13 @@ const toMessage = (row: MessageRow): Message =>
         ...(row.answers && { answers: row.answers }),
         ...(row.attachments && { attachments: JSON.parse(row.attachments) as Attachment[] }),
         ...(row.spoken && { spoken: JSON.parse(row.spoken) as Spoken }),
+        ...(row.done && { done: row.done }),
       }
     : {
         id: row.id,
         role: "agent",
         kind: row.kind ?? "reply",
-        turn: row.turn ?? "",
+        ...(row.kind !== "post" && { turn: row.turn ?? "" }),
         text: row.text,
         at: row.at,
         position: row.position,
@@ -507,7 +521,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       };
     },
 
-    acceptMessage: (id, text, attachments = [], spoken) =>
+    acceptMessage: (id, text, attachments = [], spoken, done) =>
       transaction(() => {
         const existing = messageRow(id);
         if (existing) {
@@ -540,11 +554,81 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           ...(spoken && {
             spoken: { call: spoken.call, ...(audioRow && { audio: JSON.parse(audioRow.body) as Attachment }) },
           }),
+          ...(done !== undefined && { done }),
         };
         append({ id: identifiers.event(), type: "message.accepted", at, message });
         if (waiting) endAsk(toAsk(waiting), "answered", id);
         return ok({ message, isNew: true });
       }),
+
+    postMessage: (text) =>
+      transaction(() => {
+        const at = now();
+        const message: Message = {
+          id: identifiers.message(),
+          role: "agent",
+          kind: "post",
+          text,
+          at,
+          position: nextSeq(),
+        };
+        append({ id: identifiers.event(), type: "message.posted", at, message });
+        return message;
+      }),
+
+    postsSince: (at) =>
+      (
+        database
+          .prepare("SELECT * FROM messages WHERE kind = 'post' AND at > ? ORDER BY position")
+          .all(at) as unknown as readonly MessageRow[]
+      ).map((row) => toMessage(row)),
+
+    desk: () => currentDesk(),
+
+    setDesk: (desk) => {
+      transaction(() => {
+        if (JSON.stringify(desk) === JSON.stringify(currentDesk())) return;
+        append({ id: identifiers.event(), type: "desk.changed", at: now(), desk });
+      });
+    },
+
+    addDone: (entry, undoWith) => {
+      database
+        .prepare("INSERT OR REPLACE INTO done (id, at, body, undo_with) VALUES (?, ?, ?, ?)")
+        .run(entry.id, entry.at, JSON.stringify(entry), undoWith === undefined ? null : JSON.stringify(undoWith));
+    },
+
+    listDone: (before, limit) => {
+      const anchor =
+        before === undefined
+          ? undefined
+          : (database.prepare("SELECT at, id FROM done WHERE id = ?").get(before) as
+              { readonly at: string; readonly id: string } | undefined);
+      const rows = database
+        .prepare("SELECT body FROM done WHERE at < ? OR (at = ? AND id < ?) ORDER BY at DESC, id DESC LIMIT ?")
+        .all(anchor?.at ?? "9999", anchor?.at ?? "9999", anchor?.id ?? "", limit + 1) as unknown as readonly {
+        readonly body: string;
+      }[];
+      return {
+        entries: rows.slice(0, limit).map((row) => JSON.parse(row.body) as DoneEntry),
+        hasMore: rows.length > limit,
+      };
+    },
+
+    findDone: (id) => {
+      const row = database.prepare("SELECT body, undo_with FROM done WHERE id = ?").get(id) as
+        { readonly body: string; readonly undo_with: string | null } | undefined;
+      return row
+        ? {
+            entry: JSON.parse(row.body) as DoneEntry,
+            payload: row.undo_with === null ? undefined : (JSON.parse(row.undo_with) as unknown),
+          }
+        : undefined;
+    },
+
+    replaceDone: (entry) => {
+      database.prepare("UPDATE done SET body = ? WHERE id = ?").run(JSON.stringify(entry), entry.id);
+    },
 
     amendMessage: (id, text, audio) =>
       transaction(() => {
