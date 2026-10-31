@@ -146,4 +146,9 @@ export const migrations: readonly string[] = [
     undo_with TEXT
   );
   CREATE INDEX done_by_time ON done (at, id);`,
+  `CREATE TABLE jobs (
+    id TEXT PRIMARY KEY,
+    every_days INTEGER,
+    body TEXT NOT NULL
+  );`,
 ];
