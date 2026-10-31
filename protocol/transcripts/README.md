@@ -60,6 +60,12 @@ request that shows its own `Authorization` header uses the token it names.
 | `you_approve` | you approve the `code` a capability's connection showed, at the provider; the server picks up the token at its next poll, within 5 seconds |
 | `ari_keeps_up` | what Ari will answer when the server asks it, aside, to keep a thing up with your ticks and choices: its `changes`, `summary` and `note` |
 | `topic_decided` | what the quick model will answer when the server asks it, after the turn, whether the subject changed: the new topic's `label` |
+| `mail_arrives` | a mail lands in an inbox the box watches: its `account`, `message_id`, `from`, `to`, `subject` and `text` |
+| `attention_decides` | what the attention pass will answer for the next mail: its `decision`, `reason` and `confidence` |
+| `kumo_works` | what the next work thread does: the tools it `calls`, in order, and the one message it may `post` |
+| `inbox_holds` | how many mails from the last 90 days an `account` holds, for the catch-up to read |
+| `invite_arrives` | an invitation lands on your iCloud calendar: its `uid`, `title`, `start`, `end`, `location` and `organizer` |
+| `briefing_written` | what the quick model will write for the next briefing: its `lines` and how many things it `handled` |
 
 ## Ids
 

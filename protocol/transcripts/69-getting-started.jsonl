@@ -1,0 +1,29 @@
+{"transcript":"69-getting-started","start":"2026-11-09T19:02:00.000Z","scenario":69,"title":"Getting started","summary":"On a fresh box Kumo asks its first question in the conversation as soon as the app connects. You connect iCloud, and Kumo reads your last 90 days of mail, with its progress on every app. When it has read everything it shows what it found: a booking it put on your calendar and a belief to check. You answer the question, confirm the belief and finish.","guarantees":["G39"],"app":{}}
+{"given":{"id":"e_0001_38770","type":"onboarding.changed","at":"2026-11-09T19:00:00.000Z","onboarding":{"state":"reading"}}}
+{"at":0,"world":"kumo_works","calls":[],"post":"While I read: what would make the next month a good one for you?"}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"id":"e_0001_38770","type":"snapshot","at":"2026-11-09T19:02:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[]},"onboarding":{"state":"reading"}}}
+{"at":0,"event":{"id":"e_0002_48805","type":"message.posted","at":"2026-11-09T19:02:00.000Z","message":{"id":"m_0001_47841","role":"agent","kind":"post","text":"While I read: what would make the next month a good one for you?","at":"2026-11-09T19:02:00.000Z","position":2}}}
+{"at":20000,"world":"kumo_works","calls":[{"tool":"add_event","input":{"title":"Flights to Valencia","start":"2026-12-04T07:15:00.000Z","end":"2026-12-04T09:40:00.000Z","location":"Gatwick North","notes":"Booked through iCloud Mail: Your easyJet booking EZY8817"}},{"tool":"believe","input":{"text":"You're training for a sub-20 5K, with parkrun on Saturdays.","page":"memory:now"}}]}
+{"at":20000,"world":"inbox_holds","account":"icloud","count":40}
+{"at":20000,"world":"capability_on","capability":"icloud","values":{"apple_id":"divy@icloud.com","app_password":"abcd-efgh-ijkl-mnop"}}
+{"at":20000,"event":{"id":"e_0003_35657","type":"onboarding.changed","at":"2026-11-09T19:02:20.000Z","onboarding":{"state":"reading","progress":{"mails_read":0,"mails_total":40}}}}
+{"at":20000,"event":{"id":"e_0004_97186","type":"onboarding.changed","at":"2026-11-09T19:02:20.000Z","onboarding":{"state":"ready","proposal":{"beliefs":[{"id":"n_0001_16451","text":"You're training for a sub-20 5K, with parkrun on Saturdays.","page":"memory:now"}],"added":[{"id":"v_0002_37981","uid":"v_0001_17594","title":"Flights to Valencia","start":"2026-12-04T07:15:00.000Z","end":"2026-12-04T09:40:00.000Z","all_day":false,"location":"Gatwick North","calendar":{"name":"Home","kumo":false},"status":"confirmed"}],"motions":[]}}}}
+{"at":40000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"aaf8d204-f34f-4599-87a4-efea5914403d","text":"Getting the QRT offer sorted, and running three times a week."}}}
+{"at":40000,"event":{"id":"e_0005_25811","type":"message.accepted","at":"2026-11-09T19:02:40.000Z","message":{"id":"aaf8d204-f34f-4599-87a4-efea5914403d","role":"user","text":"Getting the QRT offer sorted, and running three times a week.","at":"2026-11-09T19:02:40.000Z","position":5}}}
+{"at":40000,"server":{"status":201,"body":{"message":{"id":"aaf8d204-f34f-4599-87a4-efea5914403d","role":"user","text":"Getting the QRT offer sorted, and running three times a week.","at":"2026-11-09T19:02:40.000Z","position":5}}}}
+{"at":40000,"event":{"id":"e_0006_68912","type":"turn.started","at":"2026-11-09T19:02:40.000Z","turn":"t_0001_05889","inputs":["aaf8d204-f34f-4599-87a4-efea5914403d"]}}
+{"at":40900,"event":{"id":"e_0007_54840","type":"turn.status","at":"2026-11-09T19:02:40.900Z","turn":"t_0001_05889","kind":"writing","label":"Writing"}}
+{"at":40900,"event":{"id":"e_0008_84670","type":"message.started","at":"2026-11-09T19:02:40.900Z","message":{"id":"m_0002_70238","role":"agent","kind":"reply","turn":"t_0001_05889","text":"","at":"2026-11-09T19:02:40.900Z","position":8}}}
+{"at":40900,"event":{"id":"e_0009_13562","type":"message.delta","at":"2026-11-09T19:02:40.900Z","message":"m_0002_70238","offset":0,"text":"Then mornings stay for "}}
+{"at":41020,"event":{"id":"e_0010_87162","type":"message.delta","at":"2026-11-09T19:02:41.020Z","message":"m_0002_70238","offset":23,"text":"running, and I'll keep the "}}
+{"at":41140,"event":{"id":"e_0011_11574","type":"message.delta","at":"2026-11-09T19:02:41.140Z","message":"m_0002_70238","offset":50,"text":"QRT side moving."}}
+{"at":41140,"event":{"id":"e_0012_28331","type":"message.ended","at":"2026-11-09T19:02:41.140Z","message":"m_0002_70238","outcome":"completed","length":66}}
+{"at":41140,"event":{"id":"e_0013_31561","type":"turn.ended","at":"2026-11-09T19:02:41.140Z","turn":"t_0001_05889","outcome":"completed"}}
+{"at":56140,"app":{"method":"POST","path":"/v0/onboarding/beliefs/n_0001_16451","body":{"answer":"true"}}}
+{"at":56140,"server":{"status":202}}
+{"at":56140,"event":{"id":"e_0014_99939","type":"onboarding.changed","at":"2026-11-09T19:02:56.140Z","onboarding":{"state":"ready","proposal":{"beliefs":[{"id":"n_0001_16451","text":"You're training for a sub-20 5K, with parkrun on Saturdays.","page":"memory:now","answer":"true"}],"added":[{"id":"v_0002_37981","uid":"v_0001_17594","title":"Flights to Valencia","start":"2026-12-04T07:15:00.000Z","end":"2026-12-04T09:40:00.000Z","all_day":false,"location":"Gatwick North","calendar":{"name":"Home","kumo":false},"status":"confirmed"}],"motions":[]}}}}
+{"at":61140,"app":{"method":"POST","path":"/v0/onboarding/done"}}
+{"at":61140,"event":{"id":"e_0015_46455","type":"onboarding.changed","at":"2026-11-09T19:03:01.140Z","onboarding":{"state":"done"}}}
+{"at":61140,"server":{"status":200,"body":{"state":"done"}}}

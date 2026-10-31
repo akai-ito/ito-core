@@ -27,6 +27,7 @@ import { codexVersion } from "#engine/codex/binary.ts";
 import type { Engine, ToolServer } from "#engine/engine.ts";
 import { createApp } from "#http/app.ts";
 import { createGate, createToken, tokenSetting } from "#http/auth.ts";
+import { leadOf } from "#http/settings.ts";
 import { registerTools, toolsPath } from "#http/tools.ts";
 import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
@@ -44,7 +45,6 @@ export type ServerOptions = {
   readonly dataDirectory: string;
   readonly createEngine: (context: EngineContext) => Engine;
   readonly name: string;
-  readonly agentName?: string;
   readonly clock?: Clock;
   readonly identifiers?: Identifiers;
   readonly limits?: Limits;
@@ -66,6 +66,7 @@ export type EngineContext = {
   readonly info: Info;
   readonly tools: () => ToolServer | undefined;
   readonly skills: () => string;
+  readonly instructions: () => string;
   readonly inMind: () => string;
   readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
 };
@@ -83,6 +84,8 @@ export type Server = {
   readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
+
+const voiceText = readFileSync(new URL("../agent/instructions.md", import.meta.url), "utf8");
 
 const talkRules = readFileSync(new URL("../agent/talk.md", import.meta.url), "utf8").trim();
 
@@ -168,6 +171,7 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     tools: toolServer,
     skills,
+    instructions: () => voiceText.replaceAll("{lead}", () => leadOf(store)) + skills(),
     inMind: () => [memory.inMindText(), motions.inMindText(), callContext()].filter(Boolean).join("\n\n"),
     callTool: (name, input) => callTool(name, input),
   });
@@ -228,18 +232,25 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     log,
   });
-  const agentName = options.agentName ?? "Ari";
   const presence = createPresence();
   const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
   const apns = createApns(() => readApnsCredentials(store), push.hosts, clock);
-  const notifier = createNotifier({ store, apns, clock, presence, agentName, log, reminderMs: push.reminderMs });
+  const notifier = createNotifier({
+    store,
+    apns,
+    clock,
+    presence,
+    agentName: () => leadOf(store),
+    log,
+    reminderMs: push.reminderMs,
+  });
 
   const app = createApp({
     store,
     turns,
     clock,
     schemas,
-    info: { name: options.name, version: packageVersion(), agentName },
+    info: { name: options.name, version: packageVersion() },
     gate: createGate(() => [store.setting(tokenSetting) ?? "", ...store.pairedTokenHashes()].filter(Boolean), clock),
     presence,
     attachments,
@@ -251,6 +262,9 @@ export const createServer = (options: ServerOptions): Server => {
     voiceprints,
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
+    onLeadRenamed: () => {
+      void engine.refresh();
+    },
     logger: options.logger ?? false,
   });
   const listening = new Promise<void>((resolve) => {

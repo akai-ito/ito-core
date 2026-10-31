@@ -184,6 +184,25 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
         .run(topic.id, topic.position, toJson(topic));
       return;
     }
+    case "message.posted": {
+      const { message } = event;
+      database
+        .prepare(
+          "INSERT INTO messages (id, position, role, kind, text, at, outcome) VALUES (?, ?, 'agent', 'post', ?, ?, 'completed')",
+        )
+        .run(message.id, seq, message.text, message.at);
+      return;
+    }
+    case "onboarding.changed": {
+      database
+        .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('onboarding', ?)")
+        .run(toJson(event.onboarding));
+      return;
+    }
+    case "desk.changed": {
+      database.prepare("INSERT OR REPLACE INTO desk (id, body) VALUES (1, ?)").run(toJson(event.desk));
+      return;
+    }
     case "turn.ended": {
       database
         .prepare("UPDATE turns SET outcome = ?, error = ?, status = NULL WHERE id = ?")

@@ -137,7 +137,7 @@ describe("notifications", () => {
       },
       clock: systemClock,
       presence: createPresence(),
-      agentName: "Ari",
+      agentName: () => "Ari",
       log: (message) => {
         logged.set([...logged.get(), message]);
       },

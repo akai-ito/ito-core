@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://akai-ito.github.io/ito-core/protocol/v0/push.schema.json",
   "title": "Ito push notifications",
-  "description": "What the server sends through Apple Push Notification service to a registered device, and only while you're not looking at the conversation: when a reply finishes, when a turn fails, when the agent asks you something, and once more for an ask still waiting after three hours. The text is encrypted on the server with the device's notification key and decrypted on the device by Ari's notification service extension, so Apple sees only ciphertext.",
+  "description": "What the server sends through Apple Push Notification service to a registered device, and only while you're not looking at Ito: when a reply finishes, when a turn fails, when Kumo asks you something or posts from background work, when a card starts waiting on you, and for the morning briefing. How loud each one is follows Kumo's shared manners: quiet during a calendar event, at most one with sound an hour, nothing non-urgent overnight, and urgent always sounds. The text is encrypted on the server with the device's notification key and decrypted on the device by Ito's notification service extension, so Apple sees only ciphertext.",
   "$ref": "#/$defs/Envelope",
   "$defs": {
     "Envelope": {
@@ -32,8 +32,8 @@
               "const": 1
             },
             "interruption-level": {
-              "description": "`time-sensitive` for an ask; `active` for everything else, including the reminder.",
-              "enum": ["active", "time-sensitive"]
+              "description": "Set by the shared manners: `time-sensitive` for an ask or something urgent; `passive` (no sound) during a calendar event, overnight, or once one with sound went out in the last hour; `active` otherwise.",
+              "enum": ["passive", "active", "time-sensitive"]
             },
             "category": {
               "description": "`ask` for an ask and its reminder, so the device can offer the options as actions.",
@@ -67,8 +67,8 @@
       }
     },
     "NotificationKind": {
-      "description": "Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once.",
-      "enum": ["reply", "failed", "ask", "reminder"]
+      "description": "Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once. `post`: Kumo posted into the conversation from background work. `card`: something started waiting on you on the Desk. `briefing`: the morning briefing is ready.",
+      "enum": ["reply", "failed", "ask", "reminder", "post", "card", "briefing"]
     },
     "Notification": {
       "description": "What the device shows, once decrypted.",
@@ -79,7 +79,7 @@
           "$ref": "#/$defs/NotificationKind"
         },
         "text": {
-          "description": "`reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: \"Couldn't finish: \" and the error's message. `ask`: the question. `reminder`: \"Still waiting on one thing: \" and the question.",
+          "description": "`reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: \"Couldn't finish: \" and the error's message. `ask`: the question. `reminder`: \"Still waiting on one thing: \" and the question. `post`: its first line. `card`: the card's title. `briefing`: its first line.",
           "type": "string",
           "minLength": 1
         },
@@ -110,6 +110,10 @@
               "type": "boolean"
             }
           }
+        },
+        "card": {
+          "$ref": "events.schema.json#/$defs/CardId",
+          "description": "`card`: the card, to open the Desk at it."
         }
       }
     }

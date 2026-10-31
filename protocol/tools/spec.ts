@@ -37,7 +37,7 @@ type Socket = {
   readonly closed?: unknown;
 };
 
-const pushLevels: ReadonlySet<string> = new Set(["active", "time-sensitive"]);
+const pushLevels: ReadonlySet<string> = new Set(["passive", "active", "time-sensitive"]);
 
 type EventDefinition = { readonly properties?: { readonly type?: { readonly const?: unknown } } };
 

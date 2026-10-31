@@ -1,7 +1,7 @@
 {"transcript":"59-blocks-in-a-reply","start":"2026-10-28T12:00:00.000Z","scenario":59,"title":"Blocks in a reply","summary":"Ari answers with a Markdown list, a place and choices to tap, the last two as blocks the app draws. Tapping a choice sends its label as an ordinary message.","guarantees":[],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-28T12:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T12:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[]}}}
 {"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"b9a80e96-e760-4e1d-b29c-8431481ad7af","text":"Can you plan our three days in Florence? We land on Friday morning."}}}
 {"at":2000,"event":{"id":"e_0001_22612","type":"message.accepted","at":"2026-10-28T12:00:02.000Z","message":{"id":"b9a80e96-e760-4e1d-b29c-8431481ad7af","role":"user","text":"Can you plan our three days in Florence? We land on Friday morning.","at":"2026-10-28T12:00:02.000Z","position":1}}}
 {"at":2000,"server":{"status":201,"body":{"message":{"id":"b9a80e96-e760-4e1d-b29c-8431481ad7af","role":"user","text":"Can you plan our three days in Florence? We land on Friday morning.","at":"2026-10-28T12:00:02.000Z","position":1}}}}

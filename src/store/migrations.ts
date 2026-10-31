@@ -16,7 +16,11 @@ export const migrations: readonly string[] = [
     at TEXT NOT NULL,
     ended_at TEXT,
     outcome TEXT,
-    error TEXT
+    error TEXT,
+    answers TEXT,
+    attachments TEXT,
+    spoken TEXT,
+    done TEXT
   );
   CREATE TABLE turns (
     id TEXT PRIMARY KEY,
@@ -39,18 +43,14 @@ export const migrations: readonly string[] = [
   CREATE TABLE settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
-  );`,
-  `CREATE TABLE steps (
+  );
+  CREATE TABLE steps (
     id TEXT PRIMARY KEY,
     turn TEXT NOT NULL,
     position INTEGER NOT NULL UNIQUE,
     body TEXT NOT NULL,
     outcome TEXT
   );
-  UPDATE events SET body = json_set(body, '$.message.position', seq)
-    WHERE type IN ('message.accepted', 'message.started');`,
-  `ALTER TABLE messages ADD COLUMN answers TEXT;
-  ALTER TABLE messages ADD COLUMN secret INTEGER NOT NULL DEFAULT 0;
   CREATE TABLE asks (
     id TEXT PRIMARY KEY,
     turn TEXT NOT NULL,
@@ -66,14 +66,14 @@ export const migrations: readonly string[] = [
     notification_key TEXT NOT NULL,
     key_id TEXT NOT NULL,
     registered_at TEXT NOT NULL
-  );`,
-  `ALTER TABLE messages ADD COLUMN attachments TEXT;
+  );
   CREATE TABLE attachments (
     id TEXT PRIMARY KEY,
     body TEXT NOT NULL,
     sha256 TEXT NOT NULL,
     at TEXT NOT NULL,
-    message TEXT
+    message TEXT,
+    kept INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE tokens (
     hash TEXT PRIMARY KEY,
@@ -84,14 +84,16 @@ export const migrations: readonly string[] = [
     hash TEXT PRIMARY KEY,
     expires_at TEXT NOT NULL,
     device_name TEXT
-  );`,
-  `CREATE TABLE memory_changes (
+  );
+  CREATE TABLE memory_changes (
     id TEXT PRIMARY KEY,
     address TEXT NOT NULL,
     title TEXT NOT NULL,
     file TEXT NOT NULL,
     commit_sha TEXT NOT NULL,
-    at TEXT NOT NULL
+    at TEXT NOT NULL,
+    before_sha TEXT,
+    note TEXT
   );
   CREATE INDEX memory_changes_by_address ON memory_changes (address, at);
   CREATE TABLE memory_chunks (
@@ -104,30 +106,19 @@ export const migrations: readonly string[] = [
     vector BLOB
   );
   CREATE INDEX memory_chunks_by_address ON memory_chunks (address);
-  CREATE VIRTUAL TABLE memory_text USING fts5(text);`,
-  `INSERT INTO settings (key, value)
-    SELECT 'capability:reports:values', json_object('token', value) FROM settings
-    WHERE key = 'reports_github_token' AND value != '';
-  INSERT INTO settings (key, value)
-    SELECT 'capability:reports:on', 'true' FROM settings WHERE key = 'reports_github_token' AND value != '';
-  DELETE FROM settings WHERE key = 'reports_github_token';`,
-  `ALTER TABLE memory_changes ADD COLUMN before_sha TEXT;`,
-  `ALTER TABLE messages ADD COLUMN spoken TEXT;
+  CREATE VIRTUAL TABLE memory_text USING fts5(text);
   CREATE TABLE calls (
     id TEXT PRIMARY KEY,
     position INTEGER NOT NULL,
     body TEXT NOT NULL,
     ended INTEGER NOT NULL DEFAULT 0
-  );`,
-  `ALTER TABLE memory_changes ADD COLUMN note TEXT;`,
-  `CREATE TABLE topics (
+  );
+  CREATE TABLE topics (
     id TEXT PRIMARY KEY,
     position INTEGER NOT NULL UNIQUE,
     body TEXT NOT NULL
-  );`,
-  `ALTER TABLE messages ADD COLUMN ticks TEXT;
-  ALTER TABLE attachments ADD COLUMN kept INTEGER NOT NULL DEFAULT 0;`,
-  `CREATE TABLE motions (
+  );
+  CREATE TABLE motions (
     id TEXT PRIMARY KEY,
     position INTEGER NOT NULL,
     status TEXT NOT NULL,
@@ -143,14 +134,9 @@ export const migrations: readonly string[] = [
   CREATE TABLE motion_states (
     motion TEXT PRIMARY KEY,
     state TEXT NOT NULL
+  );
+  CREATE TABLE desk (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    body TEXT NOT NULL
   );`,
-  `ALTER TABLE messages DROP COLUMN secret;
-  ALTER TABLE messages DROP COLUMN ticks;
-  DELETE FROM events WHERE type = 'plan.ticked';
-  UPDATE events SET body = json_remove(body, '$.message.secret', '$.message.ticks', '$.message.spoken.corrections')
-    WHERE type IN ('message.accepted', 'message.amended');
-  UPDATE events SET body = json_remove(body, '$.ask.secret') WHERE type IN ('ask.started', 'ask.ended');
-  UPDATE asks SET body = json_remove(body, '$.secret');
-  UPDATE messages SET spoken = json_remove(spoken, '$.corrections') WHERE spoken IS NOT NULL;
-  DELETE FROM settings WHERE key = 'vocabulary_learned';`,
 ];

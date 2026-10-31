@@ -1,5 +1,4 @@
 import { once } from "node:events";
-import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -21,8 +20,6 @@ import { createSidecarVoice, voiceDirectory, voiceModels } from "#voice/sidecar.
 export const defaultPort = 8787;
 
 export const tailnetPort = 8443;
-
-const instructionsFile = new URL("../../agent/instructions.md", import.meta.url);
 
 type EngineName = "codex" | "demo";
 
@@ -63,19 +60,17 @@ const toEngineFactory = (engine: EngineName, paths: Paths): ServerOptions["creat
         settings.setSetting(modelSetting, "demo");
         return createScriptEngine(systemClock, demoScripts, callTool);
       }
-    : ({ settings, log, info, tools, skills, inMind }: EngineContext) => {
-        const voice = readFileSync(instructionsFile, "utf8");
-        return createCodexEngine({
+    : ({ settings, log, info, tools, instructions, inMind }: EngineContext) =>
+        createCodexEngine({
           codexHome: paths.codexHome,
           workspace: paths.workspace,
-          instructions: () => voice + skills(),
+          instructions,
           context: inMind,
           settings,
           log,
           info,
           tools,
         });
-      };
 
 const firstRunMessage = (token: string, port: number): string =>
   [

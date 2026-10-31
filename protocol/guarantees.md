@@ -39,6 +39,13 @@ where the protocol has to make it possible, marked *App*.
 | G29 | **Topics mark where the subject changed.** When you change the subject, Ito puts a label of a few plain words on the message that changed it, just after the turn, typed or spoken, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
 | G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Ari can't start or change a trip without a cover, a photo for every place and every stop at its place, or any thing with a title over 28 characters. Forgetting a thing asks you first. | 62, 63, 64 |
+| G33 | **The Desk is home.** The briefing, what's coming up and what's waiting on you come whole in the snapshot and in every change, so an app never pieces it together. The morning briefing comes once, at the first calm moment after your time, and is gone by the afternoon. | 65, 68 |
+| G34 | **Waiting on you stays until it's done.** A card waits whatever the date, shows when the box is acting on your answer, and leaves only when that's done. | 65, 67 |
+| G35 | **Every mail is read, and only work becomes work.** A quick model judges each new mail by its consequences, not its tone; only mail with work to do starts a short-lived work thread, and the conversation stays clean. | 66 |
+| G36 | **Kumo never sends what you'd write.** Replies to people are drafts in your Drafts folder and cards on the Desk; you send them from Mail. | 66 |
+| G37 | **The calendar goes through the box.** Events, holds and invite answers are written to iCloud by the box, so they land while your phone sleeps; an invite is held on Kumo's calendar until you answer. | 67 |
+| G38 | **Kumo picks the moment; manners pick the volume.** A notification lands when Kumo sends it. It's quiet during a calendar event and overnight, at most one an hour has sound, and urgent always sounds. | 18, 21, 68 |
+| G39 | **Getting started reads before it asks.** Kumo reads your recent mail and calendar first, every app sees how far it has got, and its few questions come as ordinary messages in the conversation. What it believes about you waits for your word, and getting started ends when you say so. | 69 |
 
 ## Scenario by scenario
 
@@ -194,6 +201,7 @@ where the protocol has to make it possible, marked *App*.
   Markdown stripped, and the reply's id so a tap opens Ari there. A failed turn arrives as "Couldn't
   finish: " and the error's message. (G15)
 - The notification's text travels encrypted with the device's own key. (G18)
+- A second notification within the hour comes quietly, as `passive`. (G38)
 
 ### 19 · [Ari asks before acting](transcripts/19-ari-asks-before-acting.jsonl)
 
@@ -213,6 +221,8 @@ where the protocol has to make it possible, marked *App*.
 - An ask made while you're away is a time-sensitive notification carrying its options and whether a
   typed answer fits, so you can answer from the notification. That answer is an ordinary send.
   (G15, G16, G18)
+- The reply that follows within the hour comes quietly, as `passive`; the ask, being urgent, sounded.
+  (G38)
 
 ### 22 · [Waiting](transcripts/22-waiting.jsonl)
 
@@ -425,6 +435,34 @@ where the protocol has to make it possible, marked *App*.
 
 - Ari keeps a picture from the web on the server before showing it, and the block names it as an
   attachment, with its source and credit. (G31)
+
+### 65 · [The Desk](transcripts/65-the-desk.jsonl)
+
+- The Desk comes whole: in the snapshot, from `GET /v0/desk`, and in every `desk.changed`. (G33)
+- Answering a card shows it `working` until the box has acted, then removes it or puts its result
+  in its place. Background work may post one line into the conversation. (G34)
+
+### 66 · [A mail arrives](transcripts/66-a-mail-arrives.jsonl)
+
+- A new mail goes through the attention pass; work runs in a work thread, which may change the
+  calendar, put a draft on the Desk and post one line into the conversation. (G35, G36)
+
+### 67 · [An invite](transcripts/67-an-invite.jsonl)
+
+- An invite is held on Kumo's calendar, shown with its clash check, and answered through iCloud
+  when you tap. (G34, G37)
+
+### 68 · [The morning briefing](transcripts/68-the-morning-briefing.jsonl)
+
+- The morning briefing waits for your time and a calm moment, arrives as a quiet notification, and
+  is marked seen when an app shows it. (G33, G38)
+
+### 69 · [Getting started](transcripts/69-getting-started.jsonl)
+
+- On a fresh box the snapshot carries `onboarding`. Connecting a mail source starts the catch-up,
+  and `onboarding.changed` carries its progress, then what it found. (G39)
+- Kumo's question arrives as a post; your answer is an ordinary message. A belief you confirm
+  shows its `answer`, and finishing ends getting started for every app. (G39)
 
 ## Not in this version
 

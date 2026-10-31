@@ -1,7 +1,7 @@
 {"transcript":"53-an-app-asks-first","start":"2026-10-28T09:00:00.000Z","scenario":53,"title":"An app asks first","summary":"Adding a calendar event needs your approval before the app runs it. The approval waits inside the running turn; you tap Allow, the same turn carries on, and the event is added.","guarantees":["G28"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-10-28T09:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[]}}
+{"at":0,"event":{"type":"snapshot","at":"2026-10-28T09:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[]}}}
 {"at":1000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"ecf0acb3-3ee8-433c-a4ea-4443d713da17","text":"Add a reminder to call Mum on Sunday at 2."}}}
 {"at":1000,"event":{"id":"e_0001_85104","type":"message.accepted","at":"2026-10-28T09:00:01.000Z","message":{"id":"ecf0acb3-3ee8-433c-a4ea-4443d713da17","role":"user","text":"Add a reminder to call Mum on Sunday at 2.","at":"2026-10-28T09:00:01.000Z","position":1}}}
 {"at":1000,"server":{"status":201,"body":{"message":{"id":"ecf0acb3-3ee8-433c-a4ea-4443d713da17","role":"user","text":"Add a reminder to call Mum on Sunday at 2.","at":"2026-10-28T09:00:01.000Z","position":1}}}}

@@ -48,6 +48,9 @@
           "$ref": "#/$defs/MessageEnded"
         },
         {
+          "$ref": "#/$defs/MessagePosted"
+        },
+        {
           "$ref": "#/$defs/AskStarted"
         },
         {
@@ -85,6 +88,12 @@
         },
         {
           "$ref": "#/$defs/MotionRemoved"
+        },
+        {
+          "$ref": "#/$defs/DeskChanged"
+        },
+        {
+          "$ref": "#/$defs/OnboardingChanged"
         }
       ]
     },
@@ -181,8 +190,8 @@
       }
     },
     "MessageKind": {
-      "description": "Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as \"I'll check current prices first.\"; an app may show notes as live detail instead of in the conversation. Hide a kind you don't recognise.",
-      "enum": ["reply", "note"]
+      "description": "Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as \"I'll check current prices first.\"; an app may show notes as live detail instead of in the conversation. A `post` is a message Kumo wrote outside a turn, from work it did in the background, such as \"How did the QRT interview go?\". Hide a kind you don't recognise.",
+      "enum": ["reply", "note", "post"]
     },
     "Message": {
       "description": "One message in the conversation. Messages are ordered by when they began.",
@@ -201,7 +210,7 @@
         },
         "turn": {
           "$ref": "#/$defs/TurnId",
-          "description": "Agent messages only: the turn that wrote it."
+          "description": "Replies and notes only: the turn that wrote it."
         },
         "text": {
           "description": "GitHub-flavoured Markdown, exactly as written. While a message is still being written, the text so far. Empty for a message that only carries attachments, and for a reply that stands in for a turn that failed or was cut off before writing. A reply may hold `ari:` blocks, described in [the blocks schema](blocks.schema.json).",
@@ -240,6 +249,10 @@
         "error": {
           "$ref": "#/$defs/Error",
           "description": "Present when the outcome is `failed`."
+        },
+        "done": {
+          "$ref": "#/$defs/DoneId",
+          "description": "User messages only: the Done entry this message replies to, such as a correction to one of Kumo's calls."
         }
       },
       "if": {
@@ -250,7 +263,7 @@
         }
       },
       "then": {
-        "required": ["kind", "turn"],
+        "required": ["kind"],
         "properties": {
           "kind": {
             "$ref": "#/$defs/MessageKind"
@@ -259,7 +272,30 @@
             "$ref": "#/$defs/TurnId"
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "agent"
+              },
+              "kind": {
+                "enum": ["reply", "note"]
+              }
+            },
+            "required": ["role", "kind"]
+          },
+          "then": {
+            "required": ["turn"],
+            "properties": {
+              "turn": {
+                "$ref": "#/$defs/TurnId"
+              }
+            }
+          }
+        }
+      ]
     },
     "AttachmentKind": {
       "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",
@@ -707,9 +743,22 @@
     },
     "Snapshot": {
       "title": "snapshot",
-      "description": "The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.",
+      "description": "The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation and of the Desk with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.",
       "type": "object",
-      "required": ["type", "at", "reason", "messages", "has_more", "turn", "next", "steps", "asks", "calls", "topics"],
+      "required": [
+        "type",
+        "at",
+        "reason",
+        "messages",
+        "has_more",
+        "turn",
+        "next",
+        "steps",
+        "asks",
+        "calls",
+        "topics",
+        "desk"
+      ],
       "properties": {
         "id": {
           "$ref": "#/$defs/EventId"
@@ -781,6 +830,13 @@
           "items": {
             "$ref": "#/$defs/Topic"
           }
+        },
+        "desk": {
+          "$ref": "#/$defs/Desk"
+        },
+        "onboarding": {
+          "$ref": "#/$defs/Onboarding",
+          "description": "Present until getting started is done."
         }
       }
     },
@@ -1554,6 +1610,679 @@
         },
         "motion": {
           "$ref": "#/$defs/MotionId"
+        }
+      }
+    },
+    "MessagePosted": {
+      "title": "message.posted",
+      "description": "Kumo posted a message into the conversation from work it did in the background, outside any turn. It arrives whole.",
+      "type": "object",
+      "required": ["id", "type", "at", "message"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.posted"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/Message"
+        }
+      }
+    },
+    "BriefingId": {
+      "description": "Opaque. The server makes it for each briefing.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "CardId": {
+      "description": "Opaque. The server makes it for each card.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "DoneId": {
+      "description": "Opaque. The server makes it for each entry.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "JobId": {
+      "description": "Opaque. The server makes it when Kumo schedules a look.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "CalendarItemId": {
+      "description": "Opaque. The server makes it for each event it shows.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "When": {
+      "description": "An instant, such as `2026-11-12T14:00:00Z`, or for an all-day event a date, such as `2026-11-12`.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2}))?$"
+    },
+    "CalendarItem": {
+      "description": "An event on one of your calendars, as the box reads it from iCloud. Open it with the event whose `uid` matches, in Apple's own views.",
+      "type": "object",
+      "required": ["id", "uid", "title", "start", "end", "all_day", "calendar"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/CalendarItemId"
+        },
+        "uid": {
+          "description": "The event's iCalendar UID, which finds it on the phone.",
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/When"
+        },
+        "end": {
+          "$ref": "#/$defs/When"
+        },
+        "all_day": {
+          "type": "boolean"
+        },
+        "location": {
+          "type": "string"
+        },
+        "calendar": {
+          "description": "Which calendar it's on. `kumo` is true for Kumo's own calendar of holds, travel and prep.",
+          "type": "object",
+          "required": ["name", "kumo"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "kumo": {
+              "type": "boolean"
+            }
+          }
+        },
+        "leave_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When to leave to get there on time, when Kumo worked it out."
+        },
+        "motion": {
+          "$ref": "#/$defs/MotionId",
+          "description": "The thing in motion it belongs to, such as the Florence trip."
+        },
+        "status": {
+          "description": "`hold` for a time Kumo is keeping free, `tentative` for maybe, `confirmed` otherwise.",
+          "enum": ["hold", "tentative", "confirmed"]
+        }
+      }
+    },
+    "BriefingLine": {
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "description": "One line, plain words.",
+          "type": "string",
+          "minLength": 1
+        },
+        "motion": {
+          "$ref": "#/$defs/MotionId",
+          "description": "The thing in motion it's about."
+        },
+        "card": {
+          "$ref": "#/$defs/CardId",
+          "description": "The card waiting on you that it's about."
+        }
+      }
+    },
+    "Briefing": {
+      "description": "Kumo's briefing at the top of the Desk: `morning` once a day at the first calm moment, or `since` for what happened after you read the morning one. The box drops it at 14:00 local, or when a newer one replaces it.",
+      "type": "object",
+      "required": ["id", "kind", "at", "lines", "handled"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/BriefingId"
+        },
+        "kind": {
+          "enum": ["morning", "since"]
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "lines": {
+          "description": "What matters, most important first. Only what needs you or changed your plans.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/BriefingLine"
+          }
+        },
+        "handled": {
+          "description": "How many small things Kumo handled without you, for \"Also handled 9 small things\".",
+          "type": "integer",
+          "minimum": 0
+        },
+        "read_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When an app first showed it, as told with `POST /v0/desk/briefing/{briefing}/read`."
+        }
+      }
+    },
+    "Slot": {
+      "description": "A time Kumo offers.",
+      "type": "object",
+      "required": ["start", "end"],
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "end": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "note": {
+          "description": "Such as \"WFH day\".",
+          "type": "string"
+        }
+      }
+    },
+    "Card": {
+      "description": "Something waiting on you on the Desk. It stays until it's done, whatever the date. Draw its buttons from `options`; `allows_text` offers a typed answer, which for a draft asks for a change, such as \"a bit more casual\". Its kind's payload sits under a field of the same name. Show a kind you don't recognise by its title and options.",
+      "type": "object",
+      "required": ["id", "kind", "at", "title", "options", "allows_text"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/CardId"
+        },
+        "kind": {
+          "description": "`draft`, `invite`, `times`, `question` or `offer`.",
+          "enum": ["draft", "invite", "times", "question", "offer"]
+        },
+        "motion": {
+          "$ref": "#/$defs/MotionId"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it began waiting, for \"since Wed\"."
+        },
+        "title": {
+          "description": "One line, such as \"Draft to Poppy\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/AskOption"
+          }
+        },
+        "allows_text": {
+          "type": "boolean"
+        },
+        "state": {
+          "description": "`working` while the box acts on your answer, such as rewriting a draft. Absent while it waits on you.",
+          "const": "working"
+        },
+        "draft": {
+          "description": "A reply Kumo wrote into your Drafts folder. Kumo never sends it: open it in Mail with `message://` and the draft's Message-ID, and send it yourself.",
+          "type": "object",
+          "required": ["account", "from", "to", "subject", "body", "message_id"],
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "description": "The mail account it's in, such as `icloud` or `outlook`.",
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cc": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "subject": {
+              "type": "string"
+            },
+            "body": {
+              "description": "Plain text, as it will be sent.",
+              "type": "string"
+            },
+            "message_id": {
+              "description": "The draft's own Message-ID, without angle brackets.",
+              "type": "string",
+              "minLength": 1
+            },
+            "in_reply_to": {
+              "description": "The Message-ID of the mail it answers.",
+              "type": "string"
+            }
+          }
+        },
+        "invite": {
+          "description": "An invitation, held on Kumo's calendar until you answer; your answer goes back through iCloud.",
+          "type": "object",
+          "required": ["event"],
+          "additionalProperties": false,
+          "properties": {
+            "event": {
+              "$ref": "#/$defs/CalendarItem"
+            },
+            "clash": {
+              "$ref": "#/$defs/CalendarItem",
+              "description": "Something already at that time."
+            }
+          }
+        },
+        "times": {
+          "description": "Times to check against your work calendar, which Kumo can't see. Answer with the slots that are clear.",
+          "type": "object",
+          "required": ["purpose", "slots"],
+          "additionalProperties": false,
+          "properties": {
+            "purpose": {
+              "description": "Such as \"A call with Poppy\".",
+              "type": "string"
+            },
+            "slots": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/Slot"
+              }
+            }
+          }
+        },
+        "question": {
+          "description": "Something Kumo isn't sure about, such as whether a mail it binned was right.",
+          "type": "object",
+          "required": ["text"],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "offer": {
+          "description": "Kumo offers to take something on, such as a need that keeps coming up. Accepting lets Kumo do it in the background.",
+          "type": "object",
+          "required": ["text"],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "capability": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "draft"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["draft"],
+            "properties": {
+              "draft": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "invite"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["invite"],
+            "properties": {
+              "invite": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "times"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["times"],
+            "properties": {
+              "times": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "question"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["question"],
+            "properties": {
+              "question": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "offer"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["offer"],
+            "properties": {
+              "offer": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Desk": {
+      "description": "Home: the briefing, what's coming up and what's waiting on you.",
+      "type": "object",
+      "required": ["coming_up", "waiting"],
+      "properties": {
+        "briefing": {
+          "$ref": "#/$defs/Briefing"
+        },
+        "coming_up": {
+          "description": "Events in the next 36 hours or so, plus anything big this week, in time order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CalendarItem"
+          }
+        },
+        "waiting": {
+          "description": "Cards waiting on you, oldest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Card"
+          }
+        }
+      }
+    },
+    "DeskChanged": {
+      "title": "desk.changed",
+      "description": "Something on the Desk changed. It carries the whole Desk, which is small: replace yours.",
+      "type": "object",
+      "required": ["id", "type", "at", "desk"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "desk.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "desk": {
+          "$ref": "#/$defs/Desk"
+        }
+      }
+    },
+    "DoneEntry": {
+      "description": "One thing Kumo did without you, for the Done list. Reply to it with a message whose `done` names it, and the correction becomes a preference.",
+      "type": "object",
+      "required": ["id", "at", "text", "undo", "quiet"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/DoneId"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "text": {
+          "description": "What Kumo did, such as \"Unsubscribed from Deliveroo promos and binned 3\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "description": "Why, in a line.",
+          "type": "string"
+        },
+        "mail": {
+          "description": "The mail it was about.",
+          "type": "object",
+          "required": ["message_id", "from", "subject"],
+          "additionalProperties": false,
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            }
+          }
+        },
+        "event": {
+          "$ref": "#/$defs/CalendarItem",
+          "description": "The event it added or changed."
+        },
+        "motion": {
+          "$ref": "#/$defs/MotionId"
+        },
+        "undo": {
+          "description": "Whether `POST /v0/done/{entry}/undo` can take it back.",
+          "type": "boolean"
+        },
+        "quiet": {
+          "description": "A mail Kumo read and left alone: \"read, nothing needed\". Fold these into one line a day.",
+          "type": "boolean"
+        }
+      }
+    },
+    "Job": {
+      "description": "A look Kumo scheduled for itself: a follow-up, a check-in after an event, or a standing job it keeps doing. It's judged when it comes due, and moves itself if the moment is bad.",
+      "type": "object",
+      "required": ["id", "why"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/JobId"
+        },
+        "why": {
+          "description": "Such as \"Ask how the QRT interview went\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it's next due."
+        },
+        "after_event": {
+          "description": "Due after this event ends.",
+          "type": "object",
+          "required": ["uid", "title"],
+          "additionalProperties": false,
+          "properties": {
+            "uid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          }
+        },
+        "standing": {
+          "description": "A standing job, with what it keeps looking for, such as \"startups I'd join\".",
+          "type": "object",
+          "required": ["ask"],
+          "additionalProperties": false,
+          "properties": {
+            "ask": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "motion": {
+          "$ref": "#/$defs/MotionId"
+        }
+      }
+    },
+    "BeliefId": {
+      "description": "Opaque. The server makes it for each belief it checks with you.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "Belief": {
+      "description": "Something Kumo believes about you from memory, for you to confirm or correct before it relies on it.",
+      "type": "object",
+      "required": ["id", "text", "page"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/BeliefId"
+        },
+        "text": {
+          "description": "Such as \"You're training for a sub-20 5K\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "page": {
+          "$ref": "#/$defs/MemoryAddress"
+        },
+        "answer": {
+          "description": "How you answered it: `true`, or `corrected` once Kumo fixed it from your correction.",
+          "enum": ["true", "corrected"]
+        }
+      }
+    },
+    "Onboarding": {
+      "description": "Getting started: Kumo reads your recent mail and calendar and talks with you briefly in the conversation, then shows what it found: beliefs to confirm, bookings it added and what it put in motion.",
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "description": "`reading` while the catch-up runs, `ready` when the proposal is there, `done` once you've finished getting started.",
+          "enum": ["reading", "ready", "done"]
+        },
+        "progress": {
+          "description": "`reading`: how far the catch-up is.",
+          "type": "object",
+          "required": ["mails_read", "mails_total"],
+          "additionalProperties": false,
+          "properties": {
+            "mails_read": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mails_total": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "proposal": {
+          "type": "object",
+          "required": ["beliefs", "added", "motions"],
+          "additionalProperties": false,
+          "properties": {
+            "beliefs": {
+              "description": "With memory from before, a few beliefs to confirm: \"Here's what I know. Still true?\"",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Belief"
+              }
+            },
+            "added": {
+              "description": "Future bookings the catch-up put on your calendar.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/CalendarItem"
+              }
+            },
+            "motions": {
+              "description": "The things the catch-up put in motion, for \"Here's what's in motion\".",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MotionId"
+              }
+            }
+          }
+        }
+      }
+    },
+    "OnboardingChanged": {
+      "title": "onboarding.changed",
+      "description": "Getting started moved on. It carries the whole state.",
+      "type": "object",
+      "required": ["id", "type", "at", "onboarding"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "onboarding.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "onboarding": {
+          "$ref": "#/$defs/Onboarding"
         }
       }
     }

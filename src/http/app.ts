@@ -18,6 +18,7 @@ import { registerMemory } from "#http/memory.ts";
 import { registerMotion } from "#http/motion.ts";
 import type { Motions } from "#motion/motion.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
+import { leadOf, notBeforeOf, registerSettings } from "#http/settings.ts";
 import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
 import type { VoiceLoop } from "#voice/loop.ts";
@@ -32,7 +33,7 @@ import type { Error as ErrorBody, Presence as PresenceBody, RegisterDevice } fro
 import type { Store } from "#store/store.ts";
 import { toRetryFailure, type Turns } from "#turns/turns.ts";
 
-export type ServerInfo = { readonly name: string; readonly version: string; readonly agentName: string };
+export type ServerInfo = { readonly name: string; readonly version: string };
 
 export type AppOptions = {
   readonly store: Store;
@@ -51,6 +52,7 @@ export type AppOptions = {
   readonly voiceprints: Voiceprints;
   readonly models: ListModels;
   readonly heartbeatMs: number;
+  readonly onLeadRenamed: () => void;
   readonly logger: FastifyServerOptions["logger"];
 };
 
@@ -96,6 +98,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     voiceprints,
     models,
     heartbeatMs,
+    onLeadRenamed,
     logger,
   } = options;
   const protocol = protocolVersion(schemas.document);
@@ -154,8 +157,9 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       name: info.name,
       version: info.version,
       protocol,
+      lead: { name: leadOf(store) },
+      briefing: { not_before: notBeforeOf(store) },
       agent: {
-        name: info.agentName,
         ...(model && { model }),
         ...(effort && { effort }),
         ...(account && { account: JSON.parse(account) as unknown }),
@@ -166,6 +170,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   });
 
   registerCapabilities(app, host, schemaFor);
+  registerSettings(app, { store, onLeadRenamed, schemaFor });
   registerMemory(app, memory, schemaFor);
   registerMotion(app, motions, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });

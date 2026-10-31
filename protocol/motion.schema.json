@@ -661,6 +661,260 @@
       "items": {
         "$ref": "#/$defs/Change"
       }
+    },
+    "Person": {
+      "description": "Someone involved, such as a recruiter or a friend coming along.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "description": "Such as `recruiter` or `hiring manager`.",
+          "type": "string"
+        },
+        "page": {
+          "description": "Their page in memory, such as `memory:people/poppy`.",
+          "$ref": "events.schema.json#/$defs/MemoryAddress"
+        }
+      }
+    },
+    "Next": {
+      "description": "The next step, and when, if it has a time.",
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "$ref": "#/$defs/LocalDateTime"
+        }
+      }
+    },
+    "WaitingOn": {
+      "description": "Who it's waiting on, and since when.",
+      "type": "object",
+      "required": ["who", "since"],
+      "additionalProperties": false,
+      "properties": {
+        "who": {
+          "type": "string",
+          "minLength": 1
+        },
+        "since": {
+          "$ref": "#/$defs/Day"
+        }
+      }
+    },
+    "PursuitOption": {
+      "description": "One option being pursued, such as a role at one firm or a flat, moving through stages.",
+      "type": "object",
+      "required": ["id", "name", "stage", "people"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "name": {
+          "description": "Such as `Senior AI Engineer`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "org": {
+          "description": "Such as `QRT`.",
+          "type": "string"
+        },
+        "stage": {
+          "description": "Where it stands, in a word or two, such as `Interviews` or `Screened`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Person"
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Next"
+        },
+        "waiting_on": {
+          "$ref": "#/$defs/WaitingOn"
+        },
+        "note": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "role": {
+          "description": "Such as `Senior AI Engineer`, when `name` is the firm or the flat.",
+          "type": "string"
+        }
+      }
+    },
+    "Pursuit": {
+      "title": "pursuit",
+      "description": "One outcome, several options moving through stages: a job search, a flat hunt, a raise, a hire. Kumo writes What you're after and How you play it from what you say, and asks when they don't cover a case.",
+      "type": "object",
+      "required": ["after", "play", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "description": "What you're after, in a line or two.",
+          "type": "string",
+          "minLength": 1
+        },
+        "play": {
+          "description": "How you play it: the rules Kumo follows for you, one a line.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "options": {
+          "description": "Best first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PursuitOption"
+          }
+        }
+      }
+    },
+    "PursuitState": {
+      "description": "A pursuit has nothing to tick.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "Occasion": {
+      "title": "occasion",
+      "description": "A dated event with people and prep: an appointment, a birthday, a dinner, a wedding.",
+      "type": "object",
+      "required": ["start", "people", "prep"],
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/LocalDateTime"
+        },
+        "end": {
+          "$ref": "#/$defs/LocalDateTime"
+        },
+        "timezone": {
+          "description": "An IANA time zone, such as `Europe/London`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "where": {
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Person"
+          }
+        },
+        "prep": {
+          "description": "What to do before, oldest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Todo"
+          }
+        },
+        "check_in": {
+          "description": "Whether Kumo asks how it went afterwards.",
+          "type": "boolean"
+        },
+        "cover": {
+          "$ref": "#/$defs/Photo"
+        },
+        "all_day": {
+          "description": "A day-long occasion, such as a birthday; its `start` and `end` times don't matter.",
+          "type": "boolean"
+        }
+      }
+    },
+    "OccasionState": {
+      "description": "Your ticks on the prep, by item id.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prep": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ItemId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Tick"
+          }
+        }
+      }
+    },
+    "CaseEntry": {
+      "description": "One moment in a case's back-and-forth.",
+      "type": "object",
+      "required": ["id", "at", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "at": {
+          "$ref": "#/$defs/Day"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Case": {
+      "title": "case",
+      "description": "A problem with back-and-forth until it's resolved: the boiler, a refund, a visa.",
+      "type": "object",
+      "required": ["problem", "status", "timeline"],
+      "additionalProperties": false,
+      "properties": {
+        "problem": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "description": "Where it stands, in a line, such as \"Engineer booked for Tuesday\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "waiting_on": {
+          "$ref": "#/$defs/WaitingOn"
+        },
+        "timeline": {
+          "description": "Oldest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaseEntry"
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Next"
+        }
+      }
+    },
+    "CaseState": {
+      "description": "A case has nothing to tick.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
     }
   }
 }

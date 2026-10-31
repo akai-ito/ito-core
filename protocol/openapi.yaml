@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.15"
+  version: "0.16"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -61,7 +61,11 @@ tags:
   - name: Connecting
     description: Find out what a server speaks and who it is.
   - name: Conversation
-    description: Send messages, follow the conversation and read its history.
+    description: Follow everything on one event stream.
+  - name: Onboarding
+    description: Getting started, with what Kumo found and the beliefs it checks with you.
+  - name: Desk
+    description: Home, with the briefing, Coming up, Waiting on you, Done, Kumo's scheduled looks and the calendar.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
   - name: Turns
@@ -152,8 +156,9 @@ paths:
                 name: studio
                 version: 0.9.0
                 protocol: "0.9"
+                lead: { name: Kumo }
+                briefing: { not_before: "07:30" }
                 agent:
-                  name: Ari
                   model: gpt-6.1-sol
                   effort: low
                   account: { kind: chatgpt, plan: plus, email_domain: example.com }
@@ -165,7 +170,7 @@ paths:
     get:
       tags: [Conversation]
       operationId: streamEvents
-      summary: Follow the conversation
+      summary: Follow the conversation and the Desk
       description: |
         One long-lived `text/event-stream` response that carries every event, in order. Each
         Server-Sent Event has an `id:` line (the event's id) and a `data:` line (the event as JSON,
@@ -175,7 +180,7 @@ paths:
         Send the id of the last event you applied as `Last-Event-ID` to resume: you receive every
         later event exactly once. When the server can't resume from it (there was none, it doesn't
         know it, or you are too far behind), the stream starts with a `snapshot` instead; replace
-        your view of the conversation with it.
+        your view of the conversation and of the Desk with it.
 
         A turn runs to its end whether or not anyone is connected.
       parameters:
@@ -202,6 +207,71 @@ paths:
         "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/onboarding:
+    get:
+      tags: [Onboarding]
+      operationId: getOnboarding
+      summary: Read how getting started is going
+      description: |
+        Where getting started stands: the catch-up's progress while Kumo reads, then what it found:
+        beliefs to confirm, bookings it added and what it put in motion. `onboarding.changed`
+        carries every change, and the snapshot holds it until getting started is done. The short
+        talk is the conversation's first messages: Kumo asks in ordinary messages, and you answer
+        with `POST /v0/messages`.
+      responses:
+        "200":
+          description: The state.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Onboarding" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/onboarding/done:
+    post:
+      tags: [Onboarding]
+      operationId: finishOnboarding
+      summary: Finish getting started
+      description: |
+        Marks getting started done once the app has shown what Kumo found. Every app hears
+        `onboarding.changed` with `done`, and the snapshot leaves `onboarding` out from then on.
+        Finishing again changes nothing.
+      responses:
+        "200":
+          description: Done.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Onboarding" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/onboarding/beliefs/{belief}:
+    post:
+      tags: [Onboarding]
+      operationId: answerBelief
+      summary: Confirm or correct a belief
+      description: |
+        Says a belief is true, or corrects it in your words; Kumo fixes its memory from the correction
+        in the background, and the belief's `answer` follows in `onboarding.changed`.
+      parameters:
+        - name: belief
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/BeliefId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BeliefAnswer" }
+            example: { correction: "Training for the Valencia half now, not a 5K." }
+      responses:
+        "202":
+          description: Taken.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/messages:
     post:
       tags: [Conversation]
@@ -223,7 +293,7 @@ paths:
         send the same message again.
 
         While an ask waits, the message answers it: `message.accepted` for the message comes first,
-        then `ask.ended`.
+        then `ask.ended`. To reply to an entry in the Done list, name it in `done`.
       requestBody:
         required: true
         content:
@@ -302,6 +372,215 @@ paths:
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/done:
+    get:
+      tags: [Desk]
+      operationId: listDone
+      summary: Read what Kumo did
+      description: |
+        The Done list, newest first: what Kumo did without you, and the mail it read and
+        left alone (`quiet`), each with its reason. Page back with `before`.
+      parameters:
+        - name: before
+          in: query
+          required: false
+          description: Return entries older than this one.
+          schema: { $ref: "events.schema.json#/$defs/DoneId" }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: A page of entries.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DonePage" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/jobs:
+    get:
+      tags: [Desk]
+      operationId: listJobs
+      summary: List Kumo's scheduled looks
+      description: |
+        The follow-ups, check-ins and standing jobs Kumo scheduled, soonest first, with those that
+        wait on an event last. To stop one, tell Kumo.
+      responses:
+        "200":
+          description: The jobs.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/done/{entry}/undo:
+    post:
+      tags: [Desk]
+      operationId: undoDone
+      summary: Take back something Kumo did
+      description: |
+        Undoes an entry whose `undo` is true, such as moving a binned mail back to the inbox. The
+        entry stays in the list, marked undone in its text.
+      parameters:
+        - name: entry
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/DoneId" }
+      responses:
+        "200":
+          description: Undone.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DoneResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/desk:
+    get:
+      tags: [Desk]
+      operationId: getDesk
+      summary: Read the Desk
+      description: |
+        Home: the briefing, Coming up and Waiting on you. The snapshot carries it too, and
+        `desk.changed` carries the whole Desk whenever it changes.
+      responses:
+        "200":
+          description: The Desk.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Desk" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/desk/briefing/{briefing}/read:
+    post:
+      tags: [Desk]
+      operationId: readBriefing
+      summary: Say the briefing was seen
+      description: |
+        Tells the box an app showed the briefing, so it can fold it and, later, write a "since this
+        morning" briefing only for what happened after.
+      parameters:
+        - name: briefing
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/BriefingId" }
+      responses:
+        "204":
+          description: Noted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/desk/cards/{card}/answer:
+    post:
+      tags: [Desk]
+      operationId: answerCard
+      summary: Answer a card
+      description: |
+        Answers a card waiting on you: tap one of its `options`, pick the clear `slots` of a
+        `times` card, or type `text`. For a draft, `text` asks for a change, such as "a bit more
+        casual", and Kumo rewrites the same draft. The card shows `state: working` while the box
+        acts, then leaves the Desk when it's done, or comes back changed; `desk.changed` says which.
+      parameters:
+        - name: card
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/CardId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardAnswer" }
+            example: { option: Accept }
+      responses:
+        "202":
+          description: Taken; the box is acting on it.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/calendar/events:
+    post:
+      tags: [Desk]
+      operationId: addEvent
+      summary: Add an event to your calendar
+      description: |
+        Adds an event to your own iCloud calendar through the box, the one path for "Add to
+        calendar". Needs the iCloud source set up.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewEvent" }
+            example: { title: Call Mum, start: "2026-11-01T14:00:00Z", end: "2026-11-01T14:30:00Z" }
+      responses:
+        "201":
+          description: Added.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/lead:
+    put:
+      tags: [Connecting]
+      operationId: renameLead
+      summary: Rename Kumo
+      description: Kumo is the lead's name until you choose another. `GET /v0/server` shows it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Lead" }
+            example: { name: Kumo }
+      responses:
+        "200":
+          description: Renamed.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lead" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/briefing:
+    put:
+      tags: [Desk]
+      operationId: setBriefing
+      summary: Set when the morning briefing may come
+      description: |
+        The morning briefing comes at the first calm moment after `not_before`, local time: when
+        you first open Ito, or the first gap with nothing on your calendar.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BriefingSettings" }
+            example: { not_before: "07:30" }
+      responses:
+        "200":
+          description: Saved.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BriefingSettings" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/turns/{turn}/stop:
     post:
       tags: [Turns]
@@ -1448,8 +1727,8 @@ components:
       properties:
         id: { $ref: "#/components/schemas/CapabilityId" }
         kind:
-          description: "`domain` for a topic of your life (Your life), `hand` for a way Ari acts (Ari's hands)."
-          enum: [domain, hand]
+          description: "`domain` for a topic of your life, `hand` for a way Kumo acts, `source` for an account Kumo reads, such as iCloud for mail and calendar."
+          enum: [domain, hand, source]
         title:
           description: Its name, such as Reports.
           type: string
@@ -1579,6 +1858,9 @@ components:
         problem:
           description: What's wrong with the values, in plain words. Absent when they work.
           type: string
+        summary:
+          description: 'When they work, what connected, such as "Connected: 2 addresses, 4 calendars. Kumo''s calendar added."'
+          type: string
     Event:
       description: One event on the stream; the `type` field says which.
       $ref: "events.schema.json#/$defs/Event"
@@ -1639,9 +1921,96 @@ components:
           items:
             type: string
             pattern: ^\d+\.\d+$
+    BeliefAnswer:
+      description: One of `answer` or `correction`.
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      maxProperties: 1
+      properties:
+        answer: { const: "true" }
+        correction: { type: string, minLength: 1, maxLength: 4000 }
+    DonePage:
+      type: object
+      required: [entries, has_more]
+      properties:
+        entries: { type: array, items: { $ref: "events.schema.json#/$defs/DoneEntry" } }
+        has_more: { type: boolean }
+    DoneResult:
+      type: object
+      required: [entry]
+      properties:
+        entry: { $ref: "events.schema.json#/$defs/DoneEntry" }
+    JobList:
+      type: object
+      required: [jobs]
+      properties:
+        jobs: { type: array, items: { $ref: "events.schema.json#/$defs/Job" } }
+    CardAnswer:
+      description: One of `option`, `slots` or `text`.
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      maxProperties: 1
+      properties:
+        option:
+          description: The label of the option you tapped.
+          type: string
+          minLength: 1
+        slots:
+          description: "`times` cards: the indexes of the slots that are clear, in the card's order."
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: integer, minimum: 0 }
+        text:
+          description: A typed answer; for a draft, the change you want.
+          type: string
+          minLength: 1
+          maxLength: 4000
+    CardResult:
+      type: object
+      required: [card]
+      properties:
+        card: { $ref: "events.schema.json#/$defs/Card" }
+    NewEvent:
+      type: object
+      required: [title, start, end]
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1 }
+        start: { $ref: "events.schema.json#/$defs/When" }
+        end: { $ref: "events.schema.json#/$defs/When" }
+        location: { type: string }
+        notes: { type: string }
+    EventResult:
+      type: object
+      required: [event]
+      properties:
+        event: { $ref: "events.schema.json#/$defs/CalendarItem" }
+    Lead:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          description: What the lead is called; Kumo until you choose another name.
+          type: string
+          minLength: 1
+          maxLength: 40
+          pattern: \S
+    BriefingSettings:
+      type: object
+      required: [not_before]
+      additionalProperties: false
+      properties:
+        not_before:
+          description: The earliest local time the morning briefing may come, such as `07:30`.
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
     ServerInfo:
       type: object
-      required: [name, version, protocol, agent, setup, capabilities]
+      required: [name, version, protocol, lead, agent, briefing, setup, capabilities]
       properties:
         name:
           description: The server's name, usually its host name.
@@ -1653,13 +2022,14 @@ components:
           description: The protocol version of this route, as `MAJOR.MINOR`.
           type: string
           pattern: ^\d+\.\d+$
+        lead:
+          $ref: "#/components/schemas/Lead"
+        briefing:
+          $ref: "#/components/schemas/BriefingSettings"
         agent:
+          description: The model Kumo runs on.
           type: object
-          required: [name]
           properties:
-            name:
-              description: What the agent is called; Ari until you choose another name.
-              type: string
             model:
               description: |
                 The model the agent runs on: the one chosen with `PUT /v0/agent`, or otherwise the one it
@@ -1732,6 +2102,9 @@ components:
           maxItems: 10
           uniqueItems: true
           items: { $ref: "events.schema.json#/$defs/UploadId" }
+        done:
+          description: The Done entry this message replies to, such as a correction to one of Kumo's calls.
+          $ref: "events.schema.json#/$defs/DoneId"
     MessageResult:
       type: object
       required: [message]

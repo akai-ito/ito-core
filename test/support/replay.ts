@@ -195,7 +195,7 @@ export const replay = async (name: string): Promise<void> => {
       dataDirectory: directory,
       createEngine: () => createScriptEngine(clock, scripts, undefined, demoModels, complete),
       name: "studio",
-      agentName: "Ari",
+
       clock,
       push: { hosts: { production: apns.origin, sandbox: apns.origin } },
       capabilities,
