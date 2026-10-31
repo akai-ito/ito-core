@@ -33,6 +33,7 @@ export type NotifierOptions = {
   readonly reminderMs: number;
   readonly timeZone?: string;
   readonly isBusy?: () => boolean;
+  readonly isUrgentPost?: () => boolean;
 };
 
 export type Notifier = { readonly close: () => void };
@@ -98,6 +99,7 @@ export const createNotifier = ({
   reminderMs,
   timeZone = "UTC",
   isBusy = () => false,
+  isUrgentPost = () => false,
 }: NotifierOptions): Notifier => {
   const askingTurns = createCell<ReadonlySet<string>>(new Set());
   const lastSounded = createCell<number | undefined>(undefined);
@@ -196,7 +198,7 @@ export const createNotifier = ({
     if (event.type === "message.posted") {
       notify(
         { kind: "post", text: toFirstLine(withoutBlocks(event.message.text)), message: event.message.id },
-        "active",
+        isUrgentPost() ? "time-sensitive" : "active",
       );
       return;
     }

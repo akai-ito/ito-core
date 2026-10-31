@@ -1,7 +1,8 @@
 import { createCell } from "#cell.ts";
 import { toTurnId, type TurnId } from "#conversation/ids.ts";
 import type { Complete, JsonSchema } from "#engine/engine.ts";
-import type { ModelChoice, ModelOption, Topic } from "#protocol/types.ts";
+import { createQuickChoice } from "#engine/quick-model.ts";
+import type { ModelOption, Topic } from "#protocol/types.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import type { Result } from "#result.ts";
 import type { Exchange, Store } from "#store/store.ts";
@@ -23,8 +24,6 @@ export type TopicsOptions = {
 export const historySetting = "topics_history";
 
 const historyDone = "done";
-
-const quickModel = "luna";
 
 const exchangesPerBatch = 40;
 
@@ -141,12 +140,7 @@ export const createTopics = ({ store, complete, models, info }: TopicsOptions): 
     });
   };
 
-  const quickChoice = async (): Promise<ModelChoice | undefined> => {
-    const listed = await models();
-    const quick = listed.ok ? listed.value.find(({ id }) => id.includes(quickModel)) : undefined;
-    const lowest = quick?.efforts[0];
-    return quick && lowest ? { model: quick.id, effort: lowest.id } : undefined;
-  };
+  const quickChoice = createQuickChoice(models);
 
   const begin = (exchange: Exchange, given: string): void => {
     const topics = store.listTopics();

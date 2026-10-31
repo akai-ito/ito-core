@@ -6,7 +6,11 @@ import { contextRun } from "#tools/context.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 
-export type WorkToolsOptions = { readonly store: Pick<Store, "postMessage">; readonly desk: DeskKeeper };
+export type WorkToolsOptions = {
+  readonly store: Pick<Store, "postMessage">;
+  readonly desk: DeskKeeper;
+  readonly markUrgent?: (isUrgent: boolean) => void;
+};
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
@@ -66,7 +70,9 @@ const toCard = (input: unknown): NewCard | string => {
   }
 };
 
-export const createWorkTools = ({ store, desk }: WorkToolsOptions): readonly Tool[] => {
+const notUrgent = (): void => undefined;
+
+export const createWorkTools = ({ store, desk, markUrgent = notUrgent }: WorkToolsOptions): readonly Tool[] => {
   const posted = createCell<ReadonlySet<string>>(new Set());
   return [
     {
@@ -78,7 +84,13 @@ export const createWorkTools = ({ store, desk }: WorkToolsOptions): readonly Too
         "snag in their plans. At most once per piece of work.",
       inputSchema: {
         type: "object",
-        properties: { text: { type: "string", description: "One or two lines, plain words." } },
+        properties: {
+          text: { type: "string", description: "One or two lines, plain words." },
+          urgent: {
+            type: "boolean",
+            description: "Only when it can't wait: the notification sounds whatever the hour.",
+          },
+        },
         required: ["text"],
         additionalProperties: false,
       },
@@ -88,7 +100,9 @@ export const createWorkTools = ({ store, desk }: WorkToolsOptions): readonly Too
         if (text === "") return Promise.resolve(failed("Give the message's text."));
         if (posted.get().has(run)) return Promise.resolve(failed("You've already posted once for this work."));
         posted.update((current) => new Set([...current, run]));
+        markUrgent(fieldOf(input, "urgent") === true);
         const message = store.postMessage(text);
+        markUrgent(false);
         return Promise.resolve({ text: `Posted into the conversation as ${message.id}.` });
       },
     },

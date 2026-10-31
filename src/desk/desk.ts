@@ -21,6 +21,7 @@ export type Work = (prompt: string) => Promise<Result<string, string>>;
 export type DeskKeeper = {
   readonly addCard: (card: NewCard) => Card;
   readonly cards: () => readonly Card[];
+  readonly removeCard: (id: string) => void;
   readonly answer: (id: string, answer: CardAnswer) => Result<Card, string>;
   readonly handle: (kind: Card["kind"], handler: CardHandler) => void;
   readonly setBriefing: (briefing: Briefing | undefined) => void;
@@ -119,6 +120,9 @@ export const createDesk = ({ store, identifiers, clock, work, info }: DeskOption
   return {
     addCard,
     cards: () => store.desk().waiting,
+    removeCard: (id) => {
+      changeCards((waiting) => waiting.filter((card) => card.id !== id));
+    },
     answer: (id, given) => {
       const card = store.desk().waiting.find((waiting) => waiting.id === id);
       if (!card) return fail("not_found");
