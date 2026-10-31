@@ -133,8 +133,11 @@ describe("capability host", () => {
     const { host } = await startHost(createMemorySettings(switchedOn({ token: "wrong" })));
 
     expect(host.find("echo")).toMatchObject({ state: "needs_you", detail: "The token was rejected." });
-    expect(await host.check("echo", { token: "wrong" })).toEqual({ ok: true, value: "That token is wrong." });
-    expect(await host.check("echo", { token: "secret-2" })).toEqual({ ok: true, value: undefined });
+    expect(await host.check("echo", { token: "wrong" })).toEqual({
+      ok: true,
+      value: { problem: "That token is wrong." },
+    });
+    expect(await host.check("echo", { token: "secret-2" })).toEqual({ ok: true, value: {} });
 
     expect(await host.setUp("echo", { token: "secret-2" })).toMatchObject({ ok: true, value: { state: "on" } });
   });

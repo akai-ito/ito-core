@@ -18,7 +18,12 @@ import { fail, ok, type Result } from "#result.ts";
 import type { Settings } from "#store/store.ts";
 import type { Info } from "#turns/turns.ts";
 
-export type Installed = { readonly id: string; readonly entry: string };
+export type CheckResult = { readonly problem?: string; readonly summary?: string };
+
+export type Builtin = { readonly manifest: Manifest; readonly check: (values: Values) => Promise<CheckResult> };
+
+export type Installed =
+  { readonly id: string; readonly entry: string } | { readonly id: string; readonly builtin: Builtin };
 
 export type CapabilityState = "off" | "setup" | "on" | "needs_you";
 
@@ -45,7 +50,7 @@ export type Host = {
   readonly offered: () => readonly Offered[];
   readonly switchTo: (id: string, on: boolean) => Promise<Result<Capability, HostFailure>>;
   readonly setUp: (id: string, values: Values) => Promise<Result<Capability, HostFailure>>;
-  readonly check: (id: string, values: Values) => Promise<Result<string | undefined, HostFailure>>;
+  readonly check: (id: string, values: Values) => Promise<Result<CheckResult, HostFailure>>;
   readonly connect: (id: string) => Promise<Result<Connection, HostFailure>>;
   readonly call: (
     id: string,
@@ -145,6 +150,11 @@ const toApproval = (given: unknown): Approval | undefined => {
     : undefined;
 };
 
+const toCheckResult = (checked: Result<string | undefined, string>): CheckResult => {
+  const problem = checked.ok ? checked.value : checked.failure;
+  return problem === undefined ? {} : { problem };
+};
+
 const notFound = (id: string): Result<never, HostFailure> =>
   fail({ code: "not_found", detail: `No capability called ${id} is installed.` });
 
@@ -203,8 +213,14 @@ export const createHost = ({
     return next;
   };
 
+  const builtinOf = (id: string): Builtin | undefined => {
+    const found = installed.find((candidate) => candidate.id === id);
+    return found && "builtin" in found ? found.builtin : undefined;
+  };
+
   const spawnProcess = (id: string, isRunner: boolean): ReturnType<typeof startCapabilityProcess> => {
-    const entry = installed.find((candidate) => candidate.id === id)?.entry ?? "";
+    const found = installed.find((candidate) => candidate.id === id);
+    const entry = found && "entry" in found ? found.entry : "";
     return startCapabilityProcess({
       id,
       entry,
@@ -254,6 +270,11 @@ export const createHost = ({
   };
 
   const launch = async (id: string): Promise<void> => {
+    const builtin = builtinOf(id);
+    if (builtin) {
+      update(id, (runner) => ({ ...runner, manifest: builtin.manifest }));
+      return;
+    }
     const started = await spawnProcess(id, true);
     if (!started.ok) {
       update(id, (runner) => ({ ...runner, problem: started.failure }));
@@ -370,15 +391,14 @@ export const createHost = ({
       if (!manifest) return fail({ code: "invalid_values", detail: `${id} hasn't described its setup yet.` });
       const values = toValues(manifest, { ...valuesOf(id), ...given });
       if (!values.ok) return fail({ code: "invalid_values", detail: values.failure });
-      if (process) {
-        const checked = await process.check(values.value);
-        return ok(checked.ok ? checked.value : checked.failure);
-      }
+      const builtin = builtinOf(id);
+      if (builtin) return ok(await builtin.check(values.value));
+      if (process) return ok(toCheckResult(await process.check(values.value)));
       const started = await spawnProcess(id, false);
-      if (!started.ok) return ok(started.failure);
+      if (!started.ok) return ok({ problem: started.failure });
       const checked = await started.value.check(values.value);
       await started.value.stop();
-      return ok(checked.ok ? checked.value : checked.failure);
+      return ok(toCheckResult(checked));
     },
     call: async (id, operation, input, { turn, signal } = {}) => {
       const capability = view(id);

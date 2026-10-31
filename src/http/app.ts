@@ -21,6 +21,7 @@ import { registerModel, type ListModels } from "#http/model.ts";
 import { leadOf, notBeforeOf, registerSettings } from "#http/settings.ts";
 import { registerDesk } from "#http/desk.ts";
 import type { DeskKeeper } from "#desk/desk.ts";
+import type { Calendar } from "#calendar/calendar.ts";
 import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
 import type { VoiceLoop } from "#voice/loop.ts";
@@ -55,6 +56,7 @@ export type AppOptions = {
   readonly models: ListModels;
   readonly heartbeatMs: number;
   readonly desk: DeskKeeper;
+  readonly calendar: Calendar;
   readonly onLeadRenamed: () => void;
   readonly logger: FastifyServerOptions["logger"];
 };
@@ -107,6 +109,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     models,
     heartbeatMs,
     desk,
+    calendar,
     onLeadRenamed,
     logger,
   } = options;
@@ -181,6 +184,28 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerCapabilities(app, host, schemaFor);
   registerSettings(app, { store, onLeadRenamed, schemaFor });
   registerDesk(app, { store, desk, schemaFor });
+  app.post<{
+    Body: {
+      readonly title: string;
+      readonly start: string;
+      readonly end: string;
+      readonly location?: string;
+      readonly notes?: string;
+    };
+  }>("/v0/calendar/events", { schema: schemaFor("addEvent") }, async (request, reply) => {
+    const { title, start, end, location, notes } = request.body;
+    const added = await calendar.addEvent({
+      title,
+      start,
+      end,
+      allDay: start.length === 10,
+      ...(location !== undefined && { location }),
+      ...(notes !== undefined && { notes }),
+    });
+    return added.ok
+      ? reply.code(201).send({ event: added.value })
+      : reply.code(503).send(toErrorResult("unavailable", added.failure, "The calendar isn't reachable."));
+  });
   registerMemory(app, memory, schemaFor);
   registerMotion(app, motions, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
