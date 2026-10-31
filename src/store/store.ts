@@ -20,6 +20,7 @@ import type {
   Call,
   Desk,
   DoneEntry,
+  Onboarding,
   Error as ErrorBody,
   Spoken,
   LiveTurn,
@@ -81,6 +82,8 @@ export type Exchange = {
 
 export type AcceptFailure = "id_conflict" | "unknown_attachment" | "attachment_taken" | "call_not_on";
 
+export const onboardingSetting = "onboarding";
+
 export type DonePage = { readonly entries: readonly DoneEntry[]; readonly hasMore: boolean };
 
 export type SpokenInput = { readonly call: string; readonly audio?: string };
@@ -125,6 +128,8 @@ export type Store = Settings & {
   readonly postsSince: (at: string) => readonly Message[];
   readonly desk: () => Desk;
   readonly setDesk: (desk: Desk) => void;
+  readonly onboarding: () => Onboarding;
+  readonly setOnboarding: (onboarding: Onboarding) => void;
   readonly addDone: (entry: DoneEntry, undoWith?: unknown) => void;
   readonly listDone: (before: string | undefined, limit: number) => DonePage;
   readonly findDone: (id: string) => { readonly entry: DoneEntry; readonly payload: unknown } | undefined;
@@ -466,6 +471,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
   const compactedThrough = (): number => Number(readSetting(compactedSetting) ?? 0);
 
+  const currentOnboarding = (): Onboarding => {
+    const stored = readSetting(onboardingSetting);
+    return stored === undefined ? { state: "reading" } : (JSON.parse(stored) as Onboarding);
+  };
+
   const currentDesk = (): Desk => {
     const row = database.prepare("SELECT body FROM desk WHERE id = 1").get() as { readonly body: string } | undefined;
     return row ? (JSON.parse(row.body) as Desk) : { coming_up: [], waiting: [] };
@@ -517,6 +527,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           turn: turn ? toLiveTurn(turn) : null,
           next: next.map((row) => row.message),
           desk: currentDesk(),
+          ...(currentOnboarding().state !== "done" && { onboarding: currentOnboarding() }),
         },
       };
     },
@@ -584,6 +595,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       ).map((row) => toMessage(row)),
 
     desk: () => currentDesk(),
+
+    onboarding: () => currentOnboarding(),
+
+    setOnboarding: (onboarding) => {
+      transaction(() => {
+        if (JSON.stringify(onboarding) === JSON.stringify(currentOnboarding())) return;
+        append({ id: identifiers.event(), type: "onboarding.changed", at: now(), onboarding });
+      });
+    },
 
     setDesk: (desk) => {
       transaction(() => {

@@ -19,6 +19,7 @@ export type Calendar = {
   readonly refresh: () => Promise<void>;
   readonly addEvent: (event: NewCalendarEvent, isKumo?: boolean) => Promise<Result<CalendarItem, string>>;
   readonly onEventEnded: (listener: (uid: string) => void) => void;
+  readonly onAdded: (listener: (item: CalendarItem) => void) => void;
   readonly close: () => void;
 };
 
@@ -111,6 +112,7 @@ export const createCalendar = ({
   const isClosed = createCell(false);
   const refreshing = createCell<Promise<void>>(Promise.resolve());
   const endedListeners = createCell<readonly ((uid: string) => void)[]>([]);
+  const addedListeners = createCell<readonly ((item: CalendarItem) => void)[]>([]);
   const seenEnded = createCell<ReadonlySet<string>>(new Set());
 
   const source = (): CalendarSource | undefined => {
@@ -262,7 +264,9 @@ export const createCalendar = ({
     const created = await calendar.create(target.value, event);
     if (!created.ok) return created;
     await refresh();
-    return ok(toCalendarItem(created.value));
+    const item = toCalendarItem(created.value);
+    for (const listener of addedListeners.get()) listener(item);
+    return ok(item);
   };
 
   const describe = (event: CalendarEvent): string =>
@@ -400,6 +404,9 @@ export const createCalendar = ({
     addEvent,
     onEventEnded: (listener) => {
       endedListeners.update((current) => [...current, listener]);
+    },
+    onAdded: (listener) => {
+      addedListeners.update((current) => [...current, listener]);
     },
     close: () => {
       isClosed.set(true);

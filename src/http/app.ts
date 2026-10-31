@@ -20,6 +20,8 @@ import type { Motions } from "#motion/motion.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { leadOf, notBeforeOf, registerSettings } from "#http/settings.ts";
 import { registerDesk } from "#http/desk.ts";
+import { registerOnboarding } from "#http/onboarding.ts";
+import type { GettingStarted } from "#onboarding/onboarding.ts";
 import type { DeskKeeper } from "#desk/desk.ts";
 import type { Calendar } from "#calendar/calendar.ts";
 import { registerTalk } from "#http/talk.ts";
@@ -58,6 +60,7 @@ export type AppOptions = {
   readonly desk: DeskKeeper;
   readonly calendar: Calendar;
   readonly onLeadRenamed: () => void;
+  readonly gettingStarted: GettingStarted;
   readonly logger: FastifyServerOptions["logger"];
 };
 
@@ -111,6 +114,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     desk,
     calendar,
     onLeadRenamed,
+    gettingStarted,
     logger,
   } = options;
   const protocol = protocolVersion(schemas.document);
@@ -184,6 +188,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerCapabilities(app, host, schemaFor);
   registerSettings(app, { store, onLeadRenamed, schemaFor });
   registerDesk(app, { store, desk, schemaFor });
+  registerOnboarding(app, { gettingStarted, schemaFor });
   app.post<{
     Body: {
       readonly title: string;
@@ -226,7 +231,17 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   app.get(
     "/v0/events",
-    createEventStream({ store, clock, protocol, heartbeatMs, maxReplay, openStream: presence.openStream }),
+    createEventStream({
+      store,
+      clock,
+      protocol,
+      heartbeatMs,
+      maxReplay,
+      openStream: () => {
+        gettingStarted.begin();
+        return presence.openStream();
+      },
+    }),
   );
 
   app.post<{ Body: SendBody }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {

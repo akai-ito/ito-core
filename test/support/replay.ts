@@ -24,6 +24,7 @@ import { openNotification } from "#notifications/crypto.ts";
 import type { Envelope } from "#notifications/notifier.ts";
 import type { SeededPage } from "#memory/memory.ts";
 import { createServer, databaseFile, type Server } from "#server.ts";
+import { onboardingSetting } from "#store/store.ts";
 import { openEventStream, type EventStream } from "./event-stream.ts";
 import { startFakeApns, type Pushed } from "./fake-apns.ts";
 import { createIdMatcher } from "./matching.ts";
@@ -225,6 +226,7 @@ export const replay = async (name: string): Promise<void> => {
   };
 
   const plans = createCell<readonly WorkPlan[]>([]);
+  const workFailures = createCell<readonly string[]>([]);
 
   const work = async (run: string): Promise<Result<string, string>> => {
     const [plan] = plans.get();
@@ -232,7 +234,8 @@ export const replay = async (name: string): Promise<void> => {
     plans.update((current) => current.slice(1));
     const server = live.get()?.server;
     for (const { tool, input } of plan.calls) {
-      await server?.callTool(tool, ids.translate(withLiveVersion(input)), run);
+      const called = await server?.callTool(tool, ids.translate(withLiveVersion(input)), run);
+      if (called?.isError === true) workFailures.update((current) => [...current, `${tool}: ${called.text}`]);
     }
     if (plan.post !== undefined) await server?.callTool("post", { text: plan.post }, run);
     return ok("Done.");
@@ -687,6 +690,9 @@ export const replay = async (name: string): Promise<void> => {
     seeded.attachments.save(attachment.id, attachment.name, attachment.media_type, fixture(attachment.name));
   }
   seeded.store.importEvents(transcript.given);
+  if (transcript.given.every((event) => event.type !== "onboarding.changed")) {
+    seeded.store.setSetting(onboardingSetting, JSON.stringify({ state: "done" }));
+  }
   seeded.store.setSetting(tokenSetting, hashToken(transcriptToken));
   const hasDevices = transcript.steps.some((step) => "app" in step && step.app.path.startsWith("/v0/devices/"));
   if (hasDevices) {
@@ -711,6 +717,7 @@ export const replay = async (name: string): Promise<void> => {
     }
     const extraPush = await apns.next(quietMs);
     if (extraPush) fail(`${name}: an unexpected push after the last step: ${JSON.stringify(extraPush.payload)}`);
+    if (workFailures.get().length > 0) fail(`${name}: Kumo's planned work failed: ${workFailures.get().join("; ")}`);
   } finally {
     await stopServer();
     await seeded.close();
