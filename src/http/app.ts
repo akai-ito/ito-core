@@ -19,6 +19,8 @@ import { registerMotion } from "#http/motion.ts";
 import type { Motions } from "#motion/motion.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { leadOf, notBeforeOf, registerSettings } from "#http/settings.ts";
+import { registerDesk } from "#http/desk.ts";
+import type { DeskKeeper } from "#desk/desk.ts";
 import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
 import type { VoiceLoop } from "#voice/loop.ts";
@@ -52,6 +54,7 @@ export type AppOptions = {
   readonly voiceprints: Voiceprints;
   readonly models: ListModels;
   readonly heartbeatMs: number;
+  readonly desk: DeskKeeper;
   readonly onLeadRenamed: () => void;
   readonly logger: FastifyServerOptions["logger"];
 };
@@ -68,7 +71,12 @@ const tooLargeAttachment = toCommandError(
   "That file is larger than Ito accepts.",
 );
 
-type SendBody = { readonly id: string; readonly text?: string; readonly attachments?: readonly string[] };
+type SendBody = {
+  readonly id: string;
+  readonly text?: string;
+  readonly attachments?: readonly string[];
+  readonly done?: string;
+};
 
 const maxReplay = 2000;
 const bodyLimitBytes = 256 * 1024;
@@ -98,6 +106,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     voiceprints,
     models,
     heartbeatMs,
+    desk,
     onLeadRenamed,
     logger,
   } = options;
@@ -171,6 +180,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   registerCapabilities(app, host, schemaFor);
   registerSettings(app, { store, onLeadRenamed, schemaFor });
+  registerDesk(app, { store, desk, schemaFor });
   registerMemory(app, memory, schemaFor);
   registerMotion(app, motions, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
@@ -195,8 +205,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   );
 
   app.post<{ Body: SendBody }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text = "", attachments: attached = [] } = request.body;
-    const accepted = store.acceptMessage(toMessageId(id), text, attached);
+    const { id, text = "", attachments: attached = [], done } = request.body;
+    const accepted = store.acceptMessage(toMessageId(id), text, attached, undefined, done);
     if (!accepted.ok) {
       switch (accepted.failure) {
         case "unknown_attachment": {

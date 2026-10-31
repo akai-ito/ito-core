@@ -1,3 +1,4 @@
+import { contextRun } from "#tools/context.ts";
 import { fieldOf } from "#tools/input.ts";
 
 export const toolServerName = "ito";
@@ -18,7 +19,11 @@ export type Tool = {
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, unknown>>;
   readonly call: (input: unknown) => Promise<ToolResult>;
+  readonly audience?: "work" | "hidden";
 };
+
+const isOffered = ({ audience }: Tool): boolean =>
+  audience === undefined || (audience === "work" && contextRun() !== undefined);
 
 export type McpMessage = { readonly id?: unknown; readonly method?: unknown; readonly params?: unknown };
 
@@ -49,18 +54,20 @@ export const createMcpAnswerer =
       case "tools/list": {
         return {
           result: {
-            tools: tools().map(({ name, title, description, inputSchema }) => ({
-              name,
-              title,
-              description,
-              inputSchema,
-            })),
+            tools: tools()
+              .filter((tool) => isOffered(tool))
+              .map(({ name, title, description, inputSchema }) => ({
+                name,
+                title,
+                description,
+                inputSchema,
+              })),
           },
         };
       }
       case "tools/call": {
         const name = fieldOf(parameters, "name");
-        const tool = tools().find((candidate) => candidate.name === name);
+        const tool = tools().find((candidate) => candidate.name === name && isOffered(candidate));
         if (!tool) return { error: { code: -32_602, message: `Ito has no tool ${textOf(name)}.` } };
         const { text, isError = false, structured } = await tool.call(fieldOf(parameters, "arguments"));
         return {

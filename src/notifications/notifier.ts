@@ -5,12 +5,13 @@ import type { Apns } from "#notifications/apns.ts";
 import { sealNotification, type Sealed } from "#notifications/crypto.ts";
 import type { Presence } from "#notifications/presence.ts";
 import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
-import type { Ask, Notification } from "#protocol/types.ts";
+import type { Ask, Desk, Notification } from "#protocol/types.ts";
+import { localHourOf, toLevel } from "#notifications/manners.ts";
 import type { LogEntry, Store, StoredDevice } from "#store/store.ts";
 import type { Log } from "#turns/turns.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 
-export type PushLevel = "active" | "time-sensitive";
+export type PushLevel = "passive" | "active" | "time-sensitive";
 
 export type Envelope = {
   readonly aps: {
@@ -30,6 +31,8 @@ export type NotifierOptions = {
   readonly agentName: () => string;
   readonly log: Log;
   readonly reminderMs: number;
+  readonly timeZone?: string;
+  readonly isBusy?: () => boolean;
 };
 
 export type Notifier = { readonly close: () => void };
@@ -93,8 +96,13 @@ export const createNotifier = ({
   agentName,
   log,
   reminderMs,
+  timeZone = "UTC",
+  isBusy = () => false,
 }: NotifierOptions): Notifier => {
   const askingTurns = createCell<ReadonlySet<string>>(new Set());
+  const lastSounded = createCell<number | undefined>(undefined);
+  const shownCards = createCell<ReadonlySet<string>>(new Set(store.desk().waiting.map(({ id }) => id)));
+  const shownBriefing = createCell<string | undefined>(store.desk().briefing?.id);
   const reminders = createCell<ReadonlyMap<string, Cancel>>(new Map());
   const deliveries = createCell<Promise<void>>(Promise.resolve());
 
@@ -119,9 +127,29 @@ export const createNotifier = ({
     }
   };
 
-  const notify = (notification: Notification, level: PushLevel): void => {
+  const notify = (notification: Notification, wanted: PushLevel): void => {
     if (presence.isWatched() || store.devices().length === 0) return;
+    const now = clock.now();
+    const level = toLevel({
+      wanted,
+      now,
+      lastSounded: lastSounded.get(),
+      localHour: localHourOf(now, timeZone),
+      isBusy: isBusy(),
+    });
+    if (level !== "passive") lastSounded.set(now);
     deliveries.set(deliverAfter(deliveries.get(), notification, level));
+  };
+
+  const onDesk = (desk: Desk): void => {
+    const fresh = desk.waiting.filter(({ id }) => !shownCards.get().has(id));
+    shownCards.set(new Set(desk.waiting.map(({ id }) => id)));
+    for (const card of fresh) notify({ kind: "card", text: card.title, card: card.id }, "active");
+    const { briefing } = desk;
+    if (briefing && briefing.id !== shownBriefing.get()) {
+      notify({ kind: "briefing", text: briefing.lines[0]?.text ?? "Your morning briefing" }, "passive");
+    }
+    shownBriefing.set(briefing?.id);
   };
 
   const dropReminder = (ask: string): void => {
@@ -161,6 +189,17 @@ export const createNotifier = ({
   };
 
   const onEvent = ({ event }: LogEntry): void => {
+    if (event.type === "desk.changed") {
+      onDesk(event.desk);
+      return;
+    }
+    if (event.type === "message.posted") {
+      notify(
+        { kind: "post", text: toFirstLine(withoutBlocks(event.message.text)), message: event.message.id },
+        "active",
+      );
+      return;
+    }
     if (event.type === "ask.started") {
       askingTurns.update((current) => new Set([...current, event.ask.turn]));
       notify({ kind: "ask", text: event.ask.question, ask: toAskPart(event.ask) }, "time-sensitive");

@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
+import { randomUUID } from "node:crypto";
 import { createCell } from "#cell.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, type Host, type Installed } from "#capabilities/host.ts";
@@ -40,6 +41,11 @@ import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
 import { packageVersion } from "#version.ts";
+import type { Result } from "#result.ts";
+import { createDesk } from "#desk/desk.ts";
+import { createBriefings } from "#desk/briefing.ts";
+import { createWorkTools } from "#work/tools.ts";
+import { inToolContext } from "#tools/context.ts";
 
 export type ServerOptions = {
   readonly dataDirectory: string;
@@ -81,13 +87,17 @@ export type Server = {
   readonly motions: Motions;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
-  readonly callTool: (name: string, input: unknown) => Promise<ToolResult>;
+  readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
 
 const voiceText = readFileSync(new URL("../agent/instructions.md", import.meta.url), "utf8");
 
 const talkRules = readFileSync(new URL("../agent/talk.md", import.meta.url), "utf8").trim();
+
+const workRules = readFileSync(new URL("../agent/work.md", import.meta.url), "utf8").trim();
+
+const isBusy = (): boolean => false;
 
 const motionSkill: OwnSkill = {
   id: "things-in-motion",
@@ -107,6 +117,7 @@ export const createServer = (options: ServerOptions): Server => {
   mkdirSync(options.dataDirectory, { recursive: true });
   const database = openDatabase(databaseFile(options.dataDirectory));
   const store = createStore(database, clock, identifiers);
+  const listening = createCell<Promise<void>>(Promise.resolve());
   const logError = createCell<Log>((message, error) => {
     console.error(message, error);
   });
@@ -207,18 +218,27 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     complete: (prompt, schema) => engine.complete(prompt, schema),
   });
+  const quickComplete: Engine["complete"] = async (prompt, schema, choice) => {
+    await listening.get();
+    return engine.complete(prompt, schema, choice);
+  };
   const topics = createTopics({
     store,
-    complete: async (prompt, schema, choice) => {
-      await listening;
-      return engine.complete(prompt, schema, choice);
-    },
+    complete: quickComplete,
     models: async () => {
-      await listening;
+      await listening.get();
       return engine.models();
     },
     info,
   });
+  const runWork = async (prompt: string): Promise<Result<string, string>> => {
+    await listening.get();
+    const done = await engine.work(`${workRules}\n\n${prompt}`, randomUUID());
+    if (!done.ok) info("Kumo's background work didn't finish", { error: done.failure });
+    return done;
+  };
+  const desk = createDesk({ store, identifiers, clock, work: runWork, info });
+  const timeZone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
     store,
@@ -233,6 +253,17 @@ export const createServer = (options: ServerOptions): Server => {
     log,
   });
   const presence = createPresence();
+  const briefings = createBriefings({
+    store,
+    desk,
+    clock,
+    timeZone,
+    presence,
+    complete: quickComplete,
+    isBusy,
+    identifiers,
+    info,
+  });
   const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
   const apns = createApns(() => readApnsCredentials(store), push.hosts, clock);
   const notifier = createNotifier({
@@ -243,6 +274,8 @@ export const createServer = (options: ServerOptions): Server => {
     agentName: () => leadOf(store),
     log,
     reminderMs: push.reminderMs,
+    timeZone,
+    isBusy,
   });
 
   const app = createApp({
@@ -262,17 +295,20 @@ export const createServer = (options: ServerOptions): Server => {
     voiceprints,
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
+    desk,
     onLeadRenamed: () => {
       void engine.refresh();
     },
     logger: options.logger ?? false,
   });
-  const listening = new Promise<void>((resolve) => {
-    app.addHook("onListen", (done) => {
-      resolve();
-      done();
-    });
-  });
+  listening.set(
+    new Promise<void>((resolve) => {
+      app.addHook("onListen", (done) => {
+        resolve();
+        done();
+      });
+    }),
+  );
   logError.set((message, error) => {
     app.log.error({ err: error }, message);
   });
@@ -288,11 +324,30 @@ export const createServer = (options: ServerOptions): Server => {
     newId: () => identifiers.attachment(),
     fetchImage: (url, signal) => fetcher(url, { signal }),
   });
-  const coreTools: readonly Tool[] = [createAskTool(turns), imageTool, ...memory.tools, ...motions.tools];
+  const coreTools: readonly Tool[] = [
+    createAskTool(turns),
+    imageTool,
+    ...memory.tools,
+    ...motions.tools,
+    ...createWorkTools({ store, desk }),
+    {
+      name: "brief_now",
+      title: "Write the briefing now",
+      audience: "hidden",
+      description: "Write the morning briefing now, whatever the time.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      call: async () => {
+        await briefings.briefNow();
+        return { text: "Wrote the briefing." };
+      },
+    },
+  ];
   const allTools = (): readonly Tool[] => [...coreTools, ...doors.tools()].map((tool) => withCheckedInput(tool));
-  const callTool = async (name: string, input: unknown): Promise<ToolResult> => {
+  const callTool = async (name: string, input: unknown, run?: string): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
-    return tool ? tool.call(input) : { text: `Ito has no tool ${name}.`, isError: true };
+    return tool
+      ? inToolContext(run === undefined ? {} : { run }, () => tool.call(input))
+      : { text: `Ito has no tool ${name}.`, isError: true };
   };
   store.subscribe(({ event }) => {
     if (event.type === "turn.ended") memory.indexConversation();
@@ -317,6 +372,7 @@ export const createServer = (options: ServerOptions): Server => {
     compaction.get()?.();
     motions.close();
     topics.close();
+    briefings.close();
     notifier.close();
     await app.close();
     await turns.close();

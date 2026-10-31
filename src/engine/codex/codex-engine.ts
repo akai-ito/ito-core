@@ -442,7 +442,7 @@ export const createCodexEngine = ({
     });
     const current = active.get();
     const fields = toApprovalFields(parameters);
-    if (!current || !fields) return Promise.resolve(declined);
+    if (!current || !fields || parameters.threadId !== openThreadId.get()) return Promise.resolve(declined);
     approvalCount.set(approvalCount.get() + 1);
     const key = `approval-${String(approvalCount.get())}`;
     return new Promise((resolve) => {
@@ -512,6 +512,38 @@ export const createCodexEngine = ({
       const respond = active.get()?.id === turn ? approvals.get().get(key) : undefined;
       approvals.update((waiting) => new Map([...waiting].filter(([waitingKey]) => waitingKey !== key)));
       respond?.(isAllowed);
+    },
+
+    work: async (prompt, run) => {
+      const opened = await ensureSession();
+      if (!opened.ok) return fail(opened.failure.detail);
+      const { process } = opened.value;
+      const server = tools?.();
+      const started = await process.call("thread/start", {
+        ...threadOptions(server && { ...server, url: `${server.url}/work/${run}` }),
+        approvalPolicy: "never",
+        ephemeral: true,
+      });
+      if (!started.ok) return fail(`Codex couldn't start a work thread: ${started.failure.message}`);
+      const threadId = started.value.thread.id;
+      const finished = new Promise<Result<string, string>>((resolve) => {
+        const finish = (answer: Result<string, string>): void => {
+          sideJobs.update((jobs) => new Map([...jobs].filter(([id]) => id !== threadId)));
+          resolve(answer);
+        };
+        sideJobs.update((jobs) => new Map([...jobs, [threadId, { answer: "", finish }]]));
+      });
+      const turn = await process.call("turn/start", {
+        threadId,
+        input: [{ type: "text", text: prompt, text_elements: [] }],
+        ...readChoice(settings.setting),
+      });
+      if (!turn.ok)
+        sideJobs
+          .get()
+          .get(threadId)
+          ?.finish(fail(`Codex didn't start the work: ${turn.failure.message}`));
+      return finished;
     },
 
     complete: async (prompt, schema, choice) => {

@@ -48,6 +48,7 @@ export const createScriptEngine = (
   callTool = noTools,
   models: readonly ModelOption[] = demoModels,
   complete = noAnswers,
+  work: Engine["work"] = () => Promise.resolve(fail("The scripted engine does no background work.")),
 ): Engine => {
   const playing = createCell<ReadonlyMap<TurnId, Playing>>(new Map());
 
@@ -96,6 +97,7 @@ export const createScriptEngine = (
       emit(turn, { type: "progress" });
     },
     complete,
+    work,
     start: (turn, inputs) => {
       const queue = createAsyncQueue<EngineEvent>();
       const script = scriptFor(turn, inputs, clock.now());

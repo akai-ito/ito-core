@@ -139,4 +139,11 @@ export const migrations: readonly string[] = [
     id INTEGER PRIMARY KEY CHECK (id = 1),
     body TEXT NOT NULL
   );`,
+  `CREATE TABLE done (
+    id TEXT PRIMARY KEY,
+    at TEXT NOT NULL,
+    body TEXT NOT NULL,
+    undo_with TEXT
+  );
+  CREATE INDEX done_by_time ON done (at, id);`,
 ];

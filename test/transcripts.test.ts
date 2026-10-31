@@ -3,13 +3,10 @@ import { replay } from "./support/replay.ts";
 import { transcriptNames } from "./support/transcript-file.ts";
 
 const pending: ReadonlySet<string> = new Set([
-  "18-a-reply-while-you-re-away",
-  "21-an-ask-while-you-re-away",
   "32-set-up-a-capability",
   "65-the-desk",
   "66-a-mail-arrives",
   "67-an-invite",
-  "68-the-morning-briefing",
   "69-getting-started",
 ]);
 

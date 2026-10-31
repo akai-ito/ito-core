@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { bearerToken, hashToken, isMatching } from "#http/auth.ts";
 import type { Result } from "#result.ts";
+import { inToolContext, type ToolContext } from "#tools/context.ts";
 import { createMcpAnswerer, type McpMessage, type Tool } from "#tools/mcp.ts";
 
 export type Command = (capability: string, rest: readonly string[]) => Promise<Result<string, string>>;
@@ -35,13 +36,23 @@ export const registerTools = (app: FastifyInstance, { token, tools, command, ver
     return given !== undefined && isMatching(given, expectedHash);
   };
 
-  app.post<{ Body: McpMessage }>(toolsPath, async (request, reply) => {
+  const handle = async (
+    request: FastifyRequest<{ Body: McpMessage }>,
+    reply: FastifyReply,
+    context: ToolContext,
+  ): Promise<unknown> => {
     if (!isAllowed(request)) return refuse(reply);
     const message = request.body;
-    return message.id === undefined || message.id === null
-      ? reply.code(202).send()
-      : { jsonrpc: "2.0", id: message.id, ...(await answer(message)) };
-  });
+    if (message.id === undefined || message.id === null) return reply.code(202).send();
+    const answered = await inToolContext(context, () => answer(message));
+    return { jsonrpc: "2.0", id: message.id, ...answered };
+  };
+
+  app.post<{ Body: McpMessage }>(toolsPath, async (request, reply) => handle(request, reply, {}));
+
+  app.post<{ Body: McpMessage; Params: { readonly run: string } }>(`${toolsPath}/work/:run`, async (request, reply) =>
+    handle(request, reply, { run: request.params.run }),
+  );
 
   app.get(toolsPath, (_request, reply) => reply.code(405).header("allow", "POST").send());
 
