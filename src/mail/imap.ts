@@ -165,6 +165,11 @@ const domainOf = (address: string): string => address.split("@", 2)[1] ?? "ito.i
 
 const ignore = (): void => undefined;
 
+const droppedCodes: ReadonlySet<string> = new Set(["NoConnection", "EConnectionClosed"]);
+
+const isDropped = (client: ImapFlow, error: unknown): boolean =>
+  !client.usable || (error instanceof Error && droppedCodes.has((error as ImapFlowError).code ?? ""));
+
 const signOff = async (client: ImapFlow): Promise<void> => {
   try {
     await client.logout();
@@ -288,6 +293,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   const run = async <Value>(
     doing: string,
     work: (opened: Session) => Promise<Result<Value, string>>,
+    isReading = false,
   ): Promise<Result<Value, string>> => {
     const opened = await session();
     if (!opened.ok) return opened;
@@ -295,10 +301,20 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return await work(opened.value);
     } catch (error) {
       const reason = explain(error);
+      if (isReading && isDropped(opened.value.client, error)) {
+        log("The mail session dropped, so it reads again on a fresh one", { doing, reason });
+        opened.value.client.close();
+        return run(doing, work);
+      }
       log("Mail work failed", { doing, reason });
       return fail(`Mail couldn't finish ${doing}: ${reason}`);
     }
   };
+
+  const runReading = <Value>(
+    doing: string,
+    work: (opened: Session) => Promise<Result<Value, string>>,
+  ): Promise<Result<Value, string>> => run(doing, work, true);
 
   const toMailFrom = async (message: FetchMessageObject, folder: string): Promise<Mail | undefined> => {
     const raw = message.source ?? message.headers;
@@ -604,7 +620,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   };
 
   const recent: MailSource["recent"] = (since) =>
-    run("reading recent mail", async (opened) => {
+    runReading("reading recent mail", async (opened) => {
       const query = sinceQuery(since);
       if (!query.ok) return query;
       const { received, archive } = opened.folders;
@@ -613,13 +629,13 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     });
 
   const read: MailSource["read"] = (messageId) =>
-    run("reading the mail", async (opened) => {
+    runReading("reading the mail", async (opened) => {
       const found = await findMail(opened, messageId);
       return found.ok ? ok(found.value.mail) : found;
     });
 
   const search: MailSource["search"] = (query) =>
-    run("searching mail", async (opened) => {
+    runReading("searching mail", async (opened) => {
       const since = query.since === undefined ? undefined : parseDate(query.since);
       if (since === undefined && query.since !== undefined) return fail(`"${query.since}" isn't a date.`);
       const criteria: SearchObject = {
@@ -635,7 +651,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     });
 
   const thread: MailSource["thread"] = (messageId) =>
-    run("reading the conversation", async (opened) => {
+    runReading("reading the conversation", async (opened) => {
       const found = await findMail(opened, messageId);
       if (!found.ok) return found;
       const { mail, place } = found.value;
@@ -733,7 +749,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     });
 
   const sent: MailSource["sent"] = (since) =>
-    run("reading sent mail", async (opened) => {
+    runReading("reading sent mail", async (opened) => {
       const query = sinceQuery(since);
       if (!query.ok) return query;
       if (opened.folders.sent === undefined) return fail("This account has no Sent folder.");
