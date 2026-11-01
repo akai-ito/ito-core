@@ -15,7 +15,7 @@ These commands are for when they bring mail up, or when a conversation needs it.
 ## Finding and reading
 
 - Search by sender, subject, words or date, newest first. For a company, search its domain, such as
-  `--from citadel.com`. Search a few ways before you say something isn't there.
+  `--from acme.com`. Search a few ways before you say something isn't there.
 - Read the whole thread before you summarise or answer one: the latest mail alone misses what was
   agreed earlier.
 - When they ask you to go through a set of mails, such as every startup that wrote to them, search
