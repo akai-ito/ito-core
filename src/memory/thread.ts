@@ -8,6 +8,9 @@ const run = promisify(execFile);
 
 export type FileChange = { readonly file: string; readonly isDeleted: boolean };
 
+// Extra environment for git's commands that reach the remote, such as the credentials to push with.
+export type GitAccess = Readonly<Record<string, string>>;
+
 export type FileCommit = {
   readonly commit: string;
   readonly at: string;
@@ -30,11 +33,17 @@ export type Thread = {
   readonly files: () => readonly string[];
   readonly head: () => Promise<string>;
   readonly changedFiles: (from: string, to: string) => Promise<readonly FileChange[]>;
-  readonly pull: () => Promise<Result<"pulled" | "current", string>>;
+  readonly pull: (access?: GitAccess) => Promise<Result<"pulled" | "current", string>>;
   readonly hasRemote: () => Promise<boolean>;
+  readonly remoteUrl: () => Promise<string | undefined>;
   readonly setRemote: (url: string) => Promise<Result<undefined, string>>;
-  readonly push: () => Promise<Result<undefined, string>>;
+  readonly removeRemote: () => Promise<Result<undefined, string>>;
+  readonly push: (access?: GitAccess) => Promise<Result<undefined, string>>;
 };
+
+export const divergedFailure = (directory: string): string =>
+  "Memory has changed both here and on the remote since they last matched, so nothing was pulled. " +
+  `Merge them by hand with git -C ${directory} pull.`;
 
 const describe = (error: unknown): string => {
   const stderr = (error as { readonly stderr?: unknown }).stderr;
@@ -60,6 +69,27 @@ export const openThread = async (directory: string): Promise<Thread> => {
   const git = async (...arguments_: readonly string[]): Promise<string> => {
     const { stdout } = await run("git", ["-C", directory, ...arguments_], { maxBuffer: 64 * 1024 * 1024 });
     return stdout;
+  };
+  // Never asks for a password: what's in `access`, or this machine's own git credentials.
+  const remoteGit = async (access: GitAccess | undefined, ...arguments_: readonly string[]): Promise<string> => {
+    const { stdout } = await run("git", ["-C", directory, ...arguments_], {
+      maxBuffer: 64 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...access },
+    });
+    return stdout;
+  };
+  const succeeds = async (...arguments_: readonly string[]): Promise<boolean> => {
+    try {
+      await git(...arguments_);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // Only the commit that started the Thread, with nothing in it: a backup can simply become it.
+  const isUntouched = async (): Promise<boolean> => {
+    const [count, files] = await Promise.all([git("rev-list", "--count", "HEAD"), git("ls-tree", "-r", "HEAD")]);
+    return count.trim() === "1" && files.trim() === "";
   };
   mkdirSync(directory, { recursive: true });
   if (!existsSync(path.join(directory, ".git"))) {
@@ -152,26 +182,16 @@ export const openThread = async (directory: string): Promise<Thread> => {
           return { file, isDeleted: status === "D" };
         });
     },
-    pull: async () => {
+    pull: async (access) => {
       try {
-        await git("fetch", "--quiet", "origin");
-        const isBehind = async (): Promise<boolean> => {
-          try {
-            await git("merge-base", "--is-ancestor", "origin/main", "HEAD");
-            return false;
-          } catch {
-            return true;
-          }
-        };
-        if (!(await isBehind())) return ok("current");
-        try {
-          await git("merge", "--ff-only", "--quiet", "origin/main");
-        } catch {
-          return fail(
-            "Memory has changed both here and on the remote since they last matched, so nothing was pulled. " +
-              `Merge them by hand with git -C ${directory} pull.`,
-          );
-        }
+        await remoteGit(access, "fetch", "--quiet", "origin");
+        const isCurrent =
+          !(await succeeds("rev-parse", "--verify", "--quiet", "refs/remotes/origin/main")) ||
+          (await succeeds("merge-base", "--is-ancestor", "origin/main", "HEAD"));
+        if (isCurrent) return ok("current");
+        if (await succeeds("merge", "--ff-only", "--quiet", "origin/main")) return ok("pulled");
+        if (!(await isUntouched())) return fail(divergedFailure(directory));
+        await git("reset", "--quiet", "--hard", "origin/main");
         return ok("pulled");
       } catch (error) {
         return fail(describe(error));
@@ -180,6 +200,14 @@ export const openThread = async (directory: string): Promise<Thread> => {
     hasRemote: async () => {
       const remotes = await git("remote");
       return remotes.split("\n").includes("origin");
+    },
+    remoteUrl: async () => {
+      try {
+        const url = await git("remote", "get-url", "origin");
+        return url.trim() || undefined;
+      } catch {
+        return;
+      }
     },
     setRemote: async (url) => {
       try {
@@ -192,9 +220,18 @@ export const openThread = async (directory: string): Promise<Thread> => {
         return fail(describe(error));
       }
     },
-    push: async () => {
+    removeRemote: async () => {
       try {
-        await git("push", "--quiet", "origin", "HEAD:main");
+        const remotes = await git("remote");
+        if (remotes.split("\n").includes("origin")) await git("remote", "remove", "origin");
+        return ok(undefined);
+      } catch (error) {
+        return fail(describe(error));
+      }
+    },
+    push: async (access) => {
+      try {
+        await remoteGit(access, "push", "--quiet", "origin", "HEAD:main");
         return ok(undefined);
       } catch (error) {
         return fail(describe(error));
