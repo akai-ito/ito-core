@@ -39,7 +39,7 @@ const valueLimit = 300;
 
 // What each area's lines say, in their message or their fields' names.
 const areas: Readonly<Record<string, RegExp>> = {
-  mail: /\b(?:mail|imap|smtp|inbox|drafts?|sent|unsubscrib\w*|sender|catch-up|attention pass|account)\b/iu,
+  mail: /\b(?:mail|imap|smtp|inbox|drafts?|sent|unsubscribe|unsubscribed|unsubscribing|sender|catch-up|attention pass|account)\b/iu,
   calendar: /\b(?:calendar|caldav|invites?|holds?)\b/iu,
   notifications: /\b(?:notifications?|push|apns|briefing|devices?)\b/iu,
   voice: /\b(?:voice\w*|calls?|spoken|speech|sentences?|sidecar)\b/iu,
