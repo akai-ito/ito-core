@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createCalendar } from "#calendar/calendar.ts";
 import { createCalendarSource, type CalendarSource } from "#calendar/caldav.ts";
 import type { CalendarEvent, CalendarInfo } from "#calendar/icalendar.ts";
 import { createCell } from "#cell.ts";
+import type { DeskKeeper } from "#desk/desk.ts";
+import type { CalendarItem } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 import { startFakeCalDav, type FakeCalDav } from "./support/fake-caldav.ts";
+import { createVirtualClock } from "./support/virtual-clock.ts";
 
 const fake = createCell<FakeCalDav | undefined>(undefined);
+const ignore = (): void => undefined;
 const november = ["2026-11-01T00:00:00Z", "2026-12-01T00:00:00Z"] as const;
 
 const server = (): FakeCalDav => {
@@ -297,5 +302,58 @@ describe("iCloud calendars over CalDAV", () => {
       ok: false,
       failure: "That changes token isn't one this calendar source gave out.",
     });
+  });
+});
+
+describe("Kumo's calendar tools", () => {
+  beforeEach(async () => {
+    fake.set(await startFakeCalDav());
+  });
+
+  afterEach(async () => {
+    await server().close();
+    fake.set(undefined);
+  });
+
+  it("holds a proposed time on Kumo's calendar, and puts a confirmed one on theirs", async () => {
+    const added = createCell<readonly CalendarItem[]>([]);
+    const calendar = createCalendar({
+      host: {
+        find: (id) =>
+          id === "icloud"
+            ? { id, state: "on", values: { apple_id: "sam", app_password: "app" }, manifest: undefined as never }
+            : undefined,
+        subscribe: () => ignore,
+      },
+      desk: {
+        addCard: ignore,
+        setComingUp: ignore,
+        handle: ignore,
+      } as unknown as DeskKeeper,
+      clock: createVirtualClock(Date.parse("2026-11-10T09:00:00.000Z")),
+      timeZone: "UTC",
+      info: ignore,
+      createSource: () => sourceFor(),
+    });
+    calendar.onAdded((item) => {
+      added.update((current) => [...current, item]);
+    });
+    const adding = calendar.tools.find(({ name }) => name === "add_event");
+    const interview = { title: "Northwind first call", start: "2026-11-12T14:00:00Z", end: "2026-11-12T14:30:00Z" };
+
+    const held = await adding?.call({ ...interview, hold: true, notes: "Proposed by Sarah at Northwind" });
+    const confirmed = await adding?.call({
+      ...interview,
+      start: "2026-11-13T10:00:00Z",
+      end: "2026-11-13T10:30:00Z",
+    });
+
+    expect(held?.text).toMatch(/^Added Northwind first call \(hold-[\da-f-]{36}\)\.$/u);
+    expect(confirmed?.isError).toBeUndefined();
+    expect(added.get().map(({ calendar: where, status }) => [where.name, where.kumo, status])).toEqual([
+      ["Kumo", true, "hold"],
+      ["Home", false, "confirmed"],
+    ]);
+    calendar.close();
   });
 });

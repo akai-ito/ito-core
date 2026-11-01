@@ -4,15 +4,22 @@ import type { CardAnswer, CardHandler, DeskKeeper, NewCard, NewDone, Undoer } fr
 import type { JsonSchema } from "#engine/engine.ts";
 import type { Mail } from "#mail/imap.ts";
 import { createMailbox, type Mailbox } from "#mail/mail.ts";
-import type { Card, DoneEntry } from "#protocol/types.ts";
-import { ok } from "#result.ts";
+import { createStakesChoice } from "#engine/quick-model.ts";
+import { demoModels } from "#engine/scripted/models.ts";
+import type { Card, DoneEntry, ModelChoice } from "#protocol/types.ts";
+import { fail, ok } from "#result.ts";
 import { createFakeMail, type ArrivingMail, type FakeMail } from "./support/fake-mail.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
 
 // The inbox holds only what needs them: the attention pass bins noise, files what's worth keeping into their
 // folders, and hands the rest to Kumo.
 
-type Judged = { readonly decision: string; readonly folder?: string; readonly confidence?: number };
+type Judged = {
+  readonly decision: string;
+  readonly stakes?: string;
+  readonly folder?: string;
+  readonly confidence?: number;
+};
 
 type Answers = {
   readonly folders?: readonly string[];
@@ -25,6 +32,7 @@ type Inbox = {
   readonly done: () => readonly DoneEntry[];
   readonly cards: () => readonly Card[];
   readonly work: () => readonly string[];
+  readonly choices: () => readonly (ModelChoice | undefined)[];
   readonly asked: () => readonly string[];
   readonly answer: (title: string, answer: CardAnswer) => Promise<void>;
   readonly undo: (entry: DoneEntry) => Promise<void>;
@@ -64,6 +72,8 @@ const newsletter: ArrivingMail = {
 
 const ignore = (): void => undefined;
 
+const nothingChosen = (): ModelChoice | undefined => undefined;
+
 // They once wrote to the pizza shop's help desk, at the same site its promotions come from.
 const toHelpDesk: Mail = {
   account: "icloud",
@@ -97,6 +107,7 @@ const openInbox = (
   const handlers = createCell<ReadonlyMap<string, CardHandler>>(new Map());
   const undoers = createCell<readonly Undoer[]>([]);
   const prompts = createCell<readonly string[]>([]);
+  const choices = createCell<readonly (ModelChoice | undefined)[]>([]);
   const asked = createCell<readonly string[]>([]);
   const desk = {
     addCard: (card: NewCard) => {
@@ -138,16 +149,19 @@ const openInbox = (
     complete: (prompt, schema) => {
       asked.update((current) => [...current, prompt]);
       if (fieldsOf(schema).includes("decision")) {
-        return Promise.resolve(ok({ folder: "", reason: "A test", confidence: 0.9, ...judged }));
+        return Promise.resolve(ok({ stakes: "low", folder: "", reason: "A test", confidence: 0.9, ...judged }));
       }
       const isRename = prompt.includes("They replied:");
       return Promise.resolve(ok({ folders: isRename ? (answers.renamed ?? []) : (answers.folders ?? []) }));
     },
     quickChoice: () => Promise.resolve(undefined),
-    work: (prompt) => {
+    work: (prompt, choice) => {
       prompts.update((current) => [...current, prompt]);
+      choices.update((current) => [...current, choice]);
       return Promise.resolve(ok("Done."));
     },
+    stakesChoice: (stakes) => Promise.resolve({ model: stakes === "high" ? "thorough" : "light", effort: stakes }),
+    matters: () => ["Job search (pursuit)"],
     info: ignore,
     createSource: mail.create,
     sentPollMs: 60_000,
@@ -158,6 +172,7 @@ const openInbox = (
     done: () => done.get(),
     cards: () => cards.get(),
     work: () => prompts.get(),
+    choices: () => choices.get(),
     asked: () => asked.get(),
     answer: async (title, answer) => {
       const card = cards.get().find((candidate) => candidate.title === title);
@@ -466,5 +481,69 @@ describe("their mail folders", () => {
     expect(again.mail.moved()).toContainEqual({ account: "icloud", messageId: receipt.message_id, to: "Receipts" });
     expect(again.mail.unsubscribed()).toEqual([promo.message_id]);
     await again.mailbox.close();
+  });
+});
+
+const opportunity: ArrivingMail = {
+  account: "icloud",
+  message_id: "intro-3@northwind.example",
+  from: "Sarah Lee <sarah.lee@northwind.example>",
+  to: ["sam@icloud.com"],
+  subject: "AI Engineer at Northwind",
+  text: "Hi Sam, would you be free for a call on Thursday at 14:00 or Friday at 10:00?",
+};
+
+describe("effort that follows the stakes", () => {
+  it("gives mail with real stakes the thorough model, and routine mail the light one", async () => {
+    const box = openInbox({ decision: "work", stakes: "high" });
+    box.mail.arrive(opportunity);
+    await settled(() => {
+      expect(box.work()).toHaveLength(1);
+    });
+    const routine = openInbox({ decision: "promotion", stakes: "low", confidence: 0.5 });
+    routine.mail.arrive(promo);
+    await settled(() => {
+      expect(routine.work()).toHaveLength(1);
+    });
+
+    expect(box.choices()).toEqual([{ model: "thorough", effort: "high" }]);
+    expect(routine.choices()).toEqual([{ model: "light", effort: "low" }]);
+    expect(box.asked()[0]).toContain("Stakes are high when a real person wrote it");
+    expect(box.asked()[0]).toContain("What's in motion for them now: Job search (pursuit).");
+    await box.mailbox.close();
+    await routine.mailbox.close();
+  });
+
+  it("asks Kumo to be prompt with an opportunity: a brief of a new company, and its times on the calendar", async () => {
+    const box = openInbox({ decision: "work", stakes: "high" });
+    box.mail.arrive(opportunity);
+    await settled(() => {
+      expect(box.work()).toHaveLength(1);
+    });
+
+    const [prompt = ""] = box.work();
+    expect(prompt).toContain("put a two-line brief of what it actually does in that option's note");
+    expect(prompt).toContain("a time that's only proposed goes on");
+    expect(prompt).toContain("Kumo's calendar as a hold");
+    await box.mailbox.close();
+  });
+
+  it("chooses the person's model thinking hard for real stakes, and the quick model for routine work", async () => {
+    const listed = (): ReturnType<Parameters<typeof createStakesChoice>[0]> => Promise.resolve(ok(demoModels));
+    const chosenLow = createStakesChoice(listed, () => ({ model: "gpt-6.1-sol", effort: "low" }));
+    const chosenMax = createStakesChoice(listed, () => ({ model: "gpt-6.1-sol", effort: "max" }));
+    const unchosen = createStakesChoice(listed, nothingChosen);
+    const withoutQuick = createStakesChoice(
+      () => Promise.resolve(ok(demoModels.filter(({ id }) => !id.includes("luna")))),
+      nothingChosen,
+    );
+    const unlisted = createStakesChoice(() => Promise.resolve(fail("Codex isn't running.")), nothingChosen);
+
+    expect(await chosenLow("high")).toEqual({ model: "gpt-6.1-sol", effort: "high" });
+    expect(await chosenMax("high")).toEqual({ model: "gpt-6.1-sol", effort: "max" });
+    expect(await unchosen("high")).toEqual({ model: "gpt-6.1-sol", effort: "high" });
+    expect(await chosenLow("low")).toEqual({ model: "gpt-6-luna", effort: "medium" });
+    expect(await withoutQuick("low")).toEqual({ model: "gpt-6.1-sol", effort: "low" });
+    expect(await unlisted("high")).toBeUndefined();
   });
 });

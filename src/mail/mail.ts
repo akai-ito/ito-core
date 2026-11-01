@@ -5,7 +5,7 @@ import { valuesSetting, type CheckResult, type Host } from "#capabilities/host.t
 import type { Values } from "#capabilities/manifest.ts";
 import type { CardAnswer, DeskKeeper, NewCard } from "#desk/desk.ts";
 import type { Complete, JsonSchema } from "#engine/engine.ts";
-import type { QuickChoice } from "#engine/quick-model.ts";
+import type { QuickChoice, Stakes, StakesChoice } from "#engine/quick-model.ts";
 import {
   createMailSource,
   type Auth,
@@ -18,7 +18,7 @@ import {
 import { createMailFolders, type FileInto } from "#mail/folders.ts";
 import { createOutlookToken } from "#mail/outlook.ts";
 import type { Account } from "#mail/providers.ts";
-import type { Card, DoneEntry } from "#protocol/types.ts";
+import type { Card, DoneEntry, ModelChoice } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { outlookClientId, outlookScope, outlookTokenUrl } from "#sources/sources.ts";
 import type { Store } from "#store/store.ts";
@@ -46,7 +46,10 @@ export type MailOptions = {
   readonly fetch: Fetch;
   readonly complete: Complete;
   readonly quickChoice: QuickChoice;
-  readonly work: (prompt: string) => Promise<Result<string, string>>;
+  readonly work: (prompt: string, choice?: ModelChoice) => Promise<Result<string, string>>;
+  readonly stakesChoice?: StakesChoice;
+  // What's in motion for them, such as a job search, so the attention pass knows what's live.
+  readonly matters?: () => readonly string[];
   readonly info: Info;
   readonly createSource?: CreateMailSource;
   readonly sentPollMs?: number;
@@ -56,8 +59,11 @@ const decisions = ["promotion", "notice", "newsletter", "record", "work", "urgen
 
 type Decision = (typeof decisions)[number];
 
+const stakes: readonly Stakes[] = ["low", "high"];
+
 type Judgement = {
   readonly decision: Decision;
+  readonly stakes: Stakes;
   readonly folder: string;
   readonly reason: string;
   readonly confidence: number;
@@ -105,11 +111,12 @@ const attentionSchema: JsonSchema = {
   type: "object",
   properties: {
     decision: { enum: decisions },
+    stakes: { enum: stakes },
     folder: { type: "string" },
     reason: { type: "string" },
     confidence: { type: "number" },
   },
-  required: ["decision", "folder", "reason", "confidence"],
+  required: ["decision", "stakes", "folder", "reason", "confidence"],
   additionalProperties: false,
 };
 
@@ -171,6 +178,8 @@ const toJudgement = (answer: unknown): Judgement | undefined => {
   return decisions.includes(decision as Decision)
     ? {
         decision: decision as Decision,
+        // Unclear stakes count as real ones, so nothing that matters gets the light touch.
+        stakes: fieldOf(answer, "stakes") === "low" ? "low" : "high",
         folder: textOf(answer, "folder").trim(),
         reason: textOf(answer, "reason").trim(),
         confidence: typeof confidence === "number" ? confidence : 0,
@@ -178,7 +187,10 @@ const toJudgement = (answer: unknown): Judgement | undefined => {
     : undefined;
 };
 
-const attentionPrompt = (account: string, mail: Mail, folders: string): string =>
+const mattersLines = (matters: readonly string[]): readonly string[] =>
+  matters.length === 0 ? [] : [`What's in motion for them now: ${matters.join("; ")}.`];
+
+const attentionPrompt = (account: string, mail: Mail, folders: string, matters: readonly string[]): string =>
   [
     "You read every mail for the person and decide what it needs, so their inbox holds only what needs them. Judge",
     "by consequences, not tone: who sent it, a real deadline, the cost of waiting a day, and whether it touches",
@@ -194,6 +206,9 @@ const attentionPrompt = (account: string, mail: Mail, folders: string): string =
     "- urgent: work that can't wait a few hours, such as a same-day change, a security alert or a closing deadline.",
     `For a record or a newsletter, give the folder it belongs in. ${folders} Name one of theirs exactly as written,`,
     "or, with none yet, a short name for its kind, such as Receipts. Otherwise leave the folder empty.",
+    "Stakes are high when a real person wrote it, or it touches money, a deadline, an interview, an opportunity",
+    "such as a role or a company reaching out, or something in motion for them; low for routine and automated mail.",
+    ...mattersLines(matters),
     "Give the reason in a line and how confident you are, from 0 to 1.",
     "",
     describe(account, mail),
@@ -208,6 +223,11 @@ const workPrompt = (account: string, mail: Mail, judged: Judgement, folders: str
     "Do what it needs. Put confirmed bookings on their calendar with add_event, saying in the notes which mail it",
     "came from. Draft any reply with draft, in their voice; it's never sent. Keep things in motion current, and",
     "record what you did with done.",
+    "If it's an opportunity, such as a role, an investor, or a company asking them to join or work with it, be",
+    "prompt. Keep it in the right thing in motion, such as their job search, and when the company is new to them,",
+    "put a two-line brief of what it actually does in that option's note, from the mail and a web search. A",
+    "meeting time that's confirmed goes on their calendar with add_event; a time that's only proposed goes on",
+    "Kumo's calendar as a hold, until it's settled. A new opportunity is worth one line to them now, with the brief.",
     "Then leave the inbox holding only what needs them. Once the mail needs nothing more from them, such as a",
     "booking you've put on the calendar, file it with file_mail into one of their folders, and bin promotions",
     "and noise. Leave it in the inbox while it still needs them, such as a reply you drafted or a bill to pay.",
@@ -301,6 +321,8 @@ export const createMailbox = ({
   complete,
   quickChoice,
   work,
+  stakesChoice = () => Promise.resolve(undefined),
+  matters = () => [],
   info,
   createSource = createMailSource,
   sentPollMs = 5 * 60 * 1000,
@@ -404,7 +426,7 @@ export const createMailbox = ({
 
   const judge = async (account: string, mail: Mail): Promise<Judgement> => {
     const answered = await complete(
-      attentionPrompt(account, mail, folders.note()),
+      attentionPrompt(account, mail, folders.note(), matters()),
       attentionSchema,
       await quickChoice(),
     );
@@ -413,7 +435,13 @@ export const createMailbox = ({
     info("The attention pass couldn't judge a mail, so Kumo looks at it", {
       error: answered.ok ? "an answer out of shape" : answered.failure,
     });
-    return { decision: "work", folder: "", reason: "The attention pass couldn't judge it.", confidence: 0 };
+    return {
+      decision: "work",
+      stakes: "high",
+      folder: "",
+      reason: "The attention pass couldn't judge it.",
+      confidence: 0,
+    };
   };
 
   const listSetting = (key: string): readonly string[] => listOf(parsedList(store.setting(key)));
@@ -576,7 +604,7 @@ export const createMailbox = ({
     if (isBlocked(mail.from.address) && (await binBlocked(connection, mail))) return;
     const judged = await judge(account, mail);
     if (await sort(connection, mail, judged)) return;
-    const done = await work(workPrompt(account, mail, judged, folders.note()));
+    const done = await work(workPrompt(account, mail, judged, folders.note()), await stakesChoice(judged.stakes));
     if (done.ok) return;
     desk.addDone({
       text: `Couldn't look at "${mail.subject}" from ${senderOf(mail)}; it's still in your inbox`,

@@ -550,13 +550,14 @@ export const replay = async (name: string): Promise<void> => {
         return;
       }
       case "attention_decides": {
-        const { decision, folder, reason, confidence } = step as unknown as {
+        const { decision, stakes, folder, reason, confidence } = step as unknown as {
           readonly decision: string;
+          readonly stakes: string;
           readonly folder: string;
           readonly reason: string;
           readonly confidence: number;
         };
-        asides.update((current) => [...current, { decision, folder, reason, confidence }]);
+        asides.update((current) => [...current, { decision, stakes, folder, reason, confidence }]);
         await advance(time);
         return;
       }

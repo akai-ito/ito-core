@@ -515,7 +515,7 @@ export const createCodexEngine = ({
       respond?.(isAllowed);
     },
 
-    work: async (prompt, run) => {
+    work: async (prompt, run, choice) => {
       const opened = await ensureSession();
       if (!opened.ok) return fail(opened.failure.detail);
       const { process } = opened.value;
@@ -537,7 +537,7 @@ export const createCodexEngine = ({
       const turn = await process.call("turn/start", {
         threadId,
         input: [{ type: "text", text: prompt, text_elements: [] }],
-        ...readChoice(settings.setting),
+        ...(choice ?? readChoice(settings.setting)),
       });
       if (!turn.ok)
         sideJobs

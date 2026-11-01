@@ -77,7 +77,8 @@ export type Engine = {
   readonly interrupt: (turn: TurnId) => Promise<void>;
   readonly approve: (turn: TurnId, key: string, isAllowed: boolean) => void;
   readonly complete: Complete;
-  readonly work: (prompt: string, run: string) => Promise<Result<string, string>>;
+  // Background work in a thread of its own, on the model and effort given, or else the one they chose.
+  readonly work: (prompt: string, run: string, choice?: ModelChoice) => Promise<Result<string, string>>;
   readonly restart: () => Promise<void>;
   readonly refresh: () => Promise<void>;
   readonly models: () => Promise<Result<readonly ModelOption[], string>>;

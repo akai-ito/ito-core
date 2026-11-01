@@ -26,7 +26,7 @@ import { createGroups } from "#tools/groups.ts";
 import { withCheckedInput } from "#tools/input.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
-import { restartedDetail, type Engine, type ToolServer } from "#engine/engine.ts";
+import { readChoice, restartedDetail, type Engine, type ToolServer } from "#engine/engine.ts";
 import { createApp } from "#http/app.ts";
 import { createGate, createToken, tokenSetting } from "#http/auth.ts";
 import { leadOf } from "#http/settings.ts";
@@ -42,6 +42,7 @@ import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
 import { packageVersion } from "#version.ts";
+import type { ModelChoice } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 import { createDesk } from "#desk/desk.ts";
 import { createBriefings } from "#desk/briefing.ts";
@@ -56,7 +57,7 @@ import type { Values } from "#capabilities/manifest.ts";
 import { toSources } from "#sources/sources.ts";
 import { mailGroup } from "#mail/group.ts";
 import { createMailbox, type CreateMailSource, type Mailbox } from "#mail/mail.ts";
-import { createQuickChoice } from "#engine/quick-model.ts";
+import { createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
 import { contextRun, inToolContext } from "#tools/context.ts";
 
 export type ServerOptions = {
@@ -277,11 +278,11 @@ export const createServer = (options: ServerOptions): Server => {
     info,
   });
   const touchedRuns = createCell<ReadonlySet<string>>(new Set());
-  const runWork = async (prompt: string): Promise<Result<string, string>> => {
+  const runWork = async (prompt: string, choice?: ModelChoice): Promise<Result<string, string>> => {
     await listening.get();
     const attempt = async (retries: number): Promise<Result<string, string>> => {
       const run = randomUUID();
-      const done = await engine.work(`${workRules}\n\n${prompt}`, run);
+      const done = await engine.work(`${workRules}\n\n${prompt}`, run, choice);
       const isTouched = touchedRuns.get().has(run);
       touchedRuns.update((runs) => new Set([...runs].filter((other) => other !== run)));
       const isCutOff = !done.ok && done.failure === restartedDetail && !isTouched;
@@ -316,6 +317,10 @@ export const createServer = (options: ServerOptions): Server => {
   });
   const presence = createPresence();
   const urgentPost = createCell(false);
+  const listedModels = async (): ReturnType<Engine["models"]> => {
+    await listening.get();
+    return engine.models();
+  };
   const mail = createMailbox({
     host,
     store,
@@ -323,11 +328,14 @@ export const createServer = (options: ServerOptions): Server => {
     clock,
     fetch: fetcher,
     complete: quickComplete,
-    quickChoice: createQuickChoice(async () => {
-      await listening.get();
-      return engine.models();
-    }),
+    quickChoice: createQuickChoice(listedModels),
     work: runWork,
+    stakesChoice: createStakesChoice(listedModels, () => readChoice(store.setting)),
+    matters: () =>
+      motions
+        .list()
+        .filter(({ status }) => status === "active")
+        .map(({ kind, title }) => `${title} (${kind})`),
     info,
     ...(options.createMailSource && { createSource: options.createMailSource }),
   });
