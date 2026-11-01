@@ -29,6 +29,9 @@ const toAddress = (text: string): Mail["from"] => {
   return named?.address === undefined ? { address: text } : { address: named.address, name: named.name ?? "" };
 };
 
+const has = (text: string, wanted: string | undefined): boolean =>
+  wanted === undefined || text.toLowerCase().includes(wanted.toLowerCase());
+
 export const createFakeMail = (now: () => string): FakeMail => {
   const boxes = createCell<ReadonlyMap<string, Box>>(new Map());
   const draftIds = createCell<readonly string[]>([]);
@@ -77,8 +80,6 @@ export const createFakeMail = (now: () => string): FakeMail => {
       return Promise.resolve(found ? ok(found) : fail("That mail isn't in this account any more."));
     },
     search: (query) => {
-      const has = (text: string, wanted: string | undefined): boolean =>
-        wanted === undefined || text.toLowerCase().includes(wanted.toLowerCase());
       const found = boxOf(account).inbox.filter(
         (mail) =>
           has(`${mail.from.name ?? ""} ${mail.from.address}`, query.from) &&

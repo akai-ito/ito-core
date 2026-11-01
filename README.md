@@ -112,6 +112,13 @@ If pages change on the remote, say by merging a pull request there, `node bin/it
 fast-forwards the Thread, and Ari takes the new pages into its search the next time it uses memory.
 It refuses, rather than merge, when pages changed on both sides.
 
+Connect iCloud, Outlook or Gmail in Ari's Settings › Capabilities, and Kumo, the agent working in
+the background, reads every mail as it arrives: it puts bookings on your calendar, drafts replies in
+your voice into your Drafts folder, and records what it did in Done, with an undo. It never sends a
+mail. In the conversation, Ari reaches the same mail through `ito mail` commands and a skill file,
+rather than more tools in every turn: ask it to go through the recruiters who wrote this month, and
+it searches, reads each thread, and drafts the replies you agree to.
+
 Ari notifies you while you're away: when a reply finishes, when something fails, and when it asks
 you something. To switch notifications on, create an APNs key in your Apple Developer account
 (Certificates, Identifiers & Profiles, then Keys, with Apple Push Notifications service), download
