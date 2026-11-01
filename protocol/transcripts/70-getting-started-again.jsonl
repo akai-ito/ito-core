@@ -1,0 +1,18 @@
+{"transcript":"70-getting-started-again","start":"2026-11-12T19:00:00.000Z","scenario":70,"title":"Getting started again","summary":"Getting started is done and iCloud is connected. You choose to see it again from Settings. Nothing is wiped and no mail is read again: Kumo asks its first question once more and names what it believes from memory. You confirm the belief and finish.","guarantees":["G39"],"app":{}}
+{"at":0,"world":"capability_on","capability":"icloud","values":{"apple_id":"divy@icloud.com","app_password":"abcd-efgh-ijkl-mnop"}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-12T19:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[]}}}
+{"at":5000,"world":"kumo_works","calls":[],"post":"Good to see this again. What's changed since we last did it?"}
+{"at":5000,"world":"kumo_works","calls":[{"tool":"believe","input":{"text":"You're training for a sub-20 5K, with parkrun on Saturdays.","page":"memory:now"}}]}
+{"at":5000,"app":{"method":"POST","path":"/v0/onboarding/replay"}}
+{"at":5000,"event":{"id":"e_0001_30807","type":"onboarding.changed","at":"2026-11-12T19:00:05.000Z","onboarding":{"state":"reading"}}}
+{"at":5000,"server":{"status":200,"body":{"state":"reading"}}}
+{"at":5000,"event":{"id":"e_0002_46266","type":"message.posted","at":"2026-11-12T19:00:05.000Z","message":{"id":"m_0001_95720","role":"agent","kind":"post","text":"Good to see this again. What's changed since we last did it?","at":"2026-11-12T19:00:05.000Z","position":2}}}
+{"at":5000,"event":{"id":"e_0003_27563","type":"onboarding.changed","at":"2026-11-12T19:00:05.000Z","onboarding":{"state":"ready","proposal":{"beliefs":[{"id":"n_0001_97990","text":"You're training for a sub-20 5K, with parkrun on Saturdays.","page":"memory:now"}],"added":[],"motions":[]}}}}
+{"at":35000,"app":{"method":"POST","path":"/v0/onboarding/beliefs/n_0001_97990","body":{"answer":"true"}}}
+{"at":35000,"server":{"status":202}}
+{"at":35000,"event":{"id":"e_0004_37265","type":"onboarding.changed","at":"2026-11-12T19:00:35.000Z","onboarding":{"state":"ready","proposal":{"beliefs":[{"id":"n_0001_97990","text":"You're training for a sub-20 5K, with parkrun on Saturdays.","page":"memory:now","answer":"true"}],"added":[],"motions":[]}}}}
+{"at":40000,"app":{"method":"POST","path":"/v0/onboarding/done"}}
+{"at":40000,"event":{"id":"e_0005_56514","type":"onboarding.changed","at":"2026-11-12T19:00:40.000Z","onboarding":{"state":"done"}}}
+{"at":40000,"server":{"status":200,"body":{"state":"done"}}}

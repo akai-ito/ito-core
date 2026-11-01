@@ -245,6 +245,27 @@ paths:
             application/json:
               schema: { $ref: "events.schema.json#/$defs/Onboarding" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/onboarding/replay:
+    post:
+      tags: [Onboarding]
+      operationId: replayOnboarding
+      summary: Run getting started again
+      description: |
+        Opens getting started again once it's done, to see it again. Nothing is wiped: accounts
+        already connected stay connected, and the 90-day catch-up runs only for an account that
+        connects now. Without one, Kumo names what it believes from memory, and the proposal's
+        `motions` is everything in motion now. Every app hears `onboarding.changed` with `reading`,
+        and Kumo asks its first question again as a post. While getting started runs, it changes
+        nothing.
+      responses:
+        "200":
+          description: Getting started, open again.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Onboarding" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/onboarding/beliefs/{belief}:
     post:
       tags: [Onboarding]

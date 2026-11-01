@@ -25,4 +25,6 @@ export const registerOnboarding = (app: FastifyInstance, { gettingStarted, schem
   );
 
   app.post("/v0/onboarding/done", { schema: schemaFor("finishOnboarding") }, () => gettingStarted.finish());
+
+  app.post("/v0/onboarding/replay", { schema: schemaFor("replayOnboarding") }, () => gettingStarted.replay());
 };

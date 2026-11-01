@@ -146,6 +146,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/onboarding/replay": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Run getting started again
+     * @description Opens getting started again once it's done, to see it again. Nothing is wiped: accounts
+     *     already connected stay connected, and the 90-day catch-up runs only for an account that
+     *     connects now. Without one, Kumo names what it believes from memory, and the proposal's
+     *     `motions` is everything in motion now. Every app hears `onboarding.changed` with `reading`,
+     *     and Kumo asks its first question again as a post. While getting started runs, it changes
+     *     nothing.
+     */
+    post: operations["replayOnboarding"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/onboarding/beliefs/{belief}": {
     parameters: {
       query?: never;
@@ -2118,7 +2143,7 @@ export interface components {
         beliefs: components["schemas"]["Belief"][];
         /** @description Future bookings the catch-up put on your calendar. */
         added: components["schemas"]["CalendarItem"][];
-        /** @description The things the catch-up put in motion, for "Here's what's in motion". */
+        /** @description The things the catch-up put in motion, for "Here's what's in motion"; when getting started runs again, everything in motion now. */
         motions: components["schemas"]["MotionId"][];
       };
     };
@@ -3103,6 +3128,28 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Done. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Onboarding"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  replayOnboarding: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Getting started, open again. */
       200: {
         headers: {
           "Ito-Protocol": components["headers"]["ItoProtocol"];

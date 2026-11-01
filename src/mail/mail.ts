@@ -33,8 +33,8 @@ export type Progress = (read: number, total: number) => void;
 export type Mailbox = {
   readonly tools: readonly Tool[];
   readonly check: (account: Account, values: Values) => Promise<CheckResult>;
-  readonly catchUp: (onProgress: Progress) => Promise<Result<undefined, string>>;
-  readonly hasSource: () => boolean;
+  readonly catchUp: (onProgress: Progress, only?: readonly string[]) => Promise<Result<undefined, string>>;
+  readonly accounts: () => readonly Account[];
   readonly close: () => Promise<void>;
 };
 
@@ -1173,19 +1173,19 @@ export const createMailbox = ({
     }
   };
 
-  const catchUp = async (onProgress: Progress): Promise<Result<undefined, string>> => {
+  const catchUp = async (onProgress: Progress, only?: readonly string[]): Promise<Result<undefined, string>> => {
     const since = toTimestamp(clock.now() - catchUpDays * dayMs);
+    const reading = connections
+      .get()
+      .values()
+      .filter(({ account }) => only?.includes(account) ?? true)
+      .toArray();
     const readRecent = async ({ account, source }: Connection): Promise<Result<readonly string[], string>> => {
       const recent = await source.recent(since);
       if (!recent.ok) info("Recent mail couldn't be read", { account, error: recent.failure });
       return recent.ok ? ok(recent.value.map((mail) => summarise(account, mail))) : recent;
     };
-    const read = await Promise.all(
-      connections
-        .get()
-        .values()
-        .map((connection) => readRecent(connection)),
-    );
+    const read = await Promise.all(reading.map((connection) => readRecent(connection)));
     const [unread = "No mail is set up."] = read.flatMap((result) => (result.ok ? [] : result.failure));
     if (read.every((result) => !result.ok)) return fail(unread);
     const lines = read.flatMap((result) => (result.ok ? result.value : []));
@@ -1201,13 +1201,10 @@ export const createMailbox = ({
     if (parts > 0 && failures.get() === parts) return fail("Kumo couldn't read any of it.");
     await folders.propose(lines);
     const sent = await Promise.all(
-      connections
-        .get()
-        .values()
-        .map(async ({ source }) => {
-          const found = await source.sent(since);
-          return found.ok ? found.value : [];
-        }),
+      reading.map(async ({ source }) => {
+        const found = await source.sent(since);
+        return found.ok ? found.value : [];
+      }),
     );
     const sample = sent.flat().slice(-sentSample);
     if (sample.length > 0) await work(voicePrompt(sample));
@@ -1222,7 +1219,7 @@ export const createMailbox = ({
     tools,
     check,
     catchUp,
-    hasSource: () => connections.get().size > 0,
+    accounts: () => connections.get().keys().toArray(),
     close: async () => {
       isClosed.set(true);
       unsubscribe();

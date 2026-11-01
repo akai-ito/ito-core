@@ -45,7 +45,7 @@ where the protocol has to make it possible, marked *App*.
 | G36 | **Kumo never sends what you'd write.** Replies to people are drafts in your Drafts folder and cards on the Desk; you send them from Mail. | 66 |
 | G37 | **The calendar goes through the box.** Events, holds and invite answers are written to iCloud by the box, so they land while your phone sleeps; an invite is held on Kumo's calendar until you answer. | 67 |
 | G38 | **Kumo picks the moment; manners pick the volume.** A notification lands when Kumo sends it. It's quiet during a calendar event and overnight, at most one an hour has sound, and urgent always sounds. | 18, 21, 68 |
-| G39 | **Getting started reads before it asks.** Kumo reads your recent mail and calendar first, every app sees how far it has got, and its few questions come as ordinary messages in the conversation. What it believes about you waits for your word, and getting started ends when you say so. | 69 |
+| G39 | **Getting started reads before it asks.** Kumo reads your recent mail and calendar first, every app sees how far it has got, and its few questions come as ordinary messages in the conversation. What it believes about you waits for your word, and getting started ends when you say so. | 69, 70 |
 
 ## Scenario by scenario
 
@@ -463,6 +463,12 @@ where the protocol has to make it possible, marked *App*.
   and `onboarding.changed` carries its progress, then what it found. (G39)
 - Kumo's question arrives as a post; your answer is an ordinary message. A belief you confirm
   shows its `answer`, and finishing ends getting started for every app. (G39)
+
+### 70 · [Getting started again](transcripts/70-getting-started-again.jsonl)
+
+- Once getting started is done, `POST /v0/onboarding/replay` opens it again without wiping anything.
+  With every account already read, no catch-up runs: Kumo asks again as a post and names what it
+  believes from memory, and the proposal shows what's in motion now. (G39)
 
 ## Not in this version
 

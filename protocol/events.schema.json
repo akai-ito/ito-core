@@ -2260,7 +2260,7 @@
               }
             },
             "motions": {
-              "description": "The things the catch-up put in motion, for \"Here's what's in motion\".",
+              "description": "The things the catch-up put in motion, for \"Here's what's in motion\"; when getting started runs again, everything in motion now.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/MotionId"
