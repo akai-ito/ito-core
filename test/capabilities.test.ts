@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -20,7 +20,9 @@ import { createStore, type Settings } from "#store/store.ts";
 import { testCapability } from "./support/test-capabilities.ts";
 import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
-const home = mkdtempSync(path.join(os.tmpdir(), "ito-capabilities-"));
+// macOS links its temporary folder through /private, and a process sees its working folder resolved.
+const temporary = realpathSync(os.tmpdir());
+const home = mkdtempSync(path.join(temporary, "ito-capabilities-"));
 const installed = [testCapability("echo")];
 const hosts = createCell<readonly Host[]>([]);
 const logged = createCell<readonly string[]>([]);
