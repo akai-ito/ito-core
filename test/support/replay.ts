@@ -11,7 +11,6 @@ import type { Complete } from "#engine/engine.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import { fail as failed, ok, type Result } from "#result.ts";
-import { fieldOf } from "#tools/input.ts";
 import { createCalendarSource } from "#calendar/caldav.ts";
 import { startFakeCalDav } from "./fake-caldav.ts";
 import { createFakeMail, type ArrivingMail } from "./fake-mail.ts";
@@ -25,6 +24,8 @@ import type { Envelope } from "#notifications/notifier.ts";
 import type { SeededPage } from "#memory/memory.ts";
 import { createServer, databaseFile, type Server } from "#server.ts";
 import { onboardingSetting } from "#store/store.ts";
+import { toLocal } from "#desk/day.ts";
+import { dayWrittenSetting } from "#desk/moments.ts";
 import { openEventStream, type EventStream } from "./event-stream.ts";
 import { startFakeApns, type Pushed } from "./fake-apns.ts";
 import { createIdMatcher } from "./matching.ts";
@@ -573,18 +574,19 @@ export const replay = async (name: string): Promise<void> => {
         await advance(time);
         return;
       }
-      case "briefing_written": {
-        const { lines, handled } = step as unknown as { readonly lines: readonly unknown[]; readonly handled: number };
-        asides.update((current) => [
-          ...current,
-          {
-            lines: lines.map((line) => ({
-              text: fieldOf(line, "text"),
-              card: ids.translate(fieldOf(line, "card") ?? ""),
-            })),
-            handled,
-          },
-        ]);
+      case "moment_written": {
+        const {
+          text,
+          options = [],
+          reply = false,
+          important = false,
+        } = step as unknown as {
+          readonly text: string;
+          readonly options?: readonly string[];
+          readonly reply?: boolean;
+          readonly important?: boolean;
+        };
+        asides.update((current) => [...current, { text, options, reply, important }]);
         await advance(time);
         return;
       }
@@ -695,6 +697,11 @@ export const replay = async (name: string): Promise<void> => {
   if (transcript.given.every((event) => event.type !== "onboarding.changed")) {
     seeded.store.setSetting(onboardingSetting, JSON.stringify({ state: "done" }));
   }
+  // Kumo's first line of the day is already written, unless the transcript shows it being written.
+  const writesDay = transcript.steps.some(
+    (step) => "event" in step && step.event.type === "desk.changed" && step.event.desk.moment?.kind === "day",
+  );
+  if (!writesDay) seeded.store.setSetting(dayWrittenSetting, toLocal(start, "UTC").day);
   seeded.store.setSetting(tokenSetting, hashToken(transcriptToken));
   const hasDevices = transcript.steps.some((step) => "app" in step && step.app.path.startsWith("/v0/devices/"));
   if (hasDevices) {

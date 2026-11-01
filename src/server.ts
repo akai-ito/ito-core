@@ -45,7 +45,7 @@ import { packageVersion } from "#version.ts";
 import type { ModelChoice } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 import { createDesk } from "#desk/desk.ts";
-import { createBriefings } from "#desk/briefing.ts";
+import { createMoments } from "#desk/moments.ts";
 import { createWorkTools } from "#work/tools.ts";
 import { createJobs, type Jobs } from "#jobs/jobs.ts";
 import { registerJobs } from "#http/jobs.ts";
@@ -66,7 +66,7 @@ import {
   pushProblem,
   type Problems,
 } from "#problems/problems.ts";
-import { createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
+import { createModestChoice, createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
 import { contextRun, inToolContext } from "#tools/context.ts";
 
 export type ServerOptions = {
@@ -302,7 +302,8 @@ export const createServer = (options: ServerOptions): Server => {
     if (!done.ok) info("Kumo's background work didn't finish", { error: done.failure });
     return done;
   };
-  const desk = createDesk({ store, identifiers, clock, work: runWork, info });
+  const timeZone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const desk = createDesk({ store, identifiers, clock, timeZone, work: runWork, info });
   const jobs = createJobs({
     store: createJobStore(database),
     isMotion: (id) => store.findMotion(id) !== undefined,
@@ -311,7 +312,6 @@ export const createServer = (options: ServerOptions): Server => {
     work: runWork,
     info,
   });
-  const timeZone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
     store,
@@ -326,7 +326,6 @@ export const createServer = (options: ServerOptions): Server => {
     log,
   });
   const presence = createPresence();
-  const urgentPost = createCell(false);
   const listedModels = async (): ReturnType<Engine["models"]> => {
     await listening.get();
     return engine.models();
@@ -364,6 +363,9 @@ export const createServer = (options: ServerOptions): Server => {
     onHealth: (account, health) => {
       problems.report(`mail:${account}`, health, mailProblem(account));
     },
+    onReading: (at) => {
+      desk.setLastMail(at);
+    },
     ...(options.createMailSource && { createSource: options.createMailSource }),
   });
   const calendar = createCalendar({
@@ -396,17 +398,6 @@ export const createServer = (options: ServerOptions): Server => {
     info,
   });
   const isBusy = (): boolean => calendar.isBusy();
-  const briefings = createBriefings({
-    store,
-    desk,
-    clock,
-    timeZone,
-    presence,
-    complete: quickComplete,
-    isBusy,
-    identifiers,
-    info,
-  });
   const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
   const apns = createApns(() => readApnsCredentials(store), push.hosts, clock);
   const notifier = createNotifier({
@@ -419,7 +410,21 @@ export const createServer = (options: ServerOptions): Server => {
     reminderMs: push.reminderMs,
     timeZone,
     isBusy,
-    isUrgentPost: () => urgentPost.get(),
+  });
+  const moments = createMoments({
+    store,
+    desk,
+    clock,
+    timeZone,
+    presence,
+    complete: quickComplete,
+    choice: createModestChoice(listedModels, () => readChoice(store.setting)),
+    isBusy,
+    isGettingStarted: () => gettingStarted.state().state !== "done",
+    identifiers,
+    lead: () => leadOf(store),
+    notify: notifier.moment,
+    info,
   });
 
   const app = createApp({
@@ -440,6 +445,7 @@ export const createServer = (options: ServerOptions): Server => {
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     desk,
+    timeZone,
     calendar,
     gettingStarted,
     onLeadRenamed: () => {
@@ -478,13 +484,7 @@ export const createServer = (options: ServerOptions): Server => {
     imageTool,
     ...memory.tools,
     ...motions.tools,
-    ...createWorkTools({
-      store,
-      desk,
-      markUrgent: (isUrgent) => {
-        urgentPost.set(isUrgent);
-      },
-    }),
+    ...createWorkTools({ post: moments.tell, desk }),
     ...calendar.tools,
     ...jobs.tools,
     ...mail.tools,
@@ -533,7 +533,7 @@ export const createServer = (options: ServerOptions): Server => {
       name: "show_mail",
       title: "Show a sample mail's work",
       audience: "hidden",
-      description: "Put a sample draft on the Desk and post a line, for the demo.",
+      description: "Read a sample mail: put a draft on the Desk and tell them about it, for the demo.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       call: () => {
         desk.addCard({
@@ -553,9 +553,11 @@ export const createServer = (options: ServerOptions): Server => {
             in_reply_to: "confirm-48213@hotelorto.it",
           },
         });
-        store.postMessage(
+        desk.setLastMail(toTimestamp(clock.now()));
+        moments.tell(
           "Hotel Orto confirmed you for 20–23 Nov. One snag: you land 22:10 and check-in closes 22:00, so I " +
             "drafted a note.",
+          false,
         );
         return Promise.resolve({ text: "Put a sample draft on the Desk." });
       },
@@ -592,14 +594,14 @@ export const createServer = (options: ServerOptions): Server => {
       },
     },
     {
-      name: "brief_now",
-      title: "Write the briefing now",
+      name: "moment_now",
+      title: "Write Kumo's line now",
       audience: "hidden",
-      description: "Write the morning briefing now, whatever the time.",
+      description: "Write Kumo's first line of the day now, whatever the time, for the demo.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       call: async () => {
-        await briefings.briefNow();
-        return { text: "Wrote the briefing." };
+        await moments.dayNow();
+        return { text: "Wrote Kumo's line." };
       },
     },
   ];
@@ -645,7 +647,7 @@ export const createServer = (options: ServerOptions): Server => {
     problems.close();
     motions.close();
     topics.close();
-    briefings.close();
+    moments.close();
     jobs.close();
     gettingStarted.close();
     calendar.close();

@@ -189,9 +189,9 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       const { message } = event;
       database
         .prepare(
-          "INSERT INTO messages (id, position, role, kind, text, at, outcome) VALUES (?, ?, 'agent', 'post', ?, ?, 'completed')",
+          "INSERT INTO messages (id, position, role, kind, text, at, outcome) VALUES (?, ?, 'agent', ?, ?, ?, 'completed')",
         )
-        .run(message.id, seq, message.text, message.at);
+        .run(message.id, seq, message.kind ?? "post", message.text, message.at);
       return;
     }
     case "onboarding.changed": {

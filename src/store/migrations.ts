@@ -151,4 +151,8 @@ export const migrations: readonly string[] = [
     every_days INTEGER,
     body TEXT NOT NULL
   );`,
+  // 0.17: Kumo's line for the moment replaces the morning briefing.
+  `UPDATE desk SET body = json_set(json_remove(body, '$.briefing'), '$.handled', 0);
+  UPDATE settings SET key = 'morning_not_before' WHERE key = 'briefing_not_before';
+  DELETE FROM settings WHERE key = 'briefing_day';`,
 ];

@@ -330,8 +330,9 @@ export interface paths {
     };
     /**
      * Read the Desk
-     * @description Home: the briefing, Coming up and Waiting on you. The snapshot carries it too, and
-     *     `desk.changed` carries the whole Desk whenever it changes.
+     * @description Home: Kumo's line for the moment, Coming up, Waiting on you, how much Kumo handled today
+     *     and when it last read your mail. The snapshot carries it too, and `desk.changed` carries
+     *     the whole Desk whenever it changes.
      */
     get: operations["getDesk"];
     put?: never;
@@ -342,7 +343,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v0/desk/briefing/{briefing}/read": {
+  "/v0/desk/moment/{moment}/read": {
     parameters: {
       query?: never;
       header?: never;
@@ -352,11 +353,58 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Say the briefing was seen
-     * @description Tells the box an app showed the briefing, so it can fold it and, later, write a "since this
-     *     morning" briefing only for what happened after.
+     * Say Kumo's line was seen
+     * @description Tells the box an app showed Kumo's line for the moment on the Desk. It's read from then
+     *     on, in the conversation too: no notification goes out for it, and three hours later it
+     *     gives way to all quiet. Saying it again changes nothing.
      */
-    post: operations["readBriefing"];
+    post: operations["readMoment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/desk/moment/{moment}/answer": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Answer Kumo's line
+     * @description Answers Kumo's line for the moment, like a card: tap one of its `options`, or type `text`
+     *     when it `allows_text`. The line shows `state: working`, with your `answer`, while Kumo acts
+     *     on it in the background, then gives way to all quiet; Done says what you answered and what
+     *     followed. If Kumo couldn't act, the line comes back to answer again, and Done says why.
+     */
+    post: operations["answerMoment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/work": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Kumo's work today
+     * @description Kumo's work today, local time, for "47 in: 3 need you, 6 handled, 38 cleared": what it
+     *     handled, and the mail it read and cleared with nothing needed, each newest first with its
+     *     reason and whether it can be undone. What needs you is the Desk's `waiting`. Earlier days
+     *     are in `GET /v0/done`.
+     */
+    get: operations["getWork"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -430,7 +478,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v0/briefing": {
+  "/v0/morning": {
     parameters: {
       query?: never;
       header?: never;
@@ -439,11 +487,12 @@ export interface paths {
     };
     get?: never;
     /**
-     * Set when the morning briefing may come
-     * @description The morning briefing comes at the first calm moment after `not_before`, local time: when
-     *     you first open Ito, or the first gap with nothing on your calendar.
+     * Set when your morning starts
+     * @description Kumo's first line of the day comes at the first calm moment after `not_before`, local
+     *     time: when you first open the conversation, or the first gap with nothing on your
+     *     calendar, however late that is.
      */
-    put: operations["setBriefing"];
+    put: operations["setMorning"];
     post?: never;
     delete?: never;
     options?: never;
@@ -1715,11 +1764,11 @@ export interface components {
     /** @description What the device shows, once decrypted. */
     Notification: {
       kind: components["schemas"]["NotificationKind"];
-      /** @description `reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: "Couldn't finish: " and the error's message. `ask`: the question. `reminder`: "Still waiting on one thing: " and the question. `post`: its first line. `card`: the card's title. `briefing`: its first line. */
+      /** @description `reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: "Couldn't finish: " and the error's message. `ask`: the question. `reminder`: "Still waiting on one thing: " and the question. `post` and `moment`: its first line. */
       text: string;
       /** @description `reply` and `failed`: the turn. */
       turn?: components["schemas"]["TurnId"];
-      /** @description `reply`: the reply, so that a tap opens the conversation there. */
+      /** @description `reply`, `post` and `moment`: the message, so that a tap opens the conversation there; a `moment` opens the Desk. */
       message?: components["schemas"]["MessageId"];
       /** @description `ask` and `reminder`: what the device needs to answer from the notification. Answering is an ordinary send. */
       ask?: {
@@ -1728,8 +1777,6 @@ export interface components {
         options: string[];
         allows_text: boolean;
       };
-      /** @description `card`: the card, to open the Desk at it. */
-      card?: components["schemas"]["CardId"];
     };
     /** @description One message in the conversation. Messages are ordered by when they began. */
     Message: {
@@ -1912,6 +1959,25 @@ export interface components {
     CardResult: {
       card: components["schemas"]["Card"];
     };
+    /** @description Your answer to Kumo's line, one of `option` or `text`. */
+    MomentAnswer: {
+      /** @description The label of the option you tapped. */
+      option?: string;
+      /** @description A typed reply. */
+      text?: string;
+    };
+    MomentResult: {
+      moment: components["schemas"]["Moment"];
+    };
+    /** @description Kumo's work today. It will grow, such as with how much Kumo checks with you. */
+    Work: {
+      /** @description Today, local time, such as `2026-11-05`. */
+      day: string;
+      /** @description What Kumo did without you today, newest first. */
+      handled: components["schemas"]["DoneEntry"][];
+      /** @description The mail Kumo read and left alone today (`quiet`), newest first. */
+      cleared: components["schemas"]["DoneEntry"][];
+    };
     NewEvent: {
       title: string;
       start: components["schemas"]["When"];
@@ -1926,8 +1992,8 @@ export interface components {
       /** @description What the lead is called; Kumo until you choose another name. */
       name: string;
     };
-    BriefingSettings: {
-      /** @description The earliest local time the morning briefing may come, such as `07:30`. */
+    MorningSettings: {
+      /** @description The earliest local time Kumo's first line of the day may come, such as `07:30`. */
       not_before: string;
     };
     ServerInfo: {
@@ -1938,7 +2004,7 @@ export interface components {
       /** @description The protocol version of this route, as `MAJOR.MINOR`. */
       protocol: string;
       lead: components["schemas"]["Lead"];
-      briefing: components["schemas"]["BriefingSettings"];
+      morning: components["schemas"]["MorningSettings"];
       /** @description The model Kumo runs on. */
       agent: {
         /**
@@ -2195,10 +2261,10 @@ export interface components {
     /** @description Opaque. A turn is one run of the agent, from its inputs to an answer, a stop or an error. */
     TurnId: string;
     /**
-     * @description Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as "I'll check current prices first."; an app may show notes as live detail instead of in the conversation. A `post` is a message Kumo wrote outside a turn, from work it did in the background, such as "How did the Halcyon interview go?". Hide a kind you don't recognise.
+     * @description Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as "I'll check current prices first."; an app may show notes as live detail instead of in the conversation. A `post` is a message Kumo wrote outside a turn, such as its first question while getting started. A `moment` is Kumo's line for the moment, the same words as the Desk's `moment` while it lasts, such as "How did the call with Northwind go?". Hide a kind you don't recognise.
      * @enum {unknown}
      */
-    MessageKind: "reply" | "note" | "post";
+    MessageKind: "reply" | "note" | "post" | "moment";
     /** @description Where a message or a step sits in the conversation: strictly increasing in conversation order, with gaps. Snapshots and history pages carry messages and steps in separate lists; merge them by position. */
     Position: number;
     /** @description Opaque. The server makes it when the agent asks. */
@@ -2349,31 +2415,37 @@ export interface components {
       };
       motion?: components["schemas"]["MotionId"];
     };
-    /** @description Opaque. The server makes it for each briefing. */
-    BriefingId: string;
+    /** @description Opaque. The server makes it for each of Kumo's lines for the moment. */
+    MomentId: string;
+    /** @description Kumo's line for the moment, at the top of the Desk: one or two sentences, right for now, which order and connect what's below rather than repeat it. It comes at the first calm moment after your morning time, when something that matters arrives, or when your day changes, and it's the same words as a `moment` message in the conversation. It goes three hours after it was read, at midnight, or once you've answered it and Kumo has acted. Draw its buttons from `options`; `allows_text` offers Reply. */
+    Moment: {
+      id: components["schemas"]["MomentId"];
+      /**
+       * @description What brought it: `day`, the first line of the day; `news`, something that matters arrived; `change`, your day changed. Show a kind you don't recognise like any other.
+       * @enum {unknown}
+       */
+      kind: "day" | "news" | "change";
+      at: components["schemas"]["Timestamp"];
+      /** @description One or two sentences, plain words. */
+      text: string;
+      /** @description The `moment` message in the conversation that holds the same words. */
+      message: components["schemas"]["MessageId"];
+      /** @description Up to three short replies, such as "Ask me tonight". A tap answers Kumo, like a card's option. */
+      options: components["schemas"]["AskOption"][];
+      /** @description Whether a typed reply fits, for Reply. */
+      allows_text: boolean;
+      /** @description When an app first showed it on the Desk, as told with `POST /v0/desk/moment/{moment}/read`. Once it's read, no notification goes out for it. */
+      read_at?: components["schemas"]["Timestamp"];
+      /**
+       * @description `working` while Kumo acts on your answer. Absent otherwise.
+       * @constant
+       */
+      state?: "working";
+      /** @description `working` only: the answer you gave, as you gave it. */
+      answer?: components["schemas"]["CardAnswer"];
+    };
     /** @description Opaque. The server makes it for each card. */
     CardId: string;
-    BriefingLine: {
-      /** @description One line, plain words. */
-      text: string;
-      /** @description The thing in motion it's about. */
-      motion?: components["schemas"]["MotionId"];
-      /** @description The card waiting on you that it's about. */
-      card?: components["schemas"]["CardId"];
-    };
-    /** @description Kumo's briefing at the top of the Desk: `morning` once a day at the first calm moment, or `since` for what happened after you read the morning one. The box drops it at 14:00 local, or when a newer one replaces it. */
-    Briefing: {
-      id: components["schemas"]["BriefingId"];
-      /** @enum {unknown} */
-      kind: "morning" | "since";
-      at: components["schemas"]["Timestamp"];
-      /** @description What matters, most important first. Only what needs you or changed your plans. */
-      lines: components["schemas"]["BriefingLine"][];
-      /** @description How many small things Kumo handled without you, for "Also handled 9 small things". */
-      handled: number;
-      /** @description When an app first showed it, as told with `POST /v0/desk/briefing/{briefing}/read`. */
-      read_at?: components["schemas"]["Timestamp"];
-    };
     /** @description A time Kumo offers. */
     Slot: {
       start: components["schemas"]["Timestamp"];
@@ -2392,6 +2464,8 @@ export interface components {
       motion?: components["schemas"]["MotionId"];
       /** @description When it began waiting, for "since Wed". */
       at: components["schemas"]["Timestamp"];
+      /** @description When Kumo last changed it while it waited, such as rewriting a draft or bringing it back after it couldn't act. Absent if it hasn't changed. Mark a card whose `changed_at`, or `at` for a new one, is later than your last look at the Desk. */
+      changed_at?: components["schemas"]["Timestamp"];
       /** @description One line, such as "Draft to Tess". */
       title: string;
       options: components["schemas"]["AskOption"][];
@@ -2442,13 +2516,18 @@ export interface components {
         capability?: string;
       };
     } & (unknown & unknown & unknown & unknown & unknown);
-    /** @description Home: the briefing, what's coming up and what's waiting on you. */
+    /** @description Home: Kumo's line for the moment, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail. */
     Desk: {
-      briefing?: components["schemas"]["Briefing"];
+      /** @description Absent while all is quiet: then say so, with `handled`, such as "All quiet. I handled 9 small things." */
+      moment?: components["schemas"]["Moment"];
       /** @description Events in the next 36 hours or so, plus anything big this week, in time order. */
       coming_up: components["schemas"]["CalendarItem"][];
       /** @description Cards waiting on you, oldest first. */
       waiting: components["schemas"]["Card"][];
+      /** @description How many things Kumo did without you today, local time: the Done entries that aren't `quiet`, for "Done · handled 9". */
+      handled: number;
+      /** @description When Kumo last read a new mail, for "Reading · last mail 2 min ago". Absent while no mail account is connected, and until the first mail. */
+      last_mail_at?: components["schemas"]["Timestamp"];
     };
     /** @description A thing in motion: something going on that Ari keeps for you, such as a trip being planned. Its content and state come from `GET /v0/motion/{id}`. */
     Motion: {
@@ -2527,7 +2606,7 @@ export interface components {
     };
     /**
      * message.posted
-     * @description Kumo posted a message into the conversation from work it did in the background, outside any turn. It arrives whole.
+     * @description Kumo posted a message into the conversation outside any turn: a `post`, or its line for the moment, a `moment`. It arrives whole.
      */
     MessagePosted: {
       id: components["schemas"]["EventId"];
@@ -2691,10 +2770,10 @@ export interface components {
       problems: components["schemas"]["Problem"][];
     };
     /**
-     * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once. `post`: Kumo posted into the conversation from background work. `card`: something started waiting on you on the Desk. `briefing`: the morning briefing is ready.
+     * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once. `post`: Kumo posted into the conversation outside a turn. `moment`: Kumo's line for the moment matters and you haven't seen it, half a minute after it came; a line read on the Desk sends nothing.
      * @enum {unknown}
      */
-    NotificationKind: "reply" | "failed" | "ask" | "reminder" | "post" | "card" | "briefing";
+    NotificationKind: "reply" | "failed" | "ask" | "reminder" | "post" | "moment";
   };
   responses: {
     /** @description The request is malformed, or not possible in the current state (`invalid_request`). */
@@ -2893,10 +2972,13 @@ export type DoneResult = components["schemas"]["DoneResult"];
 export type JobList = components["schemas"]["JobList"];
 export type CardAnswer = components["schemas"]["CardAnswer"];
 export type CardResult = components["schemas"]["CardResult"];
+export type MomentAnswer = components["schemas"]["MomentAnswer"];
+export type MomentResult = components["schemas"]["MomentResult"];
+export type Work = components["schemas"]["Work"];
 export type NewEvent = components["schemas"]["NewEvent"];
 export type EventResult = components["schemas"]["EventResult"];
 export type Lead = components["schemas"]["Lead"];
-export type BriefingSettings = components["schemas"]["BriefingSettings"];
+export type MorningSettings = components["schemas"]["MorningSettings"];
 export type ServerInfo = components["schemas"]["ServerInfo"];
 export type SendMessage = components["schemas"]["SendMessage"];
 export type MessageResult = components["schemas"]["MessageResult"];
@@ -2951,10 +3033,9 @@ export type UploadId = components["schemas"]["UploadId"];
 export type DoneEntry = components["schemas"]["DoneEntry"];
 export type JobId = components["schemas"]["JobId"];
 export type Job = components["schemas"]["Job"];
-export type BriefingId = components["schemas"]["BriefingId"];
+export type MomentId = components["schemas"]["MomentId"];
+export type Moment = components["schemas"]["Moment"];
 export type CardId = components["schemas"]["CardId"];
-export type BriefingLine = components["schemas"]["BriefingLine"];
-export type Briefing = components["schemas"]["Briefing"];
 export type Slot = components["schemas"]["Slot"];
 export type Card = components["schemas"]["Card"];
 export type Desk = components["schemas"]["Desk"];
@@ -3090,7 +3171,7 @@ export interface operations {
            *       "lead": {
            *         "name": "Kumo"
            *       },
-           *       "briefing": {
+           *       "morning": {
            *         "not_before": "07:30"
            *       },
            *       "agent": {
@@ -3469,12 +3550,12 @@ export interface operations {
       401: components["responses"]["TokenRejected"];
     };
   };
-  readBriefing: {
+  readMoment: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        briefing: components["schemas"]["BriefingId"];
+        moment: components["schemas"]["MomentId"];
       };
       cookie?: never;
     };
@@ -3490,6 +3571,63 @@ export interface operations {
       };
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  answerMoment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        moment: components["schemas"]["MomentId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "option": "Ask me tonight"
+         *     }
+         */
+        "application/json": components["schemas"]["MomentAnswer"];
+      };
+    };
+    responses: {
+      /** @description Taken; Kumo is acting on it. */
+      202: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MomentResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  getWork: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Today's work. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Work"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
     };
   };
   answerCard: {
@@ -3594,7 +3732,7 @@ export interface operations {
       401: components["responses"]["TokenRejected"];
     };
   };
-  setBriefing: {
+  setMorning: {
     parameters: {
       query?: never;
       header?: never;
@@ -3608,7 +3746,7 @@ export interface operations {
          *       "not_before": "07:30"
          *     }
          */
-        "application/json": components["schemas"]["BriefingSettings"];
+        "application/json": components["schemas"]["MorningSettings"];
       };
     };
     responses: {
@@ -3619,7 +3757,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["BriefingSettings"];
+          "application/json": components["schemas"]["MorningSettings"];
         };
       };
       400: components["responses"]["InvalidRequest"];

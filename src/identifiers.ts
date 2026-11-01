@@ -26,7 +26,7 @@ export type Identifiers = {
   readonly card: () => string;
   readonly done: () => string;
   readonly job: () => string;
-  readonly briefing: () => string;
+  readonly moment: () => string;
   readonly calendarItem: () => string;
   readonly belief: () => string;
 };
@@ -49,7 +49,7 @@ export const randomIdentifiers: Identifiers = {
   card: () => `k_${randomText()}`,
   done: () => `d_${randomText()}`,
   job: () => `j_${randomText()}`,
-  briefing: () => `b_${randomText()}`,
+  moment: () => `o_${randomText()}`,
   calendarItem: () => `v_${randomText()}`,
   belief: () => `n_${randomText()}`,
 };

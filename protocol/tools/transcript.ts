@@ -12,7 +12,6 @@ import type {
   AskKind,
   Attachment,
   AskOption,
-  Briefing,
   CalendarItem,
   Call,
   Card,
@@ -24,6 +23,7 @@ import type {
   LiveTurn,
   Message,
   MessageKind,
+  Moment,
   Motion,
   MotionChange,
   Notification,
@@ -69,6 +69,15 @@ type SendOptions = {
 };
 
 type NewCard = Omit<Card, "id" | "at">;
+
+type NewMoment = {
+  readonly kind: Moment["kind"];
+  readonly text: string;
+  readonly options?: readonly string[];
+  readonly allowsText?: boolean;
+};
+
+type WorkToday = { readonly handled: readonly Fields[]; readonly cleared: readonly Fields[] };
 
 type NewCalendarItem = Omit<CalendarItem, "id">;
 
@@ -151,8 +160,18 @@ export type Transcript = {
   readonly getDesk: () => void;
   readonly calendarItem: (item: NewCalendarItem) => CalendarItem;
   readonly comingUp: (items: readonly CalendarItem[]) => void;
-  readonly brief: (briefing: Omit<Briefing, "id" | "at">) => Briefing;
-  readonly readBriefing: () => void;
+  // Kumo's line for the moment: a `moment` message and the Desk's `moment`.
+  readonly moment: (moment: NewMoment) => Moment;
+  // The grace after a line that matters is over: one notification, if it's still unread and you're away.
+  readonly momentUnread: (isUrgent?: boolean) => void;
+  readonly readMoment: () => void;
+  readonly answerMoment: (answer: Fields) => void;
+  // The line gives way to all quiet: Kumo acted on your answer, or it was read three hours ago.
+  readonly quiet: () => void;
+  // Kumo did one more thing without you today: its Done entry.
+  readonly handled: (entry: { readonly text: string; readonly reason?: string }) => Fields;
+  readonly mailRead: () => void;
+  readonly getWork: (work: WorkToday) => void;
   readonly addCard: (card: NewCard) => Card;
   readonly answerCard: (card: string, answer: Fields) => void;
   readonly settleCard: (card: string, replacement?: Partial<Card>) => void;
@@ -191,7 +210,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p" | "k" | "d" | "j" | "b" | "v" | "n";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p" | "k" | "d" | "j" | "o" | "v" | "n";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -391,7 +410,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacfpkdjbvn]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfpkdjovn]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -412,7 +431,7 @@ const toCounters = (log: readonly Event[]): Counters => {
     k: highest("k"),
     d: highest("d"),
     j: highest("j"),
-    b: highest("b"),
+    o: highest("o"),
     v: highest("v"),
     n: highest("n"),
   };
@@ -425,7 +444,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({
     boot: 1,
-    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0, k: 0, d: 0, j: 0, b: 0, v: 0, n: 0 },
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0, k: 0, d: 0, j: 0, o: 0, v: 0, n: 0 },
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
@@ -449,7 +468,7 @@ export const createTranscript = (header: Header): Transcript => {
   const device = createCell<Device | undefined>(undefined);
   const attachments = createCell<ReadonlyMap<string, Attachment>>(new Map());
   const pairingCodes = createCell<ReadonlySet<string>>(new Set());
-  const deskState = createCell<Desk>({ coming_up: [], waiting: [] });
+  const deskState = createCell<Desk>({ coming_up: [], waiting: [], handled: 0 });
   const onboardingState = createCell<Onboarding>({ state: "done" });
   const problemsState = createCell<readonly Problem[]>([]);
   const lastSounded = createCell<number | undefined>(undefined);
@@ -1420,7 +1439,15 @@ export const createTranscript = (header: Header): Transcript => {
   const post = (text: string): string => {
     const id = newId("m");
     emit("message.posted", {
-      message: { id, role: "agent", kind: "post", text, at: timestamp(), position: nextPosition() },
+      message: {
+        id,
+        role: "agent",
+        kind: "post",
+        text,
+        at: timestamp(),
+        position: nextPosition(),
+        outcome: "completed",
+      },
     });
     push("active", { kind: "post", text: toFirstLine(withoutBlocks(text)), message: id });
     return id;
@@ -1444,25 +1471,86 @@ export const createTranscript = (header: Header): Transcript => {
     changeDesk((desk) => ({ ...desk, coming_up: [...items] }));
   };
 
-  const brief = (given: Omit<Briefing, "id" | "at">): Briefing => {
-    const briefing: Briefing = { id: newId("b"), at: timestamp(), ...given };
-    changeDesk((desk) => ({ ...desk, briefing }));
-    push("passive", { kind: "briefing", text: briefing.lines[0]?.text ?? "" });
-    return briefing;
+  const currentMoment = (): Moment => {
+    const current = deskState.get().moment;
+    if (!current) throw new Error("no line for the moment");
+    return current;
   };
 
-  const readBriefing = (): void => {
-    const briefing = deskState.get().briefing;
-    if (!briefing) throw new Error("no briefing to read");
-    request("POST", `/v0/desk/briefing/${briefing.id}/read`);
-    changeDesk((desk) => ({ ...desk, briefing: { ...briefing, read_at: timestamp() } }));
+  const withMoment = (moment: Moment | undefined): void => {
+    changeDesk((desk) =>
+      moment
+        ? { ...desk, moment }
+        : (Object.fromEntries(Object.entries(desk).filter(([field]) => field !== "moment")) as Desk),
+    );
+  };
+
+  const moment = ({ kind, text, options = [], allowsText = false }: NewMoment): Moment => {
+    const message = newId("m");
+    const at = timestamp();
+    emit("message.posted", {
+      message: { id: message, role: "agent", kind: "moment", text, at, position: nextPosition(), outcome: "completed" },
+    });
+    const written: Moment = {
+      id: newId("o"),
+      kind,
+      at,
+      text,
+      message,
+      options: options.map((label) => ({ label })),
+      allows_text: allowsText,
+    };
+    withMoment(written);
+    return written;
+  };
+
+  const momentUnread = (isUrgent = false): void => {
+    const current = currentMoment();
+    if (current.read_at !== undefined) return;
+    push(isUrgent ? "time-sensitive" : "active", {
+      kind: "moment",
+      text: toFirstLine(current.text),
+      message: current.message,
+    });
+  };
+
+  const readMoment = (): void => {
+    const current = currentMoment();
+    request("POST", `/v0/desk/moment/${current.id}/read`);
+    if (current.read_at === undefined) withMoment({ ...current, read_at: timestamp() });
     response(204, undefined);
+  };
+
+  const answerMoment = (answer: Fields): void => {
+    const current = currentMoment();
+    request("POST", `/v0/desk/moment/${current.id}/answer`, { body: answer });
+    const working: Moment = { ...current, state: "working", answer };
+    withMoment(working);
+    response(202, { moment: working });
+  };
+
+  const quiet = (): void => {
+    withMoment(undefined);
+  };
+
+  const handled = (entry: { readonly text: string; readonly reason?: string }): Fields => {
+    const done = { id: newId("d"), at: timestamp(), ...entry, quiet: false, undo: false };
+    changeDesk((desk) => ({ ...desk, handled: desk.handled + 1 }));
+    return done;
+  };
+
+  const mailRead = (): void => {
+    changeDesk((desk) => ({ ...desk, last_mail_at: timestamp() }));
+  };
+
+  const getWork = (work: WorkToday): void => {
+    request("GET", "/v0/work");
+    response(200, { day: timestamp().slice(0, 10), handled: work.handled, cleared: work.cleared });
   };
 
   const addCard = (given: NewCard): Card => {
     const card: Card = { id: newId("k"), at: timestamp(), ...given };
     changeDesk((desk) => ({ ...desk, waiting: [...desk.waiting, card] }));
-    push("active", { kind: "card", text: card.title, card: card.id });
     return card;
   };
 
@@ -1486,7 +1574,7 @@ export const createTranscript = (header: Header): Transcript => {
       waiting: desk.waiting.flatMap((waitingCard) => {
         if (waitingCard.id !== id) return [waitingCard];
         if (!replacement) return [];
-        const merged: Card = { ...card, ...replacement };
+        const merged: Card = { ...card, ...replacement, id, at: card.at, changed_at: timestamp() };
         return [
           Object.fromEntries(
             Object.entries(merged).filter(([field]) => field !== "state" && field !== "answer"),
@@ -1649,8 +1737,14 @@ export const createTranscript = (header: Header): Transcript => {
     getDesk,
     calendarItem,
     comingUp,
-    brief,
-    readBriefing,
+    moment,
+    momentUnread,
+    readMoment,
+    answerMoment,
+    quiet,
+    handled,
+    mailRead,
+    getWork,
     addCard,
     answerCard,
     settleCard,

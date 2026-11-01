@@ -5,7 +5,7 @@ import type { Apns } from "#notifications/apns.ts";
 import { sealNotification, type Sealed } from "#notifications/crypto.ts";
 import type { Presence } from "#notifications/presence.ts";
 import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
-import type { Ask, Desk, Notification } from "#protocol/types.ts";
+import type { Ask, Notification } from "#protocol/types.ts";
 import { localHourOf, toLevel } from "#notifications/manners.ts";
 import type { LogEntry, Store, StoredDevice } from "#store/store.ts";
 import type { Log } from "#turns/turns.ts";
@@ -33,12 +33,19 @@ export type NotifierOptions = {
   readonly reminderMs: number;
   readonly timeZone?: string;
   readonly isBusy?: () => boolean;
-  readonly isUrgentPost?: () => boolean;
+  readonly graceMs?: number;
 };
 
-export type Notifier = { readonly close: () => void };
+export type Notifier = {
+  // Kumo's line for the moment matters: one notification goes out if it's still unread after a short grace.
+  readonly moment: (id: string, isUrgent: boolean) => void;
+  readonly close: () => void;
+};
 
 export const defaultReminderMs = 3 * 60 * 60 * 1000;
+
+// Long enough for an app showing the Desk to say it showed the line.
+export const momentGraceMs = 30 * 1000;
 
 const expiryMs = 24 * 60 * 60 * 1000;
 
@@ -59,11 +66,8 @@ const fallbackText = (kind: Notification["kind"], agentName: string): string => 
     case "post": {
       return `${agentName} has news`;
     }
-    case "card": {
-      return `Something is waiting on you`;
-    }
-    case "briefing": {
-      return `Your morning briefing`;
+    case "moment": {
+      return `${agentName} has something for you`;
     }
   }
 };
@@ -99,13 +103,12 @@ export const createNotifier = ({
   reminderMs,
   timeZone = "UTC",
   isBusy = () => false,
-  isUrgentPost = () => false,
+  graceMs = momentGraceMs,
 }: NotifierOptions): Notifier => {
   const askingTurns = createCell<ReadonlySet<string>>(new Set());
   const lastSounded = createCell<number | undefined>(undefined);
-  const shownCards = createCell<ReadonlySet<string>>(new Set(store.desk().waiting.map(({ id }) => id)));
-  const shownBriefing = createCell<string | undefined>(store.desk().briefing?.id);
   const reminders = createCell<ReadonlyMap<string, Cancel>>(new Map());
+  const graces = createCell<ReadonlyMap<string, Cancel>>(new Map());
   const deliveries = createCell<Promise<void>>(Promise.resolve());
 
   const deliver = async (notification: Notification, level: PushLevel): Promise<void> => {
@@ -143,17 +146,18 @@ export const createNotifier = ({
     deliveries.set(deliverAfter(deliveries.get(), notification, level));
   };
 
-  const onDesk = (desk: Desk): void => {
-    const fresh = desk.waiting.filter(({ id }) => !shownCards.get().has(id));
-    shownCards.set(new Set(desk.waiting.map(({ id }) => id)));
-    for (const card of fresh) {
-      notify({ kind: "card", text: card.title, card: card.id }, card.quiet === true ? "passive" : "active");
-    }
-    const { briefing } = desk;
-    if (briefing && briefing.id !== shownBriefing.get()) {
-      notify({ kind: "briefing", text: briefing.lines[0]?.text ?? "Your morning briefing" }, "passive");
-    }
-    shownBriefing.set(briefing?.id);
+  const moment = (id: string, isUrgent: boolean): void => {
+    graces.get().get(id)?.();
+    const cancel = clock.after(graceMs, () => {
+      graces.update((current) => new Map([...current].filter(([other]) => other !== id)));
+      const current = store.desk().moment;
+      if (current?.id !== id || current.read_at !== undefined) return;
+      notify(
+        { kind: "moment", text: toFirstLine(current.text), message: current.message },
+        isUrgent ? "time-sensitive" : "active",
+      );
+    });
+    graces.update((current) => new Map([...current, [id, cancel]]));
   };
 
   const dropReminder = (ask: string): void => {
@@ -193,14 +197,12 @@ export const createNotifier = ({
   };
 
   const onEvent = ({ event }: LogEntry): void => {
-    if (event.type === "desk.changed") {
-      onDesk(event.desk);
-      return;
-    }
     if (event.type === "message.posted") {
+      // Kumo's line for the moment notifies only when it matters and stays unread, through moment().
+      if (event.message.kind === "moment") return;
       notify(
         { kind: "post", text: toFirstLine(withoutBlocks(event.message.text)), message: event.message.id },
-        isUrgentPost() ? "time-sensitive" : "active",
+        "active",
       );
       return;
     }
@@ -222,10 +224,12 @@ export const createNotifier = ({
   if (waiting && !store.isReminded(toAskId(waiting.id))) scheduleReminder(waiting);
 
   return {
+    moment,
     close: () => {
       unsubscribe();
-      for (const cancel of reminders.get().values()) cancel();
+      for (const cancel of [...reminders.get().values(), ...graces.get().values()]) cancel();
       reminders.set(new Map());
+      graces.set(new Map());
     },
   };
 };

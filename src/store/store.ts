@@ -127,8 +127,7 @@ export type Store = Settings & {
     spoken?: SpokenInput,
     done?: string,
   ) => Result<Accepted, AcceptFailure>;
-  readonly postMessage: (text: string) => Message;
-  readonly postsSince: (at: string) => readonly Message[];
+  readonly postMessage: (text: string, kind?: "post" | "moment") => Message;
   readonly desk: () => Desk;
   readonly setDesk: (desk: Desk) => void;
   readonly onboarding: () => Onboarding;
@@ -137,6 +136,7 @@ export type Store = Settings & {
   readonly setProblems: (problems: readonly Problem[]) => void;
   readonly addDone: (entry: DoneEntry, undoWith?: unknown) => void;
   readonly listDone: (before: string | undefined, limit: number) => DonePage;
+  readonly doneSince: (at: string) => readonly DoneEntry[];
   readonly findDone: (id: string) => { readonly entry: DoneEntry; readonly payload: unknown } | undefined;
   readonly replaceDone: (entry: DoneEntry) => void;
   readonly amendMessage: (
@@ -225,7 +225,7 @@ type MessageRow = {
   readonly id: string;
   readonly position: number;
   readonly role: "user" | "agent";
-  readonly kind: MessageKind | "post" | null;
+  readonly kind: MessageKind | "post" | "moment" | null;
   readonly turn: string | null;
   readonly text: string;
   readonly at: string;
@@ -295,7 +295,7 @@ const toMessage = (row: MessageRow): Message =>
         id: row.id,
         role: "agent",
         kind: row.kind ?? "reply",
-        ...(row.kind !== "post" && { turn: row.turn ?? "" }),
+        ...(row.kind !== "post" && row.kind !== "moment" && { turn: row.turn ?? "" }),
         text: row.text,
         at: row.at,
         position: row.position,
@@ -488,7 +488,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
   const currentDesk = (): Desk => {
     const row = database.prepare("SELECT body FROM desk WHERE id = 1").get() as { readonly body: string } | undefined;
-    return row ? (JSON.parse(row.body) as Desk) : { coming_up: [], waiting: [] };
+    return row ? (JSON.parse(row.body) as Desk) : { coming_up: [], waiting: [], handled: 0 };
   };
 
   return {
@@ -583,27 +583,21 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         return ok({ message, isNew: true });
       }),
 
-    postMessage: (text) =>
+    postMessage: (text, kind = "post") =>
       transaction(() => {
         const at = now();
         const message: Message = {
           id: identifiers.message(),
           role: "agent",
-          kind: "post",
+          kind,
           text,
           at,
           position: nextSeq(),
+          outcome: "completed",
         };
         append({ id: identifiers.event(), type: "message.posted", at, message });
         return message;
       }),
-
-    postsSince: (at) =>
-      (
-        database
-          .prepare("SELECT * FROM messages WHERE kind = 'post' AND at > ? ORDER BY position")
-          .all(at) as unknown as readonly MessageRow[]
-      ).map((row) => toMessage(row)),
 
     desk: () => currentDesk(),
 
@@ -654,6 +648,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         hasMore: rows.length > limit,
       };
     },
+
+    doneSince: (at) =>
+      (
+        database
+          .prepare("SELECT body FROM done WHERE at >= ? ORDER BY at DESC, id DESC")
+          .all(at) as unknown as readonly {
+          readonly body: string;
+        }[]
+      ).map((row) => JSON.parse(row.body) as DoneEntry),
 
     findDone: (id) => {
       const row = database.prepare("SELECT body, undo_with FROM done WHERE id = ?").get(id) as

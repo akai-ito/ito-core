@@ -39,7 +39,7 @@ where the protocol has to make it possible, marked *App*.
 | G29 | **Topics mark where the subject changed.** When you change the subject, Ito puts a label of a few plain words on the message that changed it, just after the turn, typed or spoken, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
 | G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Ari can't start or change a trip without a cover, a photo for every place and every stop at its place, or any thing with a title over 28 characters. Forgetting a thing asks you first. | 62, 63, 64 |
-| G33 | **The Desk is home.** The briefing, what's coming up and what's waiting on you come whole in the snapshot and in every change, so an app never pieces it together. The morning briefing comes once, at the first calm moment after your time, and is gone by the afternoon. | 65, 68 |
+| G33 | **The Desk is home.** Kumo's line for the moment, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail come whole in the snapshot and in every change, so an app never pieces it together. | 65, 68, 72 |
 | G34 | **Waiting on you stays until it's done.** A card waits whatever the date, shows when the box is acting on your answer, and leaves only when that's done. | 65, 67 |
 | G35 | **Every mail is read, and only work becomes work.** A quick model judges each new mail by its consequences, not its tone; only mail with work to do starts a short-lived work thread, and the conversation stays clean. | 66 |
 | G36 | **Kumo never sends what you'd write.** Replies to people are drafts in your Drafts folder and cards on the Desk; you send them from Mail. | 66 |
@@ -47,6 +47,8 @@ where the protocol has to make it possible, marked *App*.
 | G38 | **Kumo picks the moment; manners pick the volume.** A notification lands when Kumo sends it. It's quiet during a calendar event and overnight, at most one an hour has sound, and urgent always sounds. | 18, 21, 68 |
 | G39 | **Getting started reads before it asks.** Kumo reads your recent mail and calendar first, every app sees how far it has got, and its few questions come as ordinary messages in the conversation. What it believes about you waits for your word, and getting started ends when you say so. | 69, 70 |
 | G40 | **Problems show until they're fixed.** Something wrong on the server that needs you (notifications it can't send, a mail or calendar account that keeps failing, a capability that needs setting up) is listed with how to fix it, live on every app, and clears on its own once fixed. A blip that sorts itself out never shows. | 71 |
+| G41 | **Kumo speaks for the moment, not the clock.** Its line at the top of the Desk changes only when the moment does: the first calm moment after your morning time however late that is, something that matters arriving, or a change to what's left of your day. Otherwise all is quiet, which needs no words from a model. Each line is also a `moment` message in the conversation, and answering it is like answering a card. | 65, 66, 68, 72 |
+| G42 | **Seen once is seen.** A line shown on the Desk is read, in the conversation too, and then no notification goes out for it. One that matters and is still unread half a minute later sends one notification, at the volume the manners allow. | 68, 72 |
 
 ## Scenario by scenario
 
@@ -441,22 +443,27 @@ where the protocol has to make it possible, marked *App*.
 
 - The Desk comes whole: in the snapshot, from `GET /v0/desk`, and in every `desk.changed`. (G33)
 - Answering a card shows it `working` until the box has acted, then removes it or puts its result
-  in its place. Background work may post one line into the conversation. (G34)
+  in its place, and what Kumo did counts in `handled`. (G34)
+- What background work says, and a new card that matters, make Kumo's next line once things go
+  quiet for a moment: one `moment` message and the Desk's `moment`. (G41)
 
 ### 66 · [A mail arrives](transcripts/66-a-mail-arrives.jsonl)
 
-- A new mail goes through the attention pass; work runs in a work thread, which may change the
-  calendar, put a draft on the Desk and post one line into the conversation. (G35, G36)
+- A new mail goes through the attention pass and sets `last_mail_at`; work runs in a work thread,
+  which may change the calendar, put a draft on the Desk and tell you. (G35, G36)
+- What it tells you becomes Kumo's line for the moment, with the card it's about. (G41)
 
 ### 67 · [An invite](transcripts/67-an-invite.jsonl)
 
 - An invite is held on Kumo's calendar, shown with its clash check, and answered through iCloud
   when you tap. (G34, G37)
 
-### 68 · [The morning briefing](transcripts/68-the-morning-briefing.jsonl)
+### 68 · [Kumo's first line of the day](transcripts/68-kumos-first-line.jsonl)
 
-- The morning briefing waits for your time and a calm moment, arrives as a quiet notification, and
-  is marked seen when an app shows it. (G33, G38)
+- The first line of the day waits for your morning time and a calm moment. (G41)
+- It matters and nobody has read it, so one notification goes out half a minute later, at the
+  volume the manners allow. (G38, G42)
+- An app that shows it says so, and three hours later it gives way to all quiet. (G33, G42)
 
 ### 69 · [Getting started](transcripts/69-getting-started.jsonl)
 
@@ -476,6 +483,14 @@ where the protocol has to make it possible, marked *App*.
 - A capability switched on without its setup is a problem, and one whose service rejects it is
   another, each with its fix; `problems.changed` carries the whole list, and `GET /v0/problems`
   reads it. Fixing it clears it, with an empty list. (G40)
+
+### 72 · [A line read on the Desk](transcripts/72-a-line-read-on-the-desk.jsonl)
+
+- A line that matters, shown on the Desk and said to be read within the half minute, sends no
+  notification. (G42)
+- Answering it shows it `working`; once Kumo has acted it gives way to all quiet, and `handled`
+  counts one more. (G41, G33)
+- `GET /v0/work` has today's work: what Kumo handled and what it cleared. (G33)
 
 ## Not in this version
 

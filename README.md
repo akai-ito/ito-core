@@ -40,8 +40,9 @@ redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `
 another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
 in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a timeout,
 *ask* a question, *approve* an approval, *remember* writes a page and the journal in memory,
-*recall* looks it up, *trip* and *training* start things in motion, and *booked* books the trip's
-Uffizi.
+*recall* looks it up, *trip* and *training* start things in motion, *booked* books the trip's
+Uffizi, *mail* reads a sample mail and puts a draft on the Desk, which Kumo tells you about in its
+line a moment later, and *moment* writes Kumo's first line of the day now.
 
 Before reaching for your phone, check a real turn from the machine itself, with the server running
 and your token in `TOKEN`. The stream should show the turn start, statuses, the reply's text
@@ -115,12 +116,16 @@ It refuses, rather than merge, when pages changed on both sides.
 Connect iCloud, Outlook or Gmail in Ari's Settings › Capabilities, and Kumo, the agent working in
 the background, reads every mail as it arrives: it puts bookings on your calendar, drafts replies in
 your voice into your Drafts folder, and records what it did in Done, with an undo. It never sends a
-mail. In the conversation, Ari reaches the same mail through `ito mail` commands and a skill file,
+mail. At the top of the Desk, Kumo speaks for the moment, not the clock: a line or two at the first
+calm moment after your morning time, however late you open Ito, when something that matters
+arrives, or when your day changes, and otherwise all quiet. Each line is also a message in the
+conversation, written with your chosen model thinking modestly; once you've seen it on the Desk, no
+notification goes out for it. In the conversation, Ari reaches the same mail through `ito mail` commands and a skill file,
 rather than more tools in every turn: ask it to go through the recruiters who wrote this month, and
 it searches, reads each thread, and drafts the replies you agree to.
 
-Ari notifies you while you're away: when a reply finishes, when something fails, and when it asks
-you something. To switch notifications on, create an APNs key in your Apple Developer account
+Ari notifies you while you're away: when a reply finishes, when something fails, when it asks you
+something, and when Kumo's line matters and you haven't seen it. To switch notifications on, create an APNs key in your Apple Developer account
 (Certificates, Identifiers & Profiles, then Keys, with Apple Push Notifications service), download
 its `.p8` file once, and run:
 

@@ -4,7 +4,7 @@ import type { Store } from "#store/store.ts";
 
 export const leadSetting = "lead_name";
 
-export const briefingSetting = "briefing_not_before";
+export const morningSetting = "morning_not_before";
 
 export const defaultLead = "Kumo";
 
@@ -18,8 +18,7 @@ export type SettingsOptions = {
 
 export const leadOf = (store: Pick<Store, "setting">): string => store.setting(leadSetting) ?? defaultLead;
 
-export const notBeforeOf = (store: Pick<Store, "setting">): string =>
-  store.setting(briefingSetting) ?? defaultNotBefore;
+export const notBeforeOf = (store: Pick<Store, "setting">): string => store.setting(morningSetting) ?? defaultNotBefore;
 
 export const registerSettings = (app: FastifyInstance, { store, onLeadRenamed, schemaFor }: SettingsOptions): void => {
   app.put<{ Body: { readonly name: string } }>("/v0/lead", { schema: schemaFor("renameLead") }, (request) => {
@@ -29,12 +28,8 @@ export const registerSettings = (app: FastifyInstance, { store, onLeadRenamed, s
     return { name };
   });
 
-  app.put<{ Body: { readonly not_before: string } }>(
-    "/v0/briefing",
-    { schema: schemaFor("setBriefing") },
-    (request) => {
-      store.setSetting(briefingSetting, request.body.not_before);
-      return { not_before: request.body.not_before };
-    },
-  );
+  app.put<{ Body: { readonly not_before: string } }>("/v0/morning", { schema: schemaFor("setMorning") }, (request) => {
+    store.setSetting(morningSetting, request.body.not_before);
+    return { not_before: request.body.not_before };
+  });
 };

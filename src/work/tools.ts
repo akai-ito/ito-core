@@ -1,15 +1,15 @@
 import { createCell } from "#cell.ts";
 import type { DeskKeeper, NewCard } from "#desk/desk.ts";
 import type { AskOption, Slot } from "#protocol/types.ts";
-import type { Store } from "#store/store.ts";
 import { contextRun } from "#tools/context.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 
 export type WorkToolsOptions = {
-  readonly store: Pick<Store, "postMessage">;
+  // Tells them: into Kumo's line for the moment, or straight into the conversation while getting started.
+  // It answers how, for the tool's result.
+  readonly post: (text: string, isUrgent: boolean) => string;
   readonly desk: DeskKeeper;
-  readonly markUrgent?: (isUrgent: boolean) => void;
 };
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
@@ -70,18 +70,17 @@ const toCard = (input: unknown): NewCard | string => {
   }
 };
 
-const notUrgent = (): void => undefined;
-
-export const createWorkTools = ({ store, desk, markUrgent = notUrgent }: WorkToolsOptions): readonly Tool[] => {
+export const createWorkTools = ({ post, desk }: WorkToolsOptions): readonly Tool[] => {
   const posted = createCell<ReadonlySet<string>>(new Set());
   return [
     {
       name: "post",
-      title: "Post into the conversation",
+      title: "Tell them now",
       audience: "work",
       description:
-        "Post one short message into the conversation, for something the person should know now, such as a " +
-        "snag in their plans. At most once per piece of work.",
+        "Tell the person something they should know now, such as a snag in their plans: it becomes your line at " +
+        "the top of their Desk and in the conversation, with anything else that came in. At most once per piece " +
+        "of work.",
       inputSchema: {
         type: "object",
         properties: {
@@ -100,10 +99,7 @@ export const createWorkTools = ({ store, desk, markUrgent = notUrgent }: WorkToo
         if (text === "") return Promise.resolve(failed("Give the message's text."));
         if (posted.get().has(run)) return Promise.resolve(failed("You've already posted once for this work."));
         posted.update((current) => new Set([...current, run]));
-        markUrgent(fieldOf(input, "urgent") === true);
-        const message = store.postMessage(text);
-        markUrgent(false);
-        return Promise.resolve({ text: `Posted into the conversation as ${message.id}.` });
+        return Promise.resolve({ text: post(text, fieldOf(input, "urgent") === true) });
       },
     },
     {
