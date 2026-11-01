@@ -64,9 +64,9 @@ describe("topics", () => {
     const topics = createTopics({ store, complete, models, info });
     await topics.idle();
 
-    const florence = talk(store, "1", "Can you help me plan Florence with Janki?", "Of course! Three days fits it.");
+    const florence = talk(store, "1", "Can you help me plan Florence with Mira?", "Of course! Three days fits it.");
     await topics.idle();
-    const panel = talk(store, "2", "Different thing: what should I tell Bora about the Halcyon panel?", "Ask her.");
+    const panel = talk(store, "2", "Different thing: what should I tell Leo about the Halcyon panel?", "Ask him.");
     await topics.idle();
     talk(store, "3", "And when should I send it?", "Before Friday.");
     await topics.idle();
@@ -91,7 +91,7 @@ describe("topics", () => {
     const store = openStore("history");
     const florence = talk(store, "1", "Can you help me plan Florence?", "Of course.");
     talk(store, "2", "Should we see Siena too?", "A morning is enough.");
-    const panel = talk(store, "3", "What should I tell Bora about the Halcyon panel?", "Ask her.");
+    const panel = talk(store, "3", "What should I tell Leo about the Halcyon panel?", "Ask him.");
     const { asked, complete } = answering([
       {
         labels: [

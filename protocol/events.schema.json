@@ -1221,7 +1221,7 @@
       }
     },
     "MemoryAddress": {
-      "description": "Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, a thing in motion such as `motion:florence-with-janki`, or `conversation:past`.",
+      "description": "Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, a thing in motion such as `motion:florence-with-mira`, or `conversation:past`.",
       "type": "string",
       "pattern": "^(memory:[a-z0-9-]+(/[a-z0-9-]+)?|motion:[a-z0-9-]+|conversation:past)$"
     },
@@ -1414,7 +1414,7 @@
       }
     },
     "MotionId": {
-      "description": "A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-janki`.",
+      "description": "A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-mira`.",
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
       "maxLength": 64
@@ -1444,7 +1444,7 @@
           "examples": ["trip"]
         },
         "title": {
-          "description": "Short, such as \"Florence with Janki\": Ari keeps it to 28 characters or fewer.",
+          "description": "Short, such as \"Florence with Mira\": Ari keeps it to 28 characters or fewer.",
           "type": "string",
           "minLength": 1
         },

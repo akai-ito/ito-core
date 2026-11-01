@@ -107,7 +107,7 @@ const startFlorence = (motions: Motions): Promise<{ text: string; isError?: bool
   call(motions, "start_motion", {
     id: florenceId,
     kind: "trip",
-    title: "Florence with Janki",
+    title: "Florence with Mira",
     summary: "6–9 Nov · 4 to book",
     content: florenceTrip(pictures),
     note: "Started the trip",
@@ -171,7 +171,7 @@ describe("things in motion", () => {
 
     const started = await startFlorence(motions);
 
-    expect(started).toEqual({ text: "Started Florence with Janki as florence-with-janki, at version 1." });
+    expect(started).toEqual({ text: "Started Florence with Mira as florence-with-mira, at version 1." });
     expect(motions.list()).toMatchObject([
       {
         id: florenceId,
@@ -184,9 +184,9 @@ describe("things in motion", () => {
       },
     ]);
     expect(existsSync(path.join(thread, "motion", florenceId, "pictures", cover))).toBe(true);
-    expect(git(thread, "log", "-1", "--format=%s")).toBe("Florence with Janki: Started the trip\n");
+    expect(git(thread, "log", "-1", "--format=%s")).toBe("Florence with Mira: Started the trip\n");
     expect(steps()).toMatchObject([{ action: "started", motion: florenceId, version: 1 }]);
-    expect(motions.inMindText()).toContain("- Florence with Janki (florence-with-janki, trip): 6–9 Nov · 4 to book");
+    expect(motions.inMindText()).toContain("- Florence with Mira (florence-with-mira, trip): 6–9 Nov · 4 to book");
   });
 
   it("changes it by id, citing the version, and keeps what changed with each note", async () => {
@@ -198,9 +198,9 @@ describe("things in motion", () => {
     const detail = await motions.detail(florenceId);
     const read = await call(motions, "read_motion", { id: florenceId });
 
-    expect(changed).toEqual({ text: "Saved Florence with Janki, now at version 2." });
+    expect(changed).toEqual({ text: "Saved Florence with Mira, now at version 2." });
     expect(stale).toEqual({
-      text: "Florence with Janki has changed since you read it: it's at version 2 now. Read it again, then change it.",
+      text: "Florence with Mira has changed since you read it: it's at version 2 now. Read it again, then change it.",
       isError: true,
     });
     expect(detail).toMatchObject({
@@ -213,7 +213,7 @@ describe("things in motion", () => {
         ],
       },
     });
-    expect(read.text).toMatch(/^florence-with-janki \(trip\), version 2, active, pinned\n/u);
+    expect(read.text).toMatch(/^florence-with-mira \(trip\), version 2, active, pinned\n/u);
     expect(read.text).toContain('"ref": "UF-2291"');
   });
 
@@ -253,7 +253,7 @@ describe("things in motion", () => {
     const started = await call(motions, "start_motion", {
       id: florenceId,
       kind: "trip",
-      title: "Florence with Janki",
+      title: "Florence with Mira",
       summary: "6–9 Nov · 4 to book",
       content: uncovered,
       note: "Started the trip",
@@ -268,7 +268,7 @@ describe("things in motion", () => {
       ],
     });
 
-    expect(started.text).toMatch(/^Florence with Janki isn't made properly yet: it needs a cover\. /u);
+    expect(started.text).toMatch(/^Florence with Mira isn't made properly yet: it needs a cover\. /u);
     expect(changed).toEqual({
       text:
         "Florence (a test; nothing booked) isn't made properly yet: it needs a title of 28 characters or fewer, " +
@@ -291,9 +291,9 @@ describe("things in motion", () => {
     expect(ticked).toEqual({ ok: true, value: { todo: { "book-pisa": { done: true } } } });
     expect(stray).toEqual({
       ok: false,
-      failure: { code: "not_found", detail: "Florence with Janki has no item nowhere." },
+      failure: { code: "not_found", detail: "Florence with Mira has no item nowhere." },
     });
-    expect(note).toBe("(Since your last reply: in Florence with Janki, you ticked Pisa train tickets.)");
+    expect(note).toBe("(Since your last reply: in Florence with Mira, you ticked Pisa train tickets.)");
     expect(store.motionState(florenceId)).toEqual({});
   });
 
@@ -305,9 +305,7 @@ describe("things in motion", () => {
 
     motions.patchState(florenceId, { todo: { "book-duomo": { done: true } } });
 
-    expect(motions.tickNote()).toBe(
-      "(Since your last reply: in Florence with Janki, you ticked Book the Duomo climb.)",
-    );
+    expect(motions.tickNote()).toBe("(Since your last reply: in Florence with Mira, you ticked Book the Duomo climb.)");
   });
 
   it("counts versions right after a change that drops a picture", async () => {
@@ -324,7 +322,7 @@ describe("things in motion", () => {
     const next = await call(motions, "change_motion", { ...bookUffizi, version: 2 });
 
     expect(existsSync(path.join(thread, "motion", florenceId, "pictures", cover))).toBe(false);
-    expect(next).toEqual({ text: "Saved Florence with Janki, now at version 3." });
+    expect(next).toEqual({ text: "Saved Florence with Mira, now at version 3." });
   });
 
   it("brings back an earlier version as a new change, and finishes the trip into Done", async () => {
@@ -340,8 +338,8 @@ describe("things in motion", () => {
     const finished = await call(motions, "finish_motion", { id: florenceId, note: "Home from Florence" });
     const earlier = await motions.detail(florenceId, 2);
 
-    expect(restored).toEqual({ text: "Brought back version 1 of Florence with Janki, now at version 3." });
-    expect(finished).toEqual({ text: "Finished Florence with Janki." });
+    expect(restored).toEqual({ text: "Brought back version 1 of Florence with Mira, now at version 3." });
+    expect(finished).toEqual({ text: "Finished Florence with Mira." });
     expect(motions.list()).toMatchObject([
       { status: "done", pinned: false, version: 4, summary: "6–9 Nov · 4 to book" },
     ]);
@@ -355,16 +353,16 @@ describe("things in motion", () => {
     const kept = await call(motions, "forget_motion", { id: florenceId, reason: "We're not going" });
     const forgotten = await call(motions, "forget_motion", { id: florenceId, reason: "We're not going" });
 
-    expect(kept).toEqual({ text: "They kept Florence with Janki, so nothing was forgotten." });
-    expect(forgotten).toEqual({ text: "Forgot Florence with Janki." });
-    expect(asked()[0]).toMatchObject({ kind: "approval", question: "Forget Florence with Janki?" });
+    expect(kept).toEqual({ text: "They kept Florence with Mira, so nothing was forgotten." });
+    expect(forgotten).toEqual({ text: "Forgot Florence with Mira." });
+    expect(asked()[0]).toMatchObject({ kind: "approval", question: "Forget Florence with Mira?" });
     expect(motions.list()).toEqual([]);
     expect(existsSync(path.join(thread, "motion", florenceId))).toBe(false);
 
     await startFlorence(motions);
     const changed = await call(motions, "change_motion", bookUffizi);
 
-    expect(changed).toEqual({ text: "Saved Florence with Janki, now at version 2." });
+    expect(changed).toEqual({ text: "Saved Florence with Mira, now at version 2." });
   });
 
   it("keeps a training block, with ticks on sessions in any week", async () => {
@@ -466,7 +464,7 @@ describe("things in motion", () => {
     expect(booked).toMatchObject({ ok: false, failure: { code: "invalid" } });
     expect(passed.ok).toBe(true);
     expect(motions.tickNote()).toBe(
-      "(Since your last reply: in Florence with Janki, you put Boboli Gardens in the plan, passed on Pitti Palace.)",
+      "(Since your last reply: in Florence with Mira, you put Boboli Gardens in the plan, passed on Pitti Palace.)",
     );
   });
 
@@ -538,6 +536,6 @@ describe("things in motion", () => {
     const recall = memory.tools.find((tool) => tool.name === "recall");
     const found = await recall?.call({ query: "Leaning Tower Pisa" });
 
-    expect(found?.text).toContain("Florence with Janki (motion:florence-with-janki,");
+    expect(found?.text).toContain("Florence with Mira (motion:florence-with-mira,");
   });
 });

@@ -1,4 +1,4 @@
-export const florenceId = "florence-with-janki";
+export const florenceId = "florence-with-mira";
 
 export const florencePictures = [
   "cover",
@@ -25,7 +25,7 @@ export const florenceTrip = (pictures: FlorencePictures): Readonly<Record<string
   destination: "Florence",
   dates: { start: "2026-11-06", end: "2026-11-09" },
   timezone: "Europe/Rome",
-  who: ["Janki"],
+  who: ["Mira"],
   cover: photo(pictures.cover, "The Duomo above Florence's rooftops at dusk", "Florence_Duomo_at_dusk.jpg"),
   days: [
     {

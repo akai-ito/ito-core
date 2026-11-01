@@ -1,5 +1,5 @@
 export const gistGuide =
-  "What the page is now, in one line: a journal day's headline, such as “Home from Ljubljana; Bora's first " +
+  "What the page is now, in one line: a journal day's headline, such as “Home from Ljubljana; Leo's first " +
   "sub-two”; who someone is to the person, such as “Recruiter on the Halcyon process”; where a project or goal " +
   "stands; or what anything else is now.";
 

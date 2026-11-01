@@ -348,7 +348,7 @@
           "minLength": 1
         },
         "who": {
-          "description": "Who's going besides you, such as `Janki`.",
+          "description": "Who's going besides you, such as `Mira`.",
           "type": "array",
           "items": {
             "type": "string"

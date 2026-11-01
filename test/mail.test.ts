@@ -312,14 +312,14 @@ describe("the mailbox", () => {
       options: [{ label: "Draft it", acts: true }],
       allows_text: true,
       times: {
-        purpose: "Interviews with Maya at Northwind",
+        purpose: "Interviews with Clara at Northwind",
         slots: [{ start: "2026-11-12T09:00:00.000Z", end: "2026-11-12T10:00:00.000Z" }],
       },
     });
     box.mail.send(
       "icloud",
       sent("2026-11-10T21:40:00.000Z", "invite-1@northwind.example", "Thursday at 9 works, thank you!", {
-        to: [{ address: "maya@northwind.example" }],
+        to: [{ address: "clara@northwind.example" }],
         subject: "Re: Interviews",
       }),
     );
@@ -333,7 +333,7 @@ describe("the mailbox", () => {
     expect(box.prompts()).toHaveLength(1);
     expect(box.prompts()[0]).toContain("Thursday at 9 works, thank you!");
     expect(box.prompts()[0]).toContain(
-      `- Confirm the Northwind interviews: Interviews with Maya at Northwind (${card.id})`,
+      `- Confirm the Northwind interviews: Interviews with Clara at Northwind (${card.id})`,
     );
     expect(box.prompts()[0]).toContain(
       "- Admin: Northwind reply and dental invoice, 2026-11-11T18:00:00.000Z to 2026-11-11T18:20:00.000Z (admin-1@kumo)",

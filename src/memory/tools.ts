@@ -341,7 +341,7 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         gist: {
           type: "string",
           description:
-            "The day's headline so far, in one line, such as “Home from Ljubljana; Bora's first sub-two”. " +
+            "The day's headline so far, in one line, such as “Home from Ljubljana; Leo's first sub-two”. " +
             "Keep it current as the day goes on.",
         },
         note: { type: "string", description: "What this entry adds, in a few words." },

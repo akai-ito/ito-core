@@ -8,39 +8,39 @@
 {"at":1800,"app":{"method":"GET","path":"/v0/calls/c40b7f14-bcb1-451e-8d2a-797ec1b00d4c/stream"}}
 {"at":1800,"server":{"status":101}}
 {"at":1800,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
-{"at":7800,"world":"you_say","text":"What did Bora say about the Halcyon panel?","heard":["What did Bora","What did Bora say about the"]}
+{"at":7800,"world":"you_say","text":"What did Leo say about the Halcyon panel?","heard":["What did Leo","What did Leo say about the"]}
 {"at":7800,"socket":{"from":"app","audio":"walk-question.pcm"}}
 {"at":7800,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
-{"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Bora","final":false}}}
-{"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Bora say about the","final":false}}}
+{"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Leo","final":false}}}
+{"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Leo say about the","final":false}}}
 {"at":7800,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
-{"at":7800,"event":{"id":"e_0002_43013","type":"message.accepted","at":"2026-10-26T07:30:07.800Z","message":{"id":"m_0001_72021","role":"user","text":"What did Bora say about the Halcyon panel?","at":"2026-10-26T07:30:07.800Z","position":2,"spoken":{"call":"c40b7f14-bcb1-451e-8d2a-797ec1b00d4c","audio":{"id":"f_0001_87874","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
-{"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Bora say about the Halcyon panel?","final":true,"message":"m_0001_72021"}}}
+{"at":7800,"event":{"id":"e_0002_43013","type":"message.accepted","at":"2026-10-26T07:30:07.800Z","message":{"id":"m_0001_72021","role":"user","text":"What did Leo say about the Halcyon panel?","at":"2026-10-26T07:30:07.800Z","position":2,"spoken":{"call":"c40b7f14-bcb1-451e-8d2a-797ec1b00d4c","audio":{"id":"f_0001_87874","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Leo say about the Halcyon panel?","final":true,"message":"m_0001_72021"}}}
 {"at":7800,"event":{"id":"e_0003_93277","type":"turn.started","at":"2026-10-26T07:30:07.800Z","turn":"t_0001_25434","inputs":["m_0001_72021"]}}
 {"at":7800,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
 {"at":8200,"event":{"id":"e_0004_73620","type":"step.started","at":"2026-10-26T07:30:08.200Z","step":{"id":"s_0001_59171","turn":"t_0001_25434","kind":"thinking","title":"Thinking it through","at":"2026-10-26T07:30:08.200Z","position":4}}}
 {"at":8200,"event":{"id":"e_0005_70792","type":"turn.status","at":"2026-10-26T07:30:08.200Z","turn":"t_0001_25434","kind":"thinking","label":"Thinking it through"}}
 {"at":9100,"event":{"id":"e_0006_33342","type":"step.ended","at":"2026-10-26T07:30:09.100Z","step":{"id":"s_0001_59171","turn":"t_0001_25434","kind":"thinking","title":"Thought it through","at":"2026-10-26T07:30:08.200Z","position":4,"ended_at":"2026-10-26T07:30:09.100Z","outcome":"completed","duration_ms":900}}}
 {"at":9100,"event":{"id":"e_0007_30780","type":"message.started","at":"2026-10-26T07:30:09.100Z","message":{"id":"m_0002_05333","role":"agent","kind":"note","turn":"t_0001_25434","text":"","at":"2026-10-26T07:30:09.100Z","position":7}}}
-{"at":9100,"event":{"id":"e_0008_78534","type":"message.delta","at":"2026-10-26T07:30:09.100Z","message":"m_0002_05333","offset":0,"text":"Let me check what I have on Bora."}}
-{"at":9100,"event":{"id":"e_0009_09292","type":"message.ended","at":"2026-10-26T07:30:09.100Z","message":"m_0002_05333","outcome":"completed","length":33}}
+{"at":9100,"event":{"id":"e_0008_78534","type":"message.delta","at":"2026-10-26T07:30:09.100Z","message":"m_0002_05333","offset":0,"text":"Let me check what I have on Leo."}}
+{"at":9100,"event":{"id":"e_0009_09292","type":"message.ended","at":"2026-10-26T07:30:09.100Z","message":"m_0002_05333","outcome":"completed","length":32}}
 {"at":9100,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
-{"at":9100,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Let me check what I have on Bora."}}}
+{"at":9100,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"Let me check what I have on Leo."}}}
 {"at":9100,"socket":{"from":"server","audio_ms":250}}
 {"at":9100,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":9400,"socket":{"from":"app","frame":{"type":"played","id":"s1"}}}
 {"at":9400,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
 {"at":10600,"event":{"id":"e_0010_65478","type":"turn.status","at":"2026-10-26T07:30:10.600Z","turn":"t_0001_25434","kind":"writing","label":"Writing"}}
 {"at":10600,"event":{"id":"e_0011_92165","type":"message.started","at":"2026-10-26T07:30:10.600Z","message":{"id":"m_0003_60545","role":"agent","kind":"reply","turn":"t_0001_25434","text":"","at":"2026-10-26T07:30:10.600Z","position":11}}}
-{"at":10600,"event":{"id":"e_0012_43699","type":"message.delta","at":"2026-10-26T07:30:10.600Z","message":"m_0003_60545","offset":0,"text":"She wants one more round on your design before the panel sits in November. I've put what she asked for in the chat.\n---\n- Tighten the intro\n- Add the latency numbers"}}
+{"at":10600,"event":{"id":"e_0012_43699","type":"message.delta","at":"2026-10-26T07:30:10.600Z","message":"m_0003_60545","offset":0,"text":"He wants one more round on your design before the panel sits in November. I've put what he asked for in the chat.\n---\n- Tighten the intro\n- Add the latency numbers"}}
 {"at":10600,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
-{"at":10600,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"She wants one more round on your design before the panel sits in November."}}}
+{"at":10600,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"He wants one more round on your design before the panel sits in November."}}}
 {"at":10600,"socket":{"from":"server","audio_ms":250}}
 {"at":10600,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
-{"at":10600,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"I've put what she asked for in the chat."}}}
+{"at":10600,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"I've put what he asked for in the chat."}}}
 {"at":10600,"socket":{"from":"server","audio_ms":250}}
 {"at":10600,"socket":{"from":"server","frame":{"type":"said","id":"s3"}}}
-{"at":10600,"event":{"id":"e_0013_59762","type":"message.ended","at":"2026-10-26T07:30:10.600Z","message":"m_0003_60545","outcome":"completed","length":165}}
+{"at":10600,"event":{"id":"e_0013_59762","type":"message.ended","at":"2026-10-26T07:30:10.600Z","message":"m_0003_60545","outcome":"completed","length":163}}
 {"at":10600,"event":{"id":"e_0014_69065","type":"turn.ended","at":"2026-10-26T07:30:10.600Z","turn":"t_0001_25434","outcome":"completed"}}
 {"at":15600,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
 {"at":19600,"socket":{"from":"app","frame":{"type":"played","id":"s3"}}}

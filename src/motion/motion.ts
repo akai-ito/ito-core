@@ -546,11 +546,11 @@ export const createMotions = ({
       inputSchema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Lowercase words and dashes, such as florence-with-janki." },
+          id: { type: "string", description: "Lowercase words and dashes, such as florence-with-mira." },
           kind: { type: "string", enum: [...kindNames] },
           title: {
             type: "string",
-            description: "Short, 28 characters at most, such as Florence with Janki; the rest goes in the summary.",
+            description: "Short, 28 characters at most, such as Florence with Mira; the rest goes in the summary.",
           },
           summary: { type: "string", description: "Where it stands, in one line, such as “6–9 Nov · 4 to book”." },
           content: { type: "object", description: "The whole content, as its kind describes." },

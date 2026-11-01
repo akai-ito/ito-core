@@ -354,7 +354,7 @@ const memoryStep = (
 const florenceCard = {
   id: florenceId,
   kind: "trip",
-  title: "Florence with Janki",
+  title: "Florence with Mira",
   summary: "6–9 Nov · 4 to book",
   status: "active" as const,
   pinned: true,
@@ -398,8 +398,8 @@ const startFlorence = (transcript: Transcript, pictures: FlorencePictures): Retu
     "Started the trip",
   );
   motionStep(transcript, "started", started.motion, {
-    title: "Starting Florence with Janki",
-    endedTitle: "Started Florence with Janki",
+    title: "Starting Florence with Mira",
+    endedTitle: "Started Florence with Mira",
   });
   return started;
 };
@@ -458,7 +458,7 @@ const tessDraft = {
 };
 
 const northwindBody =
-  "Hi Maya, thanks for reaching out! I'd love a first call. Thursday 13th at 9:00 or Friday 14th at 17:30 " +
+  "Hi Clara, thanks for reaching out! I'd love a first call. Thursday 13th at 9:00 or Friday 14th at 17:30 " +
   "work well for me. Here's my CV, and I'm on LinkedIn too. Best, Divy";
 
 const spokenWav = { "Content-Type": "audio/wav", "Content-Length": "12044" };
@@ -2204,8 +2204,8 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(300);
     transcript.openStream(call);
     transcript.wait(6000);
-    const user = transcript.youSay("walk-question.pcm", "What did Bora say about the Halcyon panel?", {
-      heard: ["What did Bora", "What did Bora say about the"],
+    const user = transcript.youSay("walk-question.pcm", "What did Leo say about the Halcyon panel?", {
+      heard: ["What did Leo", "What did Leo say about the"],
     });
     transcript.startTurn([user]);
     transcript.wait(400);
@@ -2213,14 +2213,14 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(900);
     transcript.endStep();
     transcript.reply("note");
-    transcript.write("Let me check what I have on Bora.", { pieces: 1 });
+    transcript.write("Let me check what I have on Leo.", { pieces: 1 });
     transcript.endMessage("completed");
     transcript.wait(300);
     transcript.played("s1");
     transcript.wait(1200);
     writeWhole(
       transcript,
-      "She wants one more round on your design before the panel sits in November. I've put what she " +
+      "He wants one more round on your design before the panel sits in November. I've put what he " +
         "asked for in the chat.\n---\n- Tighten the intro\n- Add the latency numbers",
       1,
     );
@@ -2284,8 +2284,8 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.time("2026-10-26T07:30:00.000Z");
     transcript.callExchange(
-      "What did Bora say about the Halcyon panel?",
-      "She wants one more round on your design before the panel sits in November.",
+      "What did Leo say about the Halcyon panel?",
+      "He wants one more round on your design before the panel sits in November.",
       "walk-turn.m4a",
     );
     transcript.begin("2026-10-26T09:00:00.000Z");
@@ -2429,7 +2429,7 @@ const scenarios: readonly (() => Transcript)[] = [
     const asked = transcript.youSay("walk-question.pcm", "When's the design review?");
     transcript.startTurn([asked]);
     transcript.wait(900);
-    writeWhole(transcript, "It's on Wednesday at ten. Maya and Bora will both be there.", 1);
+    writeWhole(transcript, "It's on Wednesday at ten. Maya and Leo will both be there.", 1);
     transcript.endTurn("completed");
     transcript.wait(800);
     const cut = transcript.unplayed();
@@ -2810,11 +2810,11 @@ const scenarios: readonly (() => Transcript)[] = [
       guarantees: ["G22"],
     });
     const seededAt = "2026-10-27T18:00:00.000Z";
-    const janki = {
-      address: "memory:people/janki",
-      title: "Janki",
+    const mira = {
+      address: "memory:people/mira",
+      title: "Mira",
       gist: "Your oldest friend, from school",
-      aliases: ["Janks"],
+      aliases: ["Mimi"],
       links: [],
       markdown: "Your oldest friend; you met at school in Pune (as of 20 Oct).\n",
       note: "Oldest friend, from school",
@@ -2823,34 +2823,34 @@ const scenarios: readonly (() => Transcript)[] = [
     const yesterday = {
       address: "memory:journal/2026-10-26",
       title: "26 October 2026",
-      gist: "Home from Ljubljana; Bora's first sub-two",
+      gist: "Home from Ljubljana; Leo's first sub-two",
       aliases: [],
       links: [],
-      markdown: "### 21:10\n\nHome from Ljubljana. Bora ran her first half marathon under two hours.\n",
+      markdown: "### 21:10\n\nHome from Ljubljana. Leo ran his first half marathon under two hours.\n",
       note: "Home from Ljubljana",
     };
     const florence = {
       address: "memory:projects/florence-trip",
       title: "Florence trip",
-      gist: "With Janki, 6–9 November; nothing booked yet",
+      gist: "With Mira, 6–9 November; nothing booked yet",
       aliases: [],
-      links: [janki.address],
-      markdown: "Florence with Janki, 6 to 9 November. Nothing booked yet (as of 27 Oct).\n",
+      links: [mira.address],
+      markdown: "Florence with Mira, 6 to 9 November. Nothing booked yet (as of 27 Oct).\n",
     };
     const today = { address: "memory:journal/2026-10-27", title: "27 October 2026" };
     transcript.begin(seededAt);
-    transcript.world("memory_holds", { pages: [janki, yesterday] });
+    transcript.world("memory_holds", { pages: [mira, yesterday] });
     transcript.wait(10 * 60 * 1000);
     transcript.connect();
     transcript.wait(2000);
-    sendAndStart(transcript, "Janki and I are off to Florence together, 6 to 9 November!");
+    sendAndStart(transcript, "Mira and I are off to Florence together, 6 to 9 November!");
     transcript.wait(700);
     const change = transcript.change();
     agentCalls(transcript, "write_page", {
       address: florence.address,
       title: florence.title,
       gist: florence.gist,
-      note: "Florence with Janki, 6–9 Nov",
+      note: "Florence with Mira, 6–9 Nov",
       links: florence.links,
       body: florence.markdown,
     });
@@ -2863,29 +2863,29 @@ const scenarios: readonly (() => Transcript)[] = [
     );
     transcript.wait(400);
     agentCalls(transcript, "journal", {
-      text: "Divy and Janki are off to Florence together, 6 to 9 November.",
-      gist: "Florence planned with Janki",
-      note: "Florence with Janki",
+      text: "Divy and Mira are off to Florence together, 6 to 9 November.",
+      gist: "Florence planned with Mira",
+      note: "Florence with Mira",
     });
     memoryStep(transcript, "journaled", [today], {
       title: "Adding to today's journal",
       endedTitle: "Added to today's journal",
     });
     transcript.wait(300);
-    writeWhole(transcript, "Florence with Janki, lovely! I've started a page for the trip.");
+    writeWhole(transcript, "Florence with Mira, lovely! I've started a page for the trip.");
     transcript.endTurn("completed");
     transcript.wait(5000);
     const writtenAt = new Date(Date.parse(seededAt) + 10 * 60 * 1000 + 2000 + 700).toISOString();
     const journaledAt = new Date(Date.parse(writtenAt) + 400).toISOString();
     memoryCall(transcript, "/v0/memory/recent", {
       changes: [
-        { change: transcript.change(), ...today, at: journaledAt, note: "Florence with Janki" },
+        { change: transcript.change(), ...today, at: journaledAt, note: "Florence with Mira" },
         {
           change,
           address: florence.address,
           title: florence.title,
           at: writtenAt,
-          note: "Florence with Janki, 6–9 Nov",
+          note: "Florence with Mira, 6–9 Nov",
         },
         {
           change: transcript.change(),
@@ -2894,27 +2894,25 @@ const scenarios: readonly (() => Transcript)[] = [
           at: seededAt,
           note: yesterday.note,
         },
-        { change: transcript.change(), address: janki.address, title: janki.title, at: seededAt, note: janki.note },
+        { change: transcript.change(), address: mira.address, title: mira.title, at: seededAt, note: mira.note },
       ],
     });
     transcript.wait(2000);
     memoryCall(transcript, "/v0/memory/pages?shelf=journal", {
       pages: [
-        { ...today, gist: "Florence planned with Janki", changed_at: journaledAt },
+        { ...today, gist: "Florence planned with Mira", changed_at: journaledAt },
         { address: yesterday.address, title: yesterday.title, gist: yesterday.gist, changed_at: seededAt },
       ],
     });
     transcript.wait(2000);
     memoryCall(transcript, "/v0/memory/pages?shelf=people", {
-      pages: [
-        { address: janki.address, title: janki.title, gist: janki.gist, circle: "friends", changed_at: seededAt },
-      ],
+      pages: [{ address: mira.address, title: mira.title, gist: mira.gist, circle: "friends", changed_at: seededAt }],
     });
     transcript.wait(2000);
     memoryCall(
       transcript,
       `/v0/memory/page?address=${florence.address}`,
-      pageBody({ ...florence, links: [] }, writtenAt, [janki]),
+      pageBody({ ...florence, links: [] }, writtenAt, [mira]),
     );
     return transcript;
   },
@@ -2925,7 +2923,7 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 58,
       title: "Topics",
       summary:
-        "Last night you planned Florence, then asked about Bora. After each turn, Ito marked each change of " +
+        "Last night you planned Florence, then asked about Leo. After each turn, Ito marked each change of " +
         "subject with a quiet label on the message that changed it, and none for a follow-up. In the morning the " +
         "snapshot carries both labels, and when you come back to Florence, the label arrives just after the reply " +
         "and is the same as before.",
@@ -2933,20 +2931,20 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.time("2026-10-27T19:00:00.000Z");
     transcript.exchange(
-      "Can you help me plan Florence with Janki?",
+      "Can you help me plan Florence with Mira?",
       "Of course! Three days fits the Uffizi, the Duomo and a morning in Siena.",
       [],
       "Florence trip",
     );
     transcript.wait(60_000);
     transcript.exchange(
-      "Different thing: what should I tell Bora about the Halcyon panel?",
-      "Tell her the design is ready for one more round, and ask which part worries her most.",
+      "Different thing: what should I tell Leo about the Halcyon panel?",
+      "Tell him the design is ready for one more round, and ask which part worries him most.",
       [],
       "Halcyon panel",
     );
     transcript.wait(30_000);
-    transcript.exchange("And when should I send it?", "Before Friday, so she has the weekend to read it.");
+    transcript.exchange("And when should I send it?", "Before Friday, so he has the weekend to read it.");
     transcript.begin("2026-10-28T08:00:00.000Z");
     transcript.world("app_opened");
     transcript.connect();
@@ -3105,7 +3103,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(2000);
     sendAndStart(
       transcript,
-      "Can you plan Florence with Janki? 6 to 9 November. Good food, the Uffizi, maybe Pisa for a day.",
+      "Can you plan Florence with Mira? 6 to 9 November. Good food, the Uffizi, maybe Pisa for a day.",
     );
     transcript.wait(800);
     const pictures = findFlorencePictures(transcript);
@@ -3151,7 +3149,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.begin("2026-10-29T09:00:00.000Z");
     transcript.connect();
     transcript.wait(2000);
-    sendAndStart(transcript, "Can you plan Florence with Janki? 6 to 9 November.");
+    sendAndStart(transcript, "Can you plan Florence with Mira? 6 to 9 November.");
     transcript.wait(800);
     const pictures = findFlorencePictures(transcript);
     transcript.wait(2000);
@@ -3186,8 +3184,8 @@ const scenarios: readonly (() => Transcript)[] = [
       "updated",
       changed.motion,
       {
-        title: "Updating Florence with Janki: booked the Uffizi, 8:15 Saturday",
-        endedTitle: "Updated Florence with Janki: booked the Uffizi, 8:15 Saturday",
+        title: "Updating Florence with Mira: booked the Uffizi, 8:15 Saturday",
+        endedTitle: "Updated Florence with Mira: booked the Uffizi, 8:15 Saturday",
       },
       note,
     );
@@ -3374,9 +3372,9 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.time("2026-11-11T06:00:00.000Z");
     const technical = transcript.calendarItem(halcyonTechnical);
-    const janki = transcript.calendarItem({
-      uid: "janki-dinner-1111@icloud.com",
-      title: "Janki",
+    const mira = transcript.calendarItem({
+      uid: "mira-dinner-1111@icloud.com",
+      title: "Mira",
       start: "2026-11-11T19:30:00.000Z",
       end: "2026-11-11T21:30:00.000Z",
       all_day: false,
@@ -3385,7 +3383,7 @@ const scenarios: readonly (() => Transcript)[] = [
       leave_at: "2026-11-11T19:05:00.000Z",
       status: "confirmed",
     });
-    transcript.comingUp([janki, technical]);
+    transcript.comingUp([mira, technical]);
     const question = transcript.addCard({
       kind: "question",
       title: "Binned a Revolut mail",
@@ -3413,7 +3411,7 @@ const scenarios: readonly (() => Transcript)[] = [
       options: [{ label: "Draft it", acts: true }],
       allows_text: true,
       times: {
-        purpose: "A first call with Maya at Northwind",
+        purpose: "A first call with Clara at Northwind",
         slots: [
           { start: "2026-11-13T09:00:00.000Z", end: "2026-11-13T09:30:00.000Z", note: "WFH day" },
           { start: "2026-11-13T12:30:00.000Z", end: "2026-11-13T13:00:00.000Z", note: "WFH day" },
@@ -3461,10 +3459,10 @@ const scenarios: readonly (() => Transcript)[] = [
           tool: "draft",
           input: {
             account: "outlook",
-            to: ["maya.reed@northwind.example"],
+            to: ["clara.voss@northwind.example"],
             subject: "Re: AI Engineer, FI",
             body: northwindBody,
-            title: "Draft to Maya at Northwind",
+            title: "Draft to Clara at Northwind",
           },
         },
       ],
@@ -3472,13 +3470,13 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.answerCard(times.id, { slots: [0, 2] });
     transcript.addCard({
       kind: "draft",
-      title: "Draft to Maya at Northwind",
+      title: "Draft to Clara at Northwind",
       options: [{ label: "Drop it" }],
       allows_text: true,
       draft: {
         account: "outlook",
         from: "divy@outlook.com",
-        to: ["maya.reed@northwind.example"],
+        to: ["clara.voss@northwind.example"],
         subject: "Re: AI Engineer, FI",
         body: northwindBody,
         message_id: "draft-northwind-0001@ito.local",

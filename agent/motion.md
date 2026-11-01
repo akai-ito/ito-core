@@ -43,7 +43,7 @@ thing's own id.
 ## In your reply
 
 After you start or change one, add a compact line, a fenced `ari:motion` block with the thing's
-id and the version your change made: `{"motion": "florence-with-janki", "change": 2}`. Say in a
+id and the version your change made: `{"motion": "florence-with-mira", "change": 2}`. Say in a
 sentence what you did; the thing holds the rest.
 
 ## Trips
@@ -54,7 +54,7 @@ where they're staying, and what's left to do.
 **Make every trip properly, even a small or test one.** It has a cover, a photo for every place,
 and every stop at its place: a station or an airport is a place too. Give it real detail: times,
 why each place, hours, prices and locations. Its title is short, 28 characters or fewer, such as
-"Florence with Janki"; anything more, such as "nothing's really booked", goes in the summary. A
+"Florence with Mira"; anything more, such as "nothing's really booked", goes in the summary. A
 trip without these is refused, with what's missing, so fix it and try again.
 
 ```json
@@ -62,7 +62,7 @@ trip without these is refused, with what's missing, so fix it and try again.
   "destination": "Florence",
   "dates": { "start": "2026-11-06", "end": "2026-11-09" },
   "timezone": "Europe/Rome",
-  "who": ["Janki"],
+  "who": ["Mira"],
   "cover": { "attachment": "f_…", "alt": "The Duomo above the rooftops", "source_url": "https://…", "credit": "…" },
   "days": [
     {

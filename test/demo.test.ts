@@ -192,10 +192,10 @@ describe("the demo engine's things in motion", () => {
       await send("I booked it");
 
       expect(server.store.listMotions().map(({ id, version, summary }) => ({ id, version, summary }))).toEqual([
-        { id: "florence-with-janki", version: 2, summary: "6–9 Nov · 3 to book" },
+        { id: "florence-with-mira", version: 2, summary: "6–9 Nov · 3 to book" },
         { id: "sub-20-5k", version: 1, summary: "Week 6 of 10 · intervals today" },
       ]);
-      expect(server.store.findMotion("florence-with-janki")?.cover).toMatch(/^f_/u);
+      expect(server.store.findMotion("florence-with-mira")?.cover).toMatch(/^f_/u);
     } finally {
       await close();
     }
