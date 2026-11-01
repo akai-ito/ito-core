@@ -352,8 +352,11 @@ export interface paths {
      * Answer a card
      * @description Answers a card waiting on you: tap one of its `options`, pick the clear `slots` of a
      *     `times` card, or type `text`. For a draft, `text` asks for a change, such as "a bit more
-     *     casual", and Kumo rewrites the same draft. The card shows `state: working` while the box
-     *     acts, then leaves the Desk when it's done, or comes back changed; `desk.changed` says which.
+     *     casual", and Kumo rewrites the same draft. The card shows `state: working`, with your
+     *     `answer`, while the box acts, then leaves the Desk when it's done, or comes back changed;
+     *     `desk.changed` says which. Once Kumo has acted on an answer to a question, an offer or
+     *     times, the Done list says what you answered and what followed. If Kumo couldn't act, the
+     *     card comes back to answer again, and Done says why.
      */
     post: operations["answerCard"];
     delete?: never;
@@ -1870,7 +1873,7 @@ export interface components {
     JobList: {
       jobs: components["schemas"]["Job"][];
     };
-    /** @description One of `option`, `slots` or `text`. */
+    /** @description Your answer to a card: one of `option`, `slots` or `text`. */
     CardAnswer: {
       /** @description The label of the option you tapped. */
       option?: string;
@@ -2360,6 +2363,8 @@ export interface components {
        * @constant
        */
       state?: "working";
+      /** @description `working` only: the answer you gave, as you gave it, to show while the box acts. */
+      answer?: components["schemas"]["CardAnswer"];
       /** @description A reply Kumo wrote into your Drafts folder. Kumo never sends it: open it in Mail with `message://` and the draft's Message-ID, and send it yourself. */
       draft?: {
         /** @description The mail account it's in, such as `icloud` or `outlook`. */

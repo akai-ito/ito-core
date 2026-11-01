@@ -309,6 +309,7 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
 export const demoWork =
   (callTool: CallTool): Engine["work"] =>
   async (prompt, run) => {
+    if (prompt.includes("You asked them on the Desk")) return ok("Noted; nothing more was needed.");
     if (!prompt.includes("Post your first question")) return fail("The demo does no background work.");
     await callTool("post", { text: "While I read: what would make the next month a good one for you?" }, run);
     return ok("Asked.");

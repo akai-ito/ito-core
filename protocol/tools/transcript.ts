@@ -1470,7 +1470,7 @@ export const createTranscript = (header: Header): Transcript => {
 
   const answerCard = (id: string, answer: Fields): void => {
     request("POST", `/v0/desk/cards/${id}/answer`, { body: answer });
-    const working: Card = { ...cardById(id), state: "working" };
+    const working: Card = { ...cardById(id), state: "working", answer };
     changeDesk((desk) => ({ ...desk, waiting: desk.waiting.map((card) => (card.id === id ? working : card)) }));
     response(202, { card: working });
   };
@@ -1483,7 +1483,11 @@ export const createTranscript = (header: Header): Transcript => {
         if (waitingCard.id !== id) return [waitingCard];
         if (!replacement) return [];
         const merged: Card = { ...card, ...replacement };
-        return [Object.fromEntries(Object.entries(merged).filter(([field]) => field !== "state")) as Card];
+        return [
+          Object.fromEntries(
+            Object.entries(merged).filter(([field]) => field !== "state" && field !== "answer"),
+          ) as Card,
+        ];
       }),
     }));
   };

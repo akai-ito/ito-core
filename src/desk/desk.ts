@@ -8,7 +8,7 @@ import type { Info } from "#turns/turns.ts";
 
 export type CardAnswer = { readonly option?: string; readonly slots?: readonly number[]; readonly text?: string };
 
-export type NewCard = Omit<Card, "id" | "at" | "state">;
+export type NewCard = Omit<Card, "id" | "at" | "state" | "answer">;
 
 export type NewDone = Omit<DoneEntry, "id" | "at" | "undo"> & { readonly undo?: unknown };
 
@@ -45,6 +45,21 @@ export type DeskOptions = {
 
 const quoted = (card: Card): string =>
   [card.title, card.question?.text, card.offer?.text, card.times?.purpose].filter(Boolean).join(": ");
+
+const doneLineLimit = 200;
+
+const lastLine = (text: string): string =>
+  (
+    text
+      .split("\n")
+      .map((line) => line.trim())
+      .findLast((line) => line !== "") ?? ""
+  ).slice(0, doneLineLimit);
+
+const cardOnly = new Set(["id", "at", "state", "answer"]);
+
+const toWaiting = (card: Card): NewCard =>
+  Object.fromEntries(Object.entries(card).filter(([field]) => !cardOnly.has(field))) as NewCard;
 
 const toAnswerText = (card: Card, answer: CardAnswer): string => {
   if (answer.option !== undefined) return answer.option;
@@ -97,25 +112,46 @@ export const createDesk = ({ store, identifiers, clock, work, info }: DeskOption
   };
 
   const background = (job: () => Promise<void>): void => {
-    void pending.update(async (previous) => {
-      await previous;
+    const running = (async (): Promise<void> => {
       try {
         await job();
       } catch (error) {
         info("A card couldn't be finished", { error: String(error) });
       }
+    })();
+    void pending.update(async (previous) => {
+      await Promise.all([previous, running]);
     });
   };
 
+  const addDone = (given: NewDone): DoneEntry => {
+    const { undo, ...rest } = given;
+    const entry: DoneEntry = { id: identifiers.done(), at: at(), ...rest, undo: undo !== undefined };
+    store.addDone(entry, undo);
+    return entry;
+  };
+
   const askKumo = async (card: Card, answer: CardAnswer): Promise<NewCard | undefined> => {
+    const said = toAnswerText(card, answer);
     const prompt = [
       `You asked them on the Desk: ${quoted(card)}`,
-      `They answered: ${toAnswerText(card, answer)}`,
+      `They answered: ${said}`,
       "Act on it if anything follows, such as undoing what you did or noting their preference on How to help",
-      "you; otherwise do nothing.",
+      "you. End with one line for their Done list saying what you did, or that nothing more was needed.",
     ].join("\n");
     const done = await work(prompt);
-    if (!done.ok) info("Kumo couldn't act on an answer", { card: card.id, error: done.failure });
+    const about = { quiet: false, ...(card.motion !== undefined && { motion: card.motion }) };
+    if (!done.ok) {
+      info("Kumo couldn't act on an answer, so the card is back", { card: card.id, error: done.failure });
+      addDone({
+        text: `Couldn't act on your answer to “${card.title}”; it's back on your Desk`,
+        reason: done.failure,
+        ...about,
+      });
+      return toWaiting(card);
+    }
+    const followed = lastLine(done.value);
+    addDone({ text: `You answered “${card.title}”: ${said}`, ...(followed !== "" && { reason: followed }), ...about });
     return undefined;
   };
 
@@ -133,7 +169,13 @@ export const createDesk = ({ store, identifiers, clock, work, info }: DeskOption
       if (!card) return fail("not_found");
       const answer = checked(card, given);
       if (!answer.ok) return answer;
-      const working: Card = { ...card, state: "working" };
+      const { option, slots, text } = answer.value;
+      const shown = {
+        ...(option !== undefined && { option }),
+        ...(slots && { slots: [...slots] }),
+        ...(text !== undefined && { text }),
+      };
+      const working: Card = { ...card, state: "working", answer: shown };
       changeCards((waiting) => waiting.map((waitingCard) => (waitingCard.id === id ? working : waitingCard)));
       background(async () => {
         const replacement = await handlerOf(card)(card, answer.value);
@@ -161,12 +203,7 @@ export const createDesk = ({ store, identifiers, clock, work, info }: DeskOption
         store.setDesk({ ...desk, briefing: { ...desk.briefing, read_at: at() } });
       return true;
     },
-    addDone: (given) => {
-      const { undo, ...rest } = given;
-      const entry: DoneEntry = { id: identifiers.done(), at: at(), ...rest, undo: undo !== undefined };
-      store.addDone(entry, undo);
-      return entry;
-    },
+    addDone,
     onUndo: (undoer) => {
       undoers.update((current) => [...current, undoer]);
     },

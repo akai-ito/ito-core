@@ -3445,6 +3445,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(1500);
     transcript.getDesk();
     transcript.wait(3000);
+    transcript.world("kumo_works", { calls: [] });
     transcript.answerCard(question.id, { option: "Right" });
     transcript.settleCard(question.id);
     transcript.wait(2000);
