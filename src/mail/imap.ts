@@ -15,6 +15,7 @@ import {
 import { providers, signInHints, type Account, type Endpoint } from "#mail/providers.ts";
 import { sendLetter, type Credentials } from "#mail/smtp.ts";
 import { unsubscribeFrom } from "#mail/unsubscribe.ts";
+import type { Health } from "#problems/problems.ts";
 import { fail, ok, type Result } from "#result.ts";
 
 export type { Address, Draft, Mail, Unsubscribe } from "#mail/message.ts";
@@ -61,6 +62,7 @@ export type SourceOptions = {
   readonly logger?: (message: string, details: Readonly<Record<string, unknown>>) => void;
   readonly watermark?: SavedWatermark;
   readonly onWatermark?: (watermark: SavedWatermark) => void;
+  readonly onHealth?: (health: Health) => void;
 };
 
 export type SavedWatermark = { readonly uidValidity: string; readonly next: number };
@@ -245,9 +247,16 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     return token.ok ? ok({ user, accessToken: token.value }) : fail(`Couldn't sign in to ${account}: ${token.failure}`);
   };
 
+  const health = (next: Health): void => {
+    options.onHealth?.(next);
+  };
+
   const openClient = async (watching: boolean): Promise<Result<ImapFlow, string>> => {
     const signIn = await credentials();
-    if (!signIn.ok) return signIn;
+    if (!signIn.ok) {
+      health({ ok: false, reason: signIn.failure, isAuth: true });
+      return signIn;
+    }
     const client = new ImapFlow({
       host: imap.host,
       port: imap.port,
@@ -263,9 +272,12 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     });
     try {
       await client.connect();
+      health({ ok: true });
       return ok(client);
     } catch (error) {
       client.close();
+      const isAuth = error instanceof Error && (error as ImapFlowError).authenticationFailed === true;
+      health({ ok: false, reason: explain(error), isAuth });
       return fail(explain(error));
     }
   };

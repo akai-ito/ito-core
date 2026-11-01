@@ -1,5 +1,6 @@
 import { createCell } from "#cell.ts";
 import type { Draft, Mail, MailSource, SourceOptions } from "#mail/imap.ts";
+import type { Health } from "#problems/problems.ts";
 import { fail, ok } from "#result.ts";
 
 export type ArrivingMail = {
@@ -27,6 +28,7 @@ export type FakeMail = {
   readonly send: (account: string, mail: Mail) => void;
   readonly breakReading: () => void;
   readonly dropSent: (times: number) => void;
+  readonly health: (account: string, health: Health) => void;
 };
 
 type Box = { readonly inbox: readonly Mail[]; readonly watchers: ReadonlySet<(mail: Mail) => void> };
@@ -49,6 +51,7 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const sentMail = createCell<ReadonlyMap<string, readonly Mail[]>>(new Map());
   const isBroken = createCell(false);
   const sentDrops = createCell(0);
+  const healthListeners = createCell<ReadonlyMap<string, (health: Health) => void>>(new Map());
 
   const boxOf = (account: string): Box => boxes.get().get(account) ?? { inbox: [], watchers: new Set() };
 
@@ -77,7 +80,12 @@ export const createFakeMail = (now: () => string): FakeMail => {
     return Promise.resolve(ok(undefined));
   };
 
-  const create = ({ account, user }: SourceOptions): MailSource => ({
+  const create = ({ account, user, onHealth }: SourceOptions): MailSource => {
+    if (onHealth) healthListeners.update((all) => new Map([...all, [account, onHealth]]));
+    return source(account, user);
+  };
+
+  const source = (account: string, user: string): MailSource => ({
     account,
     check: () => Promise.resolve(ok({ addresses: [user], folders: 4 })),
     watch: (onMail) => {
@@ -174,6 +182,9 @@ export const createFakeMail = (now: () => string): FakeMail => {
     },
     dropSent: (times) => {
       sentDrops.set(times);
+    },
+    health: (account, health) => {
+      healthListeners.get().get(account)?.(health);
     },
   };
 };

@@ -21,6 +21,7 @@ import {
   type MailMeta,
 } from "#mail/message.ts";
 import { providers } from "#mail/providers.ts";
+import type { Health } from "#problems/problems.ts";
 import { postOneClick, toLetter, unsubscribeFrom, type Fetch } from "#mail/unsubscribe.ts";
 
 type Connection = { readonly directNotifications?: boolean; readonly socket?: { readonly destroy: () => void } };
@@ -515,6 +516,28 @@ describe("over IMAP", () => {
 
   it("logs in, counts the folders and learns the addresses used to send", async () => {
     expect(await connect().check()).toEqual({ ok: true, value: { addresses: ["sam@example.com"], folders: 7 } });
+  });
+
+  it("says a refused sign-in is one, and a good one that it's fine, for the server's problems", async () => {
+    const seen = createCell<readonly Health[]>([]);
+    const watched = (password: string): MailSource =>
+      createMailSource({
+        account: "icloud",
+        user: "sam@example.com",
+        auth: { password },
+        imap: { host: "127.0.0.1", port: running().address().port, secure: false },
+        onHealth: (health) => {
+          seen.update((current) => [...current, health]);
+        },
+      });
+    const refused = watched("wrong");
+    await refused.sent("2026-10-01");
+    await refused.close();
+    const accepted = watched("app-password");
+    await accepted.sent("2026-10-01");
+    await accepted.close();
+
+    expect(seen.get()).toMatchObject([{ ok: false, isAuth: true }, { ok: true }]);
   });
 
   it("explains a refused sign-in in plain words", async () => {

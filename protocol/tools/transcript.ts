@@ -18,6 +18,7 @@ import type {
   Card,
   Desk,
   Onboarding,
+  Problem,
   Topic,
   Error as ErrorBody,
   LiveTurn,
@@ -156,6 +157,7 @@ export type Transcript = {
   readonly answerCard: (card: string, answer: Fields) => void;
   readonly settleCard: (card: string, replacement?: Partial<Card>) => void;
   readonly onboarding: (state: Onboarding) => void;
+  readonly problems: (problems: readonly Problem[]) => void;
   readonly belief: () => string;
   readonly eventUid: () => string;
   readonly answerBelief: (belief: string, answer: Fields) => void;
@@ -449,6 +451,7 @@ export const createTranscript = (header: Header): Transcript => {
   const pairingCodes = createCell<ReadonlySet<string>>(new Set());
   const deskState = createCell<Desk>({ coming_up: [], waiting: [] });
   const onboardingState = createCell<Onboarding>({ state: "done" });
+  const problemsState = createCell<readonly Problem[]>([]);
   const lastSounded = createCell<number | undefined>(undefined);
 
   const timestamp = (): string => new Date(now.get()).toISOString();
@@ -573,6 +576,7 @@ export const createTranscript = (header: Header): Transcript => {
         next: next.get(),
         desk: deskState.get(),
         ...(onboardingState.get().state !== "done" && { onboarding: onboardingState.get() }),
+        ...(problemsState.get().length > 0 && { problems: [...problemsState.get()] }),
       },
     });
     cursor.set(latest);
@@ -1497,6 +1501,11 @@ export const createTranscript = (header: Header): Transcript => {
     emit("onboarding.changed", { onboarding: state });
   };
 
+  const problems = (current: readonly Problem[]): void => {
+    problemsState.set(current);
+    emit("problems.changed", { problems: [...current] });
+  };
+
   const belief = (): string => newId("n");
 
   const eventUid = (): string => newId("v");
@@ -1646,6 +1655,7 @@ export const createTranscript = (header: Header): Transcript => {
     answerCard,
     settleCard,
     onboarding,
+    problems,
     belief,
     eventUid,
     answerBelief,

@@ -12,6 +12,7 @@ import { modelSetting } from "#engine/engine.ts";
 import { demoAnswers, demoScripts, demoWork, withDemoPictures } from "#engine/scripted/demo.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { createToken, hashToken, tokenSetting } from "#http/auth.ts";
+import { createLogFile, logDirectory } from "#log-file.ts";
 import { onboardingSetting } from "#store/store.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { createServer, type EngineContext, type ServerOptions } from "#server.ts";
@@ -97,6 +98,13 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
   }
   const { engine, port, name, onboarding } = parsed.value;
   const paths = toPaths(io.environment);
+  const logFile = createLogFile({
+    directory: logDirectory(paths.home),
+    clock: systemClock,
+    onFailure: (reason) => {
+      io.printError(`Ito can't write its log in ${logDirectory(paths.home)}: ${reason}`);
+    },
+  });
   const server = createServer({
     embedder: engine === "demo" ? wordEmbedder : createLocalEmbedder(path.join(paths.home, "models")),
     createVoice: (context) =>
@@ -106,7 +114,16 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
     name,
     capabilities: engine === "demo" ? demoInstalled : installed,
     ...(engine === "demo" && { fetch: withDemoPictures(fetch) }),
-    logger: { level: "info", redact: ["req.headers.authorization"] },
+    logger: {
+      level: "info",
+      redact: ["req.headers.authorization"],
+      stream: {
+        write: (line: string) => {
+          process.stdout.write(line);
+          logFile.write(line);
+        },
+      },
+    },
   });
   if (engine === "demo" && !onboarding && server.store.setting(onboardingSetting) === undefined) {
     server.store.setSetting(onboardingSetting, JSON.stringify({ state: "done" }));
@@ -127,5 +144,6 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
   }
   if (!io.shutdown.aborted) await once(io.shutdown, "abort");
   await server.close();
+  logFile.close();
   return 0;
 };

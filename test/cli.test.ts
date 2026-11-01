@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import type { Io } from "#cli/io.ts";
 import { main, usage } from "#cli/main.ts";
 import { systemClock } from "#clock.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
+import { localDay } from "#log-file.ts";
 import { apnsSettings } from "#notifications/apns.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { databaseFile } from "#server.ts";
@@ -19,11 +20,11 @@ const home = mkdtempSync(path.join(os.tmpdir(), "ito-cli-"));
 
 type Run = { readonly code: number; readonly printed: string; readonly errors: string };
 
-const run = async (argv: readonly string[], isTerminal = false): Promise<Run> => {
+const run = async (argv: readonly string[], isTerminal = false, itoHome = home): Promise<Run> => {
   const printed = createCell<readonly string[]>([]);
   const errors = createCell<readonly string[]>([]);
   const io: Io = {
-    environment: { ITO_HOME: home },
+    environment: { ITO_HOME: itoHome },
     isTerminal,
     print: (text) => {
       printed.set([...printed.get(), text]);
@@ -46,6 +47,9 @@ const storedSetting = (key: string): string | undefined => {
 };
 
 const storedTokenHash = (): string | undefined => storedSetting(tokenSetting);
+
+const entries = (printed: string): readonly string[] =>
+  printed.split("\n").filter((each) => /^\d\d:\d\d:\d\d /u.test(each));
 
 const printedToken = (text: string): string => /ito_[\w-]{43}/u.exec(text)?.[0] ?? "";
 
@@ -173,5 +177,50 @@ describe("the ito command", () => {
     const served = await run(["serve", "--engine", "demo", "--port", "0"]);
     expect(served).toMatchObject({ code: 0, errors: "" });
     expect(printedToken(served.printed)).toBe("");
+    const today = path.join(home, "logs", `ito-${localDay(Date.now())}.log`);
+    const logged = readFileSync(today, "utf8");
+    expect(logged).toContain("Ito is listening on http://127.0.0.1:");
+  });
+
+  it("reads its own log back: by time, by area, only problems, or raw", async () => {
+    const now = Date.now();
+    const line = (minutesAgo: number, level: number, message: string, fields: Readonly<Record<string, unknown>> = {}) =>
+      JSON.stringify({ level, time: now - minutesAgo * 60_000, pid: 1, hostname: "box", ...fields, msg: message });
+    const lines = [
+      line(180, 30, "Ito is listening on http://127.0.0.1:8787 with the codex engine"),
+      line(90, 40, "Sent mail couldn't be read, so Kumo reads it next time", {
+        account: "outlook",
+        error: "Mail couldn't finish reading sent mail: Connection not available",
+      }),
+      line(60, 30, "incoming request", { reqId: "req-1", req: { method: "GET", url: "/v0/desk" } }),
+      line(30, 50, "A notification didn't go out", { err: { message: "Notifications aren't set up" } }),
+      line(10, 30, "Learnt your voiceprint"),
+    ];
+    const logs = path.join(home, "read-back", "logs");
+    mkdirSync(logs, { recursive: true });
+    for (const text of lines) {
+      const { time } = JSON.parse(text) as { readonly time: number };
+      appendFileSync(path.join(logs, `ito-${localDay(time)}.log`), `${text}\n`);
+    }
+    const readBack = (argv: readonly string[]): Promise<Run> => run(argv, false, path.dirname(logs));
+
+    const problems = await readBack(["logs", "--problems", "--since", "2h"]);
+    const mail = await readBack(["logs", "--about", "mail", "--since", "4h"]);
+    const requests = await readBack(["logs", "--about", "requests", "--since", "4h", "--raw"]);
+    const unknown = await readBack(["logs", "--about", "weather"]);
+
+    expect(problems.code).toBe(0);
+    expect(entries(problems.printed)).toEqual([
+      expect.stringMatching(
+        /^\d\d:\d\d:\d\d {2}WARN {3}Sent mail couldn't be read, so Kumo reads it next time {2}account=outlook error="Mail couldn't finish reading sent mail: Connection not available"$/u,
+      ),
+      expect.stringMatching(/ERROR {2}A notification didn't go out {2}error="Notifications aren't set up"$/u),
+    ]);
+    expect(mail.printed).toContain("Sent mail couldn't be read");
+    expect(mail.printed).not.toContain("voiceprint");
+    expect(mail.printed).not.toContain("incoming request");
+    expect(requests.printed).toBe(lines[2]);
+    expect(unknown.code).toBe(1);
+    expect(unknown.errors).toContain('There\'s no area "weather"');
   });
 });

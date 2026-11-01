@@ -1,6 +1,7 @@
 import { canRunCapability, runCapability } from "#cli/capability.ts";
 import type { Io } from "#cli/io.ts";
 import { login } from "#cli/login.ts";
+import { logsUsage, showLogs } from "#cli/logs.ts";
 import { memoryUsage, pullMemory, setMemoryRemote } from "#cli/memory.ts";
 import { pair } from "#cli/pair.ts";
 import { pushUsage, setUpPush } from "#cli/push.ts";
@@ -9,7 +10,7 @@ import { newToken } from "#cli/token.ts";
 import { checkVoice, voiceUsage } from "#cli/voice.ts";
 import { packageVersion } from "#version.ts";
 
-export const coreCommands: readonly string[] = ["serve", "token", "pair", "memory", "push", "login", "voice"];
+export const coreCommands: readonly string[] = ["serve", "token", "pair", "memory", "push", "login", "voice", "logs"];
 
 export const usage = [
   "Usage:",
@@ -19,6 +20,7 @@ export const usage = [
   `  ${memoryUsage}`,
   `  ${pushUsage}`,
   `  ${voiceUsage}`,
+  `  ${logsUsage}`,
   "  ito login [codex login options]",
   "  ito <capability> <operation> [--flag value]…   (inside Ari's agent sessions)",
   "  ito --version",
@@ -52,6 +54,9 @@ export const main = async (argv: readonly string[], io: Io): Promise<number> => 
     }
     case "pair": {
       return pair(rest, io);
+    }
+    case "logs": {
+      return showLogs(rest, io);
     }
     case "login": {
       return login(rest, io);

@@ -28,6 +28,7 @@ import type {
   Motion,
   MotionChange,
   Outcome,
+  Problem,
   Snapshot,
   Status,
   Step,
@@ -84,6 +85,8 @@ export type AcceptFailure = "id_conflict" | "unknown_attachment" | "attachment_t
 
 export const onboardingSetting = "onboarding";
 
+export const problemsSetting = "problems";
+
 export type DonePage = { readonly entries: readonly DoneEntry[]; readonly hasMore: boolean };
 
 export type SpokenInput = { readonly call: string; readonly audio?: string };
@@ -130,6 +133,8 @@ export type Store = Settings & {
   readonly setDesk: (desk: Desk) => void;
   readonly onboarding: () => Onboarding;
   readonly setOnboarding: (onboarding: Onboarding) => void;
+  readonly problems: () => readonly Problem[];
+  readonly setProblems: (problems: readonly Problem[]) => void;
   readonly addDone: (entry: DoneEntry, undoWith?: unknown) => void;
   readonly listDone: (before: string | undefined, limit: number) => DonePage;
   readonly findDone: (id: string) => { readonly entry: DoneEntry; readonly payload: unknown } | undefined;
@@ -476,6 +481,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     return stored === undefined ? { state: "reading" } : (JSON.parse(stored) as Onboarding);
   };
 
+  const currentProblems = (): readonly Problem[] => {
+    const stored = readSetting(problemsSetting);
+    return stored === undefined ? [] : (JSON.parse(stored) as Problem[]);
+  };
+
   const currentDesk = (): Desk => {
     const row = database.prepare("SELECT body FROM desk WHERE id = 1").get() as { readonly body: string } | undefined;
     return row ? (JSON.parse(row.body) as Desk) : { coming_up: [], waiting: [] };
@@ -528,6 +538,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           next: next.map((row) => row.message),
           desk: currentDesk(),
           ...(currentOnboarding().state !== "done" && { onboarding: currentOnboarding() }),
+          ...(currentProblems().length > 0 && { problems: [...currentProblems()] }),
         },
       };
     },
@@ -602,6 +613,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       transaction(() => {
         if (JSON.stringify(onboarding) === JSON.stringify(currentOnboarding())) return;
         append({ id: identifiers.event(), type: "onboarding.changed", at: now(), onboarding });
+      });
+    },
+
+    problems: () => currentProblems(),
+
+    setProblems: (problems) => {
+      transaction(() => {
+        if (JSON.stringify(problems) === JSON.stringify(currentProblems())) return;
+        append({ id: identifiers.event(), type: "problems.changed", at: now(), problems: [...problems] });
       });
     },
 

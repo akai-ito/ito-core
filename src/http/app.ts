@@ -185,6 +185,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     };
   });
 
+  app.get("/v0/problems", { schema: schemaFor("getProblems") }, () => ({ problems: [...store.problems()] }));
+
   registerCapabilities(app, host, schemaFor);
   registerSettings(app, { store, onLeadRenamed, schemaFor });
   registerDesk(app, { store, desk, schemaFor });

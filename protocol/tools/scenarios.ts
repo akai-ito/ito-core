@@ -3756,6 +3756,55 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.finishOnboarding();
     return transcript;
   },
+
+  () => {
+    const transcript = createTranscript({
+      name: "71-problems-until-fixed",
+      scenario: 71,
+      title: "Problems, until they're fixed",
+      summary:
+        "With the app open, you switch Reports on but don't finish its setup, so the server lists it as a " +
+        "problem, saying how to fix it. GitHub then rejects the token you give, and the problem says so. A good " +
+        "token fixes it, and the problem clears on its own.",
+      guarantees: ["G40"],
+    });
+    const settingUp = {
+      id: "capability:reports",
+      area: "capabilities",
+      title: "Reports needs setting up",
+      detail: "It's switched on, but its setup isn't finished, so it can't do anything yet.",
+      fix: "Finish its setup in Settings › Capabilities › Reports, or switch it off.",
+    };
+    const rejected = {
+      id: "capability:reports",
+      area: "capabilities",
+      title: "Reports isn't working",
+      detail: "GitHub rejected the token.",
+      fix: "Open Settings › Capabilities › Reports and do what it says.",
+    };
+    transcript.begin(todayAt);
+    transcript.connect();
+    transcript.wait(2000);
+    transcript.request("PUT", "/v0/capabilities/reports", { body: { on: true } });
+    transcript.problems([settingUp]);
+    transcript.wait(60);
+    transcript.response(200, reports("setup", false), { headers: { "Ito-Protocol": protocol } });
+    transcript.wait(15_000);
+    transcript.request("PUT", "/v0/capabilities/reports/setup", { body: { values: { token: "github_pat_revoked" } } });
+    transcript.problems([rejected]);
+    transcript.wait(60);
+    transcript.response(200, reports("needs_you", true, "GitHub rejected the token."), {
+      headers: { "Ito-Protocol": protocol },
+    });
+    transcript.wait(5000);
+    capabilityCall(transcript, "GET", "/v0/problems", undefined, 200, { problems: [rejected] });
+    transcript.wait(20_000);
+    transcript.request("PUT", "/v0/capabilities/reports/setup", { body: { values: { token: "github_pat_example" } } });
+    transcript.problems([]);
+    transcript.wait(60);
+    transcript.response(200, reports("on", true), { headers: { "Ito-Protocol": protocol } });
+    return transcript;
+  },
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

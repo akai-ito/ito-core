@@ -70,6 +70,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/problems": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read what's wrong on the server
+     * @description What's wrong on the server right now and how to fix each: notifications that can't be
+     *     sent, a mail or calendar account that keeps failing (a refused sign-in at once, anything
+     *     else after ten minutes), or a capability that needs setting up. Each clears on its own
+     *     once it's fixed. `problems.changed` carries every change, and the snapshot holds the list
+     *     while it isn't empty.
+     */
+    get: operations["getProblems"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/events": {
     parameters: {
       query?: never;
@@ -1435,7 +1459,8 @@ export interface components {
       | components["schemas"]["MotionStateChanged"]
       | components["schemas"]["MotionRemoved"]
       | components["schemas"]["DeskChanged"]
-      | components["schemas"]["OnboardingChanged"];
+      | components["schemas"]["OnboardingChanged"]
+      | components["schemas"]["ProblemsChanged"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation and of the Desk with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -1469,6 +1494,8 @@ export interface components {
       desk: components["schemas"]["Desk"];
       /** @description Present until getting started is done. */
       onboarding?: components["schemas"]["Onboarding"];
+      /** @description What's wrong on the server right now, while anything is. Absent when nothing is. */
+      problems?: components["schemas"]["Problem"][];
     };
     /**
      * message.accepted
@@ -2074,6 +2101,19 @@ export interface components {
     ErrorResult: {
       error: components["schemas"]["Error"];
     };
+    /** @description Something wrong on the server that needs you, shown until it's fixed, when it clears on its own: notifications that can't be sent, a mail or calendar account that keeps failing, or a capability that needs setting up. A blip that sorts itself out, such as a reconnect, isn't one. */
+    Problem: {
+      /** @description Stable while it lasts, such as `push` or `mail:outlook`. */
+      id: string;
+      /** @description What it's about: `notifications`, `mail`, `calendar` or `capabilities`. Show an area you don't know plainly. */
+      area: string;
+      /** @description One plain line, such as "Notifications can't be sent". */
+      title: string;
+      /** @description What's wrong and what it means for you, in a sentence or two. */
+      detail: string;
+      /** @description How to fix it, in plain steps. */
+      fix: string;
+    };
     /** @description Opaque and never reused, even after the server is restored from a backup. Resume by sending the id of the last event you applied as `Last-Event-ID`. */
     EventId: string;
     /** @description Opaque. The server makes it for each belief it checks with you. */
@@ -2640,6 +2680,17 @@ export interface components {
       onboarding: components["schemas"]["Onboarding"];
     };
     /**
+     * problems.changed
+     * @description What's wrong on the server changed: a problem appeared, or one was fixed. It carries the whole list, empty once nothing is wrong.
+     */
+    ProblemsChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "problems.changed";
+      at: components["schemas"]["Timestamp"];
+      problems: components["schemas"]["Problem"][];
+    };
+    /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or a `reminder` for an ask still waiting after three hours, sent once. `post`: Kumo posted into the conversation from background work. `card`: something started waiting on you on the Desk. `briefing`: the morning briefing is ready.
      * @enum {unknown}
      */
@@ -2864,6 +2915,7 @@ export type Device = components["schemas"]["Device"];
 export type DeviceResult = components["schemas"]["DeviceResult"];
 export type Presence = components["schemas"]["Presence"];
 export type ErrorResult = components["schemas"]["ErrorResult"];
+export type Problem = components["schemas"]["Problem"];
 export type EventId = components["schemas"]["EventId"];
 export type BeliefId = components["schemas"]["BeliefId"];
 export type MemoryAddress = components["schemas"]["MemoryAddress"];
@@ -2928,6 +2980,7 @@ export type MotionStateChanged = components["schemas"]["MotionStateChanged"];
 export type MotionRemoved = components["schemas"]["MotionRemoved"];
 export type DeskChanged = components["schemas"]["DeskChanged"];
 export type OnboardingChanged = components["schemas"]["OnboardingChanged"];
+export type ProblemsChanged = components["schemas"]["ProblemsChanged"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -3066,6 +3119,30 @@ export interface operations {
       };
       401: components["responses"]["TokenRejected"];
       429: components["responses"]["SlowDown"];
+    };
+  };
+  getProblems: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The problems, empty when nothing is wrong. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            problems: components["schemas"]["Problem"][];
+          };
+        };
+      };
+      401: components["responses"]["TokenRejected"];
     };
   };
   streamEvents: {
