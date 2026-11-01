@@ -644,6 +644,17 @@ export const createMailbox = ({
             }),
           });
           if (!saved.ok) return failed(saved.failure);
+          // A new draft for the same mail replaces the one before it, in Drafts and on the Desk.
+          const replaced = answering
+            ? draftCards().filter(
+                (card) => card.draft?.account === account && card.draft.in_reply_to === answering.messageId,
+              )
+            : [];
+          for (const old of replaced) {
+            desk.removeCard(old.id);
+            const removed = old.draft ? await source.removeDraft(old.draft.message_id) : ok(undefined);
+            if (!removed.ok) info("A replaced draft couldn't be removed", { error: removed.failure });
+          }
           const card = desk.addCard({
             kind: "draft",
             title: textOf(input, "title").trim() || draftTitle(to[0] ?? "", answering),

@@ -22,6 +22,7 @@ import { createCapabilityApprovals } from "#capabilities/approvals.ts";
 import { createTopics } from "#topics/topics.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
+import { createGroups } from "#tools/groups.ts";
 import { withCheckedInput } from "#tools/input.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
@@ -53,6 +54,7 @@ import { createCalendar, type Calendar } from "#calendar/calendar.ts";
 import { createCalendarSource, type CalendarSource } from "#calendar/caldav.ts";
 import type { Values } from "#capabilities/manifest.ts";
 import { toSources } from "#sources/sources.ts";
+import { mailGroup } from "#mail/group.ts";
 import { createMailbox, type CreateMailSource, type Mailbox } from "#mail/mail.ts";
 import { createQuickChoice } from "#engine/quick-model.ts";
 import { contextRun, inToolContext } from "#tools/context.ts";
@@ -192,8 +194,9 @@ export const createServer = (options: ServerOptions): Server => {
     approve: createCapabilityApprovals({ store, approve: (fields) => turns.approve(fields) }),
   });
   const launcher = writeLauncher(path.join(options.dataDirectory, "bin", "ito"));
+  const groups = createGroups({ groups: [mailGroup], tools: () => allTools(), command: launcher });
   const skills = (): string =>
-    writeOwnSkills(path.join(options.dataDirectory, "skills"), [motionSkill]) +
+    writeOwnSkills(path.join(options.dataDirectory, "skills"), [motionSkill, ...groups.skills()]) +
     writeSkills(path.join(options.dataDirectory, "skills"), host.offered(), launcher);
   const memory = createMemory({
     directory: path.join(options.dataDirectory, "thread"),
@@ -245,7 +248,7 @@ export const createServer = (options: ServerOptions): Server => {
   const turns = createTurns(store, engine, clock, identifiers, log, {
     limits: options.limits ?? defaultLimits,
     attachmentPath: attachments.pathOf,
-    trail: createTrail(host, launcher),
+    trail: createTrail(host, launcher, groups),
     moreNotes: () => motions.tickNote(),
   });
   const schemas = loadSchemas();
@@ -571,7 +574,7 @@ export const createServer = (options: ServerOptions): Server => {
   registerTools(app, {
     token: toolsToken,
     tools: allTools,
-    command: doors.command,
+    command: (id, rest) => groups.command(id, rest) ?? doors.command(id, rest),
     version: packageVersion(),
   });
 
