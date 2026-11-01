@@ -3,6 +3,7 @@ import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import type { Fetch } from "#capabilities/connect.ts";
 import { valuesSetting, type CheckResult, type Host } from "#capabilities/host.ts";
 import type { Values } from "#capabilities/manifest.ts";
+import type { AddressUse, Contacts, Recipient } from "#contacts/contacts.ts";
 import type { CardAnswer, DeskKeeper, NewCard } from "#desk/desk.ts";
 import type { Complete, JsonSchema } from "#engine/engine.ts";
 import type { QuickChoice, Stakes, StakesChoice } from "#engine/quick-model.ts";
@@ -79,6 +80,8 @@ export type MailOptions = {
   readonly sentPollMs?: number;
   // Kumo's workspace, where pictures and files for a draft come from, such as uploads from the chat.
   readonly workspace?: string;
+  // Their contacts: who a sender is, and the address to write to someone named.
+  readonly contacts?: Pick<Contacts, "known" | "recipient">;
 };
 
 const decisions = ["promotion", "notice", "newsletter", "record", "work", "urgent"] as const;
@@ -287,9 +290,11 @@ const draftTitle = (to: string, original: Mail | undefined): string =>
     ? `Draft to ${firstName(to)}${domainName(to) === "" ? "" : ` at ${domainName(to)}`}`
     : `Draft to ${original.from.name}`;
 
-const describe = (account: string, mail: Mail, limit = textLimit): string =>
+// A mail as the agent reads it, with who the sender is in their Contacts when that's known.
+const describe = (account: string, mail: Mail, limit = textLimit, sender?: string): string =>
   [
     `From: ${mail.from.name === undefined ? mail.from.address : `${mail.from.name} <${mail.from.address}>`}`,
+    ...(sender === undefined ? [] : [sender]),
     `To: ${mail.to.map(({ address }) => address).join(", ")}`,
     `Subject: ${mail.subject}`,
     `Date: ${mail.date}`,
@@ -353,11 +358,17 @@ const attentionPrompt = (
     describe(account, mail),
   ].join("\n");
 
-const workPrompt = (account: string, mail: Mail, judged: Judgement, folders: string): string =>
+const workPrompt = (
+  account: string,
+  mail: Mail,
+  judged: Judgement,
+  folders: string,
+  sender: string | undefined,
+): string =>
   [
     `A mail arrived in their ${account} inbox, and you judged it ${judged.decision}: ${judged.reason}`,
     "",
-    describe(account, mail),
+    describe(account, mail, textLimit, sender),
     "",
     "Do what it needs. Put confirmed bookings on their calendar with add_event, saying in the notes which mail it",
     "came from. Draft any reply with draft, in their voice; it's never sent. Keep things in motion current, and",
@@ -367,6 +378,8 @@ const workPrompt = (account: string, mail: Mail, judged: Judgement, folders: str
     "put a two-line brief of what it actually does in that option's note, from the mail and a web search. A",
     "meeting time that's confirmed goes on their calendar with add_event; a time that's only proposed goes on",
     "Kumo's calendar as a hold, until it's settled. A new opportunity is worth one line to them now, with the brief.",
+    "If it shows a new detail about someone in their life, such as a phone or an address in a signature, a new job",
+    "or an address on a booking, update their Contacts with ito contacts, only when you're sure it's that person's.",
     "Then leave the inbox holding only what needs them. Once the mail needs nothing more from them, such as a",
     "booking you've put on the calendar, file it with file_mail into one of their folders, and bin promotions",
     "and noise. Leave it in the inbox while it still needs them, such as a reply you drafted or a bill to pay.",
@@ -534,6 +547,9 @@ const mostStepMails = 50;
 // One email address on its own, such as clara.voss@northwind.example.
 const emailAddress = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:".]+(?:\.[^\s@<>()[\]\\,;:".]+)+$/u;
 
+// A recipient given by name, without an @, to find in their Contacts.
+const isName = (given: string): boolean => !given.includes("@");
+
 const recipientProblem = (field: "to" | "cc", given: readonly string[]): string | undefined => {
   const wrong = given.find((address) => !emailAddress.test(address));
   return wrong === undefined
@@ -699,6 +715,7 @@ export const createMailbox = ({
   createSource = createMailSource,
   sentPollMs = 5 * 60 * 1000,
   workspace,
+  contacts,
 }: MailOptions): Mailbox => {
   const connections = createCell<ReadonlyMap<Account, Connection>>(new Map());
   const arrivals = createCell<Promise<void>>(Promise.resolve());
@@ -979,7 +996,9 @@ export const createMailbox = ({
     if (isBlocked(mail.from.address) && (await binBlocked(connection, mail))) return;
     const judged = await judge(account, mail);
     if (await sort(connection, mail, judged)) return;
-    const done = await work(workPrompt(account, mail, judged, folders.note()), await stakesChoice(judged.stakes));
+    const sender = await contacts?.known(mail.from.address);
+    const prompt = workPrompt(account, mail, judged, folders.note(), sender);
+    const done = await work(prompt, await stakesChoice(judged.stakes));
     if (done.ok) return;
     desk.addDone({
       text: `Couldn't look at "${mail.subject}" from ${senderOf(mail)}; it's still in your inbox`,
@@ -1350,7 +1369,9 @@ export const createMailbox = ({
   const draftField = {
     type: "array",
     items: { type: "string" },
-    description: "One email address each time; repeat it for more, such as --to a@acme.com --to b@acme.com.",
+    description:
+      "One email address, or a name in their Contacts such as “Clara Voss” or “Clara Voss (work)”, each time; " +
+      "repeat it for more, such as --to a@acme.com --to b@acme.com.",
   };
 
   const draftList = (): string =>
@@ -1501,6 +1522,61 @@ export const createMailbox = ({
     };
   };
 
+  // When mail last came from an address, and when they last wrote to it, for picking someone's address.
+  const useOf =
+    (source: MailSource): AddressUse =>
+    async (address) => {
+      const [received, sent] = await Promise.all([
+        source.search({ from: address, limit: 1 }),
+        source.search({ folder: "sent", text: address, limit: 1 }),
+      ]);
+      const from = received.ok ? received.value.mails[0]?.date : undefined;
+      const to = sent.ok ? sent.value.mails[0]?.date : undefined;
+      return { ...(from !== undefined && { from }), ...(to !== undefined && { to }) };
+    };
+
+  // Recipients as given: an address stays as it is; a name, without an @, is found in their Contacts.
+  const resolveNames = async (
+    { source }: Connection,
+    givenTo: readonly string[],
+    givenCc: readonly string[],
+  ): Promise<
+    Result<
+      { readonly to: readonly string[]; readonly cc: readonly string[]; readonly found: readonly Recipient[] },
+      string
+    >
+  > => {
+    const isAddress = (given: string): boolean => contacts === undefined || !isName(given);
+    const problem =
+      recipientProblem(
+        "to",
+        givenTo.filter((given) => isAddress(given)),
+      ) ??
+      recipientProblem(
+        "cc",
+        givenCc.filter((given) => isAddress(given)),
+      );
+    if (problem !== undefined) return fail(problem);
+    const resolve = async (
+      given: string,
+    ): Promise<Result<{ readonly address: string; readonly found?: Recipient }, string>> => {
+      if (contacts === undefined || !isName(given)) return ok({ address: given });
+      const found = await contacts.recipient(given, useOf(source));
+      return found.ok ? ok({ address: found.value.address, found: found.value }) : found;
+    };
+    const [to, cc] = await Promise.all([Promise.all(givenTo.map(resolve)), Promise.all(givenCc.map(resolve))]);
+    const all = [...to, ...cc];
+    const [failure] = all.flatMap((result) => (result.ok ? [] : result.failure));
+    if (failure !== undefined) return fail(failure);
+    const addressOf = (result: Result<{ readonly address: string }, string>): readonly string[] =>
+      result.ok ? [result.value.address] : [];
+    return ok({
+      to: to.flatMap((result) => addressOf(result)),
+      cc: cc.flatMap((result) => addressOf(result)),
+      found: all.flatMap((result) => (result.ok && result.value.found ? result.value.found : [])),
+    });
+  };
+
   const tools: readonly Tool[] = [
     {
       name: "mail_search",
@@ -1578,7 +1654,7 @@ export const createMailbox = ({
           const read = await source.read(textOf(input, "message_id"));
           if (!read.ok) return failed(read.failure);
           return {
-            text: describe(account, read.value),
+            text: describe(account, read.value, textLimit, await contacts?.known(read.value.from.address)),
             step: {
               title: `Read “${subjectOf(read.value)}” from ${senderOf(read.value)}`,
               mails: [toStepMail(read.value, textLimit)],
@@ -1610,8 +1686,13 @@ export const createMailbox = ({
             ),
           ];
           const people = others.length === 0 ? "" : ` with ${listed(others, 2)}`;
+          const described = await Promise.all(
+            thread.value.map(async (mail) =>
+              describe(account, mail, textLimit, await contacts?.known(mail.from.address)),
+            ),
+          );
           return {
-            text: thread.value.map((mail) => describe(account, mail)).join("\n\n---\n\n"),
+            text: described.join("\n\n---\n\n"),
             step: {
               title: `Read the thread “${first === undefined ? "" : subjectOf(first, true)}”${people}`,
               note: plural(thread.value.length, "mail"),
@@ -1675,12 +1756,15 @@ export const createMailbox = ({
           const original = replyTo === "" ? undefined : await source.read(replyTo);
           if (original && !original.ok) return failed(original.failure);
           const answering = original?.value;
-          const givenTo = listOf(fieldOf(input, "to"));
-          const givenCc = listOf(fieldOf(input, "cc"));
-          const problem = recipientProblem("to", givenTo) ?? recipientProblem("cc", givenCc);
-          if (problem !== undefined) return failed(problem);
+          const named = await resolveNames(connection, listOf(fieldOf(input, "to")), listOf(fieldOf(input, "cc")));
+          if (!named.ok) return failed(named.failure);
+          const { to: givenTo, cc: givenCc, found } = named.value;
           const to = givenTo.length > 0 ? givenTo : (before?.to ?? (answering ? [answering.from.address] : []));
           const cc = givenCc.length > 0 ? givenCc : (before?.cc ?? []);
+          const nameOf = (address: string): { readonly address: string; readonly name?: string } => {
+            const person = found.find((recipient) => recipient.address === address);
+            return person ? { address, name: person.name } : toAddress(address);
+          };
           const subject = filled(textOf(input, "subject"), before?.subject, answering && reSubject(answering.subject));
           const body = filled(textOf(input, "body").trim(), before?.body);
           if (body === "" || subject === "" || to.length === 0) {
@@ -1706,8 +1790,8 @@ export const createMailbox = ({
           if (!letter.ok) return failed(letter.failure);
           const saved = await source.draft({
             from: toAddress(user),
-            to: to.map((address) => toAddress(address)),
-            ...(cc.length > 0 && { cc: cc.map((address) => toAddress(address)) }),
+            to: to.map((address) => nameOf(address)),
+            ...(cc.length > 0 && { cc: cc.map((address) => nameOf(address)) }),
             subject,
             body: letter.value.text,
             html: letter.value.html,
@@ -1775,7 +1859,8 @@ export const createMailbox = ({
           return {
             text:
               `Saved the draft in Drafts and put it on the Desk as ${id}${kept ? ", in place of the earlier one" : ""}.` +
-              `${signed}${carried}`,
+              `${signed}${carried}` +
+              found.map(({ name, address, why }) => ` From Contacts, ${name}: ${address}, ${why}.`).join(""),
             step: {
               title: `${kept ? "Redrafted" : "Drafted"} ${answering ? "a reply" : "a mail"} to ${whom}`,
               note: `To ${to.join(", ")}`,

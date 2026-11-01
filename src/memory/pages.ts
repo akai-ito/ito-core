@@ -19,6 +19,8 @@ export type Page = {
   readonly title: string;
   readonly gist?: string;
   readonly circle?: string;
+  // On a people page, the uid of their card in Contacts, which holds the facts about them.
+  readonly contact?: string;
   readonly aliases: readonly string[];
   readonly links: readonly string[];
   readonly markdown: string;
@@ -72,21 +74,24 @@ export const parsePage = (text: string, fallbackTitle: string): Page => {
   const title = fields?.title;
   const gist = fields?.gist;
   const circle = fields?.circle;
+  const contact = fields?.contact;
   return {
     title: typeof title === "string" ? title : fallbackTitle,
     ...(typeof gist === "string" && gist.trim() !== "" && { gist: gist.trim() }),
     ...(typeof circle === "string" && circle.trim() !== "" && { circle: circle.trim() }),
+    ...(typeof contact === "string" && contact.trim() !== "" && { contact: contact.trim() }),
     aliases: strings(fields?.aliases),
     links: strings(fields?.links),
     markdown: text.replace(frontMatter, "").replace(/^\n+/u, ""),
   };
 };
 
-export const formatPage = ({ title, gist, circle, aliases, links, markdown }: Page): string => {
+export const formatPage = ({ title, gist, circle, contact, aliases, links, markdown }: Page): string => {
   const fields = {
     title,
     ...(gist !== undefined && { gist }),
     ...(circle !== undefined && { circle }),
+    ...(contact !== undefined && { contact }),
     ...(aliases.length > 0 && { aliases }),
     ...(links.length > 0 && { links }),
   };

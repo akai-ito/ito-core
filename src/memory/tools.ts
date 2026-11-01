@@ -45,6 +45,10 @@ const circleGuide =
   "Who they are to the person, in a few words you reuse across people, such as family, friends, work or " +
   "running club.";
 
+const contactGuide =
+  "People pages only: the uid of their card in Contacts, from ito contacts, which holds the facts about them " +
+  "(emails, phones, addresses, birthday, work), so the page keeps the story.";
+
 const toPageReference = ({
   address,
   title,
@@ -158,6 +162,7 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         },
         title: { type: "string", description: "A new title." },
         circle: { type: "string", description: `People pages only. ${circleGuide}` },
+        contact: { type: "string", description: contactGuide },
         aliases: { type: "array", items: { type: "string" }, description: "Other names for it, all of them." },
         links: { type: "array", items: { type: "string" }, description: "Addresses of related pages, all of them." },
       },
@@ -194,6 +199,7 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         title: { type: "string", description: "The page's title, such as Alex." },
         gist: { type: "string", description: gistGuide },
         circle: { type: "string", description: `Required on a people page. ${circleGuide}` },
+        contact: { type: "string", description: contactGuide },
         note: { type: "string", description: "What this page is for, in a few words." },
         aliases: { type: "array", items: { type: "string" }, description: "Other names for it." },
         links: {

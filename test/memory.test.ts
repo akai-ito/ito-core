@@ -107,6 +107,22 @@ describe("memory", () => {
     expect(memory.inMindText()).toContain("## Now (memory:now)\n\nTraining for Valencia (as of 22 Oct).");
   });
 
+  it("links a People page to the person's card in Contacts, and only a People page", async () => {
+    const { memory } = await openMemory();
+    await write(memory, { address: "memory:people/leo", title: "Leo", body: "Your oldest friend (as of 1 Nov)." });
+    await write(memory, { address: "memory:topics/running", title: "Running", body: "Parkrun on Saturdays." });
+
+    const linked = await edit(memory, { address: "memory:people/leo", contact: "LEO-1" });
+    const kept = await edit(memory, { address: "memory:people/leo", old_text: "oldest", new_text: "closest" });
+    const refused = await edit(memory, { address: "memory:topics/running", contact: "LEO-1" });
+    const read = await call(memory, "read_page", { address: "memory:people/leo" });
+
+    expect(linked.text).toMatch(/^Saved Leo, now at version \w{10}\.$/u);
+    expect(kept.text).toMatch(/^Saved Leo, now at version \w{10}\.$/u);
+    expect(read.text).toContain("{title: Leo, gist: A page, circle: friends, contact: LEO-1}");
+    expect(refused).toEqual({ text: "Only a page about one person links to a contact.", isError: true });
+  });
+
   it("reads a page with numbered lines and edits an exact passage or a range of lines", async () => {
     const { memory } = await openMemory();
     await write(memory, {

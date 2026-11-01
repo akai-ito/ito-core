@@ -13,6 +13,8 @@ import { demoModels } from "#engine/scripted/models.ts";
 import { fail as failed, ok, type Result } from "#result.ts";
 import { createCalendarSource } from "#calendar/caldav.ts";
 import { startFakeCalDav } from "./fake-caldav.ts";
+import { startFakeCardDav } from "./fake-carddav.ts";
+import { createContactsSource } from "#contacts/carddav.ts";
 import { createFakeMail, type ArrivingMail } from "./fake-mail.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
@@ -201,6 +203,7 @@ export const replay = async (name: string): Promise<void> => {
   const response = createCell<Promise<Received> | undefined>(undefined);
   const apns = await startFakeApns();
   const caldav = await startFakeCalDav();
+  const carddav = await startFakeCardDav();
   const mail = createFakeMail(() => new Date(clock.now()).toISOString());
   mail.expectDrafts(draftIdsOf(transcript));
   const deviceKey = createCell<DeviceKey | undefined>(undefined);
@@ -281,6 +284,12 @@ export const replay = async (name: string): Promise<void> => {
           appleId: String(values.apple_id),
           appPassword: String(values.app_password),
           serverUrl: caldav.serverUrl,
+        }),
+      createContactsSource: (values) =>
+        createContactsSource({
+          appleId: String(values.apple_id),
+          appPassword: String(values.app_password),
+          serverUrl: carddav.serverUrl,
         }),
       createMailSource: mail.create,
       createEngine: () =>
@@ -751,6 +760,7 @@ export const replay = async (name: string): Promise<void> => {
     await seeded.close();
     await apns.close();
     await caldav.close();
+    await carddav.close();
     rmSync(directory, { recursive: true, force: true });
   }
 };

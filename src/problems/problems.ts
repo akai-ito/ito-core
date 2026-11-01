@@ -108,6 +108,16 @@ export const memoryBackupProblem =
     fix: isAuth ? fix : keepsTrying,
   });
 
+export const contactsId = "contacts:icloud";
+
+export const contactsProblem = (reason: string, isAuth: boolean): Problem => ({
+  id: contactsId,
+  area: "contacts",
+  title: "iCloud Contacts isn't working",
+  detail: `Kumo can't read or change your contacts: ${reason}`,
+  fix: isAuth ? signInFix("icloud") : "Kumo keeps trying. If it goes on, check the server's internet connection.",
+});
+
 export const createProblems = ({ clock, standing, publish, checkMs = 60_000 }: ProblemsOptions): Problems => {
   const failures = createCell<ReadonlyMap<string, Failure>>(new Map());
   const timer = createCell<Cancel | undefined>(undefined);

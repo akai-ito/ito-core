@@ -59,12 +59,18 @@ import { createCalendar, type Calendar } from "#calendar/calendar.ts";
 import { createCalendarSource, type CalendarSource } from "#calendar/caldav.ts";
 import type { Values } from "#capabilities/manifest.ts";
 import { toSources } from "#sources/sources.ts";
+import { createContacts, type Contacts, type PersonPage } from "#contacts/contacts.ts";
+import { createContactsSource, type ContactsSource } from "#contacts/carddav.ts";
+import { contactsGroup } from "#contacts/group.ts";
 import { mailGroup } from "#mail/group.ts";
+import { parsePage, toAddress } from "#memory/pages.ts";
 import { createMailbox, type CreateMailSource, type Mailbox } from "#mail/mail.ts";
 import {
   calendarId,
   calendarProblem,
   capabilityProblem,
+  contactsId,
+  contactsProblem,
   createProblems,
   mailProblem,
   memoryBackupId,
@@ -101,6 +107,7 @@ export type ServerOptions = {
   readonly timeZone?: string;
   readonly fetch?: Fetch;
   readonly createCalendarSource?: (values: Values) => CalendarSource;
+  readonly createContactsSource?: (values: Values) => ContactsSource;
   readonly createMailSource?: CreateMailSource;
   readonly github?: GitHubHosts;
   readonly backupCheckMs?: number;
@@ -134,6 +141,7 @@ export type Server = {
   readonly voice: VoiceLoop;
   readonly calls: Calls;
   readonly calendar: Calendar;
+  readonly contacts: Contacts;
   readonly mail: Mailbox;
   readonly problems: Problems;
   readonly trust: Trust;
@@ -154,6 +162,9 @@ const textValue = (values: Values, name: string): string => {
 
 export const icloudCalendar = (values: Values): CalendarSource =>
   createCalendarSource({ appleId: textValue(values, "apple_id"), appPassword: textValue(values, "app_password") });
+
+export const icloudContacts = (values: Values): ContactsSource =>
+  createContactsSource({ appleId: textValue(values, "apple_id"), appPassword: textValue(values, "app_password") });
 
 const motionSkill: OwnSkill = {
   id: "things-in-motion",
@@ -210,10 +221,12 @@ export const createServer = (options: ServerOptions): Server => {
       if (!checked.ok) return { problem: checked.failure };
       const mailChecked = await mail.check("icloud", values);
       if (mailChecked.problem !== undefined) return mailChecked;
+      const contactsChecked = await contacts.check(values);
+      if (!contactsChecked.ok) return { problem: contactsChecked.failure };
       const kumo = await calendar.ensureKumo();
       const count = checked.value.calendars.filter(({ isKumo }) => !isKumo).length;
       return kumo.ok
-        ? { summary: `Connected: Mail and ${String(count)} calendars. Kumo's calendar added.` }
+        ? { summary: `Connected: Mail, Contacts and ${String(count)} calendars. Kumo's calendar added.` }
         : { problem: kumo.failure };
     },
     outlook: (values) => mail.check("outlook", values),
@@ -234,7 +247,7 @@ export const createServer = (options: ServerOptions): Server => {
     approve: createCapabilityApprovals({ store, approve: (fields) => turns.approve(fields) }),
   });
   const launcher = writeLauncher(path.join(options.dataDirectory, "bin", "ito"));
-  const groups = createGroups({ groups: [mailGroup], tools: () => allTools(), command: launcher });
+  const groups = createGroups({ groups: [mailGroup, contactsGroup], tools: () => allTools(), command: launcher });
   const skills = (): string =>
     writeOwnSkills(path.join(options.dataDirectory, "skills"), [motionSkill, ...groups.skills()]) +
     writeSkills(path.join(options.dataDirectory, "skills"), host.offered(), launcher);
@@ -410,6 +423,39 @@ export const createServer = (options: ServerOptions): Server => {
     ...(options.github && { hosts: options.github }),
     ...(options.backupCheckMs !== undefined && { checkMs: options.backupCheckMs }),
   });
+  // People pages in memory, with the contact each is linked to.
+  const peoplePages = (): Promise<readonly PersonPage[]> =>
+    memory.withThread((thread) =>
+      Promise.resolve(
+        thread
+          .files()
+          .filter((file) => file.startsWith("people/"))
+          .map((file) => {
+            const page = parsePage(thread.read(file) ?? "", file);
+            return {
+              address: toAddress(file),
+              title: page.title,
+              ...(page.gist !== undefined && { gist: page.gist }),
+              ...(page.circle !== undefined && { circle: page.circle }),
+              ...(page.contact !== undefined && { contact: page.contact }),
+            };
+          }),
+      ),
+    );
+  const contacts = createContacts({
+    host,
+    store,
+    desk,
+    clock,
+    timeZone,
+    info,
+    work: runWork,
+    people: peoplePages,
+    createSource: options.createContactsSource ?? icloudContacts,
+    onHealth: (health) => {
+      problems.report(contactsId, health, contactsProblem);
+    },
+  });
   const mail = createMailbox({
     host,
     store,
@@ -436,6 +482,7 @@ export const createServer = (options: ServerOptions): Server => {
     },
     ...(options.createMailSource && { createSource: options.createMailSource }),
     workspace: path.join(options.dataDirectory, "workspace"),
+    contacts,
   });
   const pictureCell = createCell<DayPicture | undefined>(undefined);
   const calendar = createCalendar({
@@ -661,6 +708,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...picture.tools,
     questions.tool,
     status.tool,
+    ...contacts.tools,
     ...jobs.tools,
     ...mail.tools,
     ...gettingStarted.tools,
@@ -872,6 +920,7 @@ export const createServer = (options: ServerOptions): Server => {
     jobs.close();
     gettingStarted.close();
     calendar.close();
+    contacts.close();
     await mail.close();
     notifier.close();
     await app.close();
@@ -899,6 +948,7 @@ export const createServer = (options: ServerOptions): Server => {
     voice,
     calls,
     calendar,
+    contacts,
     mail,
     problems,
     trust,

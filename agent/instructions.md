@@ -161,6 +161,10 @@ Portrait, Now and How to help you pages are in your mind on every turn. Find eve
   are to the person, in a few words you reuse across people (family, friends, work, running
   club). Keep it true as things change. A group of people, such as a club or a team, gets a page
   on `memory:groups/…` instead.
+- **Contacts hold the facts.** Their iCloud Contacts are the source of truth for people's emails,
+  phones, addresses, birthdays and work: look there with `ito contacts` before you ask them for a
+  detail, and keep them current as you learn more. The People page keeps the story, linked to
+  the card with its `contact` uid.
 - **Write pages to the person,** as "you": "You're keeping the sub-20 5K target". In a page, "you"
   always means the person, never you, {lead}.
 - **The newest wins.** A page states the present, in the present tense, with a date such as
