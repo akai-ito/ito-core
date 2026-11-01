@@ -473,6 +473,21 @@ const speak = (transcript: Transcript, voice?: string): void => {
   transcript.response(200, undefined, { headers: { ...spokenWav, "Ito-Protocol": protocol } });
 };
 
+type Fields = Readonly<Record<string, unknown>>;
+
+// A rung Kumo climbed to after a clean stretch, for the trust ladder.
+const climbedTo = (days: number, step: string, since: string): Fields => ({
+  step,
+  since,
+  change: { kind: "climb", days },
+});
+
+// The trust ladder for sorting and the calendar.
+const sortingAndCalendar = (sorting: Fields, calendar: Fields): readonly Fields[] => [
+  { work: "sorting", title: "Sorting mail", ...sorting },
+  { work: "calendar", title: "Calendar", ...calendar },
+];
+
 const scenarios: readonly (() => Transcript)[] = [
   () => {
     const transcript = createTranscript({
@@ -3877,6 +3892,128 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.quiet();
     transcript.wait(2000);
     transcript.getWork({ handled: [entry], cleared: [] });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "73-that-was-wrong",
+      scenario: 73,
+      title: "That was wrong",
+      summary:
+        "Kumo is on spot checks for sorting and trusted with your calendar. It bins a mail from Acme as a " +
+        "promotion and asks quietly whether that was right. You open Kumo's work and say it was wrong: the mail " +
+        "goes back to your inbox, the spot check has its answer, Kumo keeps what to do differently on How to " +
+        "help you, and sorting steps back to Learning, which Kumo's next line says. Then you ask to see every " +
+        "calendar change again.",
+      guarantees: ["G43"],
+    });
+    transcript.begin("2026-11-11T10:00:00.000Z");
+    transcript.world("trust_holds", {
+      ladder: {
+        sorting: climbedTo(15, "spot_checks", "2026-11-02T08:00:00.000Z"),
+        calendar: climbedTo(21, "trusted", "2026-11-03T08:00:00.000Z"),
+      },
+    });
+    transcript.world("capability_on", {
+      capability: "outlook",
+      values: { address: "sam@outlook.example", token: "replay-token" },
+    });
+    transcript.connect();
+    transcript.wait(1000);
+    transcript.world("attention_decides", {
+      decision: "promotion",
+      stakes: "low",
+      folder: "",
+      reason: "Acme selling something",
+      confidence: 0.86,
+    });
+    transcript.world("mail_arrives", {
+      account: "outlook",
+      message_id: "order-5531@acme.com",
+      from: "Acme <hello@acme.com>",
+      to: ["sam@outlook.example"],
+      subject: "Your Acme order is on its way",
+      text: "Good news! Your desk lamp ships today. Fancy 20% off your next order?",
+    });
+    transcript.mailRead();
+    const text = 'Binned "Your Acme order is on its way" from Acme';
+    const binned = transcript.addDone({
+      text,
+      reason: "Acme selling something",
+      mail: {
+        account: "outlook",
+        message_id: "order-5531@acme.com",
+        from: "Acme",
+        subject: "Your Acme order is on its way",
+      },
+      undo: true,
+      work: "sorting",
+    });
+    const check = transcript.addCard({
+      kind: "question",
+      title: "Was this right?",
+      options: [{ label: "Right", acts: true }, { label: "That was wrong" }],
+      allows_text: true,
+      quiet: true,
+      question: { text: `${text}. Acme selling something. Was this right?` },
+    });
+    const trustedCalendar = {
+      step: "trusted",
+      line: "Three weeks without a correction on your calendar. I only bring you the changes that need you.",
+      since: "2026-11-03T08:00:00.000Z",
+    };
+    transcript.wait(90_000);
+    transcript.getWork({
+      handled: [binned],
+      cleared: [],
+      trust: sortingAndCalendar(
+        {
+          step: "spot_checks",
+          line: "Two weeks without a correction on sorting. I only check about one in five with you now.",
+          since: "2026-11-02T08:00:00.000Z",
+        },
+        trustedCalendar,
+      ),
+    });
+    const correctedAt = "2026-11-11T10:02:00.000Z";
+    transcript.time(correctedAt);
+    const words = "That was my order, not an offer";
+    transcript.world("kumo_works", { calls: [] });
+    const line =
+      "Sorry about the Acme order: it's back in your inbox, and I'll show you all the mail I sort for a while.";
+    transcript.world("moment_written", { text: line, options: [], reply: false, important: false });
+    transcript.request("POST", `/v0/done/${String(binned.id)}/wrong`, { body: { text: words } });
+    const corrected = { ...binned, text: `Undone: ${text}`, undo: false, corrected_at: correctedAt };
+    transcript.settleCard(check.id);
+    const noted = transcript.addDone({ text: `You said “${text}” was wrong: ${words}`, reason: "Done." });
+    transcript.wait(60);
+    transcript.response(200, { entry: corrected });
+    // Kumo's line waits for a quiet spell after the correction is told.
+    transcript.time(new Date(Date.parse(correctedAt) + gatherMs).toISOString());
+    transcript.moment({ kind: "news", text: line });
+    const resetAt = "2026-11-11T10:03:00.000Z";
+    transcript.time(resetAt);
+    transcript.request("POST", "/v0/trust/calendar/reset");
+    const reset = {
+      step: "learning",
+      line: "You asked to see everything again, so I'm showing you every calendar change.",
+      since: resetAt,
+    };
+    transcript.response(200, { trust: { work: "calendar", title: "Calendar", ...reset } });
+    transcript.wait(2000);
+    transcript.getWork({
+      handled: [noted, corrected],
+      cleared: [],
+      trust: sortingAndCalendar(
+        {
+          step: "learning",
+          line: `You said “${text}” was wrong today, so I'm back to showing you the mail I sort.`,
+          since: correctedAt,
+        },
+        reset,
+      ),
+    });
     return transcript;
   },
 ];

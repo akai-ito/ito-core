@@ -488,6 +488,40 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/done/{entry}/wrong:
+    post:
+      tags: [Desk]
+      operationId: correctDone
+      summary: Tell Kumo it got something wrong
+      description: |
+        "That was wrong", on anything Kumo did. Kumo undoes it where it can (as with
+        `POST /v0/done/{entry}/undo`, and otherwise with its own tools in the background), keeps what
+        to do differently as a preference, and records that in Done. When it's one of Kumo's own calls
+        (the entry's `work`), that kind of work steps back one rung on the trust ladder, and Kumo's
+        next line says so. Say what was wrong in `text`, or send `{}` and Kumo works it out. The answer
+        is the entry, with `corrected_at`. Saying it again only adds your words.
+      parameters:
+        - name: entry
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/DoneId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CorrectDone" }
+            example: { text: I needed that one }
+      responses:
+        "200":
+          description: Noted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DoneResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/desk:
     get:
       tags: [Desk]
@@ -567,8 +601,15 @@ paths:
       description: |
         Kumo's work today, local time, for "47 in: 3 need you, 6 handled, 38 cleared": what it
         handled, and the mail it read and cleared with nothing needed, each newest first with its
-        reason and whether it can be undone. What needs you is the Desk's `waiting`. Earlier days
-        are in `GET /v0/done`.
+        reason and whether it can be undone. What needs you is the Desk's `waiting`. `trust` is how
+        much Kumo checks with you for each kind of work it has done. Another day's work, such as the
+        day a review card asks you to glance at, comes with `day`; everything is in `GET /v0/done`.
+      parameters:
+        - name: day
+          in: query
+          required: false
+          description: A local day, such as `2026-11-10`. Today if left out.
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
       responses:
         "200":
           description: Today's work.
@@ -578,6 +619,31 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Work" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/trust/{work}/reset:
+    post:
+      tags: [Desk]
+      operationId: resetTrust
+      summary: Show me everything again
+      description: |
+        Puts one kind of Kumo's work back to Learning, whatever its rung: Kumo shows you its calls
+        again, with a card a day to glance at them, and climbs only after a fresh clean stretch.
+        Saying "show me everything again" in the conversation does the same.
+      parameters:
+        - name: work
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/WorkKind" }
+      responses:
+        "200":
+          description: Back to Learning.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrustResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/desk/cards/{card}/answer:
     post:
       tags: [Desk]
@@ -2212,22 +2278,66 @@ components:
       properties:
         moment: { $ref: "events.schema.json#/$defs/Moment" }
     Work:
-      description: Kumo's work today. It will grow, such as with how much Kumo checks with you.
+      description: Kumo's work for a day, today unless you asked for another, and how much it checks with you.
       type: object
-      required: [day, handled, cleared]
+      required: [day, handled, cleared, trust]
       properties:
         day:
-          description: Today, local time, such as `2026-11-05`.
+          description: The local day, such as `2026-11-05`.
           type: string
           pattern: ^\d{4}-\d{2}-\d{2}$
         handled:
-          description: What Kumo did without you today, newest first.
+          description: What Kumo did without you that day, newest first.
           type: array
           items: { $ref: "events.schema.json#/$defs/DoneEntry" }
         cleared:
-          description: The mail Kumo read and left alone today (`quiet`), newest first.
+          description: The mail Kumo read and left alone that day (`quiet`), newest first.
           type: array
           items: { $ref: "events.schema.json#/$defs/DoneEntry" }
+        trust:
+          description: |
+            The trust ladder, now: one rung for each kind of work Kumo has done, in a fixed order.
+            Draw each as three steps filled to its `step`, with its `line` under it.
+          type: array
+          items: { $ref: "#/components/schemas/Trust" }
+    Trust:
+      description: |
+        How much Kumo checks with you for one kind of work. `learning`: it shows you its calls, with a
+        card a day to glance at them. `spot_checks`: about one call in five may get a quiet "Was this
+        right?" card. `trusted`: only what needs you. It climbs a rung after a clean stretch (enough
+        calls and about two weeks with no correction), and a "That was wrong" steps it back one.
+      type: object
+      required: [work, title, step, line, since]
+      properties:
+        work: { $ref: "events.schema.json#/$defs/WorkKind" }
+        title:
+          description: Its name, such as "Sorting mail".
+          type: string
+          minLength: 1
+        step:
+          description: Show a step you don't recognise as Learning.
+          enum: [learning, spot_checks, trusted]
+        line:
+          description: Kumo's line on where it stands and why, such as "Two weeks without a correction on sorting."
+          type: string
+          minLength: 1
+        since:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When its current stretch began, with its first call, a climb, a correction or a reset.
+    TrustResult:
+      type: object
+      required: [trust]
+      properties:
+        trust: { $ref: "#/components/schemas/Trust" }
+    CorrectDone:
+      description: What was wrong, in your words; `{}` just says it was wrong.
+      type: object
+      additionalProperties: false
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
     NewEvent:
       type: object
       required: [title, start, end]

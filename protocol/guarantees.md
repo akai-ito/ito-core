@@ -49,6 +49,7 @@ where the protocol has to make it possible, marked *App*.
 | G40 | **Problems show until they're fixed.** Something wrong on the server that needs you (notifications it can't send, a mail or calendar account that keeps failing, a capability that needs setting up) is listed with how to fix it, live on every app, and clears on its own once fixed. A blip that sorts itself out never shows. | 71 |
 | G41 | **Kumo speaks for the moment, not the clock.** Its line at the top of the Desk changes only when the moment does: the first calm moment after your morning time however late that is, something that matters arriving, or a change to what's left of your day. Otherwise all is quiet, which needs no words from a model. Each line is also a `moment` message in the conversation, and answering it is like answering a card. | 65, 66, 68, 72 |
 | G42 | **Seen once is seen.** A line shown on the Desk is read, in the conversation too, and then no notification goes out for it. One that matters and is still unread half a minute later sends one notification, at the volume the manners allow. | 68, 72 |
+| G43 | **Kumo earns trust one kind of work at a time.** Each of Kumo's own calls says which kind of work it was. Each kind has its own rung (Learning shows you its calls, with a card a day to glance at; Spot checks asks about one in five; Trusted brings only what needs you), climbs after a clean stretch, and says so in Kumo's line. "That was wrong" on any entry undoes it where it can, keeps a preference, and steps that kind back one rung; "show me everything again" puts it back to Learning. | 73 |
 
 ## Scenario by scenario
 
@@ -492,6 +493,16 @@ where the protocol has to make it possible, marked *App*.
 - Answering it shows it `working`; once Kumo has acted it gives way to all quiet, and `handled`
   counts one more. (G41, G33)
 - `GET /v0/work` has today's work: what Kumo handled and what it cleared. (G33)
+
+### 73 · [That was wrong](transcripts/73-that-was-wrong.jsonl)
+
+- On spot checks, a call Kumo makes may get a quiet "Was this right?" card, and the call's Done entry
+  says which kind of work it was. (G43)
+- `GET /v0/work` has the trust ladder: each kind's rung, Kumo's line about it and when its stretch
+  began. (G43)
+- "That was wrong" from Kumo's work undoes the call, answers its spot check, records what Kumo will
+  do differently, and steps sorting back to Learning, which Kumo's next line says. (G43, G41)
+- `POST /v0/trust/{work}/reset` puts a kind back to Learning. (G43)
 
 ## Not in this version
 

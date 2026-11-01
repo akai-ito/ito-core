@@ -1694,6 +1694,10 @@
       "minLength": 1,
       "maxLength": 64
     },
+    "WorkKind": {
+      "description": "A kind of Kumo's work, each with its own place on the trust ladder: `sorting`, the mail it files, bins and clears; `calendar`, what it puts on, moves or takes off your calendars; `drafts`, the replies it writes for you; `contacts`, what it changes in your contacts. Show a kind you don't recognise by the title Kumo's work gives it.",
+      "enum": ["sorting", "calendar", "drafts", "contacts"]
+    },
     "JobId": {
       "description": "Opaque. The server makes it when Kumo schedules a look.",
       "type": "string",
@@ -2005,6 +2009,27 @@
             }
           }
         },
+        "review": {
+          "description": "On a `question` card: Kumo is still learning a kind of work, so once a day it asks you to glance at its calls, such as \"Yesterday I sorted 44 mails. Glance?\". Its first option opens Kumo's work for `day`, showing only these kinds of work; answer the card with the option you tapped, as for any card.",
+          "type": "object",
+          "required": ["day", "work"],
+          "additionalProperties": false,
+          "properties": {
+            "day": {
+              "description": "The local day of the calls, such as `2026-11-10`, for `GET /v0/work?day=`.",
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "work": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/WorkKind"
+              }
+            }
+          }
+        },
         "offer": {
           "description": "Kumo offers to take something on, such as a need that keeps coming up. Accepting lets Kumo do it in the background.",
           "type": "object",
@@ -2223,6 +2248,14 @@
         "quiet": {
           "description": "A mail Kumo read and left alone: \"read, nothing needed\". Fold these into one line a day.",
           "type": "boolean"
+        },
+        "work": {
+          "$ref": "#/$defs/WorkKind",
+          "description": "The kind of work it was, when it's one of Kumo's own calls: what the trust ladder counts. Absent for anything else, such as acting on your answer to a card."
+        },
+        "corrected_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When you said it was wrong, with `POST /v0/done/{entry}/wrong`. Show it as noted rather than offering That was wrong again."
         }
       }
     },

@@ -1,10 +1,11 @@
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Clock } from "#clock.ts";
-import { startOfDay } from "#desk/day.ts";
+import { startOfDay, toLocal } from "#desk/day.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { CalendarItem, Card, Desk, DoneEntry, Moment } from "#protocol/types.ts";
+import type { CalendarItem, Card, Desk, DoneEntry, Moment, WorkKind } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
+import { fieldOf } from "#tools/input.ts";
 import type { Info } from "#turns/turns.ts";
 
 export type CardAnswer = { readonly option?: string; readonly slots?: readonly number[]; readonly text?: string };
@@ -16,6 +17,8 @@ export type NewDone = Omit<DoneEntry, "id" | "at" | "undo"> & { readonly undo?: 
 export type CardHandler = (card: Card, answer: CardAnswer) => Promise<NewCard | undefined>;
 
 export type Undoer = (entry: DoneEntry, payload: unknown) => Promise<Result<undefined, string>>;
+
+export type DoneListener = (entry: DoneEntry) => void;
 
 export type Work = (prompt: string) => Promise<Result<string, string>>;
 
@@ -39,7 +42,11 @@ export type DeskKeeper = {
   readonly recount: () => void;
   // Today's Done entries, newest first.
   readonly today: () => readonly DoneEntry[];
+  // One local day's Done entries, such as `2026-11-10`, newest first.
+  readonly doneOn: (day: string) => readonly DoneEntry[];
   readonly addDone: (entry: NewDone) => DoneEntry;
+  // Hears each new Done entry, such as one of Kumo's calls for the trust ladder to count.
+  readonly onDone: (listener: DoneListener) => void;
   readonly onUndo: (undoer: Undoer) => void;
   readonly undo: (id: string) => Promise<Result<DoneEntry, string>>;
   readonly settled: () => Promise<void>;
@@ -59,7 +66,7 @@ const quoted = (card: Card): string =>
 
 const doneLineLimit = 200;
 
-const lastLine = (text: string): string =>
+export const lastLine = (text: string): string =>
   (
     text
       .split("\n")
@@ -68,6 +75,31 @@ const lastLine = (text: string): string =>
   ).slice(0, doneLineLimit);
 
 const cardOnly = new Set(["id", "at", "state", "answer"]);
+
+const isMailUndo = (payload: unknown): boolean => {
+  const kind = fieldOf(payload, "kind");
+  return typeof kind === "string" && kind.startsWith("mail_");
+};
+
+// The kind of Kumo's own work an entry is, when it doesn't say: mail it moved, cleared or unsubscribed from is
+// sorting. A line saying Kumo couldn't do something isn't a call.
+export const workOf = (given: NewDone): WorkKind | undefined => {
+  if (given.work !== undefined) return given.work;
+  if (/^Couldn't\b/u.test(given.text)) return undefined;
+  return given.mail !== undefined || isMailUndo(given.undo) ? "sorting" : undefined;
+};
+
+const halfDayMs = 12 * 60 * 60 * 1000;
+
+// A local day's first instant. Noon in UTC falls on that day nearly everywhere; furthest east it's the next day.
+const dayStart = (day: string, timeZone: string): number => {
+  const noon = Date.parse(`${day}T12:00:00.000Z`);
+  const shown = toLocal(noon, timeZone).day;
+  return startOfDay(shown === day ? noon : noon + (shown < day ? halfDayMs : -halfDayMs), timeZone);
+};
+
+// Long enough past a day's start to be into the next day, whatever its daylight saving.
+const pastADayMs = 26 * 60 * 60 * 1000;
 
 const toWaiting = (card: Card): NewCard =>
   Object.fromEntries(Object.entries(card).filter(([field]) => !cardOnly.has(field))) as NewCard;
@@ -131,6 +163,7 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
   const handlers = createCell<ReadonlyMap<Card["kind"], CardHandler>>(new Map());
   const cardHandlers = createCell<ReadonlyMap<string, CardHandler>>(new Map());
   const undoers = createCell<readonly Undoer[]>([]);
+  const doneListeners = createCell<readonly DoneListener[]>([]);
   const pending = createCell<Promise<void>>(Promise.resolve());
 
   const at = (): string => toTimestamp(clock.now());
@@ -146,6 +179,12 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
   const today = (): readonly DoneEntry[] => {
     const since = startOfDay(clock.now(), timeZone);
     return store.doneSince(toTimestamp(since));
+  };
+
+  const doneOn = (day: string): readonly DoneEntry[] => {
+    const since = dayStart(day, timeZone);
+    const until = toTimestamp(startOfDay(since + pastADayMs, timeZone));
+    return store.doneSince(toTimestamp(since)).filter((entry) => entry.at < until);
   };
 
   const recount = (): void => {
@@ -196,9 +235,17 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
 
   const addDone = (given: NewDone): DoneEntry => {
     const { undo, ...rest } = given;
-    const entry: DoneEntry = { id: identifiers.done(), at: at(), ...rest, undo: undo !== undefined };
+    const work = workOf(given);
+    const entry: DoneEntry = {
+      id: identifiers.done(),
+      at: at(),
+      ...rest,
+      undo: undo !== undefined,
+      ...(work !== undefined && { work }),
+    };
     store.addDone(entry, undo);
     if (!entry.quiet) recount();
+    for (const listener of doneListeners.get()) listener(entry);
     return entry;
   };
 
@@ -326,7 +373,11 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     },
     recount,
     today,
+    doneOn,
     addDone,
+    onDone: (listener) => {
+      doneListeners.update((current) => [...current, listener]);
+    },
     onUndo: (undoer) => {
       undoers.update((current) => [...current, undoer]);
     },

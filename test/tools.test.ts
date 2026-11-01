@@ -84,6 +84,7 @@ describe("Ito's tools over MCP", () => {
           { name: "finish_motion" },
           { name: "restore_motion" },
           { name: "forget_motion" },
+          { name: "show_everything_again" },
           { name: "calendar_events" },
           { name: "add_event" },
           { name: "change_event" },

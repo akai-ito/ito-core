@@ -4,6 +4,7 @@ import type { AskOption, Slot } from "#protocol/types.ts";
 import { contextRun } from "#tools/context.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
+import { kinds } from "#work/trust.ts";
 
 export type WorkToolsOptions = {
   // Tells them: into Kumo's line for the moment, or straight into the conversation while getting started.
@@ -13,6 +14,8 @@ export type WorkToolsOptions = {
 };
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
+
+const workKinds = kinds.map(({ work }) => work);
 
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
 
@@ -185,10 +188,17 @@ export const createWorkTools = ({ post, desk }: WorkToolsOptions): readonly Tool
       name: "done",
       title: "Record what you did",
       audience: "work",
-      description: "Record one thing you did without the person, for their Done list, with why in a line.",
+      description:
+        "Record one thing you did without the person, for their Done list, with why in a line. Say which kind of " +
+        "work it was, so they can tell you when you got it wrong and you learn: calendar for anything you put on, " +
+        "moved or took off a calendar, drafts for a draft you wrote, sorting for mail you filed or cleared.",
       inputSchema: {
         type: "object",
-        properties: { text: { type: "string" }, reason: { type: "string" } },
+        properties: {
+          text: { type: "string" },
+          reason: { type: "string" },
+          work: { enum: workKinds, description: "Leave it out for anything else." },
+        },
         required: ["text"],
         additionalProperties: false,
       },
@@ -196,7 +206,14 @@ export const createWorkTools = ({ post, desk }: WorkToolsOptions): readonly Tool
         const text = lineOf(input, "text");
         if (text === "") return Promise.resolve(failed("Say what you did."));
         const reason = lineOf(input, "reason");
-        const entry = desk.addDone({ text, ...(reason !== "" && { reason }), quiet: false });
+        const given = fieldOf(input, "work");
+        const work = workKinds.find((kind) => kind === given);
+        const entry = desk.addDone({
+          text,
+          ...(reason !== "" && { reason }),
+          ...(work !== undefined && { work }),
+          quiet: false,
+        });
         return Promise.resolve({ text: `Recorded ${entry.id}.` });
       },
     },
