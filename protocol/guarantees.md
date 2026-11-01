@@ -174,7 +174,8 @@ where the protocol has to make it possible, marked *App*.
   for 60 seconds") and the technical detail. (G10)
 - Your message and any text already written are kept.
 - Every turn is bounded: if the agent makes no progress for a set time, the turn fails with a
-  timeout instead of spinning forever.
+  timeout instead of spinning forever. Compacting a long conversation shows no progress for a while,
+  so it gets longer: up to 10 minutes rather than 60 seconds.
 - Try again is a command keyed by the failed turn: it starts one new attempt and never sends your
   message twice.
 - A turn that fails before writing a reply still leaves one: empty, carrying the error. The failure

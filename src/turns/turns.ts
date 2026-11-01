@@ -25,6 +25,8 @@ export type RetryStarted = { readonly turn: TurnId; readonly isNew: boolean };
 
 export type Limits = {
   readonly watchdogMs: number;
+  // Compacting a long conversation can take minutes with nothing to show for it, so it gets longer.
+  readonly compactingMs: number;
   readonly forcedStopMs: number;
   readonly coalesceMs: number;
 };
@@ -92,7 +94,12 @@ const isOption = (answer: string, ask: Ask): boolean =>
 
 export const isApprovalChoice = (answer: string, ask: Ask): boolean => isAllowing(answer, ask) || isOption(answer, ask);
 
-export const defaultLimits: Limits = { watchdogMs: 60_000, forcedStopMs: 5000, coalesceMs: 100 };
+export const defaultLimits: Limits = {
+  watchdogMs: 60_000,
+  compactingMs: 10 * 60_000,
+  forcedStopMs: 5000,
+  coalesceMs: 100,
+};
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -302,10 +309,17 @@ export const createTurns = (
     }
   };
 
-  const armWatchdog = (turn: TurnId): Cancel =>
-    clock.after(limits.watchdogMs, () => {
+  const isCompacting = (state: Running): boolean => state.steps.values().some(({ kind }) => kind === "compacting");
+
+  const armWatchdog = (turn: TurnId, waitMs = limits.watchdogMs): Cancel =>
+    clock.after(waitMs, () => {
       const state = current(turn);
       if (state?.phase !== "running" || state.approvals.size > 0) return;
+      if (isCompacting(state) && waitMs === limits.watchdogMs) {
+        const restMs = limits.compactingMs - limits.watchdogMs;
+        change(turn, (latest) => ({ ...latest, cancelWatchdog: armWatchdog(turn, restMs) }));
+        return;
+      }
       failTurn(turn, toWatchdogError(limits.watchdogMs, state.writing !== undefined));
       void interruptEngine(turn, () => engine.restart());
     });
