@@ -13,6 +13,7 @@ import { createCheckins } from "#day/checkins.ts";
 import { createNights } from "#day/nights.ts";
 import { createDayPicture, guessMark } from "#day/picture.ts";
 import { createQuestions } from "#day/questions.ts";
+import { createStatus } from "#day/status.ts";
 import { atLocal, spokenTime } from "#day/time.ts";
 import type { Line } from "#desk/moments.ts";
 import { demoAnswers, demoScripts, demoWork } from "#engine/scripted/demo.ts";
@@ -152,6 +153,36 @@ describe("nights", () => {
     expect(nights.lately(Date.parse("2026-11-12T09:00:00.000Z"))).toEqual([
       "Wed: up until 02:10, against the 1 they set",
     ]);
+  });
+});
+
+describe("what Kumo knows you're doing", () => {
+  it("hears your Focus, latest first, until it's off or stale, and what you say until it's not true", async () => {
+    const clock = createVirtualClock(Date.parse("2026-11-11T20:00:00.000Z"));
+    const store = storeAt("status");
+    const nights = createNights(store, "UTC");
+    const status = createStatus(store, clock, "UTC", nights);
+    status.setFocus("phone", "work");
+    expect(status.lines()).toEqual(["Now: their Work Focus has been on since 20:00."]);
+    expect(status.likely()).toBe("their Work Focus is on this evening");
+    clock.moveTo(Date.parse("2026-11-11T20:30:00.000Z"));
+    const noted = await status.tool.call({ text: "Building tonight, the sync screen" });
+    expect(noted.text).toBe("Noted until 00:30.");
+    expect(status.likely()).toBe("they told you: Building tonight, the sync screen");
+    status.setFocus("phone", undefined);
+    expect(status.lines()).toEqual(["They told you at 20:30: Building tonight, the sync screen"]);
+
+    nights.change("2026-11-11", (night) => ({ ...night, stop: "01:00" }));
+    clock.moveTo(Date.parse("2026-11-12T01:20:00.000Z"));
+    status.setFocus("phone", "sleep");
+    expect(status.isAsleep()).toBe(true);
+    expect(status.lines()).toEqual(["Now: their Sleep Focus has been on since 01:20."]);
+    expect(nights.get("2026-11-11")).toMatchObject({
+      stoppedAt: "2026-11-12T01:20:00.000Z",
+      lastActive: "2026-11-12T01:20:00.000Z",
+    });
+    clock.moveTo(Date.parse("2026-11-12T17:30:00.000Z"));
+    expect(status.isAsleep()).toBe(false);
   });
 });
 

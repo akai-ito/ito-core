@@ -4265,6 +4265,77 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.skipMoment();
     return transcript;
   },
+
+  () => {
+    const transcript = createTranscript({
+      name: "77-asleep-is-asleep",
+      scenario: 77,
+      title: "Asleep is asleep",
+      summary:
+        "You commit to stopping at 1 and close Ito. At 00:20 your Sleep Focus comes on, and the app tells the box, " +
+        "though it's closed. Kumo takes it that you've stopped: no line at 00:45, and no notification. Opening " +
+        "Ito at 00:50 shows only the new day.",
+      guarantees: ["G45", "G47"],
+    });
+    transcript.begin("2026-11-11T20:25:00.000Z");
+    transcript.world("capability_on", {
+      capability: "icloud",
+      values: { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop" },
+    });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(1000);
+    const building = {
+      kind: "guess",
+      title: "Building",
+      start: "2026-11-11T21:00:00.000Z",
+      end: "2026-11-12T02:00:00.000Z",
+      activity: "building",
+      why: "Most weeknights this month you've built until about 2.",
+    };
+    transcript.world("agent_calls", { tool: "plan_block", input: building });
+    transcript.comingUp([
+      transcript.calendarItem({
+        uid: transcript.eventUid(),
+        title: building.title,
+        start: building.start,
+        end: building.end,
+        all_day: false,
+        calendar: { name: "Kumo", kumo: true },
+        status: "confirmed",
+        guess: { activity: "building", why: building.why },
+      }),
+    ]);
+    const ask = "Building tonight? Stop at 1, next step being…?";
+    transcript.world("kumo_writes", { text: ask, stop: "01:00" });
+    transcript.time("2026-11-11T20:30:00.000Z");
+    transcript.moment({
+      kind: "checkin",
+      text: ask,
+      options: ["Stop at 1", "Not tonight"],
+      allowsText: true,
+      replyLabel: "Next step",
+    });
+    transcript.wait(1500);
+    transcript.readMoment();
+    transcript.wait(10_000);
+    transcript.answerMoment({ option: "Stop at 1" });
+    transcript.handled({
+      text: `You answered “${quoteOf(ask)}”: Stop at 1`,
+      reason: "Tonight's line is 1; I'll check in at 12:45.",
+    });
+    transcript.quiet();
+    transcript.wait(5000);
+    transcript.disconnect("app_closed");
+    transcript.time("2026-11-12T00:00:00.000Z");
+    transcript.recount(0);
+    transcript.time("2026-11-12T00:20:00.000Z");
+    transcript.focus("sleep");
+    transcript.time("2026-11-12T00:50:00.000Z");
+    transcript.world("app_opened");
+    transcript.connect();
+    return transcript;
+  },
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

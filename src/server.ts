@@ -78,6 +78,9 @@ import { createCheckins, type DemoCheckin } from "#day/checkins.ts";
 import { createNights } from "#day/nights.ts";
 import { createDayPicture, type DayPicture } from "#day/picture.ts";
 import { createQuestions } from "#day/questions.ts";
+import { createStatus } from "#day/status.ts";
+import { registerStatus } from "#http/status.ts";
+import { toSpoken } from "#desk/day.ts";
 import { sampleDay } from "#day/samples.ts";
 import { registerDay } from "#http/day.ts";
 import { contextRun, inToolContext } from "#tools/context.ts";
@@ -261,6 +264,11 @@ export const createServer = (options: ServerOptions): Server => {
       : "<call>\nThe call has ended, so they're reading the chat. Write as usual, and don't say you've put " +
           "something in the chat: that's only for calls.\n</call>";
   };
+  const zone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const statusCell = createCell<() => readonly string[]>(() => []);
+  // The time and what Kumo knows they're doing now, so replies fit the moment.
+  const nowText = (): string =>
+    ["<now>", `It's ${toSpoken(clock.now(), zone)}.`, ...statusCell.get()(), "</now>"].join("\n");
   const engine = options.createEngine({
     settings: store,
     log,
@@ -270,6 +278,7 @@ export const createServer = (options: ServerOptions): Server => {
     instructions: () => voiceText.replaceAll("{lead}", () => leadOf(store)) + skills(),
     inMind: () =>
       [
+        nowText(),
         memory.inMindText(),
         motions.inMindText(),
         jobs.inMindText(),
@@ -341,7 +350,7 @@ export const createServer = (options: ServerOptions): Server => {
     if (!done.ok) info("Kumo's background work didn't finish", { error: done.failure });
     return done;
   };
-  const timeZone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const timeZone = zone;
   // One part of their How to help you page, such as how they like their mail sorted.
   const howToHelp = (section: string): string => {
     const page = memory.page("memory:helping-you");
@@ -442,6 +451,8 @@ export const createServer = (options: ServerOptions): Server => {
   });
   const nights = createNights(store, timeZone);
   const questions = createQuestions(store, clock, timeZone);
+  const status = createStatus(store, clock, timeZone, nights);
+  statusCell.set(status.lines);
   const picture = createDayPicture({
     blocks: createBlockStore(database),
     calendar,
@@ -454,6 +465,7 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     lead: () => leadOf(store),
     morning: () => notBeforeOf(store),
+    now: status.lines,
   });
   pictureCell.set(picture);
   calendar.onEventEnded((uid) => {
@@ -503,6 +515,7 @@ export const createServer = (options: ServerOptions): Server => {
     notify: notifier.moment,
     info,
     beforeDay: () => picture.plan(),
+    now: status.lines,
   });
   const checkins = createCheckins({
     store,
@@ -522,6 +535,9 @@ export const createServer = (options: ServerOptions): Server => {
     lead: () => leadOf(store),
     morning: () => notBeforeOf(store),
     info,
+    now: status.lines,
+    likely: status.likely,
+    isAsleep: status.isAsleep,
   });
   const trust = createTrust({
     store,
@@ -643,6 +659,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...calendar.tools,
     ...picture.tools,
     questions.tool,
+    status.tool,
     ...jobs.tools,
     ...mail.tools,
     ...gettingStarted.tools,
@@ -823,6 +840,7 @@ export const createServer = (options: ServerOptions): Server => {
   });
   registerJobs(app, { jobs, schemas });
   registerDay(app, { picture, schemas });
+  registerStatus(app, { status, schemas });
   registerTools(app, {
     token: toolsToken,
     tools: allTools,

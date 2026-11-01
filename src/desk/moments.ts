@@ -57,6 +57,8 @@ export type MomentsOptions = {
   readonly info: Info;
   // Before the day's first line: lays out the day, such as Kumo's plan, and says what the line should know.
   readonly beforeDay?: () => Promise<readonly string[]>;
+  // What Kumo knows they're doing now, such as their Focus, for its lines.
+  readonly now?: () => readonly string[];
 };
 
 export const dayWrittenSetting = "moment_day";
@@ -259,6 +261,7 @@ export const createMoments = ({
   notify,
   info,
   beforeDay = () => Promise.resolve([]),
+  now: nowLines = () => [],
 }: MomentsOptions): Moments => {
   const pending = createCell<readonly News[]>([]);
   const gathering = createCell<{ readonly since: number; readonly cancel: Cancel } | undefined>(undefined);
@@ -279,6 +282,7 @@ export const createMoments = ({
     const handled = desk.today().filter(({ quiet }) => !quiet);
     const previous = current.moment;
     return [
+      ...nowLines(),
       ...before,
       ...(told.length > 0 ? ["What your background work said they should know now:", ...told] : []),
       ...(changes.length > 0 ? ["What changed in their day:", ...changes] : []),

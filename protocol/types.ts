@@ -724,6 +724,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/devices/{device}/status": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Say what your phone's Focus is
+     * @description Send it when a Focus you've added Ito to turns on, with what that Focus is for, and with
+     *     no `focus` when it turns off. Kumo reads it as what you're doing now: its lines, plans
+     *     and check-ins fit it, a Sleep Focus ends tonight's check-ins, and nothing is ever sent
+     *     because of it. A Focus never said to be off stops counting after 16 hours. Any device
+     *     can say it, registered for notifications or not.
+     */
+    put: operations["setStatus"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/capabilities": {
     parameters: {
       query?: never;
@@ -2405,6 +2429,14 @@ export interface components {
       /** @description Whether the conversation is on this device's screen. */
       looking: boolean;
     };
+    /** @description Your phone's Focus, when you've added Ito to it; absent while no such Focus is on. */
+    DeviceStatus: {
+      /**
+       * @description What the Focus is for, as you chose when adding Ito to it.
+       * @enum {unknown}
+       */
+      focus?: "sleep" | "work" | "fitness" | "personal" | "other";
+    };
     ErrorResult: {
       error: components["schemas"]["Error"];
     };
@@ -3274,6 +3306,7 @@ export type RegisterDevice = components["schemas"]["RegisterDevice"];
 export type Device = components["schemas"]["Device"];
 export type DeviceResult = components["schemas"]["DeviceResult"];
 export type Presence = components["schemas"]["Presence"];
+export type DeviceStatus = components["schemas"]["DeviceStatus"];
 export type ErrorResult = components["schemas"]["ErrorResult"];
 export type Problem = components["schemas"]["Problem"];
 export type EventId = components["schemas"]["EventId"];
@@ -4441,6 +4474,39 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  setStatus: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A random UUID the app makes once per install, and keeps. */
+        device: components["parameters"]["Device"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "focus": "sleep"
+         *     }
+         */
+        "application/json": components["schemas"]["DeviceStatus"];
+      };
+    };
+    responses: {
+      /** @description Noted. */
+      204: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
     };
   };
   listCapabilities: {

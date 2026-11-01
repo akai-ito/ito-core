@@ -144,7 +144,10 @@ with why; tell Kumo one was wrong there, or in the chat, and its next guesses le
 evening, if you're likely to build, its line asks once when you'll stop and what's next; near and
 past that line it says plainly what tomorrow still fits or what it costs, and the next morning it
 moves the plan rather than scold. When your week's time drifts from what matters, it says so once,
-in numbers, and at most once a day it asks one small question you can skip.
+in numbers, and at most once a day it asks one small question you can skip. Add Ito to a Focus on
+your phone (Sleep, Work, Fitness, Personal) and Ari tells the box whenever it turns on or off; tell
+Kumo what you're up to ("building tonight") and it keeps that in mind for a few hours. Kumo's lines,
+plans and check-ins fit what it knows, and a Sleep Focus ends the night's check-ins.
 
 In the conversation, Ari reaches the same mail through `ito mail` commands and a skill file, rather
 than more tools in every turn: ask it to go through the recruiters who wrote this month, and it
