@@ -8,6 +8,7 @@ import { createStakesChoice } from "#engine/quick-model.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import type { Card, DoneEntry, ModelChoice } from "#protocol/types.ts";
 import { fail, ok } from "#result.ts";
+import type { ToolResult } from "#tools/mcp.ts";
 import { createFakeMail, type ArrivingMail, type FakeMail } from "./support/fake-mail.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
 
@@ -364,7 +365,14 @@ describe("their mail folders", () => {
       text: "They have no folder called Health. Their folders: Bookings & travel, Money & receipts and Newsletters.",
       isError: true,
     });
-    expect(added).toEqual({ text: "Filed it into Health." });
+    expect(added).toEqual({
+      text: "Filed it into Health.",
+      step: {
+        title: "Filed “Your Tuesday ride” from Rides into Health",
+        tally: "into Health",
+        note: "They asked for a Health folder",
+      },
+    });
     expect(box.setting("mail_folders")).toBe(
       JSON.stringify(["Bookings & travel", "Money & receipts", "Newsletters", "Health"]),
     );
@@ -545,5 +553,80 @@ describe("effort that follows the stakes", () => {
     expect(await chosenLow("low")).toEqual({ model: "gpt-6-luna", effort: "medium" });
     expect(await withoutQuick("low")).toEqual({ model: "gpt-6.1-sol", effort: "low" });
     expect(await unlisted("high")).toBeUndefined();
+  });
+});
+
+const move = (inbox: Inbox, input: unknown): Promise<ToolResult> | undefined =>
+  inbox.mailbox.tools.find(({ name }) => name === "mail_move")?.call(input);
+
+describe("moving many mails at once", () => {
+  const issues = ["held-1@news.example", "held-2@news.example", "held-3@news.example"];
+
+  it("bins a page of the inbox in one move, and Undo brings it back without reading it again", async () => {
+    const box = openInbox({ decision: "promotion" }, {}, chosen);
+    box.mail.hold("icloud", 3);
+
+    const moved = await move(box, { message_id: issues, into: "bin", reason: "Old news" });
+
+    expect(moved).toMatchObject({
+      text: "Moved 3 mails from Inbox to the bin.",
+      step: { title: "Moved 3 mails from Inbox to the bin", note: "Old news" },
+    });
+    expect(moved?.step?.mails).toHaveLength(3);
+    expect(issues.map((id) => box.mail.folderOf("icloud", id))).toEqual(["Trash", "Trash", "Trash"]);
+    const [entry] = box.done();
+    expect(box.done()).toMatchObject([{ text: "Moved 3 mails from Inbox to the bin", reason: "Old news", undo: true }]);
+
+    if (entry) await box.undo(entry);
+    expect(issues.map((id) => box.mail.folderOf("icloud", id))).toEqual(["INBOX", "INBOX", "INBOX"]);
+    box.mail.arrive({ ...promo, message_id: "held-1@news.example", subject: "Issue 1" });
+    box.mail.arrive(promo);
+    await settled(() => {
+      expect(box.done().map(({ text }) => text)).toContain('Binned "Two for one tonight" from Pizza Place');
+    });
+    expect(box.done().map(({ text }) => text)).not.toContain('Binned "Issue 1" from Pizza Place');
+    await box.mailbox.close();
+  });
+
+  it("asks once on the Desk for a big batch, and moves nothing when they say not now", async () => {
+    const box = openInbox({ decision: "promotion" }, {}, chosen);
+    box.mail.hold("icloud", 30);
+
+    const asked = await move(box, { folder: "inbox", from: "news.example", into: "newsletters" });
+
+    expect(asked?.text).toMatch(/^That's 30 mails, so they're asked once on the Desk first, as k_1: /u);
+    expect(asked?.step?.title).toBe("Asked you about moving 30 mails from Inbox into Newsletters");
+    expect(box.cards()).toMatchObject([{ kind: "question", title: "Move 30 mails from Inbox into Newsletters?" }]);
+    await box.answer("Move 30 mails from Inbox into Newsletters?", { option: "Not now" });
+    expect(box.mail.moved()).toEqual([]);
+    expect(box.done()).toEqual([]);
+    expect(box.setting("mail_batch_asks")).toBe("[]");
+    await box.mailbox.close();
+  });
+
+  it("says where mail can go, and takes one way of picking it", async () => {
+    const box = openInbox({ decision: "promotion" }, {}, chosen);
+    const fresh = openInbox({ decision: "promotion" });
+
+    expect(await move(box, { folder: "Receipts (old)", into: "Receipts" })).toEqual({
+      text:
+        "They have no folder called Receipts. Their folders: Bookings & travel, Money & receipts and Newsletters. " +
+        "Make one with --new-folder only when they've asked for it.",
+      isError: true,
+    });
+    expect(await move(box, { message_id: issues, folder: "inbox", into: "bin" })).toEqual({
+      text: "Pick mails by --message-id, or by --folder and search words, not both.",
+      isError: true,
+    });
+    expect(await move(box, { into: "bin" })).toEqual({
+      text: "Say which mails: --message-id for each one, or --folder and any search words.",
+      isError: true,
+    });
+    expect(await move(fresh, { folder: "inbox", into: "Money & receipts" })).toEqual({
+      text: "They haven't chosen their mail folders yet, so mail can only go to archive, bin or inbox for now.",
+      isError: true,
+    });
+    await box.mailbox.close();
+    await fresh.mailbox.close();
   });
 });

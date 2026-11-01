@@ -1,6 +1,6 @@
 ---
 name: mail
-description: "Their mail, from the conversation: find mail, read whole threads, draft replies in their voice (never sent), file into their folders, bin, unsubscribe and block, with ito mail commands."
+description: "Their mail, from the conversation: find mail, go through the inbox a page at a time, read whole threads, draft replies in their voice (never sent), file into their folders one or many at a time, bin, unsubscribe and block, with ito mail commands."
 ---
 
 # Mail
@@ -9,13 +9,26 @@ You reach their mail with `ito mail` commands in your shell. Each mail has a Mes
 gives it, and reading, drafting, filing and unsubscribing take it. Leave out `--account` when they
 have one mail account; with more than one, say `icloud`, `outlook` or `gmail`.
 
+A flag that takes a list takes one value each time: repeat it for more, never a JSON list or
+commas. For example:
+
+```text
+ito mail draft --to clara.voss@northwind.example --to tess.harlow@halcyon.example --subject "Intro" --body "…"
+ito mail move --message-id <id> --message-id <id> --into bin
+```
+
 You read every mail as it arrives in the background, so what needs them is already on the Desk.
 These commands are for when they bring mail up, or when a conversation needs it.
 
 ## Finding and reading
 
-- Search by sender, subject, words or date, newest first. For a company, search its domain, such as
-  `--from acme.com`. Search a few ways before you say something isn't there.
+- Search by sender, subject, words, date or folder, newest first. For a company, search its
+  domain, such as `--from acme.com`. Search a few ways before you say something isn't there.
+- `--folder` keeps a search to one place: `inbox`, `archive`, `sent`, `bin` or one of the account's
+  folders by name. Without it, a search looks everywhere they keep mail.
+- Results come a page at a time, 20 by default (`--limit` up to 50). Each says what it searched,
+  how many match and which ones these are. When there's more, it gives a `--more` cursor: run the
+  same command again with it for the next page.
 - Read the whole thread before you summarise or answer one: the latest mail alone misses what was
   agreed earlier.
 - When they ask you to go through a set of mails, such as every startup that wrote to them, search
@@ -28,8 +41,10 @@ These commands are for when they bring mail up, or when a conversation needs it.
   in a line that it's ready. With `--reply-to`, the recipient and subject follow the mail it answers.
 - Write as them, in their own voice and length, the way they write to that kind of person. Never
   invent a fact: leave a [placeholder] for what you don't know, such as a salary or a notice period.
-- To change a draft, draft it again with the same `--reply-to`: the new one replaces the old one,
-  in Drafts and on the Desk.
+- To change a draft, draft it again with `--replaces <card id>`: the new one takes the old one's
+  place in Drafts and on the Desk, and keeps whatever you don't give again. To fix only a recipient,
+  give `--replaces` and the right `--to`. A new draft with the same `--reply-to` replaces the old
+  one too.
 - Times they're offering or accepting go on their calendar too, with `add_event`. A meeting that's
   only proposed goes on Kumo's calendar as a hold (`hold`), and the hold goes once it's settled.
 
@@ -46,10 +61,22 @@ Their inbox holds only what needs them. You sort each mail as it arrives: noise 
 what's worth keeping but needs nothing from them goes into one of their few folders, such as Money &
 receipts or Newsletters.
 
-- `file --to folder --folder <name>` files a mail into one of their folders; a wrong name lists
-  them. `--to archive` keeps a mail no folder fits, and `--to bin` is for noise. Each is recorded in
-  their Done list with an undo, so don't record them again.
+- When they ask you to tidy their inbox, go through what's in it now with `inbox`, a page at a
+  time, rather than searching recent mail. Decide each mail on the page, move them together, then
+  take the next page with `--more`, until you reach the end or they say stop.
+- `file --to folder --folder <name>` files one mail into one of their folders; a wrong name lists
+  them. `--to archive` keeps a mail no folder fits, and `--to bin` is for noise.
+- `move` moves many at once: each `--message-id`, or everything in a `--folder`, narrowed by search
+  words if you like. `--into` is one of their folders, `archive`, `bin` or `inbox`. Up to 25 move
+  at once. More than that wait for one question card on their Desk; they move when they tap
+  Apply. Tell them it's there, and don't ask again in the chat.
+- Every move is recorded in their Done list with an undo, a batch as one line, so don't record
+  them again.
 - Keep the folders few: make a new one with `--new-folder` only when they ask for it.
+- `folders` lists every folder in the account, with how many mails each holds, and marks theirs.
+  To move an old filing system into theirs, such as folders an earlier assistant made, list the
+  folders, say which old folder goes into which of theirs, and once they agree, move each old
+  folder with `move --folder <old> --into <theirs>`.
 - `unsubscribe` uses the list's own unsubscribe link. Do it when they ask, or for promotions from a
   sender they've never written to. Ask first for a sender they've written to, and never unsubscribe
   from a newsletter they read.

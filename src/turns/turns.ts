@@ -12,7 +12,7 @@ import {
   toStepStatus,
   writingStatus,
 } from "#conversation/status.ts";
-import { toEndedStep, toStepTitle, toUpdatedStep, type Trail } from "#conversation/steps.ts";
+import { toEndedStep, toStepTitle, toUpdatedStep, type StepEnd, type Trail } from "#conversation/steps.ts";
 import type { AskFields, Engine, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type { Ask, Error as ErrorBody, Outcome, Status, Step, StepKind } from "#protocol/types.ts";
@@ -226,7 +226,7 @@ export const createTurns = (
 
   const startStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.started" }>): void => {
     const started = { kind: event.kind, facts: event.facts };
-    const { kind, facts } = trail?.toStart(started) ?? started;
+    const { kind, facts } = trail?.toStart(started, `${turn}/${event.key}`) ?? started;
     const title = toStepTitle(kind, facts, "present", trail);
     const step = store.startStep(turn, kind, title, facts);
     changeSteps(turn, (steps) => new Map(steps).set(event.key, step));
@@ -245,9 +245,9 @@ export const createTurns = (
   const endStep = (turn: TurnId, event: Extract<EngineEvent, { readonly type: "step.ended" }>): void => {
     const step = current(turn)?.steps.get(event.key);
     if (!step) return;
-    const ended = { outcome: event.outcome, facts: event.facts };
-    const { outcome, facts } = trail?.toEnd(step, ended) ?? ended;
-    store.endStep(toEndedStep(step, outcome, facts, clock.now(), trail));
+    const ended: StepEnd = { outcome: event.outcome, facts: event.facts };
+    const { outcome, facts, title } = trail?.toEnd(step, ended, `${turn}/${event.key}`) ?? ended;
+    store.endStep(toEndedStep(step, outcome, facts, clock.now(), trail, title));
     changeSteps(turn, (steps) => new Map([...steps].filter(([key]) => key !== event.key)));
   };
 

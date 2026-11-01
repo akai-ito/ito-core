@@ -8,23 +8,29 @@ import type { Complete, JsonSchema } from "#engine/engine.ts";
 import type { QuickChoice, Stakes, StakesChoice } from "#engine/quick-model.ts";
 import {
   createMailSource,
+  fromUidSet,
+  toUidSet,
   type Auth,
   type Filing,
+  type FolderUse,
   type Mail,
+  type MailPage,
+  type MailQuery,
   type MailSource,
   type SavedWatermark,
   type SourceOptions,
+  type UidGroup,
 } from "#mail/imap.ts";
-import { createMailFolders, type FileInto } from "#mail/folders.ts";
+import { createMailFolders, sameName, type FileInto } from "#mail/folders.ts";
 import { createOutlookToken } from "#mail/outlook.ts";
 import type { Account } from "#mail/providers.ts";
 import type { Health } from "#problems/problems.ts";
-import type { CalendarItem, Card, DoneEntry, ModelChoice } from "#protocol/types.ts";
+import type { CalendarItem, Card, DoneEntry, ModelChoice, Step } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { outlookClientId, outlookScope, outlookTokenUrl } from "#sources/sources.ts";
 import type { Store } from "#store/store.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
-import type { Tool, ToolResult } from "#tools/mcp.ts";
+import type { Tool, ToolResult, ToolStep } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 
 export type CreateMailSource = (options: SourceOptions) => MailSource;
@@ -380,6 +386,191 @@ const mailReference = (account: string, mail: Mail): NonNullable<DoneEntry["mail
   from: senderOf(mail),
   subject: mail.subject,
 });
+
+type Into = "archive" | "bin" | "inbox" | { readonly folder: string };
+
+// Mails to move together, as asked for: each folder's UIDs and Message-IDs, where they go, and why.
+type Plan = {
+  readonly account: string;
+  readonly groups: readonly (UidGroup & { readonly ids: readonly string[] })[];
+  readonly into: Into;
+  readonly is_new: boolean;
+  readonly from: string;
+  readonly count: number;
+  readonly reason: string;
+};
+
+type BatchAsk = Plan & { readonly card: string };
+
+// Puts a batch back: each part moves from the destination to the folder it came from, by its UIDs there when the
+// server gave them, or by Message-ID. Mail going back to the inbox isn't new, so it isn't read again.
+type MovedUndo = {
+  readonly kind: "mail_moved";
+  readonly account: string;
+  readonly destination: string;
+  readonly moves: readonly { readonly to: string; readonly uids?: string; readonly ids?: readonly string[] }[];
+  readonly restore: readonly string[];
+};
+
+type StepMail = NonNullable<Step["mails"]>[number];
+
+export const batchAsksSetting = "mail_batch_asks";
+
+const pageSize = 20;
+// More mails than this in one move wait for them to agree on the Desk.
+export const askAbove = 25;
+const applyLabel = "Apply";
+const threadTextLimit = 1500;
+const mostStepMails = 50;
+
+// One email address on its own, such as clara.voss@northwind.example.
+const emailAddress = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:".]+(?:\.[^\s@<>()[\]\\,;:".]+)+$/u;
+
+const recipientProblem = (field: "to" | "cc", given: readonly string[]): string | undefined => {
+  const wrong = given.find((address) => !emailAddress.test(address));
+  return wrong === undefined
+    ? undefined
+    : `"${wrong}" isn't an email address. Give one address each time and repeat --${field} for each, such as ` +
+        `--${field} clara.voss@northwind.example --${field} tess.harlow@halcyon.example.`;
+};
+
+const plural = (count: number, noun: string): string =>
+  `${count.toLocaleString("en-GB")} ${noun}${count === 1 ? "" : "s"}`;
+
+const matching = (total: number): string =>
+  total === 0 ? "nothing matches" : `${plural(total, "mail")} ${total === 1 ? "matches" : "match"}`;
+
+const capitalised = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
+const withStop = (text: string): string => (/[.!?]$/u.test(text) ? text : `${text}.`);
+
+const listed = (names: readonly string[], most = names.length): string => {
+  if (names.length > most) return `${names.slice(0, most).join(", ")} and ${plural(names.length - most, "other")}`;
+  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;
+};
+
+const isInbox = (folder: string): boolean => folder.toUpperCase() === "INBOX";
+
+const folderName = (folder: string): string => (isInbox(folder) ? "Inbox" : folder);
+
+const placesOf = (searched: readonly string[], isEverywhere: boolean): string =>
+  isEverywhere ? "all their mail" : listed(searched.map(folderName), 2);
+
+const originOf = (groups: readonly UidGroup[], folder: string | undefined): string => {
+  const [only] = groups;
+  if (only !== undefined && groups.length === 1) return folderName(only.folder);
+  return folder === undefined ? plural(groups.length, "folder") : folderName(folder);
+};
+
+const intoWords = (into: Into): string => {
+  if (typeof into === "object") return `into ${into.folder}`;
+  const words = { archive: "into the archive", bin: "to the bin", inbox: "to the inbox" };
+  return words[into];
+};
+
+const queryWords = ({ from = "", subject, text, since }: MailQuery): string =>
+  [
+    from,
+    subject === undefined ? "" : `“${subject}” in the subject`,
+    text === undefined ? "" : `“${text}”`,
+    since === undefined ? "" : `since ${since}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+const bareSubject = (subject: string): string => subject.replace(/^(?:\s*(?:re|fwd?|aw|sv)\s*:)+/iu, "").trim();
+
+const subjectOf = (mail: Mail, isBare = false): string =>
+  (isBare ? bareSubject(mail.subject) : mail.subject.trim()) || "(no subject)";
+
+const stepDate = (date: string): string => {
+  const parsed = Date.parse(date);
+  return toTimestamp(Number.isNaN(parsed) ? 0 : parsed);
+};
+
+const toStepMail = (mail: Mail, limit?: number): StepMail => ({
+  from: senderOf(mail),
+  subject: subjectOf(mail),
+  date: stepDate(mail.date),
+  ...(limit !== undefined && { text: mail.text.slice(0, limit) }),
+  ...(limit !== undefined && mail.text.length > limit && { cut: true as const }),
+});
+
+// The senders of a batch, most mails first.
+const countedSenders = (mails: readonly Mail[]): readonly string[] => {
+  const counts = Map.groupBy(mails, (mail) => senderOf(mail));
+  return [...counts].toSorted(([, left], [, right]) => right.length - left.length).map(([sender]) => sender);
+};
+
+const filings: Readonly<Record<Filing, { readonly verb: (about: string) => string; readonly tally: string }>> = {
+  archive: { verb: (about) => `Archived ${about}`, tally: "archived" },
+  bin: { verb: (about) => `Binned ${about}`, tally: "binned" },
+  inbox: { verb: (about) => `Moved ${about} back to the inbox`, tally: "back in the inbox" },
+  flag: { verb: (about) => `Flagged ${about}`, tally: "flagged" },
+  unflag: { verb: (about) => `Unflagged ${about}`, tally: "unflagged" },
+};
+
+const useNames: Readonly<Record<FolderUse, string>> = {
+  inbox: "the inbox",
+  archive: "the archive",
+  sent: "sent mail",
+  drafts: "drafts",
+  trash: "the bin",
+  junk: "junk",
+};
+
+const plainInto = ["archive", "bin", "inbox"] as const;
+
+const isPlainInto = (value: unknown): value is (typeof plainInto)[number] =>
+  plainInto.includes(value as (typeof plainInto)[number]);
+
+// The first of these that says something.
+const filled = (...texts: readonly (string | undefined)[]): string =>
+  texts.find((text) => text !== undefined && text !== "") ?? "";
+
+const queryOf = (input: unknown): MailQuery => {
+  const limit = fieldOf(input, "limit");
+  return {
+    ...Object.fromEntries(
+      ["from", "subject", "text", "since", "folder", "more"].flatMap((field) =>
+        textOf(input, field).trim() === "" ? [] : [[field, textOf(input, field).trim()]],
+      ),
+    ),
+    ...(typeof limit === "number" && { limit }),
+  };
+};
+
+const isMovedUndo = (payload: unknown): payload is MovedUndo => fieldOf(payload, "kind") === "mail_moved";
+
+const toInto = (value: unknown): Into | undefined => {
+  if (isPlainInto(value)) return value;
+  const folder = textOf(value, "folder");
+  return folder === "" ? undefined : { folder };
+};
+
+const toBatchAsks = (text: string | undefined): readonly BatchAsk[] =>
+  parsedList(text).flatMap((item) => {
+    const into = toInto(fieldOf(item, "into"));
+    const groups = fieldOf(item, "groups");
+    const count = fieldOf(item, "count");
+    const [card, account] = [textOf(item, "card"), textOf(item, "account")];
+    return card && account && into && typeof count === "number" && Array.isArray(groups)
+      ? {
+          card,
+          account,
+          groups: (groups as readonly unknown[]).map((group) => ({
+            folder: textOf(group, "folder"),
+            uids: (fieldOf(group, "uids") as readonly number[] | undefined) ?? [],
+            ids: listOf(fieldOf(group, "ids")),
+          })),
+          into,
+          is_new: fieldOf(item, "is_new") === true,
+          from: textOf(item, "from"),
+          count,
+          reason: textOf(item, "reason"),
+        }
+      : [];
+  });
 
 export const createMailbox = ({
   host,
@@ -890,11 +1081,28 @@ export const createMailbox = ({
     return;
   });
 
+  const moveBack = async ({ account, destination, moves, restore }: MovedUndo): Promise<Result<undefined, string>> => {
+    const connection = connectionOf(account);
+    if (!connection) return fail(`${account} mail isn't set up any more.`);
+    restored.update((current) => new Set([...current, ...restore]));
+    for (const { to, uids, ids = [] } of moves) {
+      const found =
+        uids === undefined
+          ? await connection.source.select({ messageIds: ids })
+          : ok({ groups: [{ folder: destination, uids: fromUidSet(uids) }] });
+      if (!found.ok) return found;
+      const back = await connection.source.move(found.value.groups, isInbox(to) ? "inbox" : { folder: to });
+      if (!back.ok) return back;
+    }
+    return ok(undefined);
+  };
+
   desk.onUndo(async (_entry, payload) => {
     if (isBlockedUndo(payload)) {
       store.setSetting(blockedSetting, JSON.stringify(blocked().filter((sender) => sender !== payload.sender)));
       return ok(undefined);
     }
+    if (isMovedUndo(payload)) return moveBack(payload);
     if (!isFiledUndo(payload)) return ok(undefined);
     const connection = connectionOf(payload.account);
     if (!connection) return fail(`${payload.account} mail isn't set up any more.`);
@@ -912,37 +1120,256 @@ export const createMailbox = ({
 
   const accountField = { type: "string", description: "icloud, outlook or gmail; leave it out for the only one." };
 
+  const scopeFields = {
+    from: { type: "string", description: "A sender's address, name or domain, such as acme.com." },
+    subject: { type: "string" },
+    text: { type: "string", description: "Words in the mail." },
+    since: { type: "string", description: "A date, such as 2026-10-01." },
+    folder: {
+      type: "string",
+      description:
+        "Where to look: inbox, archive, sent, bin or one of the account's folders by name. Everywhere by default.",
+    },
+  };
+
+  const pageFields = {
+    limit: { type: "integer", description: `How many to show, ${String(pageSize)} by default and at most 50.` },
+    more: { type: "string", description: "The cursor the last page gave, for the page after it." },
+  };
+
+  // The page's mails, one a line, between a line saying what was searched and one saying whether there's more.
+  const pageText = (account: string, page: MailPage, heading: string): string => {
+    const first = page.total - page.after - page.mails.length + 1;
+    const range =
+      page.mails.length === 0
+        ? ""
+        : ` These are ${String(first)}–${String(first + page.mails.length - 1)}, newest first.`;
+    const more =
+      page.more === undefined
+        ? page.mails.length === 0
+          ? []
+          : ["That's all of them."]
+        : [`${String(page.after)} more: run it again with --more ${page.more} for the next page.`];
+    return [`${heading}${range}`, ...page.mails.map((mail) => summarise(account, mail)), ...more].join("\n");
+  };
+
+  const pageNote = (page: MailPage): string =>
+    page.total === 0
+      ? "Nothing matched"
+      : `${plural(page.total, "mail")}${page.more === undefined ? "" : `, ${String(page.after)} more after these`}`;
+
+  const draftField = {
+    type: "array",
+    items: { type: "string" },
+    description: "One email address each time; repeat it for more, such as --to a@acme.com --to b@acme.com.",
+  };
+
+  const draftList = (): string =>
+    draftCards()
+      .map(({ id, title }) => `${id} (${title})`)
+      .join(", ") || "none";
+
+  const batchAsks = (): readonly BatchAsk[] => toBatchAsks(store.setting(batchAsksSetting));
+
+  // Where a batch goes, from what Kumo gave: one of their folders by name, or the archive, the bin or the inbox.
+  const intoOf = (text: string, isNew: boolean): Result<Into, string> => {
+    const wanted = text.trim();
+    const filing = wanted.toLowerCase();
+    if (isPlainInto(filing)) return ok(filing);
+    if (wanted === "") return fail("Say where they go, with --into: one of their folders, archive, bin or inbox.");
+    const theirs = folders.names();
+    if (theirs.length === 0) {
+      return fail("They haven't chosen their mail folders yet, so mail can only go to archive, bin or inbox for now.");
+    }
+    const match = theirs.find((name) => sameName(name, wanted));
+    if (match !== undefined) return ok({ folder: match });
+    return isNew
+      ? ok({ folder: wanted })
+      : fail(
+          `They have no folder called ${wanted}. Their folders: ${listed(theirs)}. Make one with --new-folder only ` +
+            "when they've asked for it.",
+        );
+  };
+
+  const applyMove = async ({ account, source }: Connection, plan: Plan): Promise<Result<string, string>> => {
+    if (plan.is_new && typeof plan.into === "object") folders.addName(plan.into.folder, plan.reason);
+    const ids = plan.groups.flatMap((group) => group.ids);
+    if (plan.into === "inbox") restored.update((current) => new Set([...current, ...ids]));
+    const moved = await source.move(plan.groups, plan.into, (count, total) => {
+      info("Moving mail", { account, moved: count, total });
+    });
+    if (!moved.ok) return moved;
+    const text = `Moved ${plural(moved.value.moved, "mail")} from ${plan.from} ${intoWords(plan.into)}`;
+    const idsFrom = (origin: string): readonly string[] =>
+      plan.groups.filter(({ folder }) => folder === origin).flatMap((group) => group.ids);
+    desk.addDone({
+      text,
+      ...(plan.reason !== "" && { reason: plan.reason }),
+      quiet: false,
+      undo: {
+        kind: "mail_moved",
+        account,
+        destination: moved.value.destination,
+        moves: moved.value.placed.map(({ origin, uids }) =>
+          uids === undefined ? { to: origin, ids: idsFrom(origin) } : { to: origin, uids: toUidSet(uids) },
+        ),
+        restore: moved.value.placed.flatMap(({ origin }) => (isInbox(origin) ? idsFrom(origin) : [])),
+      } satisfies MovedUndo,
+    });
+    return ok(text);
+  };
+
+  const answerMove = async (card: { readonly id: string }, given: CardAnswer): Promise<undefined> => {
+    const ask = batchAsks().find((candidate) => candidate.card === card.id);
+    store.setSetting(batchAsksSetting, JSON.stringify(batchAsks().filter((candidate) => candidate.card !== card.id)));
+    if (ask === undefined || given.option !== applyLabel) return undefined;
+    const connection = connectionOf(ask.account);
+    const done = connection ? await applyMove(connection, ask) : fail(`${ask.account} mail isn't set up any more.`);
+    if (!done.ok) {
+      desk.addDone({
+        text: `Couldn't move ${plural(ask.count, "mail")} from ${ask.from}`,
+        reason: done.failure,
+        quiet: false,
+      });
+    }
+    return undefined;
+  };
+
+  // A big batch waits for one answer on the Desk, rather than moving at once.
+  const askToMove = (plan: Plan, mails: readonly Mail[]): Card => {
+    const senders = countedSenders(mails);
+    const card = desk.addCard({
+      kind: "question",
+      title: `Move ${plural(plan.count, "mail")} from ${plan.from} ${intoWords(plan.into)}?`,
+      options: [{ label: applyLabel }, { label: "Not now" }],
+      allows_text: false,
+      question: {
+        text: [
+          ...(plan.reason === "" ? [] : [withStop(plan.reason)]),
+          `They're from ${listed(senders, 3)}. They go in one move, and Undo on your Done list puts them back.`,
+        ].join(" "),
+      },
+    });
+    store.setSetting(batchAsksSetting, JSON.stringify([...batchAsks(), { ...plan, card: card.id }]));
+    desk.handleCard(card.id, answerMove);
+    return card;
+  };
+
+  const moveMails = async (connection: Connection, input: unknown): Promise<ToolResult> => {
+    const ids = listOf(fieldOf(input, "message_id"));
+    const query = queryOf(input);
+    const hasQuery = Object.keys(query).length > 0;
+    if (hasQuery && ids.length > 0)
+      return failed("Pick mails by --message-id, or by --folder and search words, not both.");
+    if (!hasQuery && ids.length === 0) {
+      return failed("Say which mails: --message-id for each one, or --folder and any search words.");
+    }
+    const into = intoOf(textOf(input, "into"), fieldOf(input, "new_folder") === true);
+    if (!into.ok) return failed(into.failure);
+    const selected = await connection.source.select(ids.length > 0 ? { messageIds: ids } : { query });
+    if (!selected.ok) return failed(selected.failure);
+    const { groups, mails } = selected.value;
+    const missing = new Set(ids).size - mails.length;
+    const unfound = ids.length > 0 && missing > 0 ? ` ${plural(missing, "Message-ID")} weren't found.` : "";
+    if (mails.length === 0)
+      return { text: `Nothing matches, so nothing moved.${unfound}`, step: { title: "Found no mail to move" } };
+    const reason = textOf(input, "reason").trim();
+    const plan: Plan = {
+      account: connection.account,
+      groups: groups.map(({ folder, uids }) => ({
+        folder,
+        uids,
+        ids: mails.filter((mail) => mail.folder === folder).map(({ messageId }) => messageId),
+      })),
+      into: into.value,
+      is_new: fieldOf(input, "new_folder") === true,
+      from: originOf(groups, query.folder),
+      count: mails.length,
+      reason,
+    };
+    const shown = mails
+      .toSorted((left, right) => right.date.localeCompare(left.date))
+      .slice(0, mostStepMails)
+      .map((mail) => toStepMail(mail));
+    if (mails.length > askAbove) {
+      const card = askToMove(plan, mails);
+      return {
+        text:
+          `That's ${plural(mails.length, "mail")}, so they're asked once on the Desk first, as ${card.id}: ` +
+          `“${card.title}” They move when they tap ${applyLabel}, so don't ask again in the chat.${unfound}`,
+        step: {
+          title: `Asked you about moving ${plural(mails.length, "mail")} from ${plan.from} ${intoWords(plan.into)}`,
+          note: "It's on your Desk until you choose",
+          mails: shown,
+        },
+      };
+    }
+    const done = await applyMove(connection, plan);
+    if (!done.ok) return failed(done.failure);
+    return {
+      text: `${done.value}.${unfound}`,
+      step: { title: done.value, ...(reason !== "" && { note: reason }), mails: shown },
+    };
+  };
+
   const tools: readonly Tool[] = [
     {
       name: "mail_search",
       title: "Search mail",
       audience: "work",
-      description: "Search their mail by sender, subject, words or date, newest first, with each mail's Message-ID.",
+      description:
+        "Search their mail by sender, subject, words, date or folder, newest first, a page at a time, with each " +
+        "mail's Message-ID. It says what it searched, how many match, and how to get the next page.",
       inputSchema: {
         type: "object",
-        properties: {
-          account: accountField,
-          from: { type: "string" },
-          subject: { type: "string" },
-          text: { type: "string" },
-          since: { type: "string", description: "A date, such as 2026-10-01." },
-        },
+        properties: { account: accountField, ...scopeFields, ...pageFields },
         additionalProperties: false,
       },
       call: (input) =>
         withSource(textOf(input, "account"), async ({ account, source }) => {
-          const query = Object.fromEntries(
-            ["from", "subject", "text", "since"].flatMap((field) =>
-              textOf(input, field) === "" ? [] : [[field, textOf(input, field)]],
-            ),
-          );
+          const query = queryOf(input);
           const found = await source.search(query);
           if (!found.ok) return failed(found.failure);
+          const where = placesOf(found.value.searched, query.folder === undefined);
+          const what = queryWords(query);
+          const heading =
+            what === ""
+              ? `${capitalised(where)} holds ${plural(found.value.total, "mail")}.`
+              : `Searched ${where} for ${what}: ${matching(found.value.total)}.`;
           return {
-            text:
-              found.value.length === 0
-                ? "No mail matches."
-                : found.value.map((mail) => summarise(account, mail)).join("\n"),
+            text: pageText(account, found.value, heading),
+            step: {
+              title: what === "" ? `Looked through ${where}` : `Searched mail for ${what}`,
+              note: pageNote(found.value),
+              mails: found.value.mails.map((mail) => toStepMail(mail)),
+            },
+          };
+        }),
+    },
+    {
+      name: "mail_inbox",
+      title: "List the inbox",
+      audience: "work",
+      description:
+        "List what's in their inbox now, newest first, a page at a time, with each mail's Message-ID and how many " +
+        "are left. Use it to go through the inbox, such as to tidy it.",
+      inputSchema: {
+        type: "object",
+        properties: { account: accountField, ...pageFields },
+        additionalProperties: false,
+      },
+      call: (input) =>
+        withSource(textOf(input, "account"), async ({ account, source }) => {
+          const found = await source.search({ ...queryOf(input), folder: "inbox" });
+          if (!found.ok) return failed(found.failure);
+          const heading = `Their inbox holds ${plural(found.value.total, "mail")} now.`;
+          return {
+            text: pageText(account, found.value, heading),
+            step: {
+              title: "Looked through your inbox",
+              note: pageNote(found.value),
+              mails: found.value.mails.map((mail) => toStepMail(mail)),
+            },
           };
         }),
     },
@@ -960,7 +1387,14 @@ export const createMailbox = ({
       call: (input) =>
         withSource(textOf(input, "account"), async ({ account, source }) => {
           const read = await source.read(textOf(input, "message_id"));
-          return read.ok ? { text: describe(account, read.value) } : failed(read.failure);
+          if (!read.ok) return failed(read.failure);
+          return {
+            text: describe(account, read.value),
+            step: {
+              title: `Read “${subjectOf(read.value)}” from ${senderOf(read.value)}`,
+              mails: [toStepMail(read.value, textLimit)],
+            },
+          };
         }),
     },
     {
@@ -975,11 +1409,26 @@ export const createMailbox = ({
         additionalProperties: false,
       },
       call: (input) =>
-        withSource(textOf(input, "account"), async ({ account, source }) => {
+        withSource(textOf(input, "account"), async ({ account, user, source }) => {
           const thread = await source.thread(textOf(input, "message_id"));
-          return thread.ok
-            ? { text: thread.value.map((mail) => describe(account, mail)).join("\n\n---\n\n") }
-            : failed(thread.failure);
+          if (!thread.ok) return failed(thread.failure);
+          const [first] = thread.value;
+          const others = [
+            ...new Set(
+              thread.value
+                .filter((mail) => addressKey(mail.from.address) !== addressKey(user))
+                .map((mail) => senderOf(mail)),
+            ),
+          ];
+          const people = others.length === 0 ? "" : ` with ${listed(others, 2)}`;
+          return {
+            text: thread.value.map((mail) => describe(account, mail)).join("\n\n---\n\n"),
+            step: {
+              title: `Read the thread “${first === undefined ? "" : subjectOf(first, true)}”${people}`,
+              note: plural(thread.value.length, "mail"),
+              mails: thread.value.slice(-mostStepMails).map((mail) => toStepMail(mail, threadTextLimit)),
+            },
+          };
         }),
     },
     {
@@ -988,35 +1437,48 @@ export const createMailbox = ({
       audience: "work",
       description:
         "Write a draft into their Drafts folder and put it on the Desk for them to send. Never sent by you. With " +
-        "reply_to, it answers that mail: to and subject follow it. Write in their voice.",
+        "reply_to, it answers that mail: to and subject follow it. With replaces, it takes the place of a draft " +
+        "already on the Desk, keeping whatever you don't give again. Write in their voice.",
       inputSchema: {
         type: "object",
         properties: {
           account: accountField,
           reply_to: { type: "string", description: "The Message-ID of the mail it answers." },
-          to: { type: "array", items: { type: "string" } },
-          cc: { type: "array", items: { type: "string" } },
+          replaces: {
+            type: "string",
+            description: "The Desk card id of a draft this one replaces, such as to correct a recipient.",
+          },
+          to: draftField,
+          cc: draftField,
           subject: { type: "string" },
           body: { type: "string", description: "Plain text, as it will be sent." },
           title: { type: "string", description: "The card's title, such as “Note to Hotel Orto”." },
         },
-        required: ["body"],
         additionalProperties: false,
       },
       call: (input) =>
         withSource(textOf(input, "account"), async ({ account, user, source }) => {
-          const replyTo = textOf(input, "reply_to");
+          const replacing = textOf(input, "replaces").trim();
+          const earlier = replacing === "" ? undefined : draftCards().find((card) => card.id === replacing);
+          if (replacing !== "" && earlier?.draft?.account !== account) {
+            return failed(`There's no draft ${replacing} on the Desk to replace. Drafts there: ${draftList()}.`);
+          }
+          const before = earlier?.draft;
+          const replyTo = filled(textOf(input, "reply_to"), before?.in_reply_to);
           const original = replyTo === "" ? undefined : await source.read(replyTo);
           if (original && !original.ok) return failed(original.failure);
           const answering = original?.value;
-          const given = listOf(fieldOf(input, "to"));
-          const to = given.length > 0 ? given : answering ? [answering.from.address] : [];
-          const subject = textOf(input, "subject") || (answering ? reSubject(answering.subject) : "");
-          const body = textOf(input, "body").trim();
+          const givenTo = listOf(fieldOf(input, "to"));
+          const givenCc = listOf(fieldOf(input, "cc"));
+          const problem = recipientProblem("to", givenTo) ?? recipientProblem("cc", givenCc);
+          if (problem !== undefined) return failed(problem);
+          const to = givenTo.length > 0 ? givenTo : (before?.to ?? (answering ? [answering.from.address] : []));
+          const cc = givenCc.length > 0 ? givenCc : (before?.cc ?? []);
+          const subject = filled(textOf(input, "subject"), before?.subject, answering && reSubject(answering.subject));
+          const body = filled(textOf(input, "body").trim(), before?.body);
           if (body === "" || subject === "" || to.length === 0) {
             return failed("A draft needs who it's to, a subject and a body, or reply_to.");
           }
-          const cc = listOf(fieldOf(input, "cc"));
           const saved = await source.draft({
             from: toAddress(user),
             to: to.map((address) => toAddress(address)),
@@ -1029,21 +1491,26 @@ export const createMailbox = ({
             }),
           });
           if (!saved.ok) return failed(saved.failure);
-          // A new draft for the same mail replaces the one before it, in Drafts and on the Desk.
-          const replaced = answering
-            ? draftCards().filter(
-                (card) => card.draft?.account === account && card.draft.in_reply_to === answering.messageId,
-              )
-            : [];
+          // A new draft for the same mail, or one named to replace, takes the old one's place in Drafts and on the Desk.
+          const replaced = draftCards().filter(
+            (card) =>
+              card.id === replacing ||
+              (answering !== undefined &&
+                card.draft?.account === account &&
+                card.draft.in_reply_to === answering.messageId),
+          );
           for (const old of replaced) {
             const removed = old.draft ? await source.removeDraft(old.draft.message_id) : ok(undefined);
             if (!removed.ok) info("A replaced draft couldn't be removed", { error: removed.failure });
           }
-          const [kept, ...dropped] = replaced;
+          // The draft named to replace keeps its card; any other for the same mail goes.
+          const [kept, ...dropped] = replaced.toSorted(
+            (left, right) => Number(right.id === replacing) - Number(left.id === replacing),
+          );
           for (const old of dropped) desk.removeCard(old.id);
           const fresh: NewCard = {
             kind: "draft",
-            title: textOf(input, "title").trim() || draftTitle(to[0] ?? "", answering),
+            title: textOf(input, "title").trim() || (earlier?.title ?? draftTitle(to[0] ?? "", answering)),
             options: [{ label: "Drop it" }],
             allows_text: true,
             draft: {
@@ -1060,7 +1527,15 @@ export const createMailbox = ({
           // The new draft takes the old one's place on the Desk, marked changed.
           if (kept) desk.replaceCard(kept.id, fresh);
           const id = kept?.id ?? desk.addCard(fresh).id;
-          return { text: `Saved the draft in Drafts and put it on the Desk as ${id}.` };
+          const whom = answering?.from.name ?? to[0] ?? "";
+          return {
+            text: `Saved the draft in Drafts and put it on the Desk as ${id}${kept ? ", in place of the earlier one" : ""}.`,
+            step: {
+              title: `${kept ? "Redrafted" : "Drafted"} ${answering ? "a reply" : "a mail"} to ${whom}`,
+              note: `To ${to.join(", ")}`,
+              mails: [{ from: "You", subject, date: toTimestamp(clock.now()), text: body }],
+            },
+          };
         }),
     },
     {
@@ -1087,23 +1562,35 @@ export const createMailbox = ({
         withSource(textOf(input, "account"), async ({ account, source }) => {
           const id = textOf(input, "message_id");
           const read = await source.read(id);
+          const reason = textOf(input, "reason").trim();
+          const said = (title: string, tally: string): ToolStep => ({
+            title,
+            tally,
+            ...(reason !== "" && { note: reason }),
+          });
           if (textOf(input, "to") === "folder") {
             const folder = textOf(input, "folder").trim();
             if (folder === "") return failed("Say which folder, with folder.");
             if (!read.ok) return failed(read.failure);
-            const reason = textOf(input, "reason").trim();
             const reference = mailReference(account, read.value);
             const isNew = fieldOf(input, "new_folder") === true;
+            const isHeld = folders.names().length === 0;
             const placed = await (isNew
               ? folders.add(reference, folder, reason)
               : folders.place(reference, folder, reason));
-            return placed.ok ? { text: placed.value } : failed(placed.failure);
+            if (!placed.ok) return failed(placed.failure);
+            const about = `“${subjectOf(read.value)}” from ${senderOf(read.value)}`;
+            return {
+              text: placed.value,
+              step: isHeld
+                ? said(`Kept ${about} in the inbox until you choose your folders`, "kept for now")
+                : said(`Filed ${about} into ${folder}`, `into ${folder}`),
+            };
           }
           const to = textOf(input, "to") as Filing;
           const filed = await source.file(id, to);
           if (!filed.ok) return failed(filed.failure);
           if ((to === "archive" || to === "bin") && read.ok) {
-            const reason = textOf(input, "reason").trim();
             desk.addDone({
               text: `${to === "bin" ? "Binned" : "Archived"} "${read.value.subject}" from ${senderOf(read.value)}`,
               ...(reason !== "" && { reason }),
@@ -1112,7 +1599,85 @@ export const createMailbox = ({
               undo: { kind: "mail_filed", account, id, back: "inbox" } satisfies FiledUndo,
             });
           }
-          return { text: `Filed it: ${to}.` };
+          if (to === "inbox") restored.update((current) => new Set([...current, id]));
+          const about = read.ok ? `“${subjectOf(read.value)}” from ${senderOf(read.value)}` : "a mail";
+          const { verb, tally } = filings[to];
+          return { text: `Filed it: ${to}.`, step: said(verb(about), tally) };
+        }),
+    },
+    {
+      name: "mail_move",
+      title: "Move mails",
+      audience: "work",
+      description:
+        "Move many mails at once: by Message-ID, or everything in a folder or a search, such as a folder an " +
+        `earlier assistant made. They go into one of their folders, the archive, the bin or the inbox. Up to ` +
+        `${String(askAbove)} move now; more wait for them to agree on one Desk card. It's one line in their Done ` +
+        "list with an undo, so don't record it again.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          account: accountField,
+          message_id: {
+            type: "array",
+            items: { type: "string" },
+            description: "A mail's Message-ID; repeat it for each mail.",
+          },
+          ...scopeFields,
+          folder: {
+            type: "string",
+            description: "Take mail from this folder: inbox, archive or one of the account's folders by name.",
+          },
+          into: {
+            type: "string",
+            description: "Where they go: one of their folders by name, archive, bin or inbox.",
+          },
+          new_folder: { type: "boolean", description: "Make the folder first, only when they've asked for a new one." },
+          reason: { type: "string", description: "Why, in a line, for their Done list." },
+        },
+        required: ["into"],
+        additionalProperties: false,
+      },
+      call: (input) => withSource(textOf(input, "account"), (connection) => moveMails(connection, input)),
+    },
+    {
+      name: "mail_folders",
+      title: "List mail folders",
+      audience: "work",
+      description:
+        "List every folder in their mail account with how many mails each holds, and which are their own folders " +
+        "that you file into. Use it before moving an old folder's mail into theirs.",
+      inputSchema: {
+        type: "object",
+        properties: { account: accountField },
+        additionalProperties: false,
+      },
+      call: (input) =>
+        withSource(textOf(input, "account"), async ({ account, source }) => {
+          const listed = await source.folders();
+          if (!listed.ok) return failed(listed.failure);
+          const theirs = folders.names();
+          const isTheirs = (name: string): boolean => theirs.some((own) => sameName(own, name));
+          const lines = listed.value.map(({ name, use, messages, unseen }) => {
+            const marks = [
+              ...(use === undefined ? [] : [useNames[use]]),
+              ...(isTheirs(name) ? ["one of their folders"] : []),
+            ];
+            const counts = `${plural(messages, "mail")}${unseen > 0 ? `, ${String(unseen)} unread` : ""}`;
+            return `- ${name}: ${counts}${marks.length > 0 ? ` (${marks.join(", ")})` : ""}`;
+          });
+          const missing = theirs.filter((own) => listed.value.every(({ name }) => !sameName(name, own)));
+          return {
+            text: [
+              `The folders in their ${account} mail:`,
+              ...lines,
+              ...(missing.length > 0
+                ? [`Their folders not made yet (the first mail filed makes one): ${missing.join(", ")}.`]
+                : []),
+              ...(theirs.length === 0 ? ["They haven't chosen their own folders yet."] : []),
+            ].join("\n"),
+            step: { title: "Looked at your mail folders", note: plural(listed.value.length, "folder") },
+          };
         }),
     },
     {
@@ -1144,7 +1709,10 @@ export const createMailbox = ({
             mail: mailReference(account, read.value),
             quiet: false,
           });
-          return { text: `Unsubscribed from ${senderOf(read.value)}.` };
+          return {
+            text: `Unsubscribed from ${senderOf(read.value)}.`,
+            step: { title: `Unsubscribed from ${senderOf(read.value)}`, ...(reason !== "" && { note: reason }) },
+          };
         }),
     },
     {
@@ -1170,10 +1738,17 @@ export const createMailbox = ({
           quiet: false,
           undo: { kind: "mail_blocked", sender } satisfies BlockedUndo,
         });
-        return Promise.resolve({ text: `Blocked ${sender}.` });
+        return Promise.resolve({
+          text: `Blocked ${sender}.`,
+          step: { title: `Blocked ${sender}`, note: "Their mail goes straight to the bin" },
+        });
       },
     },
   ];
+
+  for (const ask of batchAsks()) {
+    if (desk.cards().some((card) => card.id === ask.card)) desk.handleCard(ask.card, answerMove);
+  }
 
   const check = async (account: Account, values: Values): Promise<CheckResult> => {
     const config = configOf(account, values);

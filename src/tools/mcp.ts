@@ -1,3 +1,4 @@
+import type { Step } from "#protocol/types.ts";
 import { contextRun } from "#tools/context.ts";
 import { fieldOf } from "#tools/input.ts";
 
@@ -7,10 +8,19 @@ export const toolsTokenVariable = "ITO_TOOLS_TOKEN";
 
 export const serverUrlVariable = "ITO_URL";
 
+// How a call to one of Ito's own tools reads on the trail: what happened in plain words, and the mails it was about.
+export type ToolStep = {
+  readonly title: string;
+  readonly note?: string;
+  readonly tally?: string;
+  readonly mails?: Step["mails"];
+};
+
 export type ToolResult = {
   readonly text: string;
   readonly isError?: boolean;
   readonly structured?: Readonly<Record<string, unknown>>;
+  readonly step?: ToolStep;
 };
 
 export type Tool = {

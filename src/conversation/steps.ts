@@ -8,11 +8,13 @@ export type Title = { readonly present: string; readonly past: string };
 
 export type StepStart = { readonly kind: StepKind; readonly facts: StepFacts };
 
-export type StepEnd = { readonly outcome: "completed" | "failed"; readonly facts: StepFacts };
+// How a step ended, and when the tool said what it did in its own words, its past-tense title.
+export type StepEnd = { readonly outcome: "completed" | "failed"; readonly facts: StepFacts; readonly title?: string };
 
+// The key names one step for as long as it runs, so its end can be matched to its start.
 export type Trail = {
-  readonly toStart: (start: StepStart) => StepStart;
-  readonly toEnd: (step: Step, end: StepEnd) => StepEnd;
+  readonly toStart: (start: StepStart, key?: string) => StepStart;
+  readonly toEnd: (step: Step, end: StepEnd, key?: string) => StepEnd;
   readonly titleOf: (capability: string, operation: string) => Title | undefined;
 };
 
@@ -274,12 +276,20 @@ export const toUpdatedStep = (step: Step, facts: StepFacts, trail?: Trail): Step
   return { ...step, ...facts, title: toStepTitle(step.kind, merged, "present", trail) };
 };
 
-export const toEndedStep = (step: Step, outcome: Outcome, facts: StepFacts, endedAt: number, trail?: Trail): Step => {
+export const toEndedStep = (
+  step: Step,
+  outcome: Outcome,
+  facts: StepFacts,
+  endedAt: number,
+  trail?: Trail,
+  title?: string,
+): Step => {
   const merged = { ...factsOf(step), ...facts };
+  const isDone = outcome === "completed";
   return {
     ...step,
     ...facts,
-    title: toStepTitle(step.kind, merged, outcome === "completed" ? "past" : "present", trail),
+    title: (isDone ? title : undefined) ?? toStepTitle(step.kind, merged, isDone ? "past" : "present", trail),
     ended_at: toTimestamp(endedAt),
     outcome,
     duration_ms: Math.max(0, endedAt - Date.parse(step.at)),

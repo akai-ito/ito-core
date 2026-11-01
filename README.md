@@ -122,7 +122,11 @@ or when your day changes, and otherwise all quiet. Each line is also a message i
 written with your chosen model thinking modestly; once you've seen it on the Desk, no notification
 goes out for it. In the conversation, Ari reaches the same mail through `ito mail` commands and a
 skill file, rather than more tools in every turn: ask it to go through the recruiters who wrote this
-month, and it searches, reads each thread, and drafts the replies you agree to.
+month, and it searches, reads each thread, and drafts the replies you agree to. Ask it to tidy your
+inbox, and it goes through what's there a page at a time and moves mails together; a move of more
+than 25, such as an old folder into one of yours, waits for one Apply on the Desk, and Done keeps it
+as one line with an undo. Each mail step in the chat says what it did, such as "Binned “50% off”
+from a shop", and opens onto the mails it read.
 
 Ari notifies you while you're away: when a reply finishes, when something fails, when it asks you
 something, and when Kumo's line matters and you haven't seen it. To switch notifications on, create

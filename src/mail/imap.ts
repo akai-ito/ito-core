@@ -28,7 +28,50 @@ export type MailQuery = {
   readonly subject?: string;
   readonly text?: string;
   readonly since?: string;
+  // inbox, archive, sent, drafts, bin, junk or one of the account's folders by name; when left out, every
+  // folder they keep mail in.
+  readonly folder?: string;
+  readonly limit?: number;
+  // The cursor a page gave, for the page after it.
+  readonly more?: string;
 };
+
+// One page of what a search found, newest first, and how much more there is.
+export type MailPage = {
+  readonly mails: readonly Mail[];
+  // How many match in the folders searched, and how many of those come after this page.
+  readonly total: number;
+  readonly after: number;
+  readonly searched: readonly string[];
+  readonly more?: string;
+};
+
+export type FolderUse = "inbox" | "archive" | "sent" | "drafts" | "trash" | "junk";
+
+export type FolderCount = {
+  readonly name: string;
+  readonly use?: FolderUse;
+  readonly messages: number;
+  readonly unseen: number;
+};
+
+export type UidGroup = { readonly folder: string; readonly uids: readonly number[] };
+
+// Mails picked out to move together: each folder's UIDs, and the mails' headers.
+export type Batch = { readonly groups: readonly UidGroup[]; readonly mails: readonly Mail[] };
+
+export type Selection = { readonly messageIds: readonly string[] } | { readonly query: MailQuery };
+
+export type Destination = "archive" | "bin" | "inbox" | { readonly folder: string };
+
+// Where a batch went: for each folder it came from, the mails' UIDs in the destination when the server says.
+export type MovedBatch = {
+  readonly moved: number;
+  readonly destination: string;
+  readonly placed: readonly { readonly origin: string; readonly uids?: readonly number[] }[];
+};
+
+export type MoveProgress = (moved: number, total: number) => void;
 
 export type MailSource = {
   readonly account: string;
@@ -36,13 +79,23 @@ export type MailSource = {
   readonly watch: (onMail: (mail: Mail) => void) => () => void;
   readonly recent: (since: string) => Promise<Result<readonly Mail[], string>>;
   readonly read: (messageId: string) => Promise<Result<Mail, string>>;
-  readonly search: (query: MailQuery) => Promise<Result<readonly Mail[], string>>;
+  readonly search: (query: MailQuery) => Promise<Result<MailPage, string>>;
   readonly thread: (messageId: string) => Promise<Result<readonly Mail[], string>>;
   readonly draft: (draft: Draft) => Promise<Result<{ readonly messageId: string }, string>>;
   readonly removeDraft: (messageId: string) => Promise<Result<undefined, string>>;
   readonly file: (messageId: string, filing: Filing) => Promise<Result<undefined, string>>;
   // Moves a mail into the folder of that name, making the folder first when the account hasn't one.
   readonly fileInto: (messageId: string, folder: string) => Promise<Result<undefined, string>>;
+  // Every folder in the account, with how many mails each holds.
+  readonly folders: () => Promise<Result<readonly FolderCount[], string>>;
+  // Picks out mails to move together: by Message-ID, or everything a search finds, however many.
+  readonly select: (selection: Selection) => Promise<Result<Batch, string>>;
+  // Moves mails a folder at a time, with one UID MOVE per chunk, making a named folder first if it's missing.
+  readonly move: (
+    groups: readonly UidGroup[],
+    destination: Destination,
+    onProgress?: MoveProgress,
+  ) => Promise<Result<MovedBatch, string>>;
   // Whether they've ever written to an address, or to anyone at a domain.
   readonly hasWritten: (address: string) => Promise<Result<boolean, string>>;
   readonly unsubscribe: (mail: Mail) => Promise<Result<"posted" | "mailed", string>>;
@@ -88,7 +141,11 @@ type Found = { readonly place: Place; readonly mail: Mail };
 
 type Watermark = { readonly uidValidity: bigint; readonly next: number };
 
-const searchLimit = 50;
+const pageSize = 20;
+const mostPerPage = 50;
+// UIDs per MOVE, and Message-IDs per search, so no command grows past what servers accept.
+const moveChunk = 250;
+const idChunk = 25;
 const addressSample = 50;
 const idleRestartMs = 4 * 60_000;
 const firstRetryMs = 1000;
@@ -118,6 +175,14 @@ export const toUidSet = (uids: readonly number[]): string =>
     }, [])
     .map(([first, last]) => (first === last ? String(first) : `${String(first)}:${String(last)}`))
     .join(",");
+
+export const fromUidSet = (text: string): readonly number[] =>
+  text.split(",").flatMap((part) => {
+    const [first = NaN, last = first] = part.split(":").map(Number);
+    return Number.isSafeInteger(first) && Number.isSafeInteger(last) && first <= last
+      ? Array.from({ length: last - first + 1 }, (_, index) => first + index)
+      : [];
+  });
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -160,6 +225,39 @@ const parseDate = (text: string): Date | undefined => {
 };
 
 const byDate = (left: Mail, right: Mail): number => left.date.localeCompare(right.date);
+
+const newestFirst = (uids: readonly number[]): readonly number[] => uids.toSorted((left, right) => right - left);
+
+const chunked = <Value>(values: readonly Value[], size: number): readonly (readonly Value[])[] =>
+  Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
+
+type Cursor = Readonly<Record<string, number>>;
+
+const toCursor = (cursor: Cursor): string => Buffer.from(JSON.stringify(cursor)).toString("base64url");
+
+const fromCursor = (text: string | undefined): Result<Cursor, string> => {
+  if (text === undefined || text === "") return ok({});
+  try {
+    const value = JSON.parse(Buffer.from(text, "base64url").toString("utf8")) as unknown;
+    const isCursor =
+      typeof value === "object" &&
+      value !== null &&
+      Object.values(value).every((uid) => typeof uid === "number" && Number.isSafeInteger(uid));
+    return isCursor ? ok(value as Cursor) : fail(`"${text}" isn't a cursor a search gave.`);
+  } catch {
+    return fail(`"${text}" isn't a cursor a search gave.`);
+  }
+};
+
+const uses: Readonly<Record<string, FolderUse>> = {
+  "\\Inbox": "inbox",
+  "\\Archive": "archive",
+  "\\All": "archive",
+  "\\Sent": "sent",
+  "\\Drafts": "drafts",
+  "\\Trash": "trash",
+  "\\Junk": "junk",
+};
 
 const byIdHeader = (name: string, id: string): SearchObject => ({ header: { [name]: `<${id}>` } });
 
@@ -367,17 +465,13 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     client: ImapFlow,
     folders: readonly string[],
     query: SearchObject,
-    newest?: number,
     isHeadersOnly = false,
   ): Promise<Result<readonly Mail[], string>> => {
     const collected = createCell<readonly Mail[]>([]);
     for (const folder of folders) {
       const found = await inFolder(client, folder, async (): Promise<Result<readonly Mail[], string>> => {
         const uids = await searchUids(client, query);
-        if (!uids.ok) return uids;
-        const chosen =
-          newest === undefined ? uids.value : uids.value.toSorted((left, right) => right - left).slice(0, newest);
-        return ok(await fetchMails(client, folder, toUidSet(chosen), isHeadersOnly));
+        return uids.ok ? ok(await fetchMails(client, folder, toUidSet(uids.value), isHeadersOnly)) : uids;
       });
       if (!found.ok) return found;
       collected.update((current) => [...current, ...found.value]);
@@ -442,7 +536,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     return deleted ? ok(true) : fail("The mail server didn't delete the draft.");
   };
 
-  const move = async (
+  const moveOne = async (
     opened: Session,
     place: Place,
     target: string | undefined,
@@ -468,13 +562,13 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   const fileAt = (opened: Session, place: Place, filing: Filing): Promise<Result<undefined, string>> => {
     switch (filing) {
       case "archive": {
-        return move(opened, place, opened.folders.archive, "Archive");
+        return moveOne(opened, place, opened.folders.archive, "Archive");
       }
       case "bin": {
-        return move(opened, place, opened.folders.trash, "Trash");
+        return moveOne(opened, place, opened.folders.trash, "Trash");
       }
       case "inbox": {
-        return move(opened, place, opened.folders.inbox, "Inbox");
+        return moveOne(opened, place, opened.folders.inbox, "Inbox");
       }
       case "flag": {
         return flag(opened, place, true);
@@ -636,7 +730,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       const query = sinceQuery(since);
       if (!query.ok) return query;
       const { received, archive } = opened.folders;
-      const mails = await mailsIn(opened.client, present([...received, archive]), query.value, undefined, true);
+      const mails = await mailsIn(opened.client, present([...received, archive]), query.value, true);
       return mails.ok ? ok(mails.value.filter((mail) => !mail.flags.includes("\\Draft")).toSorted(byDate)) : mails;
     });
 
@@ -646,20 +740,117 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return found.ok ? ok(found.value.mail) : found;
     });
 
+  const folderNamed = ({ folders }: Session, name: string): string | undefined => {
+    const wanted = name.trim().toLowerCase();
+    return folders.list.find(
+      (entry) => isSelectable(entry) && (entry.name.toLowerCase() === wanted || entry.path.toLowerCase() === wanted),
+    )?.path;
+  };
+
+  const folderList = ({ folders }: Session): string =>
+    folders.list
+      .filter(isSelectable)
+      .map(({ path }) => path)
+      .join(", ");
+
+  // The folders a search or a batch looks in: one by its role or name, or by default every folder they keep mail in.
+  const scopeOf = (
+    opened: Session,
+    folder: string | undefined,
+    all: readonly string[],
+  ): Result<readonly string[], string> => {
+    const wanted = folder?.trim() ?? "";
+    if (wanted === "") return ok(all);
+    const { inbox, archive, sent, drafts, trash, list } = opened.folders;
+    const roles: ReadonlyMap<string, string | undefined> = new Map([
+      ["inbox", inbox],
+      ["archive", archive],
+      ["sent", sent],
+      ["drafts", drafts],
+      ["bin", trash],
+      ["trash", trash],
+      ["junk", specialPath(list, "\\Junk")],
+    ]);
+    const role = roles.get(wanted.toLowerCase());
+    if (role !== undefined) return ok([role]);
+    if (roles.has(wanted.toLowerCase())) return fail(`This account has no ${wanted} folder.`);
+    const named = folderNamed(opened, wanted);
+    return named === undefined
+      ? fail(`There's no folder called ${wanted}. The account's folders: ${folderList(opened)}.`)
+      : ok([named]);
+  };
+
+  const criteriaOf = (query: MailQuery): Result<SearchObject, string> => {
+    const since = query.since === undefined || query.since === "" ? undefined : parseDate(query.since);
+    if (since === undefined && query.since !== undefined && query.since !== "")
+      return fail(`"${query.since}" isn't a date.`);
+    return ok({
+      ...(query.from !== undefined && query.from !== "" && { from: query.from }),
+      ...(query.subject !== undefined && query.subject !== "" && { subject: query.subject }),
+      ...(query.text !== undefined && query.text !== "" && { text: query.text }),
+      ...(since !== undefined && { since }),
+    });
+  };
+
+  // What a query asks for: its criteria, or everything when it names a folder and nothing else.
+  const lookFor = (query: MailQuery): Result<SearchObject, string> => {
+    const criteria = criteriaOf(query);
+    if (!criteria.ok || Object.keys(criteria.value).length > 0) return criteria;
+    return (query.folder?.trim() ?? "") === ""
+      ? fail("Say what to look for: a sender, a subject, words, a date or a folder, such as --folder inbox.")
+      : ok({ all: true });
+  };
+
   const search: MailSource["search"] = (query) =>
     runReading("searching mail", async (opened) => {
-      const since = query.since === undefined ? undefined : parseDate(query.since);
-      if (since === undefined && query.since !== undefined) return fail(`"${query.since}" isn't a date.`);
-      const criteria: SearchObject = {
-        ...(query.from !== undefined && query.from !== "" && { from: query.from }),
-        ...(query.subject !== undefined && query.subject !== "" && { subject: query.subject }),
-        ...(query.text !== undefined && query.text !== "" && { text: query.text }),
-        ...(since !== undefined && { since }),
-      };
-      if (Object.keys(criteria).length === 0)
-        return fail("Say what to look for: a sender, a subject, words or a date.");
-      const mails = await mailsIn(opened.client, kept(opened), criteria, searchLimit);
-      return mails.ok ? ok(mails.value.toSorted(byDate).toReversed().slice(0, searchLimit)) : mails;
+      const criteria = lookFor(query);
+      if (!criteria.ok) return criteria;
+      const scope = scopeOf(opened, query.folder, kept(opened));
+      if (!scope.ok) return scope;
+      const cursor = fromCursor(query.more);
+      if (!cursor.ok) return cursor;
+      const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? pageSize)), mostPerPage);
+      const found = createCell<
+        readonly {
+          readonly folder: string;
+          readonly matches: number;
+          readonly older: readonly number[];
+          readonly mails: readonly Mail[];
+        }[]
+      >([]);
+      for (const folder of scope.value) {
+        const read = await inFolder(opened.client, folder, async (): Promise<Result<undefined, string>> => {
+          const uids = await searchUids(opened.client, criteria.value);
+          if (!uids.ok) return uids;
+          const below = cursor.value[folder];
+          const older = newestFirst(uids.value.filter((uid) => below === undefined || uid < below));
+          const mails = await fetchMails(opened.client, folder, toUidSet(older.slice(0, limit)), true);
+          found.update((current) => [...current, { folder, matches: uids.value.length, older, mails }]);
+          return ok(undefined);
+        });
+        if (!read.ok) return read;
+      }
+      const shown = uniqueByMessageId(found.get().flatMap(({ mails }) => mails))
+        .filter((mail) => !mail.flags.includes("\\Deleted"))
+        .toSorted(byDate)
+        .toReversed()
+        .slice(0, limit);
+      const next = found.get().map(({ folder, older }) => {
+        const from = shown.filter((mail) => mail.folder === folder).map(({ uid }) => uid);
+        const oldest = from.length === 0 ? cursor.value[folder] : Math.min(...from);
+        return { folder, oldest, left: older.filter((uid) => oldest === undefined || uid < oldest).length };
+      });
+      const after = next.reduce((sum, { left }) => sum + left, 0);
+      const more = Object.fromEntries(
+        next.flatMap(({ folder, oldest }) => (oldest === undefined ? [] : [[folder, oldest]])),
+      );
+      return ok({
+        mails: shown,
+        total: found.get().reduce((sum, { matches }) => sum + matches, 0),
+        after,
+        searched: scope.value,
+        ...(after > 0 && { more: toCursor(more) }),
+      });
     });
 
   const thread: MailSource["thread"] = (messageId) =>
@@ -704,13 +895,6 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return removed.value ? ok(undefined) : fail("That draft isn't in the Drafts folder any more.");
     });
 
-  const folderNamed = ({ folders }: Session, name: string): string | undefined => {
-    const wanted = name.trim().toLowerCase();
-    return folders.list.find(
-      (entry) => isSelectable(entry) && (entry.name.toLowerCase() === wanted || entry.path.toLowerCase() === wanted),
-    )?.path;
-  };
-
   const ensureFolder = async (opened: Session, name: string): Promise<Result<string, string>> => {
     const found = folderNamed(opened, name);
     if (found !== undefined) return ok(found);
@@ -748,7 +932,137 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       if (!place.ok) return place;
       if (place.value === undefined) return fail(gone);
       const target = await ensureFolder(opened, folder);
-      return target.ok ? move(opened, place.value, target.value, folder) : target;
+      return target.ok ? moveOne(opened, place.value, target.value, folder) : target;
+    });
+
+  const folders: MailSource["folders"] = () =>
+    runReading("listing the folders", async (opened) => {
+      const listed = await opened.client.list({ statusQuery: { messages: true, unseen: true } });
+      return ok(
+        listed.filter(isSelectable).map((entry) => {
+          const use = entry.path === opened.folders.inbox ? "inbox" : uses[entry.specialUse ?? ""];
+          return {
+            name: entry.path,
+            ...(use !== undefined && { use }),
+            messages: entry.status?.messages ?? 0,
+            unseen: entry.status?.unseen ?? 0,
+          };
+        }),
+      );
+    });
+
+  // The UIDs in the open folder of mails with these Message-IDs, a few ids to a search.
+  const uidsWithIds = async (client: ImapFlow, ids: readonly string[]): Promise<Result<readonly number[], string>> => {
+    const uids = createCell<readonly number[]>([]);
+    for (const part of chunked(ids, idChunk)) {
+      const [only] = part;
+      const query: SearchObject =
+        only !== undefined && part.length === 1
+          ? byIdHeader("message-id", only)
+          : { or: part.map((id) => byIdHeader("message-id", id)) };
+      const matched = await searchUids(client, query);
+      if (!matched.ok) return matched;
+      uids.update((current) => [...current, ...matched.value]);
+    }
+    return ok(uids.get());
+  };
+
+  // Finds mails by Message-ID a folder at a time, inbox first, so each is taken from the first folder that has it,
+  // as reading one does.
+  const selectIds = async (opened: Session, ids: readonly string[]): Promise<Result<Batch, string>> => {
+    const synthetic = ids.flatMap((id) => fromSyntheticMessageId(id) ?? []);
+    const wanted = createCell<ReadonlySet<string>>(
+      new Set(ids.filter((id) => fromSyntheticMessageId(id) === undefined)),
+    );
+    const groups = createCell<readonly UidGroup[]>([]);
+    const mails = createCell<readonly Mail[]>([]);
+    for (const folder of everywhere(opened)) {
+      const looking = [...wanted.get()];
+      const own = synthetic.filter((place) => place.folder === folder).map(({ uid }) => uid);
+      if (looking.length === 0 && own.length === 0) continue;
+      const found = await inFolder(opened.client, folder, async (): Promise<Result<readonly Mail[], string>> => {
+        const uids = await uidsWithIds(opened.client, looking);
+        return uids.ok ? ok(await fetchMails(opened.client, folder, toUidSet([...own, ...uids.value]), true)) : uids;
+      });
+      if (!found.ok) return found;
+      const taken = found.value.filter((mail) => wanted.get().has(mail.messageId) || own.includes(mail.uid));
+      const takenIds = new Set(taken.map(({ messageId }) => messageId));
+      wanted.set(new Set(looking.filter((id) => !takenIds.has(id))));
+      if (taken.length === 0) continue;
+      groups.update((current) => [...current, { folder, uids: taken.map(({ uid }) => uid) }]);
+      mails.update((current) => [...current, ...taken]);
+    }
+    return ok({ groups: groups.get(), mails: mails.get() });
+  };
+
+  const selectQuery = async (opened: Session, query: MailQuery): Promise<Result<Batch, string>> => {
+    const criteria = lookFor(query);
+    if (!criteria.ok) return criteria;
+    const { received, archive } = opened.folders;
+    const scope = scopeOf(opened, query.folder, present([...received, archive]));
+    if (!scope.ok) return scope;
+    const collected = createCell<readonly Mail[]>([]);
+    for (const folder of scope.value) {
+      const found = await inFolder(opened.client, folder, async (): Promise<Result<readonly Mail[], string>> => {
+        const uids = await searchUids(opened.client, criteria.value);
+        return uids.ok ? ok(await fetchMails(opened.client, folder, toUidSet(uids.value), true)) : uids;
+      });
+      if (!found.ok) return found;
+      collected.update((current) => [...current, ...found.value]);
+    }
+    // A mail in two folders, such as Gmail's inbox and All Mail, moves from the first.
+    const mails = uniqueByMessageId(collected.get());
+    const groups = scope.value.flatMap((folder) => {
+      const uids = mails.filter((mail) => mail.folder === folder).map(({ uid }) => uid);
+      return uids.length === 0 ? [] : { folder, uids };
+    });
+    return ok({ groups, mails });
+  };
+
+  const select: MailSource["select"] = (selection) =>
+    runReading("picking out mail", (opened) =>
+      "messageIds" in selection ? selectIds(opened, selection.messageIds) : selectQuery(opened, selection.query),
+    );
+
+  const destinationOf = async (opened: Session, destination: Destination): Promise<Result<string, string>> => {
+    if (typeof destination === "object") return ensureFolder(opened, destination.folder);
+    const { archive, trash, inbox } = opened.folders;
+    const paths = { archive, bin: trash, inbox };
+    const path = paths[destination];
+    return path === undefined
+      ? fail(`This account has no ${destination === "bin" ? "Trash" : "Archive"} folder.`)
+      : ok(path);
+  };
+
+  const move: MailSource["move"] = (groups, destination, onProgress) =>
+    run("moving mail", async (opened) => {
+      const target = await destinationOf(opened, destination);
+      if (!target.ok) return target;
+      const total = groups.reduce((sum, { folder, uids }) => sum + (folder === target.value ? 0 : uids.length), 0);
+      const moved = createCell(0);
+      const placed = createCell<MovedBatch["placed"]>([]);
+      const moving = groups.filter((group) => group.folder !== target.value);
+      for (const { folder, uids } of moving) {
+        const landed = createCell<readonly number[] | undefined>([]);
+        for (const part of chunked(newestFirst(uids).toReversed(), moveChunk)) {
+          const done = await inFolder(opened.client, folder, () =>
+            opened.client.messageMove(toUidSet(part), target.value, { uid: true }),
+          );
+          if (done === false) return fail(`The mail server didn't move the mail out of ${folder}.`);
+          const map = done.uidMap;
+          landed.update((current) =>
+            current === undefined || map === undefined ? undefined : [...current, ...map.values()],
+          );
+          moved.update((count) => count + (map?.size ?? part.length));
+          onProgress?.(moved.get(), total);
+        }
+        const uidsThere = landed.get();
+        placed.update((current) => [
+          ...current,
+          { origin: folder, ...(uidsThere !== undefined && { uids: uidsThere }) },
+        ]);
+      }
+      return ok({ moved: moved.get(), destination: target.value, placed: placed.get() });
     });
 
   const hasWritten: MailSource["hasWritten"] = (address) =>
@@ -789,6 +1103,9 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     removeDraft,
     file,
     fileInto,
+    folders,
+    select,
+    move,
     hasWritten,
     unsubscribe,
     sent,

@@ -1,8 +1,12 @@
 import { toInput, toOperationUsage } from "#capabilities/commands.ts";
 import type { Operation } from "#capabilities/manifest.ts";
 import type { OwnSkill } from "#capabilities/skills.ts";
+import { createCell } from "#cell.ts";
 import { fail, ok, type Result } from "#result.ts";
-import type { Tool } from "#tools/mcp.ts";
+import type { Tool, ToolStep } from "#tools/mcp.ts";
+
+// How a run of one operation's steps reads as one line, with {count} for how many.
+export type RunTitle = { readonly present: string; readonly past: string };
 
 // One command in a group, run as `ito <group> <name>` and backed by one of Ito's own tools.
 export type GroupOperation = {
@@ -10,6 +14,7 @@ export type GroupOperation = {
   readonly tool: string;
   readonly running: string;
   readonly done: string;
+  readonly run?: RunTitle;
 };
 
 // Ito's own tools that the agent reaches through commands and a skill file, rather than as tools in
@@ -22,7 +27,7 @@ export type ToolGroup = {
   readonly operations: readonly GroupOperation[];
 };
 
-export type FoundOperation = { readonly group: ToolGroup; readonly operation: Operation };
+export type FoundOperation = { readonly group: ToolGroup; readonly operation: Operation; readonly run?: RunTitle };
 
 export type Groups = {
   // Runs a group's command, or gives undefined when no group has that id.
@@ -30,6 +35,11 @@ export type Groups = {
   readonly find: (id: string, name: string) => FoundOperation | undefined;
   readonly findTool: (tool: string) => FoundOperation | undefined;
   readonly skills: () => readonly OwnSkill[];
+  // Wraps a tool so that a call to a group's tool keeps how it reads on the trail, for the step that made it.
+  readonly reporting: (tool: Tool) => Tool;
+  // How a call read, taken once: the latest call with that tool and input, or without its input, the latest of that
+  // tool. The latest, so one left behind by a call no step showed never stands in for a newer one.
+  readonly report: (tool: string, input: unknown) => ToolStep | undefined;
 };
 
 export type GroupsOptions = {
@@ -40,8 +50,27 @@ export type GroupsOptions = {
 
 const isHelp = (word: string | undefined): boolean => word === undefined || word === "--help" || word === "help";
 
+type Reported = { readonly tool: string; readonly input: string; readonly step: ToolStep };
+
+// Reports a step never came back for, such as one cut off by a restart, are dropped past this many.
+const mostReports = 100;
+
+// The same input written the same way, whatever order its fields came in.
+const canonical = (input: unknown): string =>
+  JSON.stringify(input ?? {}, (_key, value: unknown) =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).toSorted(([left], [right]) => left.localeCompare(right)))
+      : value,
+  );
+
+const runOf = (group: ToolGroup, operation: Operation): RunTitle | undefined =>
+  group.operations.find(({ name }) => name === operation.name)?.run;
+
 export const createGroups = ({ groups, tools, command }: GroupsOptions): Groups => {
   const toolOf = (name: string): Tool | undefined => tools().find((tool) => tool.name === name);
+  const reports = createCell<readonly Reported[]>([]);
+  const isGrouped = (tool: string): boolean =>
+    groups.some((group) => group.operations.some((operation) => operation.tool === tool));
 
   const toOperation = ({ name, tool, running, done }: GroupOperation): Operation | undefined => {
     const found = toolOf(tool);
@@ -88,14 +117,14 @@ export const createGroups = ({ groups, tools, command }: GroupsOptions): Groups 
     find: (id, name) => {
       const group = groups.find((candidate) => candidate.id === id);
       const operation = group && operationsOf(group).find((candidate) => candidate.name === name);
-      return group && operation && { group, operation };
+      return group && operation && { group, operation, run: runOf(group, operation) };
     },
     findTool: (tool) =>
       groups
         .flatMap((group) =>
           operationsOf(group)
             .filter((operation) => operation.tool === tool)
-            .map((operation) => ({ group, operation })),
+            .map((operation) => ({ group, operation, run: runOf(group, operation) })),
         )
         .at(0),
     skills: () =>
@@ -104,5 +133,29 @@ export const createGroups = ({ groups, tools, command }: GroupsOptions): Groups 
         summary: group.summary,
         text: `${group.skill.trimEnd()}\n\n## Commands\n\n${usageOf(group)}\n`,
       })),
+    reporting: (tool) =>
+      isGrouped(tool.name)
+        ? {
+            ...tool,
+            call: async (input) => {
+              const result = await tool.call(input);
+              const { step } = result;
+              if (step !== undefined && result.isError !== true) {
+                reports.update((current) =>
+                  [...current, { tool: tool.name, input: canonical(input), step }].slice(-mostReports),
+                );
+              }
+              return result;
+            },
+          }
+        : tool,
+    report: (tool, input) => {
+      const wanted = input === undefined ? undefined : canonical(input);
+      const found = reports
+        .get()
+        .findLast((reported) => reported.tool === tool && (wanted === undefined || reported.input === wanted));
+      if (found) reports.update((current) => current.filter((reported) => reported !== found));
+      return found?.step;
+    },
   };
 };

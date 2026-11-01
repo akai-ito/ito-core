@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -11,10 +11,12 @@ import { toMessageId } from "#conversation/ids.ts";
 import type { EngineContext } from "#server.ts";
 import type { TimedEvent } from "#engine/scripted/script-engine.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
+import { hashToken, tokenSetting } from "#http/auth.ts";
 import { commandsPath } from "#http/tools.ts";
 import { randomIdentifiers } from "#identifiers.ts";
+import { foldersSetting } from "#mail/folders.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
-import type { Step } from "#protocol/types.ts";
+import type { Card, Step } from "#protocol/types.ts";
 import { fail } from "#result.ts";
 import { createServer, databaseFile, type Server } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
@@ -23,6 +25,7 @@ import { createFakeMail } from "./support/fake-mail.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-mail-commands-"));
 const launcher = path.join(home, "bin", "ito");
+const appToken = "ito_mail_commands_app";
 
 const offer = {
   account: "icloud",
@@ -41,6 +44,16 @@ const promo = {
   subject: "Two for one tonight",
   text: "Order now.",
 };
+
+// Thirty receipts in a folder an earlier assistant made.
+const oldReceipts = Array.from({ length: 30 }, (_, index) => ({
+  account: "icloud",
+  message_id: `receipt-${String(index + 1)}@quillfield.example`,
+  from: index % 3 === 0 ? "Halcyon <billing@halcyon.example>" : "Quillfield Dental <hello@quillfield.example>",
+  to: ["sam@icloud.com"],
+  subject: `Receipt ${String(index + 1)}`,
+  text: "Paid, thank you.",
+}));
 
 const absent = (): Promise<never> => Promise.resolve(fail("No calendar in this test.") as never);
 
@@ -78,7 +91,7 @@ const searchTurn = (now: number): readonly TimedEvent[] => [
     },
   },
   {
-    at: now + 900,
+    at: now + 1500,
     event: {
       type: "step.ended",
       key: "shell",
@@ -86,11 +99,11 @@ const searchTurn = (now: number): readonly TimedEvent[] => [
       facts: { exit_code: 0, output: "- 2026-11-01 · Clara Voss · AI Engineer at Northwind" },
     },
   },
-  { at: now + 900, event: { type: "step.ended", key: "mcp", outcome: "completed", facts: {} } },
-  { at: now + 950, event: { type: "text.started", kind: "reply" } },
-  { at: now + 960, event: { type: "text", text: "Northwind wrote about an AI Engineer role." } },
-  { at: now + 970, event: { type: "text.ended" } },
-  { at: now + 980, event: { type: "ended" } },
+  { at: now + 1500, event: { type: "step.ended", key: "mcp", outcome: "completed", facts: {} } },
+  { at: now + 1550, event: { type: "text.started", kind: "reply" } },
+  { at: now + 1560, event: { type: "text", text: "Northwind wrote about an AI Engineer role." } },
+  { at: now + 1570, event: { type: "text.ended" } },
+  { at: now + 1580, event: { type: "ended" } },
 ];
 
 describe("mail in the conversation, through ito mail commands", () => {
@@ -108,25 +121,45 @@ describe("mail in the conversation, through ito mail commands", () => {
   const command = async (
     words: readonly string[],
     token = running().context.tools()?.token ?? "",
+    capability = "mail",
   ): Promise<{ readonly status: number; readonly text: string }> => {
     const origin = running().context.tools()?.origin ?? "";
     const response = await fetch(`${origin}${commandsPath}`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ capability: "mail", arguments: words }),
+      body: JSON.stringify({ capability, arguments: words }),
     });
     const body = response.status === 401 ? { text: "" } : ((await response.json()) as { readonly text: string });
     return { status: response.status, text: body.text };
   };
 
+  const drafts = (): readonly Card[] =>
+    running()
+      .server.store.desk()
+      .waiting.filter((card) => card.kind === "draft");
+
+  const inApp = (url: string, payload?: Readonly<Record<string, unknown>>) =>
+    running().server.app.inject({
+      method: "POST",
+      url,
+      headers: { authorization: `Bearer ${appToken}` },
+      ...(payload && { payload }),
+    });
+
   beforeAll(async () => {
     const store = createStore(openDatabase(databaseFile(home)), systemClock, randomIdentifiers);
     store.setSetting(onSetting("icloud"), "true");
     store.setSetting(valuesSetting("icloud"), JSON.stringify({ apple_id: "sam@icloud.com", app_password: "test" }));
+    store.setSetting(foldersSetting, JSON.stringify(["Money & receipts", "Newsletters"]));
+    store.setSetting(tokenSetting, hashToken(appToken));
     store.close();
+    // A skill file an earlier version wrote for the mail account, which has no commands of its own.
+    mkdirSync(path.join(home, "skills", "icloud"), { recursive: true });
+    writeFileSync(path.join(home, "skills", "icloud", "SKILL.md"), "---\nname: icloud\n---\n");
     // In the inbox before the server watches it, so neither mail arrives as new.
     mail.arrive(offer);
     mail.arrive(promo);
+    for (const receipt of oldReceipts) mail.keep("Receipts (old)", receipt);
     const started = createServer({
       embedder: wordEmbedder,
       dataDirectory: home,
@@ -160,13 +193,151 @@ describe("mail in the conversation, through ito mail commands", () => {
     const skillFile = path.join(home, "skills", "mail", "SKILL.md");
     const instructions = running().context.instructions();
 
-    expect(instructions).toContain(`- mail: their mail: find it, read whole threads`);
+    expect(instructions).toContain(`- mail: their mail: find it, go through the inbox a page at a time`);
     expect(instructions).toContain(`(file: ${skillFile})`);
     expect(existsSync(skillFile)).toBe(true);
     const skill = readFileSync(skillFile, "utf8");
     expect(skill).toContain("name: mail");
     expect(skill).toContain(`${launcher} mail search: Search their mail`);
     expect(skill).toContain(`${launcher} mail draft: Write a draft`);
+    expect(skill).toContain(`${launcher} mail inbox: List what's in their inbox now`);
+    expect(skill).toContain(`${launcher} mail move: Move many mails at once`);
+    expect(skill).toContain("  --to <string> (repeat for more): One email address each time");
+    expect(skill).toContain("ito mail draft --to clara.voss@northwind.example --to tess.harlow@halcyon.example");
+  });
+
+  it("leaves out mail accounts, which have no commands of their own, from the agent's skills", async () => {
+    const instructions = running().context.instructions();
+    const icloud = await command(["--help"], undefined, "icloud");
+
+    expect(instructions).not.toMatch(/^- icloud:/mu);
+    expect(existsSync(path.join(home, "skills", "icloud", "SKILL.md"))).toBe(false);
+    expect(icloud).toEqual({ status: 422, text: "iCloud has no commands of its own; Ito's own tools use it." });
+  });
+
+  it("goes through the inbox a page at a time, saying what's there and what's left", async () => {
+    const first = await command(["inbox", "--limit", "1"]);
+    const second = await command(["inbox", "--limit", "1", "--more", "1"]);
+    const scoped = await command(["search", "--from", "northwind.example", "--folder", "inbox"]);
+
+    expect(first.text.split("\n")).toEqual([
+      "Their inbox holds 2 mails now. These are 1–1, newest first.",
+      expect.stringContaining(`Pizza Place · Two for one tonight (icloud ${promo.message_id})`),
+      "1 more: run it again with --more 1 for the next page.",
+    ]);
+    expect(second.text).toContain(`Clara Voss · AI Engineer at Northwind (icloud ${offer.message_id})`);
+    expect(second.text).toContain("That's all of them.");
+    expect(scoped.text).toMatch(
+      /^Searched Inbox for northwind\.example: 1 mail matches\. These are 1–1, newest first\./u,
+    );
+  });
+
+  it("refuses a recipient that isn't one email address, and says to repeat --to", async () => {
+    const before = mail.drafts().length;
+    const listed = await command([
+      "draft",
+      "--to",
+      '["clara.voss@northwind.example","tess.harlow@halcyon.example"]',
+      "--subject",
+      "Intro",
+      "--body",
+      "Hello",
+    ]);
+    const commas = await command([
+      "draft",
+      "--to",
+      "clara.voss@northwind.example, tess.harlow@halcyon.example",
+      "--subject",
+      "Intro",
+      "--body",
+      "Hello",
+    ]);
+
+    expect(listed.status).toBe(422);
+    expect(listed.text).toContain("--to takes one value each time: repeat --to for each, rather than giving a list.");
+    expect(commas.status).toBe(422);
+    expect(commas.text).toBe(
+      '"clara.voss@northwind.example, tess.harlow@halcyon.example" isn\'t an email address. Give one address each ' +
+        "time and repeat --to for each, such as --to clara.voss@northwind.example --to tess.harlow@halcyon.example.",
+    );
+    expect(mail.drafts()).toHaveLength(before);
+  });
+
+  it("replaces any draft on the Desk by its card, keeping what isn't given again", async () => {
+    await command([
+      "draft",
+      "--to",
+      "clara.voss@northwind.example",
+      "--subject",
+      "Coffee next week?",
+      "--body",
+      "Free Tuesday?",
+    ]);
+    const first = drafts().find((card) => card.draft?.subject === "Coffee next week?");
+    const fixed = await command(["draft", "--replaces", first?.id ?? "", "--to", "tess.harlow@halcyon.example"]);
+    const missing = await command(["draft", "--replaces", "card_gone", "--body", "Hello"]);
+
+    expect(fixed.text).toBe(
+      `Saved the draft in Drafts and put it on the Desk as ${first?.id ?? ""}, in place of the earlier one.`,
+    );
+    expect(drafts().filter((card) => card.draft?.subject === "Coffee next week?")).toEqual([
+      expect.objectContaining({
+        id: first?.id,
+        title: first?.title,
+        changed_at: expect.any(String) as unknown,
+        draft: expect.objectContaining({ to: ["tess.harlow@halcyon.example"], body: "Free Tuesday?" }) as unknown,
+      }),
+    ]);
+    expect(mail.removedDrafts()).toContain(first?.draft?.message_id);
+    expect(missing.text).toMatch(/^There's no draft card_gone on the Desk to replace\. Drafts there: /u);
+  });
+
+  it("moves a few mails at once, as one line in the Done list", async () => {
+    const moved = await command(["move", "--message-id", promo.message_id, "--into", "bin", "--reason", "A promotion"]);
+
+    expect(moved.text).toBe("Moved 1 mail from Inbox to the bin.");
+    expect(mail.folderOf("icloud", promo.message_id)).toBe("Trash");
+    expect(running().server.store.listDone(undefined, 5).entries[0]).toMatchObject({
+      text: "Moved 1 mail from Inbox to the bin",
+      reason: "A promotion",
+      undo: true,
+    });
+  });
+
+  it("lists the account's folders, and moves an old one into theirs once they agree on the Desk", async () => {
+    const listed = await command(["folders"]);
+    const asked = await command(["move", "--folder", "Receipts (old)", "--into", "money & receipts"]);
+    const card = running()
+      .server.store.desk()
+      .waiting.find(({ title }) => title === "Move 30 mails from Receipts (old) into Money & receipts?");
+
+    expect(listed.text).toContain("- Receipts (old): 30 mails");
+    expect(listed.text).toContain(
+      "Their folders not made yet (the first mail filed makes one): Money & receipts, Newsletters.",
+    );
+    expect(asked.text).toContain("That's 30 mails, so they're asked once on the Desk first");
+    expect(card).toMatchObject({
+      kind: "question",
+      options: [{ label: "Apply" }, { label: "Not now" }],
+      question: {
+        text: "They're from Quillfield Dental and Halcyon. They go in one move, and Undo on your Done list puts them back.",
+      },
+    });
+    expect(mail.folderOf("icloud", "receipt-1@quillfield.example")).toBe("Receipts (old)");
+
+    const answered = await inApp(`/v0/desk/cards/${card?.id ?? "none"}/answer`, { option: "Apply" });
+    expect(answered.statusCode).toBe(202);
+    await vi.waitFor(() => {
+      expect(mail.folderOf("icloud", "receipt-1@quillfield.example")).toBe("Money & receipts");
+    });
+    const [entry] = running().server.store.listDone(undefined, 5).entries;
+    expect(entry).toMatchObject({ text: "Moved 30 mails from Receipts (old) into Money & receipts", undo: true });
+
+    const undone = await inApp(`/v0/done/${entry?.id ?? "none"}/undo`);
+    expect(undone.statusCode).toBe(200);
+    expect(oldReceipts.map(({ message_id: id }) => mail.folderOf("icloud", id))).toEqual(
+      oldReceipts.map(() => "Receipts (old)"),
+    );
   });
 
   it("searches and reads mail, only for the session's token", async () => {
@@ -198,28 +369,24 @@ describe("mail in the conversation, through ito mail commands", () => {
 
   it("drafts a reply onto the Desk, and replaces it when drafted again", async () => {
     const first = await command(["draft", "--reply-to", offer.message_id, "--body", "Happy to chat. Thursday?"]);
-    const firstCard = running()
-      .server.store.desk()
-      .waiting.find((card) => card.kind === "draft");
+    const firstCard = drafts().find((card) => card.draft?.in_reply_to === offer.message_id);
     const second = await command(["draft", "--reply-to", offer.message_id, "--body", "Happy to chat. Friday?"]);
-    const drafts = running()
-      .server.store.desk()
-      .waiting.filter((card) => card.kind === "draft");
+    const replies = drafts().filter((card) => card.draft?.in_reply_to === offer.message_id);
 
     expect(first.status).toBe(200);
     expect(second.text).toMatch(/^Saved the draft in Drafts and put it on the Desk as /u);
-    expect(drafts).toHaveLength(1);
-    expect(drafts[0]?.draft).toMatchObject({
+    expect(replies).toHaveLength(1);
+    expect(replies[0]?.draft).toMatchObject({
       to: ["clara.voss@northwind.example"],
       subject: "Re: AI Engineer at Northwind",
       body: "Happy to chat. Friday?",
       in_reply_to: offer.message_id,
     });
-    expect(mail.removedDrafts()).toEqual([firstCard?.draft?.message_id]);
+    expect(mail.removedDrafts()).toContain(firstCard?.draft?.message_id);
   });
 
-  it("titles a mail command, and the reader's own mail tool, as mail work", async () => {
-    const { store, turns } = running().server;
+  it("says what each mail step did in plain words, and opens onto the mails rather than their ids", async () => {
+    const { store, turns, callTool } = running().server;
     const accepted = store.acceptMessage(toMessageId(randomUUID()), "Did Northwind write?");
     if (!accepted.ok) throw new Error(accepted.failure);
     const stepsOf = (): readonly Step[] =>
@@ -229,12 +396,32 @@ describe("mail in the conversation, through ito mail commands", () => {
     await vi.waitFor(() => {
       expect(stepsOf().map(({ title }) => title)).toEqual(["Searching mail", "Reading a thread"]);
     });
-    await vi.waitFor(() => {
-      expect(store.snapshot("no_cursor").event.turn).toBeNull();
+    // The agent's command and tool call run while their steps do.
+    await command(["search", "--from", "northwind.example"]);
+    await callTool("mail_thread", { message_id: offer.message_id });
+    await vi.waitFor(
+      () => {
+        expect(store.snapshot("no_cursor").event.turn).toBeNull();
+      },
+      { timeout: 5000 },
+    );
+
+    const [search, thread] = stepsOf();
+    expect(search).toMatchObject({
+      kind: "tool",
+      operation: "search",
+      title: "Searched mail for northwind.example",
+      outcome: "completed",
+      note: "1 mail",
+      run_title: { present: "Searching mail", past: "Searched mail {count} times" },
+      mails: [{ from: "Clara Voss", subject: "AI Engineer at Northwind" }],
     });
-    expect(stepsOf().map(({ kind, operation, title, outcome }) => ({ kind, operation, title, outcome }))).toEqual([
-      { kind: "tool", operation: "search", title: "Searched mail", outcome: "completed" },
-      { kind: "tool", operation: "thread", title: "Read a thread", outcome: "completed" },
-    ]);
+    expect(thread).toMatchObject({
+      operation: "thread",
+      title: "Read the thread “AI Engineer at Northwind” with Clara Voss",
+      mails: [{ from: "Clara Voss", subject: "AI Engineer at Northwind", text: offer.text }],
+    });
+    expect(search).not.toHaveProperty("arguments");
+    expect(thread).not.toHaveProperty("arguments");
   });
 });
