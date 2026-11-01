@@ -180,6 +180,8 @@ export type Transcript = {
   readonly answerGuess: (item: CalendarItem, answer: Fields, after: CalendarItem) => void;
   // What Kumo handled today, counted again, such as from nothing at midnight.
   readonly recount: (handled: number) => void;
+  // A Focus with Ito in it turns on, or off without a kind; the app says so even while it's closed.
+  readonly focus: (kind?: string) => void;
   // Kumo did one more thing without you today: its Done entry.
   readonly handled: (entry: { readonly text: string; readonly reason?: string }) => Fields;
   readonly mailRead: () => void;
@@ -1558,6 +1560,13 @@ export const createTranscript = (header: Header): Transcript => {
     withMoment(undefined);
   };
 
+  const focus = (kind?: string): void => {
+    request("PUT", `/v0/devices/${toUuid(`${header.name}:device`)}/status`, {
+      body: kind === undefined ? {} : { focus: kind },
+    });
+    response(204, undefined);
+  };
+
   // A new day: what Kumo handled counts from nothing again.
   const recount = (handled: number): void => {
     changeDesk((desk) => ({ ...desk, handled }));
@@ -1803,6 +1812,7 @@ export const createTranscript = (header: Header): Transcript => {
     skipMoment,
     answerGuess,
     recount,
+    focus,
     handled,
     mailRead,
     getWork,

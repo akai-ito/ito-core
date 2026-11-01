@@ -51,8 +51,9 @@ where the protocol has to make it possible, marked *App*.
 | G42 | **Seen once is seen.** A line shown on the Desk is read, in the conversation too, and then no notification goes out for it. One that matters and is still unread half a minute later sends one notification, at the volume the manners allow. | 68, 72, 75 |
 | G43 | **Kumo earns trust one kind of work at a time.** Each of Kumo's own calls says which kind of work it was. Each kind has its own rung (Learning shows you its calls, with a card a day to glance at; Spot checks asks about one in five; Trusted brings only what needs you), climbs after a clean stretch, and says so in Kumo's line. "That was wrong" on any entry undoes it where it can, keeps a preference, and steps that kind back one rung; "show me everything again" puts it back to Learning. | 73 |
 | G44 | **Kumo's picture of your day is on its own calendar.** Its plan for your day and its guesses at the rest are written to Kumo's calendar, never yours, and show in Coming up as they land. A guess is marked as one, with why; once you've answered it, it's yours rather than a guess, and Kumo's next guesses learn from it. | 74 |
-| G45 | **Commitments made earlier, honest at the line.** In the evening, when you're likely to build, Kumo asks once when you'll stop, and your answer is tonight's line. Near it and past it, Kumo's line says plainly what tomorrow still fits or what it costs, as a line for the moment, notified only while unread. Past the line it speaks only while you're still up, and never once you've said you're stopping. | 75 |
+| G45 | **Commitments made earlier, honest at the line.** In the evening, when you're likely to build, Kumo asks once when you'll stop, and your answer is tonight's line. Near it and past it, Kumo's line says plainly what tomorrow still fits or what it costs, as a line for the moment, notified only while unread. Past the line it speaks only while you're still up, and never once you've said you're stopping or your Sleep Focus is on. | 75, 77 |
 | G46 | **One small question a day.** Kumo asks at most one question a day, at a calm moment while you're looking, as its line for the moment. Skipping it takes it away at once, with nothing in Done, and it's never asked again. | 76 |
+| G47 | **Kumo hears your Focus, and only for now.** When a Focus you've added Ito to turns on or off, the app tells the box, even while it's closed. Kumo's lines, plans and check-ins fit it, a Sleep Focus ends tonight's check-ins, and nothing is ever sent because of it. | 77 |
 
 ## Scenario by scenario
 
@@ -530,6 +531,11 @@ where the protocol has to make it possible, marked *App*.
 - A question Kumo's work proposed becomes its line once you're looking at a calm moment, as
   `kind` `question`. (G46, G41)
 - Skipping it takes it away at once, with nothing in Done. (G46)
+
+### 77 · [Asleep is asleep](transcripts/77-asleep-is-asleep.jsonl)
+
+- With Ito closed, the app says your Sleep Focus came on. (G47)
+- Tonight's line at 00:45 doesn't go out, and nothing is notified. (G45, G47)
 
 ## Not in this version
 

@@ -1020,6 +1020,32 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/devices/{device}/status:
+    put:
+      tags: [Notifications]
+      operationId: setStatus
+      summary: Say what your phone's Focus is
+      description: |
+        Send it when a Focus you've added Ito to turns on, with what that Focus is for, and with
+        no `focus` when it turns off. Kumo reads it as what you're doing now: its lines, plans
+        and check-ins fit it, a Sleep Focus ends tonight's check-ins, and nothing is ever sent
+        because of it. A Focus never said to be off stops counting after 16 hours. Any device
+        can say it, registered for notifications or not.
+      parameters:
+        - $ref: "#/components/parameters/Device"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceStatus" }
+            example: { focus: sleep }
+      responses:
+        "204":
+          description: Noted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/capabilities:
     get:
       tags: [Capabilities]
@@ -2683,6 +2709,14 @@ components:
         looking:
           description: Whether the conversation is on this device's screen.
           type: boolean
+    DeviceStatus:
+      description: Your phone's Focus, when you've added Ito to it; absent while no such Focus is on.
+      type: object
+      additionalProperties: false
+      properties:
+        focus:
+          description: What the Focus is for, as you chose when adding Ito to it.
+          enum: [sleep, work, fitness, personal, other]
     ErrorResult:
       type: object
       required: [error]
