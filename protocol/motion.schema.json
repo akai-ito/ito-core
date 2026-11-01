@@ -348,7 +348,7 @@
           "minLength": 1
         },
         "who": {
-          "description": "Who's going besides you, such as `Janki`.",
+          "description": "Who's going besides you, such as `Mira`.",
           "type": "array",
           "items": {
             "type": "string"
@@ -677,7 +677,7 @@
           "type": "string"
         },
         "page": {
-          "description": "Their page in memory, such as `memory:people/poppy`.",
+          "description": "Their page in memory, such as `memory:people/tess`.",
           "$ref": "events.schema.json#/$defs/MemoryAddress"
         }
       }
@@ -727,7 +727,7 @@
           "minLength": 1
         },
         "org": {
-          "description": "Such as `QRT`.",
+          "description": "Such as `Halcyon`.",
           "type": "string"
         },
         "stage": {

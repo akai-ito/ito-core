@@ -135,7 +135,7 @@ export const createJobs = ({ store, isMotion, clock, identifiers, work, info }: 
 
   const toStored = (input: unknown): Result<StoredJob, string> => {
     const why = lineOf(input, "why");
-    if (why === "") return fail("Say why in a line, such as “Ask how the QRT interview went”.");
+    if (why === "") return fail("Say why in a line, such as “Ask how the Halcyon interview went”.");
     const when = lineOf(input, "at");
     const at = when === "" ? undefined : Date.parse(when);
     if (at !== undefined && (Number.isNaN(at) || !instantPattern.test(when))) {
@@ -191,7 +191,7 @@ export const createJobs = ({ store, isMotion, clock, identifiers, work, info }: 
       inputSchema: {
         type: "object",
         properties: {
-          why: { type: "string", description: "What it's for, such as “Ask how the QRT interview went”." },
+          why: { type: "string", description: "What it's for, such as “Ask how the Halcyon interview went”." },
           at: { type: "string", description: "When, as an ISO time with its offset, such as 2026-11-03T18:00:00Z." },
           after_event: {
             type: "object",

@@ -57,16 +57,16 @@ describe("topics", () => {
     const store = openStore("live");
     const { asked, complete } = answering([
       { changed: true, label: "Florence trip" },
-      { changed: true, label: "QRT panel" },
+      { changed: true, label: "Halcyon panel" },
       { changed: false, label: "" },
       { changed: true, label: " florence   trip " },
     ]);
     const topics = createTopics({ store, complete, models, info });
     await topics.idle();
 
-    const florence = talk(store, "1", "Can you help me plan Florence with Janki?", "Of course! Three days fits it.");
+    const florence = talk(store, "1", "Can you help me plan Florence with Mira?", "Of course! Three days fits it.");
     await topics.idle();
-    const panel = talk(store, "2", "Different thing: what should I tell Bora about the QRT panel?", "Ask her.");
+    const panel = talk(store, "2", "Different thing: what should I tell Leo about the Halcyon panel?", "Ask him.");
     await topics.idle();
     talk(store, "3", "And when should I send it?", "Before Friday.");
     await topics.idle();
@@ -75,15 +75,15 @@ describe("topics", () => {
 
     expect(store.listTopics().map(({ label, position }) => ({ label, position }))).toEqual([
       { label: "Florence trip", position: florence },
-      { label: "QRT panel", position: panel },
+      { label: "Halcyon panel", position: panel },
       { label: "Florence trip", position: back },
     ]);
     expect(asked.get().map(({ choice }) => choice)).toEqual(
       Array.from({ length: 4 }, () => ({ model: "gpt-6-luna", effort: "low" })),
     );
     expect(asked.get()[2]?.prompt).toContain("Before it:\nThey said: Different thing:");
-    expect(asked.get()[3]?.prompt).toContain('Labels so far: "QRT panel", "Florence trip".');
-    expect(asked.get()[3]?.prompt).toContain('The subject now: "QRT panel".');
+    expect(asked.get()[3]?.prompt).toContain('Labels so far: "Halcyon panel", "Florence trip".');
+    expect(asked.get()[3]?.prompt).toContain('The subject now: "Halcyon panel".');
     topics.close();
   });
 
@@ -91,11 +91,11 @@ describe("topics", () => {
     const store = openStore("history");
     const florence = talk(store, "1", "Can you help me plan Florence?", "Of course.");
     talk(store, "2", "Should we see Siena too?", "A morning is enough.");
-    const panel = talk(store, "3", "What should I tell Bora about the QRT panel?", "Ask her.");
+    const panel = talk(store, "3", "What should I tell Leo about the Halcyon panel?", "Ask him.");
     const { asked, complete } = answering([
       {
         labels: [
-          { exchange: 3, label: "QRT panel" },
+          { exchange: 3, label: "Halcyon panel" },
           { exchange: 1, label: "Florence trip" },
         ],
       },
@@ -110,7 +110,7 @@ describe("topics", () => {
 
     expect(store.listTopics().map(({ label, position }) => ({ label, position }))).toEqual([
       { label: "Florence trip", position: florence },
-      { label: "QRT panel", position: panel },
+      { label: "Halcyon panel", position: panel },
     ]);
     expect(asked.get()).toHaveLength(1);
     expect(asked.get()[0]?.prompt).toContain("2.\n   They said: Should we see Siena too?");

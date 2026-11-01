@@ -59,7 +59,7 @@ const currentAt = (topics: readonly Topic[], position: number): Topic | undefine
 const rules = (topics: readonly Topic[], current: Topic | undefined): readonly string[] => {
   const labels = [...new Set(topics.map(({ label }) => label).toReversed())];
   return [
-    '- A new subject gets a label of one to four plain words, such as "Florence trip" or "QRT panel".',
+    '- A new subject gets a label of one to four plain words, such as "Florence trip" or "Halcyon panel".',
     "- When they come back to an earlier subject, use its label exactly as before.",
     "- More on the same subject, small talk, thanks or a follow-up starts nothing new.",
     "",

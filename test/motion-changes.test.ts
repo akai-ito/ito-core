@@ -27,7 +27,7 @@ const trip: Fields = {
   ],
 };
 
-const card = { title: "Florence with Janki", summary: "6–9 Nov · 2 to book", pinned: true };
+const card = { title: "Florence with Mira", summary: "6–9 Nov · 2 to book", pinned: true };
 
 const florence: Applied = { card, content: trip };
 
@@ -84,9 +84,9 @@ describe("changing a thing in motion by id", () => {
   it("treats only list fields as lists, so an empty field of words can be set", () => {
     const withWho: Applied = { card, content: { ...trip, who: [] } };
 
-    expect(applyChanges("florence", withWho, [{ set: "florence", fields: { who: ["Janki"] } }])).toMatchObject({
+    expect(applyChanges("florence", withWho, [{ set: "florence", fields: { who: ["Mira"] } }])).toMatchObject({
       ok: true,
-      value: { content: { who: ["Janki"] } },
+      value: { content: { who: ["Mira"] } },
     });
     expect(applyChanges("florence", withWho, [{ add: { id: "x" }, to: "who" }])).toEqual({
       ok: false,
@@ -158,7 +158,7 @@ describe("a thing's state", () => {
 
 describe("a trip's shape", () => {
   const kinds = createKinds(loadSchemas());
-  const whole = { ...trip, timezone: "Europe/Rome", who: ["Janki"], places: [], travel: [], stays: [] };
+  const whole = { ...trip, timezone: "Europe/Rome", who: ["Mira"], places: [], travel: [], stays: [] };
 
   it("accepts a whole trip, and says plainly what's wrong with one that isn't", () => {
     expect(kinds.checkContent("trip", whole)).toEqual({ ok: true, value: undefined });

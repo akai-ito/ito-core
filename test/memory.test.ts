@@ -110,19 +110,19 @@ describe("memory", () => {
   it("reads a page with numbered lines and edits an exact passage or a range of lines", async () => {
     const { memory } = await openMemory();
     await write(memory, {
-      address: "memory:people/janki",
-      title: "Janki",
+      address: "memory:people/mira",
+      title: "Mira",
       body: "Your partner (as of 28 Oct).\nFlorence together 6–9 Nov.\n\n## Earlier\n\n- 2025: met in London.",
     });
 
-    const read = await call(memory, "read_page", { address: "memory:people/janki" });
+    const read = await call(memory, "read_page", { address: "memory:people/mira" });
     const byPassage = await edit(memory, {
-      address: "memory:people/janki",
+      address: "memory:people/mira",
       old_text: "6–9 Nov",
       new_text: "6–10 Nov",
     });
     const byLines = await edit(memory, {
-      address: "memory:people/janki",
+      address: "memory:people/mira",
       start_line: 6,
       end_line: 6,
       new_text: "- 2025: met in London, at a friend's party.",
@@ -130,14 +130,14 @@ describe("memory", () => {
     });
 
     expect(read.text).toMatch(
-      /^memory:people\/janki, version \w{10}\n---\n\{title: Janki, gist: A page, circle: friends\}\n---\n/u,
+      /^memory:people\/mira, version \w{10}\n---\n\{title: Mira, gist: A page, circle: friends\}\n---\n/u,
     );
     expect(read.text).toContain(
       "1  Your partner (as of 28 Oct).\n2  Florence together 6–9 Nov.\n3\n4  ## Earlier\n5\n6  - 2025: met in London.",
     );
-    expect(byPassage.text).toMatch(/^Saved Janki, now at version \w{10}\.$/u);
-    expect(byLines.text).toMatch(/^Saved Janki, now at version \w{10}\.$/u);
-    expect(memory.page("memory:people/janki")).toMatchObject({
+    expect(byPassage.text).toMatch(/^Saved Mira, now at version \w{10}\.$/u);
+    expect(byLines.text).toMatch(/^Saved Mira, now at version \w{10}\.$/u);
+    expect(memory.page("memory:people/mira")).toMatchObject({
       ok: true,
       value: {
         gist: "Your partner",
@@ -178,26 +178,26 @@ describe("memory", () => {
   it("never empties or halves a page by editing, and writes whole pages only when they're new", async () => {
     const { memory } = await openMemory();
     await write(memory, {
-      address: "memory:people/janki",
-      title: "Janki",
+      address: "memory:people/mira",
+      title: "Mira",
       body: "Your partner.\n" + "Detail. ".repeat(40),
     });
 
     const halved = await edit(memory, {
-      address: "memory:people/janki",
+      address: "memory:people/mira",
       old_text: "Detail. ".repeat(30),
       new_text: "",
     });
-    const rewritten = await write(memory, { address: "memory:people/janki", title: "Janki", body: "" });
+    const rewritten = await write(memory, { address: "memory:people/mira", title: "Mira", body: "" });
 
     expect(halved).toEqual({
       text:
-        "That would remove more than half of Janki. Edit it a part at a time, or forget the page with " +
+        "That would remove more than half of Mira. Edit it a part at a time, or forget the page with " +
         "forget_page if it should go.",
       isError: true,
     });
     expect(rewritten).toEqual({
-      text: "Janki is already a page. Read it with read_page, then change it with edit_page.",
+      text: "Mira is already a page. Read it with read_page, then change it with edit_page.",
       isError: true,
     });
   });
@@ -356,11 +356,11 @@ describe("memory", () => {
     writeFileSync(path.join(thread, "places", "ljubljana.md"), "---\ntitle: Ljubljana\n---\n\nWhere you run.\n");
     git(thread, "add", "people", "places");
     git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
-    await write(memory, { address: "memory:people/bora", title: "Bora", body: "You run with Bora." });
-    await write(memory, { address: "memory:projects/job-search", title: "Job search", body: "QRT next." });
+    await write(memory, { address: "memory:people/leo", title: "Leo", body: "You run with Leo." });
+    await write(memory, { address: "memory:projects/job-search", title: "Job search", body: "Halcyon next." });
     await write(memory, { address: "memory:now", body: "Back from Ljubljana (as of 27 Oct)." });
 
-    expect(await memory.boostedNames()).toEqual(["Bora", "Ljubljana"]);
+    expect(await memory.boostedNames()).toEqual(["Leo", "Ljubljana"]);
   });
 
   it("closes cleanly when a last write was refused because memory was closing", async () => {

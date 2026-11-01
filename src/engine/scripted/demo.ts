@@ -16,7 +16,7 @@ const shortReply = [
   "- Send a message while it writes to try **steering**.",
   "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, or *approve* for an approval.",
   "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
-  "- *trip* starts Florence with Janki in In motion, *training* a sub-20 5K block, and *booked* books the trip's Uffizi.",
+  "- *trip* starts Florence with Mira in In motion, *training* a sub-20 5K block, and *booked* books the trip's Uffizi.",
 ].join("\n");
 
 const longReply = Array.from(
@@ -211,7 +211,7 @@ const startTrip: Act["act"] = async (callTool) => {
   await callTool("start_motion", {
     id: florenceId,
     kind: "trip",
-    title: "Florence with Janki",
+    title: "Florence with Mira",
     summary: "6–9 Nov · 4 to book",
     content: florenceTrip(Object.fromEntries(kept) as FlorencePictures),
     note: "Started the trip",
@@ -265,8 +265,8 @@ const fillDesk: Act["act"] = async (callTool) => {
 const offerTimes: Act["act"] = async (callTool) => {
   await callTool("add_card", {
     kind: "times",
-    title: "Times for a call with Citadel",
-    purpose: "A first call with Sarah at Citadel",
+    title: "Times for a call with Northwind",
+    purpose: "A first call with Clara at Northwind",
     slots: [
       { start: "2026-11-13T09:00:00.000Z", end: "2026-11-13T09:30:00.000Z", note: "WFH day" },
       { start: "2026-11-13T12:30:00.000Z", end: "2026-11-13T13:00:00.000Z", note: "WFH day" },
@@ -296,7 +296,7 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
     { pattern: /\bdesk\b/u, act: fillDesk, said: "I've put a question and an offer on your Desk." },
     { pattern: /\btimes\b/u, act: offerTimes, said: "Pick the times that are clear at work; they're on your Desk." },
     { pattern: /\bbriefing\b/u, act: briefNow, said: "Your briefing is at the top of the Desk." },
-    { pattern: /\binvite\b/u, act: showInvite, said: "Poppy's invite is on your Desk." },
+    { pattern: /\binvite\b/u, act: showInvite, said: "Tess's invite is on your Desk." },
     { pattern: /\bmail\b/u, act: showMail, said: "A booking came in; there's a draft for you on the Desk." },
     { pattern: /\bstart\b/u, act: showGettingStarted, said: "I've read your mail. Here's what I found." },
   ].find(({ pattern }) => pattern.test(text));
@@ -321,7 +321,7 @@ export const demoAnswers: Complete = (_prompt, schema) => {
     return Promise.resolve(
       ok({
         lines: [
-          { text: "Poppy sent the Teams link for Thursday; it's on the event.", card: "" },
+          { text: "Tess sent the Teams link for Thursday; it's on the event.", card: "" },
           { text: "Body: easy 30 minutes or rest; big afternoon.", card: "" },
         ],
         handled: 9,
@@ -334,7 +334,7 @@ export const demoAnswers: Complete = (_prompt, schema) => {
 
 const motionScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {
   const chosen = [
-    { pattern: /\btrip\b/u, act: startTrip, said: `I've started Florence with Janki.\n\n${motionLine(florenceId)}` },
+    { pattern: /\btrip\b/u, act: startTrip, said: `I've started Florence with Mira.\n\n${motionLine(florenceId)}` },
     { pattern: /\btraining\b/u, act: startTraining, said: `All ten weeks are in.\n\n${motionLine(sub20Id)}` },
     { pattern: /\bbooked\b/u, act: bookUffizi, said: "Lovely: the Uffizi is booked for 8:15 on Saturday." },
   ].find(({ pattern }) => pattern.test(text));

@@ -341,7 +341,7 @@ describe("Kumo's calendar tools", () => {
     const adding = calendar.tools.find(({ name }) => name === "add_event");
     const interview = { title: "Northwind first call", start: "2026-11-12T14:00:00Z", end: "2026-11-12T14:30:00Z" };
 
-    const held = await adding?.call({ ...interview, hold: true, notes: "Proposed by Sarah at Northwind" });
+    const held = await adding?.call({ ...interview, hold: true, notes: "Proposed by Clara at Northwind" });
     const confirmed = await adding?.call({
       ...interview,
       start: "2026-11-13T10:00:00Z",

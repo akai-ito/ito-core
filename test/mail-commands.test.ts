@@ -27,7 +27,7 @@ const launcher = path.join(home, "bin", "ito");
 const offer = {
   account: "icloud",
   message_id: "role-1@northwind.example",
-  from: "Sarah Lee <sarah.lee@northwind.example>",
+  from: "Clara Voss <clara.voss@northwind.example>",
   to: ["sam@icloud.com"],
   subject: "AI Engineer at Northwind",
   text: "Hi Sam, would you be open to a chat about our AI Engineer role this week?",
@@ -83,7 +83,7 @@ const searchTurn = (now: number): readonly TimedEvent[] => [
       type: "step.ended",
       key: "shell",
       outcome: "completed",
-      facts: { exit_code: 0, output: "- 2026-11-01 · Sarah Lee · AI Engineer at Northwind" },
+      facts: { exit_code: 0, output: "- 2026-11-01 · Clara Voss · AI Engineer at Northwind" },
     },
   },
   { at: now + 900, event: { type: "step.ended", key: "mcp", outcome: "completed", facts: {} } },
@@ -174,7 +174,7 @@ describe("mail in the conversation, through ito mail commands", () => {
     const read = await command(["read", "--message-id", offer.message_id]);
 
     expect(found.status).toBe(200);
-    expect(found.text).toContain(`Sarah Lee · AI Engineer at Northwind (icloud ${offer.message_id})`);
+    expect(found.text).toContain(`Clara Voss · AI Engineer at Northwind (icloud ${offer.message_id})`);
     expect(found.text).not.toContain("Pizza Place");
     expect(read.text).toContain("Subject: AI Engineer at Northwind");
     expect(read.text).toContain("would you be open to a chat");
@@ -210,7 +210,7 @@ describe("mail in the conversation, through ito mail commands", () => {
     expect(second.text).toMatch(/^Saved the draft in Drafts and put it on the Desk as /u);
     expect(drafts).toHaveLength(1);
     expect(drafts[0]?.draft).toMatchObject({
-      to: ["sarah.lee@northwind.example"],
+      to: ["clara.voss@northwind.example"],
       subject: "Re: AI Engineer at Northwind",
       body: "Happy to chat. Friday?",
       in_reply_to: offer.message_id,

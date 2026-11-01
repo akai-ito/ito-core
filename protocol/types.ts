@@ -2118,7 +2118,7 @@ export interface components {
     EventId: string;
     /** @description Opaque. The server makes it for each belief it checks with you. */
     BeliefId: string;
-    /** @description Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, a thing in motion such as `motion:florence-with-janki`, or `conversation:past`. */
+    /** @description Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, a thing in motion such as `motion:florence-with-mira`, or `conversation:past`. */
     MemoryAddress: string;
     /** @description Something Kumo believes about you from memory, for you to confirm or correct before it relies on it. */
     Belief: {
@@ -2142,7 +2142,7 @@ export interface components {
      * @example 2026-10-12T09:41:07.120Z
      */
     Timestamp: string;
-    /** @description A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-janki`. */
+    /** @description A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-mira`. */
     MotionId: string;
     /** @description An event on one of your calendars, as the box reads it from iCloud. Open it with the event whose `uid` matches, in Apple's own views. */
     CalendarItem: {
@@ -2195,7 +2195,7 @@ export interface components {
     /** @description Opaque. A turn is one run of the agent, from its inputs to an answer, a stop or an error. */
     TurnId: string;
     /**
-     * @description Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as "I'll check current prices first."; an app may show notes as live detail instead of in the conversation. A `post` is a message Kumo wrote outside a turn, from work it did in the background, such as "How did the QRT interview go?". Hide a kind you don't recognise.
+     * @description Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as "I'll check current prices first."; an app may show notes as live detail instead of in the conversation. A `post` is a message Kumo wrote outside a turn, from work it did in the background, such as "How did the Halcyon interview go?". Hide a kind you don't recognise.
      * @enum {unknown}
      */
     MessageKind: "reply" | "note" | "post";
@@ -2334,7 +2334,7 @@ export interface components {
     /** @description A look Kumo scheduled for itself: a follow-up, a check-in after an event, or a standing job it keeps doing. It's judged when it comes due, and moves itself if the moment is bad. */
     Job: {
       id: components["schemas"]["JobId"];
-      /** @description Such as "Ask how the QRT interview went". */
+      /** @description Such as "Ask how the Halcyon interview went". */
       why: string;
       /** @description When it's next due. */
       at?: components["schemas"]["Timestamp"];
@@ -2392,7 +2392,7 @@ export interface components {
       motion?: components["schemas"]["MotionId"];
       /** @description When it began waiting, for "since Wed". */
       at: components["schemas"]["Timestamp"];
-      /** @description One line, such as "Draft to Poppy". */
+      /** @description One line, such as "Draft to Tess". */
       title: string;
       options: components["schemas"]["AskOption"][];
       allows_text: boolean;
@@ -2428,7 +2428,7 @@ export interface components {
       };
       /** @description Times to check against your work calendar, which Kumo can't see. Answer with the slots that are clear. */
       times?: {
-        /** @description Such as "A call with Poppy". */
+        /** @description Such as "A call with Tess". */
         purpose: string;
         slots: components["schemas"]["Slot"][];
       };
@@ -2458,7 +2458,7 @@ export interface components {
        * @example trip
        */
       kind: string;
-      /** @description Short, such as "Florence with Janki": Ari keeps it to 28 characters or fewer. */
+      /** @description Short, such as "Florence with Mira": Ari keeps it to 28 characters or fewer. */
       title: string;
       /** @description Where it stands, in one line, for the pinned line and the In motion tab, such as "6–9 Nov · 3 to book". Ari keeps it current with every change. */
       summary: string;

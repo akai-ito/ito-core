@@ -193,7 +193,7 @@
       }
     },
     "MessageKind": {
-      "description": "Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as \"I'll check current prices first.\"; an app may show notes as live detail instead of in the conversation. A `post` is a message Kumo wrote outside a turn, from work it did in the background, such as \"How did the QRT interview go?\". Hide a kind you don't recognise.",
+      "description": "Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as \"I'll check current prices first.\"; an app may show notes as live detail instead of in the conversation. A `post` is a message Kumo wrote outside a turn, from work it did in the background, such as \"How did the Halcyon interview go?\". Hide a kind you don't recognise.",
       "enum": ["reply", "note", "post"]
     },
     "Message": {
@@ -1221,7 +1221,7 @@
       }
     },
     "MemoryAddress": {
-      "description": "Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, a thing in motion such as `motion:florence-with-janki`, or `conversation:past`.",
+      "description": "Where something lives in memory: `memory:portrait`, `memory:now`, `memory:helping-you`, a shelf page such as `memory:people/alex`, a journal day such as `memory:journal/2026-10-25`, a thing in motion such as `motion:florence-with-mira`, or `conversation:past`.",
       "type": "string",
       "pattern": "^(memory:[a-z0-9-]+(/[a-z0-9-]+)?|motion:[a-z0-9-]+|conversation:past)$"
     },
@@ -1414,7 +1414,7 @@
       }
     },
     "MotionId": {
-      "description": "A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-janki`.",
+      "description": "A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-mira`.",
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
       "maxLength": 64
@@ -1444,7 +1444,7 @@
           "examples": ["trip"]
         },
         "title": {
-          "description": "Short, such as \"Florence with Janki\": Ari keeps it to 28 characters or fewer.",
+          "description": "Short, such as \"Florence with Mira\": Ari keeps it to 28 characters or fewer.",
           "type": "string",
           "minLength": 1
         },
@@ -1856,7 +1856,7 @@
           "description": "When it began waiting, for \"since Wed\"."
         },
         "title": {
-          "description": "One line, such as \"Draft to Poppy\".",
+          "description": "One line, such as \"Draft to Tess\".",
           "type": "string",
           "minLength": 1
         },
@@ -1947,7 +1947,7 @@
           "additionalProperties": false,
           "properties": {
             "purpose": {
-              "description": "Such as \"A call with Poppy\".",
+              "description": "Such as \"A call with Tess\".",
               "type": "string"
             },
             "slots": {
@@ -2192,7 +2192,7 @@
           "$ref": "#/$defs/JobId"
         },
         "why": {
-          "description": "Such as \"Ask how the QRT interview went\".",
+          "description": "Such as \"Ask how the Halcyon interview went\".",
           "type": "string",
           "minLength": 1
         },

@@ -487,7 +487,7 @@ describe("their mail folders", () => {
 const opportunity: ArrivingMail = {
   account: "icloud",
   message_id: "intro-3@northwind.example",
-  from: "Sarah Lee <sarah.lee@northwind.example>",
+  from: "Clara Voss <clara.voss@northwind.example>",
   to: ["sam@icloud.com"],
   subject: "AI Engineer at Northwind",
   text: "Hi Sam, would you be free for a call on Thursday at 14:00 or Friday at 10:00?",
