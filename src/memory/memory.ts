@@ -29,7 +29,7 @@ import {
 } from "#memory/pages.ts";
 import { mentions, toBoosted, toNames } from "#memory/vocabulary.ts";
 import { rank, toMessageChunk, toPageChunks, type Passage } from "#memory/recall.ts";
-import { openThread, type Thread } from "#memory/thread.ts";
+import { openThread, type GitAccess, type Thread } from "#memory/thread.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { MemoryStore } from "#store/memory.ts";
@@ -105,12 +105,29 @@ export type Memory = {
   readonly change: (id: string) => Promise<ChangeBody | undefined>;
   readonly seed: (page: SeededPage) => Promise<Result<string, string>>;
   readonly isBackedUp: () => boolean;
+  readonly pushedAt: () => string | undefined;
+  readonly remote: () => Promise<string | undefined>;
+  readonly attach: (url: string) => Promise<Result<undefined, string>>;
+  readonly detach: () => Promise<Result<undefined, string>>;
   readonly indexConversation: () => void;
   readonly sync: () => Promise<void>;
   readonly boostedNames: () => Promise<readonly string[]>;
   readonly withThread: <Value>(work: (thread: Thread) => Promise<Value>) => Promise<Value>;
   readonly indexText: (address: string, title: string, text: string | undefined) => Promise<void>;
   readonly close: () => Promise<void>;
+};
+
+// How memory reaches its remote: the credentials to push with, and what came of each push.
+export type RemoteAccess = {
+  readonly access: () => Promise<Result<GitAccess, string>>;
+  readonly pushed: (outcome: Result<undefined, string>, remote: string) => void;
+};
+
+const machineAccess: RemoteAccess = {
+  access: () => Promise.resolve(ok({})),
+  pushed: () => {
+    // This machine's own credentials: nothing to report to.
+  },
 };
 
 export type MemoryOptions = {
@@ -125,6 +142,7 @@ export type MemoryOptions = {
   readonly info: Info;
   readonly timeZone: string;
   readonly pushDelayMs?: number;
+  readonly remote?: RemoteAccess;
 };
 
 const indexModelSetting = "memory_index_model";
@@ -137,6 +155,9 @@ const passagesPerRecall = 6;
 const recentChanges = 20;
 const boostDays = 28;
 const boostMessages = 200;
+
+// The remote has commits this Thread doesn't, so the push was turned away.
+const isTurnedAway = (failure: string): boolean => /\[rejected\]|non-fast-forward|fetch first/u.test(failure);
 
 const isInMindPage = (shelf: Shelf | InMindPage): shelf is InMindPage =>
   (inMindPages as readonly string[]).includes(shelf);
@@ -166,6 +187,7 @@ export const createMemory = ({
   info,
   timeZone,
   pushDelayMs = 30_000,
+  remote = machineAccess,
 }: MemoryOptions): Memory => {
   const thread = createCell<Thread | undefined>(undefined);
   const writes = createCell<Promise<unknown>>(Promise.resolve());
@@ -258,12 +280,21 @@ export const createMemory = ({
     return hasRemote.get() && (failingSince === "" || clock.now() - Date.parse(failingSince) < dayMs);
   };
 
-  const push = async (): Promise<void> => {
-    pushTimer.set(undefined);
-    if (isClosed.get()) return;
-    hasRemote.set(await opened().hasRemote());
-    if (!hasRemote.get()) return;
-    const pushed = await opened().push();
+  // Pushes once. Turned away because the remote moved on, say by a merged pull request, it
+  // fast-forwards and pushes again; it never merges, and never forces.
+  const pushOnce = async (): Promise<Result<undefined, string>> => {
+    const access = await remote.access();
+    if (!access.ok) return access;
+    const pushed = await opened().push(access.value);
+    if (pushed.ok || !isTurnedAway(pushed.failure)) return pushed;
+    const pulled = await opened().pull(access.value);
+    if (!pulled.ok) return pulled;
+    if (pulled.value === "pulled") await catchUp();
+    return opened().push(access.value);
+  };
+
+  const settle = async (pushed: Result<undefined, string>): Promise<void> => {
+    remote.pushed(pushed, (await opened().remoteUrl()) ?? "");
     if (pushed.ok) {
       settings.setSetting(pushedAtSetting, toTimestamp(clock.now()));
       settings.setSetting(failingSinceSetting, "");
@@ -274,6 +305,21 @@ export const createMemory = ({
     const attempts = pushAttempts.update((count) => count + 1);
     info("Memory couldn't be pushed to its remote, so it'll try again", { attempts, error: pushed.failure });
     schedulePush(Math.min(pushDelayMs * 2 ** attempts, longestPushDelayMs));
+  };
+
+  const push = async (): Promise<void> => {
+    pushTimer.set(undefined);
+    if (isClosed.get()) return;
+    hasRemote.set(await opened().hasRemote());
+    if (!hasRemote.get()) return;
+    await settle(await pushOnce());
+  };
+
+  const stopPushing = (): void => {
+    pushTimer.get()?.();
+    pushTimer.set(undefined);
+    pushAttempts.set(0);
+    settings.setSetting(failingSinceSetting, "");
   };
 
   const schedulePush = (delayMs = pushDelayMs): void => {
@@ -709,6 +755,36 @@ export const createMemory = ({
         return written.ok ? ok(written.value.change) : written;
       }),
     isBackedUp,
+    pushedAt: () => {
+      const at = settings.setting(pushedAtSetting);
+      return at === "" ? undefined : at;
+    },
+    remote: async () => {
+      await ready;
+      return opened().remoteUrl();
+    },
+    attach: async (url) => {
+      await ready;
+      return serially(async () => {
+        if (isClosed.get()) return fail("Memory is closing.");
+        const set = await opened().setRemote(url);
+        if (!set.ok) return set;
+        hasRemote.set(true);
+        stopPushing();
+        const pushed = await pushOnce();
+        await settle(pushed);
+        return pushed;
+      });
+    },
+    detach: async () => {
+      await ready;
+      return serially(async () => {
+        stopPushing();
+        const removed = await opened().removeRemote();
+        hasRemote.set(await opened().hasRemote());
+        return removed;
+      });
+    },
     indexConversation,
     sync,
     boostedNames: async () => {

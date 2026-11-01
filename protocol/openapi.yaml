@@ -27,7 +27,7 @@ info:
       and fill in its setup sheet, or connect it through its provider.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
       journal, what Ari changed lately and why, and what each change changed. Ari writes memory
-      itself; the API only reads it.
+      itself; the API only reads it, and backs it up to GitHub.
     - **Choose the model** the agent runs on, and how hard it thinks, from those its engine offers.
     - **Talk:** start and end a call with the agent, and stream it: your microphone up, Ari's voice
       down, with states and captions. The server hears your turns, steered toward the names in
@@ -77,7 +77,7 @@ tags:
   - name: Capabilities
     description: Switch capabilities on and off, and set them up.
   - name: Memory
-    description: Read what Ari remembers. Ari writes it; apps only read.
+    description: Read what Ari remembers, and back it up. Ari writes it; apps only read.
   - name: Motion
     description: |
       Things in motion that Ari keeps for you, such as a trip being planned. Ari writes them; apps
@@ -174,8 +174,8 @@ paths:
       description: |
         What's wrong on the server right now and how to fix each: notifications that can't be
         sent, a mail or calendar account that keeps failing (a refused sign-in at once, anything
-        else after ten minutes), or a capability that needs setting up. Each clears on its own
-        once it's fixed. `problems.changed` carries every change, and the snapshot holds the list
+        else after ten minutes), a capability that needs setting up, or memory that isn't
+        reaching its backup. Each clears on its own once it's fixed. `problems.changed` carries every change, and the snapshot holds the list
         while it isn't empty.
       responses:
         "200":
@@ -1161,6 +1161,77 @@ paths:
               schema: { $ref: "#/components/schemas/MemoryChange" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/memory/backup:
+    get:
+      tags: [Memory]
+      operationId: getMemoryBackup
+      summary: Read where memory is backed up
+      description: |
+        Whether memory is backed up off the server, where to, and when it last got there. While
+        you're backing up through GitHub, read it every couple of seconds to follow along: the
+        server notices on its own when you've entered the code and when the app is installed.
+      responses:
+        "200":
+          description: How memory is backed up.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemoryBackup" }
+              example:
+                state: "on"
+                repository: octo-person/ito-thread
+                repository_url: https://github.com/octo-person/ito-thread
+                pushed_at: "2026-11-01T09:12:00.000Z"
+        "401": { $ref: "#/components/responses/TokenRejected" }
+    post:
+      tags: [Memory]
+      operationId: backUpMemory
+      summary: Back memory up to GitHub
+      description: |
+        Connects GitHub through Ito Memory, Ito's GitHub app, and answers with the code to enter
+        on GitHub's page. Once you approve it there, GitHub hands the server a token, which never
+        reaches the app. The server then finds your private `ito-thread` repository, or makes one,
+        and asks for the app to be installed on just that repository; once it is, memory is pushed
+        there after each change. Connecting again starts over with a new code, and keeps the
+        repository. Refused while memory already backs up somewhere else, set with
+        `ito memory remote`: the message says how to remove that first. History already in the
+        repository is kept: the server fast-forwards to it, and never pushes over changes made on
+        both sides.
+      responses:
+        "200":
+          description: Connecting, with the code to enter.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemoryBackup" }
+              example:
+                state: connecting
+                code: WDJB-MJHT
+                url: https://github.com/login/device
+                expires_at: "2026-11-01T09:15:00.000Z"
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+    delete:
+      tags: [Memory]
+      operationId: stopMemoryBackup
+      summary: Stop backing memory up to GitHub
+      description: |
+        *Disconnect*: the server forgets its GitHub tokens and stops pushing. The repository and
+        everything in it stay on GitHub, and memory stays on the server. A backup set with
+        `ito memory remote` is left as it is.
+      responses:
+        "200":
+          description: How memory is backed up now.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemoryBackup" }
+              example: { state: "off" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/motion:
     get:
       tags: [Motion]
@@ -1813,6 +1884,65 @@ components:
         after:
           description: The page's Markdown after the change. Absent when Ari deleted it.
           type: string
+    MemoryBackup:
+      description: Where memory is backed up off the server, and how that's going.
+      type: object
+      required: [state]
+      properties:
+        state:
+          description: |
+            - `off`: memory is only on the server.
+            - `connecting`: waiting for you to enter `code` at `url`, before `expires_at`.
+            - `installing`: GitHub is connected, and the server waits for Ito Memory to be installed
+              on `repository`: open `install_url`. It notices by itself.
+            - `on`: memory is pushed after each change to `repository`, through Ito Memory, or to
+              `remote`, set on the server with `ito memory remote`.
+            - `stopped`: backing up needs you: `problem` says why, and `GET /v0/problems` says how to
+              fix it. Connecting again starts over.
+          enum: [off, connecting, installing, on, stopped]
+        code:
+          description: "`connecting`: the code to enter, to show as it is."
+          type: string
+        url:
+          description: "`connecting`: GitHub's page to enter it on."
+          type: string
+          format: uri
+        expires_at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: "`connecting`: when the code stops working."
+        repository:
+          description: The GitHub repository memory goes to, as `owner/name`.
+          type: string
+          examples: [octo-person/ito-thread]
+        repository_url:
+          description: Its page on GitHub.
+          type: string
+          format: uri
+        created:
+          description: The server made the repository, private, when it found none.
+          type: boolean
+        install_url:
+          description: "`installing`: where to install Ito Memory, or, once it's installed, to add the repository to it."
+          type: string
+          format: uri
+        repository_chosen:
+          description: "`installing`: true when GitHub's page opens with the repository already chosen; otherwise choose just that one there."
+          type: boolean
+        new_repository_url:
+          description: |
+            `installing`: there may be no `ito-thread` yet, and GitHub lets the server make one
+            only once the app is installed. Make it here first, private, then install.
+          type: string
+          format: uri
+        remote:
+          description: "Where `ito memory remote` points, without any password in it, when that's how memory is backed up."
+          type: string
+        pushed_at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When memory last reached the backup.
+        problem:
+          description: "`stopped`: what's wrong, in a sentence. `off`: why connecting didn't finish, such as a code that expired."
+          type: string
     CapabilityId:
       description: Lowercase letters, digits and dashes, such as `reports`.
       type: string
@@ -2187,8 +2317,9 @@ components:
               type: boolean
             memory_backup:
               description: |
-                Whether memory is backed up: true once `ito memory remote` has set where to push it
-                and the last day's pushes went through.
+                Whether memory is backed up: true once it has somewhere to go, through GitHub
+                (`POST /v0/memory/backup`) or `ito memory remote`, and the last day's pushes went
+                through.
               type: boolean
         capabilities:
           description: The capabilities that are on, with their versions, so the app knows which screens it can show.

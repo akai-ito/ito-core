@@ -16,6 +16,8 @@ import { createCalls, type Calls } from "#voice/calls.ts";
 import { createVoiceprints } from "#voice/voiceprints.ts";
 import { chosenVoice } from "#voice/voices.ts";
 import { createMemory, type Memory } from "#memory/memory.ts";
+import { createBackup, type Backup } from "#memory/backup.ts";
+import type { GitHubHosts } from "#memory/github.ts";
 import { createImageTool } from "#replies/images.ts";
 import type { Fetch } from "#capabilities/connect.ts";
 import { createCapabilityApprovals } from "#capabilities/approvals.ts";
@@ -63,6 +65,8 @@ import {
   capabilityProblem,
   createProblems,
   mailProblem,
+  memoryBackupId,
+  memoryBackupProblem,
   pushProblem,
   type Problems,
 } from "#problems/problems.ts";
@@ -86,6 +90,8 @@ export type ServerOptions = {
   readonly fetch?: Fetch;
   readonly createCalendarSource?: (values: Values) => CalendarSource;
   readonly createMailSource?: CreateMailSource;
+  readonly github?: GitHubHosts;
+  readonly backupCheckMs?: number;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
@@ -108,6 +114,7 @@ export type Server = {
   readonly attachments: Attachments;
   readonly host: Host;
   readonly memory: Memory;
+  readonly backup: Backup;
   readonly motions: Motions;
   readonly jobs: Jobs;
   readonly voice: VoiceLoop;
@@ -220,6 +227,12 @@ export const createServer = (options: ServerOptions): Server => {
     approve: (fields) => turns.approve(fields),
     info,
     timeZone: options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
+    remote: {
+      access: () => backup.access(),
+      pushed: (outcome, remote) => {
+        backup.pushed(outcome, remote);
+      },
+    },
   });
   const callContext = (): string => {
     const latest = store.latestCall();
@@ -343,6 +356,20 @@ export const createServer = (options: ServerOptions): Server => {
   host.subscribe(() => {
     problems.refresh();
   });
+  const backup = createBackup({
+    memory,
+    settings: store,
+    fetch: fetcher,
+    clock,
+    info,
+    directory: path.join(options.dataDirectory, "thread"),
+    report: (health, toProblem) => {
+      problems.report(memoryBackupId, health, toProblem);
+    },
+    toProblem: memoryBackupProblem,
+    ...(options.github && { hosts: options.github }),
+    ...(options.backupCheckMs !== undefined && { checkMs: options.backupCheckMs }),
+  });
   const mail = createMailbox({
     host,
     store,
@@ -438,6 +465,7 @@ export const createServer = (options: ServerOptions): Server => {
     attachments,
     host,
     memory,
+    backup,
     motions,
     voice,
     calls,
@@ -641,10 +669,12 @@ export const createServer = (options: ServerOptions): Server => {
   compact();
   turns.recover();
   problems.start();
+  backup.start();
 
   const shutdown = async (): Promise<void> => {
     compaction.get()?.();
     problems.close();
+    await backup.close();
     motions.close();
     topics.close();
     moments.close();
@@ -672,6 +702,7 @@ export const createServer = (options: ServerOptions): Server => {
     attachments,
     host,
     memory,
+    backup,
     motions,
     jobs,
     voice,

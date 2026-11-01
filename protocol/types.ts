@@ -81,8 +81,8 @@ export interface paths {
      * Read what's wrong on the server
      * @description What's wrong on the server right now and how to fix each: notifications that can't be
      *     sent, a mail or calendar account that keeps failing (a refused sign-in at once, anything
-     *     else after ten minutes), or a capability that needs setting up. Each clears on its own
-     *     once it's fixed. `problems.changed` carries every change, and the snapshot holds the list
+     *     else after ten minutes), a capability that needs setting up, or memory that isn't
+     *     reaching its backup. Each clears on its own once it's fixed. `problems.changed` carries every change, and the snapshot holds the list
      *     while it isn't empty.
      */
     get: operations["getProblems"];
@@ -881,6 +881,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/memory/backup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read where memory is backed up
+     * @description Whether memory is backed up off the server, where to, and when it last got there. While
+     *     you're backing up through GitHub, read it every couple of seconds to follow along: the
+     *     server notices on its own when you've entered the code and when the app is installed.
+     */
+    get: operations["getMemoryBackup"];
+    put?: never;
+    /**
+     * Back memory up to GitHub
+     * @description Connects GitHub through Ito Memory, Ito's GitHub app, and answers with the code to enter
+     *     on GitHub's page. Once you approve it there, GitHub hands the server a token, which never
+     *     reaches the app. The server then finds your private `ito-thread` repository, or makes one,
+     *     and asks for the app to be installed on just that repository; once it is, memory is pushed
+     *     there after each change. Connecting again starts over with a new code, and keeps the
+     *     repository. Refused while memory already backs up somewhere else, set with
+     *     `ito memory remote`: the message says how to remove that first. History already in the
+     *     repository is kept: the server fast-forwards to it, and never pushes over changes made on
+     *     both sides.
+     */
+    post: operations["backUpMemory"];
+    /**
+     * Stop backing memory up to GitHub
+     * @description *Disconnect*: the server forgets its GitHub tokens and stops pushing. The repository and
+     *     everything in it stay on GitHub, and memory stays on the server. A backup set with
+     *     `ito memory remote` is left as it is.
+     */
+    delete: operations["stopMemoryBackup"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/motion": {
     parameters: {
       query?: never;
@@ -1344,6 +1384,61 @@ export interface components {
       before?: string;
       /** @description The page's Markdown after the change. Absent when Ari deleted it. */
       after?: string;
+    };
+    /** @description Where memory is backed up off the server, and how that's going. */
+    MemoryBackup: {
+      /**
+       * @description - `off`: memory is only on the server.
+       *     - `connecting`: waiting for you to enter `code` at `url`, before `expires_at`.
+       *     - `installing`: GitHub is connected, and the server waits for Ito Memory to be installed
+       *       on `repository`: open `install_url`. It notices by itself.
+       *     - `on`: memory is pushed after each change to `repository`, through Ito Memory, or to
+       *       `remote`, set on the server with `ito memory remote`.
+       *     - `stopped`: backing up needs you: `problem` says why, and `GET /v0/problems` says how to
+       *       fix it. Connecting again starts over.
+       * @enum {unknown}
+       */
+      state: "off" | "connecting" | "installing" | "on" | "stopped";
+      /** @description `connecting`: the code to enter, to show as it is. */
+      code?: string;
+      /**
+       * Format: uri
+       * @description `connecting`: GitHub's page to enter it on.
+       */
+      url?: string;
+      /** @description `connecting`: when the code stops working. */
+      expires_at?: components["schemas"]["Timestamp"];
+      /**
+       * @description The GitHub repository memory goes to, as `owner/name`.
+       * @example octo-person/ito-thread
+       */
+      repository?: string;
+      /**
+       * Format: uri
+       * @description Its page on GitHub.
+       */
+      repository_url?: string;
+      /** @description The server made the repository, private, when it found none. */
+      created?: boolean;
+      /**
+       * Format: uri
+       * @description `installing`: where to install Ito Memory, or, once it's installed, to add the repository to it.
+       */
+      install_url?: string;
+      /** @description `installing`: true when GitHub's page opens with the repository already chosen; otherwise choose just that one there. */
+      repository_chosen?: boolean;
+      /**
+       * Format: uri
+       * @description `installing`: there may be no `ito-thread` yet, and GitHub lets the server make one
+       *     only once the app is installed. Make it here first, private, then install.
+       */
+      new_repository_url?: string;
+      /** @description Where `ito memory remote` points, without any password in it, when that's how memory is backed up. */
+      remote?: string;
+      /** @description When memory last reached the backup. */
+      pushed_at?: components["schemas"]["Timestamp"];
+      /** @description `stopped`: what's wrong, in a sentence. `off`: why connecting didn't finish, such as a code that expired. */
+      problem?: string;
     };
     /** @description Lowercase letters, digits and dashes, such as `reports`. */
     CapabilityId: string;
@@ -2053,8 +2148,9 @@ export interface components {
         /** @description Whether the server can send push notifications (`ito push setup`). */
         notifications: boolean;
         /**
-         * @description Whether memory is backed up: true once `ito memory remote` has set where to push it
-         *     and the last day's pushes went through.
+         * @description Whether memory is backed up: true once it has somewhere to go, through GitHub
+         *     (`POST /v0/memory/backup`) or `ito memory remote`, and the last day's pushes went
+         *     through.
          */
         memory_backup: boolean;
       };
@@ -2188,11 +2284,11 @@ export interface components {
     ErrorResult: {
       error: components["schemas"]["Error"];
     };
-    /** @description Something wrong on the server that needs you, shown until it's fixed, when it clears on its own: notifications that can't be sent, a mail or calendar account that keeps failing, or a capability that needs setting up. A blip that sorts itself out, such as a reconnect, isn't one. */
+    /** @description Something wrong on the server that needs you, shown until it's fixed, when it clears on its own: notifications that can't be sent, a mail or calendar account that keeps failing, a capability that needs setting up, or memory that isn't reaching its backup. A blip that sorts itself out, such as a reconnect, isn't one. */
     Problem: {
       /** @description Stable while it lasts, such as `push` or `mail:outlook`. */
       id: string;
-      /** @description What it's about: `notifications`, `mail`, `calendar` or `capabilities`. Show an area you don't know plainly. */
+      /** @description What it's about: `notifications`, `mail`, `calendar`, `capabilities` or `memory`. Show an area you don't know plainly. */
       area: string;
       /** @description One plain line, such as "Notifications can't be sent". */
       title: string;
@@ -2955,6 +3051,7 @@ export type RecentChange = components["schemas"]["RecentChange"];
 export type RecentChanges = components["schemas"]["RecentChanges"];
 export type ShelfList = components["schemas"]["ShelfList"];
 export type MemoryChange = components["schemas"]["MemoryChange"];
+export type MemoryBackup = components["schemas"]["MemoryBackup"];
 export type CapabilityId = components["schemas"]["CapabilityId"];
 export type CapabilityList = components["schemas"]["CapabilityList"];
 export type Capability = components["schemas"]["Capability"];
@@ -4392,6 +4489,95 @@ export interface operations {
       };
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  getMemoryBackup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description How memory is backed up. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "state": "on",
+           *       "repository": "octo-person/ito-thread",
+           *       "repository_url": "https://github.com/octo-person/ito-thread",
+           *       "pushed_at": "2026-11-01T09:12:00.000Z"
+           *     }
+           */
+          "application/json": components["schemas"]["MemoryBackup"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  backUpMemory: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Connecting, with the code to enter. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "state": "connecting",
+           *       "code": "WDJB-MJHT",
+           *       "url": "https://github.com/login/device",
+           *       "expires_at": "2026-11-01T09:15:00.000Z"
+           *     }
+           */
+          "application/json": components["schemas"]["MemoryBackup"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  stopMemoryBackup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description How memory is backed up now. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "state": "off"
+           *     }
+           */
+          "application/json": components["schemas"]["MemoryBackup"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
     };
   };
   listMotion: {

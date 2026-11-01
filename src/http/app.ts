@@ -27,6 +27,7 @@ import type { DeskKeeper } from "#desk/desk.ts";
 import type { Calendar } from "#calendar/calendar.ts";
 import { registerTalk } from "#http/talk.ts";
 import type { Memory } from "#memory/memory.ts";
+import type { Backup } from "#memory/backup.ts";
 import type { VoiceLoop } from "#voice/loop.ts";
 import type { Calls } from "#voice/calls.ts";
 import type { Voiceprints } from "#voice/voiceprints.ts";
@@ -52,6 +53,7 @@ export type AppOptions = {
   readonly attachments: Attachments;
   readonly host: Host;
   readonly memory: Memory;
+  readonly backup: Backup;
   readonly motions: Motions;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
@@ -107,6 +109,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     attachments,
     host,
     memory,
+    backup,
     motions,
     voice,
     calls,
@@ -216,7 +219,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       ? reply.code(201).send({ event: added.value })
       : reply.code(503).send(toErrorResult("unavailable", added.failure, "The calendar isn't reachable."));
   });
-  registerMemory(app, memory, schemaFor);
+  registerMemory(app, memory, backup, schemaFor);
   registerMotion(app, motions, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
   registerTalk(app, { store, attachments, voice, calls, voiceprints, schemaFor });

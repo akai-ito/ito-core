@@ -1,14 +1,32 @@
 import type { FastifyInstance } from "fastify";
 import { toCommandError } from "#conversation/failures.ts";
 import type { RouteSchema } from "#http/validation.ts";
+import type { Backup } from "#memory/backup.ts";
 import type { Memory } from "#memory/memory.ts";
 import type { Shelf } from "#memory/pages.ts";
 
 export const registerMemory = (
   app: FastifyInstance,
   memory: Memory,
+  backup: Backup,
   schemaFor: (operationId: string) => RouteSchema,
 ): void => {
+  app.get("/v0/memory/backup", () => backup.status());
+
+  app.post("/v0/memory/backup", async (_request, reply) => {
+    const started = await backup.connect();
+    if (started.ok) return started.value;
+    return started.failure.code === "invalid"
+      ? reply
+          .code(400)
+          .send({ error: toCommandError("invalid_request", started.failure.detail, started.failure.detail) })
+      : reply
+          .code(503)
+          .send({ error: toCommandError("unavailable", started.failure.detail, "GitHub can't be reached.") });
+  });
+
+  app.delete("/v0/memory/backup", () => backup.disconnect());
+
   app.get("/v0/memory/in-mind", async () => {
     await memory.sync();
     return { pages: memory.inMind() };

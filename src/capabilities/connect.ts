@@ -12,6 +12,15 @@ export type DeviceCode = {
   readonly intervalMs: number;
 };
 
+export type DeviceToken = {
+  readonly access_token: string;
+  readonly refresh_token?: string;
+  readonly expires_at?: number;
+  readonly refresh_expires_at?: number;
+};
+
+export type RefreshFailure = { readonly reason: string; readonly isRefused: boolean };
+
 type Answer = Readonly<Record<string, unknown>>;
 
 type Poll =
@@ -85,6 +94,51 @@ export const requestDeviceCode = async (
   });
 };
 
+// A token that expires carries a refresh token, and may say when that expires too, as GitHub's do.
+const toDeviceToken = (answer: Answer, now: number, refreshToken?: string): DeviceToken | undefined => {
+  const accessToken = textOf(answer.access_token);
+  if (accessToken === undefined) return undefined;
+  const refresh = textOf(answer.refresh_token) ?? refreshToken;
+  if (refresh === undefined) return { access_token: accessToken };
+  return {
+    access_token: accessToken,
+    refresh_token: refresh,
+    expires_at: now + secondsOf(answer.expires_in, 3600) * 1000,
+    ...(typeof answer.refresh_token_expires_in === "number" && {
+      refresh_expires_at: now + answer.refresh_token_expires_in * 1000,
+    }),
+  };
+};
+
+export const readDeviceToken = (text: string | undefined): DeviceToken | undefined => {
+  if (text === undefined || text === "") return undefined;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isAnswer(parsed) && typeof parsed.access_token === "string" ? (parsed as DeviceToken) : undefined;
+  } catch {
+    return { access_token: text };
+  }
+};
+
+// Trades a refresh token for a new pair. The old pair stops working, so save the new one at once.
+export const refreshDeviceToken = async (
+  connect: DeviceConnect,
+  refreshToken: string,
+  fetcher: Fetch,
+  now: number,
+): Promise<Result<DeviceToken, RefreshFailure>> => {
+  const answered = await post(fetcher, connect.tokenUrl, {
+    client_id: connect.clientId,
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  });
+  if (!answered.ok) return fail({ reason: answered.failure, isRefused: false });
+  const token = toDeviceToken(answered.value, now, refreshToken);
+  return token
+    ? ok(token)
+    : fail({ reason: reasonOf(answered.value, "The provider didn't renew the sign-in."), isRefused: true });
+};
+
 export const toPoll = (answer: Answer, intervalMs: number): Poll => {
   const token = textOf(answer.access_token);
   if (token !== undefined) return { kind: "token", token };
@@ -134,16 +188,8 @@ export const awaitToken = (
     const next = toPoll(answered.value, intervalMs);
     switch (next.kind) {
       case "token": {
-        const refresh = textOf(answered.value.refresh_token);
-        return ok(
-          refresh === undefined
-            ? next.token
-            : JSON.stringify({
-                access_token: next.token,
-                refresh_token: refresh,
-                expires_at: clock.now() + secondsOf(answered.value.expires_in, 3600) * 1000,
-              }),
-        );
+        const token = toDeviceToken(answered.value, clock.now());
+        return ok(token?.refresh_token === undefined ? next.token : JSON.stringify(token));
       }
       case "pending": {
         return poll(next.intervalMs);

@@ -94,6 +94,20 @@ export const calendarProblem = (reason: string, isAuth: boolean): Problem => ({
   fix: isAuth ? signInFix("icloud") : "Kumo keeps trying. If it goes on, check the server's internet connection.",
 });
 
+export const memoryBackupId = "memory:backup";
+
+const keepsTrying = "Ito keeps trying. If it goes on, check the server's internet connection.";
+
+export const memoryBackupProblem =
+  (fix: string) =>
+  (reason: string, isAuth: boolean): Problem => ({
+    id: memoryBackupId,
+    area: "memory",
+    title: "Memory isn't backed up",
+    detail: `Memory is on this server only until this is fixed. ${reason}`,
+    fix: isAuth ? fix : keepsTrying,
+  });
+
 export const createProblems = ({ clock, standing, publish, checkMs = 60_000 }: ProblemsOptions): Problems => {
   const failures = createCell<ReadonlyMap<string, Failure>>(new Map());
   const timer = createCell<Cancel | undefined>(undefined);

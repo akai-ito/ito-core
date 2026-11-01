@@ -2359,7 +2359,7 @@
       }
     },
     "Problem": {
-      "description": "Something wrong on the server that needs you, shown until it's fixed, when it clears on its own: notifications that can't be sent, a mail or calendar account that keeps failing, or a capability that needs setting up. A blip that sorts itself out, such as a reconnect, isn't one.",
+      "description": "Something wrong on the server that needs you, shown until it's fixed, when it clears on its own: notifications that can't be sent, a mail or calendar account that keeps failing, a capability that needs setting up, or memory that isn't reaching its backup. A blip that sorts itself out, such as a reconnect, isn't one.",
       "type": "object",
       "required": ["id", "area", "title", "detail", "fix"],
       "additionalProperties": false,
@@ -2370,7 +2370,7 @@
           "minLength": 1
         },
         "area": {
-          "description": "What it's about: `notifications`, `mail`, `calendar` or `capabilities`. Show an area you don't know plainly.",
+          "description": "What it's about: `notifications`, `mail`, `calendar`, `capabilities` or `memory`. Show an area you don't know plainly.",
           "type": "string",
           "minLength": 1
         },
