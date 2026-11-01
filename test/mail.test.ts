@@ -142,7 +142,7 @@ describe("the mailbox", () => {
   });
 
   it("doesn't bin a mail again when an undo moves it back to the inbox", async () => {
-    const box = openBox("quiet");
+    const box = openBox("notice");
     const block = box.mailbox.tools.find(({ name }) => name === "block");
     await block?.call({ sender: "reservations@hotelorto.it" });
     box.mail.arrive(booking);
@@ -167,7 +167,7 @@ describe("the mailbox", () => {
   });
 
   it("fails the catch-up when no account could be read, so getting started can try again", async () => {
-    const box = openBox("quiet");
+    const box = openBox("notice");
     box.mail.breakReading();
 
     const caughtUp = await box.mailbox.catchUp(ignore);
@@ -178,7 +178,7 @@ describe("the mailbox", () => {
   });
 
   it("matches a sent mail to its draft only by the thread it answers, and only once the draft existed", async () => {
-    const box = openBox("quiet");
+    const box = openBox("notice");
     const draft = {
       account: "icloud",
       from: "divy@icloud.com",

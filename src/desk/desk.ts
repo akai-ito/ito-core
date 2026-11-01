@@ -24,6 +24,8 @@ export type DeskKeeper = {
   readonly removeCard: (id: string) => void;
   readonly answer: (id: string, answer: CardAnswer) => Result<Card, string>;
   readonly handle: (kind: Card["kind"], handler: CardHandler) => void;
+  // Answers one card, ahead of its kind's handler, such as a question only the mailbox can act on.
+  readonly handleCard: (id: string, handler: CardHandler) => void;
   readonly setBriefing: (briefing: Briefing | undefined) => void;
   readonly setComingUp: (items: readonly CalendarItem[]) => void;
   readonly readBriefing: (id: string) => boolean;
@@ -71,6 +73,7 @@ const checked = (card: Card, answer: CardAnswer): Result<CardAnswer, string> => 
 
 export const createDesk = ({ store, identifiers, clock, work, info }: DeskOptions): DeskKeeper => {
   const handlers = createCell<ReadonlyMap<Card["kind"], CardHandler>>(new Map());
+  const cardHandlers = createCell<ReadonlyMap<string, CardHandler>>(new Map());
   const undoers = createCell<readonly Undoer[]>([]);
   const pending = createCell<Promise<void>>(Promise.resolve());
 
@@ -89,6 +92,7 @@ export const createDesk = ({ store, identifiers, clock, work, info }: DeskOption
 
   const settle = (id: string, replacement: NewCard | undefined): void => {
     changeCards((waiting) => waiting.filter((card) => card.id !== id));
+    cardHandlers.update((current) => new Map([...current].filter(([card]) => card !== id)));
     if (replacement) addCard(replacement);
   };
 
@@ -115,7 +119,8 @@ export const createDesk = ({ store, identifiers, clock, work, info }: DeskOption
     return undefined;
   };
 
-  const handlerOf = (card: Card): CardHandler => handlers.get().get(card.kind) ?? askKumo;
+  const handlerOf = (card: Card): CardHandler =>
+    cardHandlers.get().get(card.id) ?? handlers.get().get(card.kind) ?? askKumo;
 
   return {
     addCard,
@@ -138,6 +143,9 @@ export const createDesk = ({ store, identifiers, clock, work, info }: DeskOption
     },
     handle: (kind, handler) => {
       handlers.update((current) => new Map([...current, [kind, handler]]));
+    },
+    handleCard: (id, handler) => {
+      cardHandlers.update((current) => new Map([...current, [id, handler]]));
     },
     setBriefing: (briefing) => {
       const { coming_up: comingUp, waiting } = store.desk();

@@ -3494,6 +3494,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(1000);
     transcript.world("attention_decides", {
       decision: "work",
+      folder: "",
       reason: "A hotel booking for Florence",
       confidence: 0.94,
     });

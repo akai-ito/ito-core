@@ -146,7 +146,9 @@ export const createNotifier = ({
   const onDesk = (desk: Desk): void => {
     const fresh = desk.waiting.filter(({ id }) => !shownCards.get().has(id));
     shownCards.set(new Set(desk.waiting.map(({ id }) => id)));
-    for (const card of fresh) notify({ kind: "card", text: card.title, card: card.id }, "active");
+    for (const card of fresh) {
+      notify({ kind: "card", text: card.title, card: card.id }, card.quiet === true ? "passive" : "active");
+    }
     const { briefing } = desk;
     if (briefing && briefing.id !== shownBriefing.get()) {
       notify({ kind: "briefing", text: briefing.lines[0]?.text ?? "Your morning briefing" }, "passive");

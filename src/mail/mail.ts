@@ -3,7 +3,7 @@ import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import type { Fetch } from "#capabilities/connect.ts";
 import { valuesSetting, type CheckResult, type Host } from "#capabilities/host.ts";
 import type { Values } from "#capabilities/manifest.ts";
-import type { DeskKeeper, NewCard } from "#desk/desk.ts";
+import type { CardAnswer, DeskKeeper, NewCard } from "#desk/desk.ts";
 import type { Complete, JsonSchema } from "#engine/engine.ts";
 import type { QuickChoice } from "#engine/quick-model.ts";
 import {
@@ -15,6 +15,7 @@ import {
   type SavedWatermark,
   type SourceOptions,
 } from "#mail/imap.ts";
+import { createMailFolders, type FileInto } from "#mail/folders.ts";
 import { createOutlookToken } from "#mail/outlook.ts";
 import type { Account } from "#mail/providers.ts";
 import type { Card, DoneEntry } from "#protocol/types.ts";
@@ -51,11 +52,16 @@ export type MailOptions = {
   readonly sentPollMs?: number;
 };
 
-const decisions = ["quiet", "work", "urgent"] as const;
+const decisions = ["promotion", "notice", "newsletter", "record", "work", "urgent"] as const;
 
 type Decision = (typeof decisions)[number];
 
-type Judgement = { readonly decision: Decision; readonly reason: string; readonly confidence: number };
+type Judgement = {
+  readonly decision: Decision;
+  readonly folder: string;
+  readonly reason: string;
+  readonly confidence: number;
+};
 
 type Config = { readonly account: Account; readonly user: string; readonly auth: Auth; readonly key: string };
 
@@ -65,9 +71,23 @@ type FiledUndo = { readonly kind: "mail_filed"; readonly account: string; readon
 
 type BlockedUndo = { readonly kind: "mail_blocked"; readonly sender: string };
 
+// A quiet card asking whether to unsubscribe from a sender they've written to, and the mail it's about.
+type UnsubscribeAsk = {
+  readonly card: string;
+  readonly account: string;
+  readonly message_id: string;
+  readonly sender: string;
+};
+
 export const blockedSetting = "mail_blocked";
 
 export const watermarkSetting = "mail_watermark";
+
+export const unsubscribedSetting = "mail_unsubscribed";
+
+export const keptListsSetting = "mail_kept_lists";
+
+export const asksSetting = "mail_unsubscribe_asks";
 
 const accounts: readonly Account[] = ["icloud", "outlook", "gmail"];
 
@@ -76,15 +96,20 @@ const catchUpDays = 90;
 const chunkSize = 100;
 const textLimit = 6000;
 const sentSample = 30;
+const evidenceDays = 30;
+const evidenceLimit = 300;
+// How sure the attention pass must be to bin or file a mail itself; below it, Kumo looks.
+const sureEnough = 0.7;
 
 const attentionSchema: JsonSchema = {
   type: "object",
   properties: {
-    decision: { enum: ["quiet", "work", "urgent"] },
+    decision: { enum: decisions },
+    folder: { type: "string" },
     reason: { type: "string" },
     confidence: { type: "number" },
   },
-  required: ["decision", "reason", "confidence"],
+  required: ["decision", "folder", "reason", "confidence"],
   additionalProperties: false,
 };
 
@@ -146,33 +171,47 @@ const toJudgement = (answer: unknown): Judgement | undefined => {
   return decisions.includes(decision as Decision)
     ? {
         decision: decision as Decision,
+        folder: textOf(answer, "folder").trim(),
         reason: textOf(answer, "reason").trim(),
         confidence: typeof confidence === "number" ? confidence : 0,
       }
     : undefined;
 };
 
-const attentionPrompt = (account: string, mail: Mail): string =>
+const attentionPrompt = (account: string, mail: Mail, folders: string): string =>
   [
-    "You read every mail for the person and decide what it needs. Judge by consequences, not tone: who sent it, a",
-    "real deadline, the cost of waiting a day, and whether it touches something they care about.",
-    "- quiet: nothing for them to do or know (promotions, receipts with nothing wrong, newsletters, notifications).",
-    "- work: something to act on, keep or answer, such as a booking, a bill, a form, or a person writing to them.",
+    "You read every mail for the person and decide what it needs, so their inbox holds only what needs them. Judge",
+    "by consequences, not tone: who sent it, a real deadline, the cost of waiting a day, and whether it touches",
+    "something they care about.",
+    "- promotion: selling or marketing something, even from a shop or a service they use. It goes to the bin.",
+    "- notice: an automated notice with nothing worth keeping once read, such as a delivery update or a social",
+    "  notification. It goes to the bin.",
+    "- newsletter: writing they signed up to read, such as an editorial newsletter. It goes to their newsletters.",
+    "- record: worth keeping but needing nothing from them, such as a receipt, a statement or a confirmation with",
+    "  nothing to add. It's filed into a folder.",
+    "- work: something to act on, put on the calendar, keep track of or answer, such as a new booking, a bill, a",
+    "  form, a sign-in code they're waiting for, or a person writing to them.",
     "- urgent: work that can't wait a few hours, such as a same-day change, a security alert or a closing deadline.",
+    `For a record or a newsletter, give the folder it belongs in. ${folders} Name one of theirs exactly as written,`,
+    "or, with none yet, a short name for its kind, such as Receipts. Otherwise leave the folder empty.",
     "Give the reason in a line and how confident you are, from 0 to 1.",
     "",
     describe(account, mail),
   ].join("\n");
 
-const workPrompt = (account: string, mail: Mail, judged: Judgement): string =>
+const workPrompt = (account: string, mail: Mail, judged: Judgement, folders: string): string =>
   [
     `A mail arrived in their ${account} inbox, and you judged it ${judged.decision}: ${judged.reason}`,
     "",
     describe(account, mail),
     "",
     "Do what it needs. Put confirmed bookings on their calendar with add_event, saying in the notes which mail it",
-    "came from. Draft any reply with draft, in their voice; it's never sent. File or unsubscribe from noise. Keep",
-    "things in motion current, and record what you did with done.",
+    "came from. Draft any reply with draft, in their voice; it's never sent. Keep things in motion current, and",
+    "record what you did with done.",
+    "Then leave the inbox holding only what needs them. Once the mail needs nothing more from them, such as a",
+    "booking you've put on the calendar, file it with file_mail into one of their folders, and bin promotions",
+    "and noise. Leave it in the inbox while it still needs them, such as a reply you drafted or a bill to pay.",
+    folders,
     judged.decision === "urgent"
       ? "It's urgent: post one line with urgent set, so they hear now."
       : "Post one line only if they should know now.",
@@ -220,6 +259,31 @@ const summarise = (account: string, mail: Mail): string =>
 const isFiledUndo = (payload: unknown): payload is FiledUndo => fieldOf(payload, "kind") === "mail_filed";
 
 const isBlockedUndo = (payload: unknown): payload is BlockedUndo => fieldOf(payload, "kind") === "mail_blocked";
+
+const parsedList = (text = "[]"): readonly unknown[] => {
+  try {
+    const value = JSON.parse(text) as unknown;
+    return Array.isArray(value) ? (value as readonly unknown[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const toAsks = (text: string | undefined): readonly UnsubscribeAsk[] =>
+  parsedList(text).flatMap((item) => {
+    const [card, account, messageId, sender] = ["card", "account", "message_id", "sender"].map((field) =>
+      textOf(item, field),
+    );
+    return card && account && messageId && sender ? { card, account, message_id: messageId, sender } : [];
+  });
+
+// Who they've written to is judged by the sender's site, so a shop's offers count as known if they ever wrote to
+// its support desk. A country's second level stays, so shop.co.uk isn't everyone at co.uk.
+const siteOf = (address: string): string => {
+  const labels = (address.split("@", 2)[1] ?? address).toLowerCase().split(".");
+  const isCountryPair = labels.length > 2 && (labels.at(-2)?.length ?? 0) <= 3 && (labels.at(-1)?.length ?? 0) === 2;
+  return labels.slice(isCountryPair ? -3 : -2).join(".");
+};
 
 const mailReference = (account: string, mail: Mail): NonNullable<DoneEntry["mail"]> => ({
   account,
@@ -303,14 +367,188 @@ export const createMailbox = ({
     return blocked().some((sender) => (sender.startsWith("@") ? lower.endsWith(sender) : lower === sender));
   };
 
+  const fileInto: FileInto = async (reference, folder, reason) => {
+    const account = reference.account ?? "";
+    const connection = connectionOf(account);
+    if (!connection) return fail(`${account} mail isn't set up any more.`);
+    const filed = await connection.source.fileInto(reference.message_id, folder);
+    if (!filed.ok) return filed;
+    desk.addDone({
+      text: `Filed "${reference.subject}" from ${reference.from} into ${folder}`,
+      ...(reason !== "" && { reason }),
+      mail: reference,
+      quiet: false,
+      undo: { kind: "mail_filed", account, id: reference.message_id, back: "inbox" } satisfies FiledUndo,
+    });
+    return ok(undefined);
+  };
+
+  const evidence = async (): Promise<readonly string[]> => {
+    const since = toTimestamp(clock.now() - evidenceDays * dayMs);
+    const read = await Promise.all(
+      connections
+        .get()
+        .values()
+        .map(async ({ account, source }) => {
+          const recent = await source.recent(since);
+          return recent.ok ? recent.value.map((mail) => summarise(account, mail)) : [];
+        }),
+    );
+    return read
+      .flat()
+      .toSorted((left, right) => left.localeCompare(right))
+      .slice(-evidenceLimit);
+  };
+
+  const folders = createMailFolders({ store, desk, complete, info, fileInto, evidence });
+
   const judge = async (account: string, mail: Mail): Promise<Judgement> => {
-    const answered = await complete(attentionPrompt(account, mail), attentionSchema, await quickChoice());
+    const answered = await complete(
+      attentionPrompt(account, mail, folders.note()),
+      attentionSchema,
+      await quickChoice(),
+    );
     const judged = answered.ok ? toJudgement(answered.value) : undefined;
     if (judged) return judged;
     info("The attention pass couldn't judge a mail, so Kumo looks at it", {
       error: answered.ok ? "an answer out of shape" : answered.failure,
     });
-    return { decision: "work", reason: "The attention pass couldn't judge it.", confidence: 0 };
+    return { decision: "work", folder: "", reason: "The attention pass couldn't judge it.", confidence: 0 };
+  };
+
+  const listSetting = (key: string): readonly string[] => listOf(parsedList(store.setting(key)));
+
+  const remember = (key: string, sender: string): void => {
+    const senders = new Set([...listSetting(key), sender]);
+    store.setSetting(key, JSON.stringify([...senders]));
+  };
+
+  const asks = (): readonly UnsubscribeAsk[] => toAsks(store.setting(asksSetting));
+
+  const moveOut = async (
+    { account, source }: Connection,
+    mail: Mail,
+    to: "archive" | "bin",
+    reason: string,
+  ): Promise<void> => {
+    const filed = await source.file(mail.messageId, to);
+    if (!filed.ok) {
+      desk.addDone({
+        text: `Couldn't move "${mail.subject}" from ${senderOf(mail)}; it's still in your inbox`,
+        reason: filed.failure,
+        mail: mailReference(account, mail),
+        quiet: false,
+      });
+      return;
+    }
+    desk.addDone({
+      text: `${to === "bin" ? "Binned" : "Archived"} "${mail.subject}" from ${senderOf(mail)}`,
+      ...(reason !== "" && { reason }),
+      mail: mailReference(account, mail),
+      quiet: false,
+      undo: { kind: "mail_filed", account, id: mail.messageId, back: "inbox" } satisfies FiledUndo,
+    });
+  };
+
+  const unsubscribeNow = async ({ account, source }: Connection, mail: Mail, reason: string): Promise<void> => {
+    const done = await source.unsubscribe(mail);
+    if (!done.ok) {
+      info("A list couldn't be unsubscribed from", { error: done.failure });
+      return;
+    }
+    remember(unsubscribedSetting, mail.from.address.toLowerCase());
+    desk.addDone({
+      text: `Unsubscribed from ${senderOf(mail)}`,
+      reason,
+      mail: mailReference(account, mail),
+      quiet: false,
+    });
+  };
+
+  const answerAsk = async (card: { readonly id: string }, given: CardAnswer): Promise<undefined> => {
+    const ask = asks().find((candidate) => candidate.card === card.id);
+    store.setSetting(asksSetting, JSON.stringify(asks().filter((candidate) => candidate.card !== card.id)));
+    if (!ask) return undefined;
+    if (given.option !== "Unsubscribe") {
+      remember(keptListsSetting, ask.sender);
+      return undefined;
+    }
+    const connection = connectionOf(ask.account);
+    const read = connection ? await connection.source.read(ask.message_id) : fail("Its mail isn't set up any more.");
+    if (connection && read.ok) await unsubscribeNow(connection, read.value, "You asked");
+    else info("A list couldn't be unsubscribed from", { error: read.ok ? "no mail" : read.failure });
+    return undefined;
+  };
+
+  const askToUnsubscribe = (account: string, mail: Mail, sender: string): void => {
+    const card = desk.addCard({
+      kind: "question",
+      title: `Unsubscribe from ${senderOf(mail)}?`,
+      options: [{ label: "Unsubscribe" }, { label: "Stay subscribed" }],
+      allows_text: false,
+      quiet: true,
+      question: {
+        text: `Their promotions go to the bin. You've written to ${siteOf(sender)} before, so I'm asking first.`,
+      },
+    });
+    store.setSetting(
+      asksSetting,
+      JSON.stringify([...asks(), { card: card.id, account, message_id: mail.messageId, sender }]),
+    );
+    desk.handleCard(card.id, answerAsk);
+  };
+
+  // A promotion's list is left only when they've never written to the sender; otherwise they're asked, quietly.
+  const leaveList = async (connection: Connection, mail: Mail): Promise<void> => {
+    const sender = mail.from.address.toLowerCase();
+    const isSettled =
+      mail.unsubscribe === undefined ||
+      sender === "" ||
+      [...listSetting(unsubscribedSetting), ...listSetting(keptListsSetting)].includes(sender) ||
+      asks().some((ask) => ask.sender === sender);
+    if (isSettled) return;
+    const written = await connection.source.hasWritten(siteOf(sender));
+    if (!written.ok) {
+      info("Sent mail couldn't be checked, so Kumo stays subscribed", { error: written.failure });
+      return;
+    }
+    if (written.value) askToUnsubscribe(connection.account, mail, sender);
+    else await unsubscribeNow(connection, mail, "Promotions from a sender you've never written to");
+  };
+
+  const keep = async (connection: Connection, mail: Mail, judged: Judgement): Promise<void> => {
+    const folder = judged.folder || (judged.decision === "newsletter" ? "Newsletters" : "");
+    const placed =
+      folder === ""
+        ? fail("No folder was named.")
+        : await folders.place(mailReference(connection.account, mail), folder, judged.reason);
+    // With no folder of theirs to fit it, the archive keeps it out of the inbox and in search.
+    if (!placed.ok) await moveOut(connection, mail, "archive", judged.reason);
+  };
+
+  // What the attention pass can finish itself, when it's sure: the rest goes to Kumo.
+  const sort = async (connection: Connection, mail: Mail, judged: Judgement): Promise<boolean> => {
+    if (judged.confidence < sureEnough) return false;
+    switch (judged.decision) {
+      case "promotion": {
+        await moveOut(connection, mail, "bin", judged.reason);
+        await leaveList(connection, mail);
+        return true;
+      }
+      case "notice": {
+        await moveOut(connection, mail, "bin", judged.reason);
+        return true;
+      }
+      case "newsletter":
+      case "record": {
+        await keep(connection, mail, judged);
+        return true;
+      }
+      case "work":
+      case "urgent": {
+        return false;
+      }
+    }
   };
 
   const binBlocked = async ({ account, source }: Connection, mail: Mail): Promise<boolean> => {
@@ -337,16 +575,8 @@ export const createMailbox = ({
     }
     if (isBlocked(mail.from.address) && (await binBlocked(connection, mail))) return;
     const judged = await judge(account, mail);
-    if (judged.decision === "quiet") {
-      desk.addDone({
-        text: `Read "${mail.subject}" from ${senderOf(mail)}: nothing needed`,
-        ...(judged.reason !== "" && { reason: judged.reason }),
-        mail: mailReference(account, mail),
-        quiet: true,
-      });
-      return;
-    }
-    const done = await work(workPrompt(account, mail, judged));
+    if (await sort(connection, mail, judged)) return;
+    const done = await work(workPrompt(account, mail, judged, folders.note()));
     if (done.ok) return;
     desk.addDone({
       text: `Couldn't look at "${mail.subject}" from ${senderOf(mail)}; it's still in your inbox`,
@@ -493,6 +723,10 @@ export const createMailbox = ({
       draft: { ...draft, body, message_id: saved.value.messageId },
     };
   };
+
+  for (const ask of asks()) {
+    if (desk.cards().some((card) => card.id === ask.card)) desk.handleCard(ask.card, answerAsk);
+  }
 
   desk.handle("draft", async (card, answer) => {
     if (answer.text !== undefined) return rewrite(card, answer.text);
@@ -679,15 +913,17 @@ export const createMailbox = ({
       title: "File a mail",
       audience: "work",
       description:
-        "Archive, bin, flag or unflag a mail, or move it back to the inbox. Archiving and binning are recorded in " +
-        "their Done list with an undo, so don't record them again.",
+        "File a mail into one of their folders, archive it, bin it, flag or unflag it, or move it back to the " +
+        "inbox. Moves are recorded in their Done list with an undo, so don't record them again.",
       inputSchema: {
         type: "object",
         properties: {
           account: accountField,
           message_id: { type: "string" },
-          to: { enum: ["archive", "bin", "inbox", "flag", "unflag"] },
-          reason: { type: "string" },
+          to: { enum: ["folder", "archive", "bin", "inbox", "flag", "unflag"] },
+          folder: { type: "string", description: "With to folder: which of their folders, such as Bookings & travel." },
+          new_folder: { type: "boolean", description: "Make the folder first, only when they've asked for a new one." },
+          reason: { type: "string", description: "Why, in a line, for their Done list." },
         },
         required: ["message_id", "to"],
         additionalProperties: false,
@@ -695,8 +931,20 @@ export const createMailbox = ({
       call: (input) =>
         withSource(textOf(input, "account"), async ({ account, source }) => {
           const id = textOf(input, "message_id");
-          const to = textOf(input, "to") as Filing;
           const read = await source.read(id);
+          if (textOf(input, "to") === "folder") {
+            const folder = textOf(input, "folder").trim();
+            if (folder === "") return failed("Say which folder, with folder.");
+            if (!read.ok) return failed(read.failure);
+            const reason = textOf(input, "reason").trim();
+            const reference = mailReference(account, read.value);
+            const isNew = fieldOf(input, "new_folder") === true;
+            const placed = await (isNew
+              ? folders.add(reference, folder, reason)
+              : folders.place(reference, folder, reason));
+            return placed.ok ? { text: placed.value } : failed(placed.failure);
+          }
+          const to = textOf(input, "to") as Filing;
           const filed = await source.file(id, to);
           if (!filed.ok) return failed(filed.failure);
           if ((to === "archive" || to === "bin") && read.ok) {
@@ -719,7 +967,11 @@ export const createMailbox = ({
       description: "Unsubscribe them from the list a mail came from, through its unsubscribe link. It's recorded.",
       inputSchema: {
         type: "object",
-        properties: { account: accountField, message_id: { type: "string" } },
+        properties: {
+          account: accountField,
+          message_id: { type: "string" },
+          reason: { type: "string", description: "Why, in a line, for their Done list." },
+        },
         required: ["message_id"],
         additionalProperties: false,
       },
@@ -729,8 +981,11 @@ export const createMailbox = ({
           if (!read.ok) return failed(read.failure);
           const done = await source.unsubscribe(read.value);
           if (!done.ok) return failed(done.failure);
+          remember(unsubscribedSetting, read.value.from.address.toLowerCase());
+          const reason = textOf(input, "reason").trim();
           desk.addDone({
             text: `Unsubscribed from ${senderOf(read.value)}`,
+            ...(reason !== "" && { reason }),
             mail: mailReference(account, read.value),
             quiet: false,
           });
@@ -805,6 +1060,7 @@ export const createMailbox = ({
       if (index + 1 < parts) onProgress((index + 1) * chunkSize, lines.length);
     }
     if (parts > 0 && failures.get() === parts) return fail("Kumo couldn't read any of it.");
+    await folders.propose(lines);
     const sent = await Promise.all(
       connections
         .get()

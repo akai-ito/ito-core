@@ -1,6 +1,6 @@
 ---
 name: mail
-description: "Their mail, from the conversation: find mail, read whole threads, draft replies in their voice (never sent), archive, bin, unsubscribe and block, with ito mail commands."
+description: "Their mail, from the conversation: find mail, read whole threads, draft replies in their voice (never sent), file into their folders, bin, unsubscribe and block, with ito mail commands."
 ---
 
 # Mail
@@ -35,8 +35,15 @@ These commands are for when they bring mail up, or when a conversation needs it.
 
 ## Tidying
 
-- `file --to archive` takes a mail out of the inbox and keeps it; `--to bin` is for noise. Both are
-  recorded in their Done list with an undo, so don't record them again.
-- `unsubscribe` uses the list's own unsubscribe link. Do it when they ask, or for promotions they
-  never open. Ask first for a sender they've written to.
+Their inbox holds only what needs them. You sort each mail as it arrives: noise goes to the bin, and
+what's worth keeping but needs nothing from them goes into one of their few folders, such as Money &
+receipts or Newsletters.
+
+- `file --to folder --folder <name>` files a mail into one of their folders; a wrong name lists
+  them. `--to archive` keeps a mail no folder fits, and `--to bin` is for noise. Each is recorded in
+  their Done list with an undo, so don't record them again.
+- Keep the folders few: make a new one with `--new-folder` only when they ask for it.
+- `unsubscribe` uses the list's own unsubscribe link. Do it when they ask, or for promotions from a
+  sender they've never written to. Ask first for a sender they've written to, and never unsubscribe
+  from a newsletter they read.
 - `block` is for a sender they want gone for good: every future mail from them goes to the bin.

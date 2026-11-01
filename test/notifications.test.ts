@@ -9,13 +9,14 @@ import { toDeviceId, toTurnId } from "#conversation/ids.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { createApns, type ApnsCredentials } from "#notifications/apns.ts";
 import { openNotification, sealNotification } from "#notifications/crypto.ts";
-import { createNotifier } from "#notifications/notifier.ts";
+import { createNotifier, type Envelope } from "#notifications/notifier.ts";
 import { createPresence } from "#notifications/presence.ts";
 import { toFirstLine } from "#notifications/text.ts";
 import { ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, toKeyId } from "#store/store.ts";
 import { startFakeApns, type FakeApns } from "./support/fake-apns.ts";
+import { createVirtualClock } from "./support/virtual-clock.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-notifications-"));
 const apnsServer = createCell<FakeApns | undefined>(undefined);
@@ -35,6 +36,8 @@ const device = {
   keyId: toKeyId(notificationKey),
   registeredAt: "2026-10-15T12:00:00.000Z",
 };
+
+const ignore = (): void => undefined;
 
 const currentApns = (): FakeApns => {
   const current = apnsServer.get();
@@ -117,6 +120,42 @@ describe("notifications", () => {
     const unset = createApns(() => unconfigured.get(), { production: fake.origin, sandbox: fake.origin }, systemClock);
     expect(await unset.send(device, { aps: {} }, Date.now())).toMatchObject({ ok: false });
     apns.close();
+  });
+
+  it("send a card that can wait without a sound, and one that matters now with one", async () => {
+    const clock = createVirtualClock(Date.parse("2026-11-10T12:00:00.000Z"));
+    const store = createStore(openDatabase(path.join(home, "cards.db")), clock, randomIdentifiers);
+    store.registerDevice(device.id, device);
+    const levels = createCell<readonly unknown[]>([]);
+    const notifier = createNotifier({
+      store,
+      apns: {
+        send: (_device, envelope) => {
+          levels.update((current) => [...current, (envelope as Envelope).aps["interruption-level"]]);
+          return Promise.resolve(ok("sent"));
+        },
+        close: ignore,
+      },
+      clock,
+      presence: createPresence(),
+      agentName: () => "Ari",
+      log: ignore,
+      reminderMs: 60_000,
+      timeZone: "UTC",
+    });
+    const card = { at: "2026-11-10T12:00:00.000Z", kind: "question" as const, options: [], allows_text: false };
+    store.setDesk({
+      coming_up: [],
+      waiting: [{ ...card, id: "k_1", title: "Unsubscribe from Pizza Place?", quiet: true, question: { text: "?" } }],
+    });
+    await expect.poll(() => levels.get()).toEqual(["passive"]);
+    store.setDesk({
+      coming_up: [],
+      waiting: [{ ...card, id: "k_2", title: "Folders for your mail", question: { text: "?" } }],
+    });
+    await expect.poll(() => levels.get()).toEqual(["passive", "active"]);
+    notifier.close();
+    store.close();
   });
 
   it("forget a device APNs says is gone", async () => {
