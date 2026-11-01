@@ -552,6 +552,29 @@ describe("over IMAP", () => {
     expect(await source.file("missing@example.com", "archive")).toEqual(gone);
   });
 
+  it("files a mail into a folder of theirs, making it first, and still finds it there", async () => {
+    const source = connect();
+    expect(await source.fileInto(ids.booking, "Bookings & travel")).toEqual({ ok: true, value: undefined });
+    const filed = await source.read(ids.booking);
+    expect(filed.ok ? filed.value.folder : filed.failure).toBe("Bookings & travel");
+    const found = await source.search({ from: "noreply@stays.example" });
+    expect(found.ok ? found.value.map(({ messageId }) => messageId) : found.failure).toEqual([ids.booking]);
+    expect(await source.fileInto(ids.newsletter, "receipts")).toEqual({ ok: true, value: undefined });
+    const moved = await source.read(ids.newsletter);
+    expect(moved.ok ? moved.value.folder : moved.failure).toBe("Receipts");
+    expect(await source.file(ids.booking, "inbox")).toEqual({ ok: true, value: undefined });
+    const back = await source.read(ids.booking);
+    expect(back.ok ? back.value.folder : back.failure).toBe("INBOX");
+    expect(await source.fileInto("missing@example.com", "Receipts")).toEqual(gone);
+  });
+
+  it("knows whom they've written to, by address or by domain", async () => {
+    const source = connect();
+    expect(await source.hasWritten("lena@studio.example")).toEqual({ ok: true, value: true });
+    expect(await source.hasWritten("studio.example")).toEqual({ ok: true, value: true });
+    expect(await source.hasWritten("deals@stays.example")).toEqual({ ok: true, value: false });
+  });
+
   it("saves a draft reply, replaces it and removes it", async () => {
     const source = connect();
     const first = await source.draft(replyDraft);

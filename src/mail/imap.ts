@@ -40,6 +40,10 @@ export type MailSource = {
   readonly draft: (draft: Draft) => Promise<Result<{ readonly messageId: string }, string>>;
   readonly removeDraft: (messageId: string) => Promise<Result<undefined, string>>;
   readonly file: (messageId: string, filing: Filing) => Promise<Result<undefined, string>>;
+  // Moves a mail into the folder of that name, making the folder first when the account hasn't one.
+  readonly fileInto: (messageId: string, folder: string) => Promise<Result<undefined, string>>;
+  // Whether they've ever written to an address, or to anyone at a domain.
+  readonly hasWritten: (address: string) => Promise<Result<boolean, string>>;
   readonly unsubscribe: (mail: Mail) => Promise<Result<"posted" | "mailed", string>>;
   readonly sent: (since: string) => Promise<Result<readonly Mail[], string>>;
   readonly close: () => Promise<void>;
@@ -63,6 +67,7 @@ export type SavedWatermark = { readonly uidValidity: string; readonly next: numb
 
 type Folders = {
   readonly inbox: string;
+  readonly list: readonly ListResponse[];
   readonly archive?: string;
   readonly sent?: string;
   readonly drafts?: string;
@@ -132,6 +137,7 @@ const toFolders = (list: readonly ListResponse[]): Folders => {
   const all = specialPath(list, "\\All");
   return {
     inbox,
+    list,
     archive: specialPath(list, "\\Archive") ?? all,
     sent: specialPath(list, "\\Sent"),
     drafts: specialPath(list, "\\Drafts"),
@@ -670,6 +676,27 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return removed.value ? ok(undefined) : fail("That draft isn't in the Drafts folder any more.");
     });
 
+  const folderNamed = ({ folders }: Session, name: string): string | undefined => {
+    const wanted = name.trim().toLowerCase();
+    return folders.list.find(
+      (entry) => isSelectable(entry) && (entry.name.toLowerCase() === wanted || entry.path.toLowerCase() === wanted),
+    )?.path;
+  };
+
+  const ensureFolder = async (opened: Session, name: string): Promise<Result<string, string>> => {
+    const found = folderNamed(opened, name);
+    if (found !== undefined) return ok(found);
+    const delimiter = opened.folders.list.find((entry) => entry.delimiter)?.delimiter ?? "/";
+    // A name is one folder at the top, never a path into others.
+    const wanted = name.replaceAll(delimiter, "-").trim();
+    if (wanted === "") return fail("A folder needs a name.");
+    const created = await opened.client.mailboxCreate(wanted);
+    const folders = toFolders(await opened.client.list());
+    sessions.set(Promise.resolve(ok({ client: opened.client, folders })));
+    log("Made a mail folder", { folder: created.path });
+    return ok(created.path);
+  };
+
   const file: MailSource["file"] = (messageId, filing) =>
     run("filing the mail", async (opened) => {
       const place = await locate(opened.client, everywhere(opened), messageId);
@@ -685,6 +712,24 @@ export const createMailSource = (options: SourceOptions): MailSource => {
         const signIn = await credentials();
         return signIn.ok ? sendLetter(smtp, signIn.value, letter) : signIn;
       },
+    });
+
+  const fileInto: MailSource["fileInto"] = (messageId, folder) =>
+    run("filing the mail", async (opened) => {
+      const place = await locate(opened.client, everywhere(opened), messageId);
+      if (!place.ok) return place;
+      if (place.value === undefined) return fail(gone);
+      const target = await ensureFolder(opened, folder);
+      return target.ok ? move(opened, place.value, target.value, folder) : target;
+    });
+
+  const hasWritten: MailSource["hasWritten"] = (address) =>
+    run("reading sent mail", async (opened) => {
+      const { sent } = opened.folders;
+      if (sent === undefined) return ok(false);
+      const query: SearchObject = { or: [{ to: address }, { cc: address }] };
+      const uids = await inFolder(opened.client, sent, () => searchUids(opened.client, query));
+      return uids.ok ? ok(uids.value.length > 0) : uids;
     });
 
   const sent: MailSource["sent"] = (since) =>
@@ -704,5 +749,21 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     await signOff(opened.value.client);
   };
 
-  return { account, check, watch, recent, read, search, thread, draft, removeDraft, file, unsubscribe, sent, close };
+  return {
+    account,
+    check,
+    watch,
+    recent,
+    read,
+    search,
+    thread,
+    draft,
+    removeDraft,
+    file,
+    fileInto,
+    hasWritten,
+    unsubscribe,
+    sent,
+    close,
+  };
 };

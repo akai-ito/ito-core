@@ -9,7 +9,11 @@ export type ArrivingMail = {
   readonly to: readonly string[];
   readonly subject: string;
   readonly text: string;
+  readonly unsubscribe?: string;
 };
+
+// Where a mail was moved: a filing such as bin, or a folder of theirs by name.
+export type Moved = { readonly account: string; readonly messageId: string; readonly to: string };
 
 export type FakeMail = {
   readonly create: (options: SourceOptions) => MailSource;
@@ -18,6 +22,8 @@ export type FakeMail = {
   readonly expectDrafts: (ids: readonly string[]) => void;
   readonly drafts: () => readonly Draft[];
   readonly removedDrafts: () => readonly string[];
+  readonly moved: () => readonly Moved[];
+  readonly unsubscribed: () => readonly string[];
   readonly send: (account: string, mail: Mail) => void;
   readonly breakReading: () => void;
 };
@@ -37,6 +43,8 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const draftIds = createCell<readonly string[]>([]);
   const saved = createCell<readonly Draft[]>([]);
   const removed = createCell<readonly string[]>([]);
+  const moves = createCell<readonly Moved[]>([]);
+  const unsubscribes = createCell<readonly string[]>([]);
   const sentMail = createCell<ReadonlyMap<string, readonly Mail[]>>(new Map());
   const isBroken = createCell(false);
 
@@ -58,8 +66,14 @@ export const createFakeMail = (now: () => string): FakeMail => {
     subject: mail.subject,
     date: now(),
     text: mail.text,
+    ...(mail.unsubscribe !== undefined && { unsubscribe: { post: mail.unsubscribe, url: mail.unsubscribe } }),
     flags: [],
   });
+
+  const move = (account: string, messageId: string, to: string): ReturnType<MailSource["file"]> => {
+    moves.update((all) => [...all, { account, messageId, to }]);
+    return Promise.resolve(ok(undefined));
+  };
 
   const create = ({ account, user }: SourceOptions): MailSource => ({
     account,
@@ -102,8 +116,16 @@ export const createFakeMail = (now: () => string): FakeMail => {
       removed.update((all) => [...all, messageId]);
       return Promise.resolve(ok(undefined));
     },
-    file: () => Promise.resolve(ok(undefined)),
-    unsubscribe: () => Promise.resolve(ok("posted" as const)),
+    file: (messageId, filing) => move(account, messageId, filing),
+    fileInto: (messageId, folder) => move(account, messageId, folder),
+    hasWritten: (address) =>
+      Promise.resolve(
+        ok((sentMail.get().get(account) ?? []).some((mail) => mail.to.some((to) => has(to.address, address)))),
+      ),
+    unsubscribe: (mail) => {
+      unsubscribes.update((all) => [...all, mail.messageId]);
+      return Promise.resolve(ok("posted" as const));
+    },
     sent: () => Promise.resolve(ok(sentMail.get().get(account) ?? [])),
     close: () => Promise.resolve(),
   });
@@ -136,6 +158,8 @@ export const createFakeMail = (now: () => string): FakeMail => {
     },
     drafts: () => saved.get(),
     removedDrafts: () => removed.get(),
+    moved: () => moves.get(),
+    unsubscribed: () => unsubscribes.get(),
     send: (account, mail) => {
       sentMail.update((all) => new Map([...all, [account, [...(all.get(account) ?? []), mail]]]));
     },
