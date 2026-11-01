@@ -7,6 +7,7 @@ import type { Store } from "#store/store.ts";
 export type DeskOptions = {
   readonly store: Pick<Store, "desk" | "listDone" | "findDone">;
   readonly desk: DeskKeeper;
+  readonly today: () => string;
   readonly schemaFor: (operationId: string) => RouteSchema;
 };
 
@@ -14,7 +15,7 @@ const toErrorResult = (code: CommandFailureCode, detail: string, message?: strin
   error: toCommandError(code, detail, message),
 });
 
-export const registerDesk = (app: FastifyInstance, { store, desk, schemaFor }: DeskOptions): void => {
+export const registerDesk = (app: FastifyInstance, { store, desk, today, schemaFor }: DeskOptions): void => {
   app.get("/v0/desk", { schema: schemaFor("getDesk") }, () => store.desk());
 
   app.post<{ Params: { readonly card: string }; Body: CardAnswer }>(
@@ -31,14 +32,39 @@ export const registerDesk = (app: FastifyInstance, { store, desk, schemaFor }: D
     },
   );
 
-  app.post<{ Params: { readonly briefing: string } }>(
-    "/v0/desk/briefing/:briefing/read",
-    { schema: schemaFor("readBriefing") },
+  app.post<{ Params: { readonly moment: string } }>(
+    "/v0/desk/moment/:moment/read",
+    { schema: schemaFor("readMoment") },
     async (request, reply) =>
-      desk.readBriefing(request.params.briefing)
+      desk.readMoment(request.params.moment)
         ? reply.code(204).send()
-        : reply.code(404).send(toErrorResult("not_found", `No briefing ${request.params.briefing}.`)),
+        : reply
+            .code(404)
+            .send(toErrorResult("not_found", `No moment ${request.params.moment}.`, "That line has moved on.")),
   );
+
+  app.post<{ Params: { readonly moment: string }; Body: CardAnswer }>(
+    "/v0/desk/moment/:moment/answer",
+    { schema: schemaFor("answerMoment") },
+    async (request, reply) => {
+      const answered = desk.answerMoment(request.params.moment, request.body);
+      if (answered.ok) return reply.code(202).send({ moment: answered.value });
+      return answered.failure === "not_found"
+        ? reply
+            .code(404)
+            .send(toErrorResult("not_found", `No moment ${request.params.moment}.`, "That line has moved on."))
+        : reply.code(400).send(toErrorResult("invalid_request", answered.failure));
+    },
+  );
+
+  app.get("/v0/work", { schema: schemaFor("getWork") }, () => {
+    const entries = desk.today();
+    return {
+      day: today(),
+      handled: entries.filter(({ quiet }) => !quiet),
+      cleared: entries.filter(({ quiet }) => quiet),
+    };
+  });
 
   app.get<{ Querystring: { readonly before?: string; readonly limit: number } }>(
     "/v0/done",

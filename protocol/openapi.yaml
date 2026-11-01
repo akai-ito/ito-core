@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.16"
+  version: "0.17"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -65,7 +65,7 @@ tags:
   - name: Onboarding
     description: Getting started, with what Kumo found and the beliefs it checks with you.
   - name: Desk
-    description: Home, with the briefing, Coming up, Waiting on you, Done, Kumo's scheduled looks and the calendar.
+    description: Home, with Kumo's line for the moment, Coming up, Waiting on you, Kumo's work, its scheduled looks and the calendar.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
   - name: Turns
@@ -157,7 +157,7 @@ paths:
                 version: 0.9.0
                 protocol: "0.9"
                 lead: { name: Kumo }
-                briefing: { not_before: "07:30" }
+                morning: { not_before: "07:30" }
                 agent:
                   model: gpt-6.1-sol
                   effort: low
@@ -494,8 +494,9 @@ paths:
       operationId: getDesk
       summary: Read the Desk
       description: |
-        Home: the briefing, Coming up and Waiting on you. The snapshot carries it too, and
-        `desk.changed` carries the whole Desk whenever it changes.
+        Home: Kumo's line for the moment, Coming up, Waiting on you, how much Kumo handled today
+        and when it last read your mail. The snapshot carries it too, and `desk.changed` carries
+        the whole Desk whenever it changes.
       responses:
         "200":
           description: The Desk.
@@ -505,19 +506,20 @@ paths:
             application/json:
               schema: { $ref: "events.schema.json#/$defs/Desk" }
         "401": { $ref: "#/components/responses/TokenRejected" }
-  /v0/desk/briefing/{briefing}/read:
+  /v0/desk/moment/{moment}/read:
     post:
       tags: [Desk]
-      operationId: readBriefing
-      summary: Say the briefing was seen
+      operationId: readMoment
+      summary: Say Kumo's line was seen
       description: |
-        Tells the box an app showed the briefing, so it can fold it and, later, write a "since this
-        morning" briefing only for what happened after.
+        Tells the box an app showed Kumo's line for the moment on the Desk. It's read from then
+        on, in the conversation too: no notification goes out for it, and three hours later it
+        gives way to all quiet. Saying it again changes nothing.
       parameters:
-        - name: briefing
+        - name: moment
           in: path
           required: true
-          schema: { $ref: "events.schema.json#/$defs/BriefingId" }
+          schema: { $ref: "events.schema.json#/$defs/MomentId" }
       responses:
         "204":
           description: Noted.
@@ -525,6 +527,57 @@ paths:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/desk/moment/{moment}/answer:
+    post:
+      tags: [Desk]
+      operationId: answerMoment
+      summary: Answer Kumo's line
+      description: |
+        Answers Kumo's line for the moment, like a card: tap one of its `options`, or type `text`
+        when it `allows_text`. The line shows `state: working`, with your `answer`, while Kumo acts
+        on it in the background, then gives way to all quiet; Done says what you answered and what
+        followed. If Kumo couldn't act, the line comes back to answer again, and Done says why.
+      parameters:
+        - name: moment
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/MomentId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MomentAnswer" }
+            example: { option: Ask me tonight }
+      responses:
+        "202":
+          description: Taken; Kumo is acting on it.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MomentResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/work:
+    get:
+      tags: [Desk]
+      operationId: getWork
+      summary: Read Kumo's work today
+      description: |
+        Kumo's work today, local time, for "47 in: 3 need you, 6 handled, 38 cleared": what it
+        handled, and the mail it read and cleared with nothing needed, each newest first with its
+        reason and whether it can be undone. What needs you is the Desk's `waiting`. Earlier days
+        are in `GET /v0/done`.
+      responses:
+        "200":
+          description: Today's work.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Work" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/desk/cards/{card}/answer:
     post:
       tags: [Desk]
@@ -607,19 +660,20 @@ paths:
               schema: { $ref: "#/components/schemas/Lead" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
-  /v0/briefing:
+  /v0/morning:
     put:
       tags: [Desk]
-      operationId: setBriefing
-      summary: Set when the morning briefing may come
+      operationId: setMorning
+      summary: Set when your morning starts
       description: |
-        The morning briefing comes at the first calm moment after `not_before`, local time: when
-        you first open Ito, or the first gap with nothing on your calendar.
+        Kumo's first line of the day comes at the first calm moment after `not_before`, local
+        time: when you first open the conversation, or the first gap with nothing on your
+        calendar, however late that is.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/BriefingSettings" }
+            schema: { $ref: "#/components/schemas/MorningSettings" }
             example: { not_before: "07:30" }
       responses:
         "200":
@@ -628,7 +682,7 @@ paths:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/BriefingSettings" }
+              schema: { $ref: "#/components/schemas/MorningSettings" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/turns/{turn}/stop:
@@ -2006,6 +2060,44 @@ components:
       required: [card]
       properties:
         card: { $ref: "events.schema.json#/$defs/Card" }
+    MomentAnswer:
+      description: Your answer to Kumo's line, one of `option` or `text`.
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      maxProperties: 1
+      properties:
+        option:
+          description: The label of the option you tapped.
+          type: string
+          minLength: 1
+        text:
+          description: A typed reply.
+          type: string
+          minLength: 1
+          maxLength: 4000
+    MomentResult:
+      type: object
+      required: [moment]
+      properties:
+        moment: { $ref: "events.schema.json#/$defs/Moment" }
+    Work:
+      description: Kumo's work today. It will grow, such as with how much Kumo checks with you.
+      type: object
+      required: [day, handled, cleared]
+      properties:
+        day:
+          description: Today, local time, such as `2026-11-05`.
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        handled:
+          description: What Kumo did without you today, newest first.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/DoneEntry" }
+        cleared:
+          description: The mail Kumo read and left alone today (`quiet`), newest first.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/DoneEntry" }
     NewEvent:
       type: object
       required: [title, start, end]
@@ -2032,18 +2124,18 @@ components:
           minLength: 1
           maxLength: 40
           pattern: \S
-    BriefingSettings:
+    MorningSettings:
       type: object
       required: [not_before]
       additionalProperties: false
       properties:
         not_before:
-          description: The earliest local time the morning briefing may come, such as `07:30`.
+          description: The earliest local time Kumo's first line of the day may come, such as `07:30`.
           type: string
           pattern: ^([01]\d|2[0-3]):[0-5]\d$
     ServerInfo:
       type: object
-      required: [name, version, protocol, lead, agent, briefing, setup, capabilities]
+      required: [name, version, protocol, lead, agent, morning, setup, capabilities]
       properties:
         name:
           description: The server's name, usually its host name.
@@ -2057,8 +2149,8 @@ components:
           pattern: ^\d+\.\d+$
         lead:
           $ref: "#/components/schemas/Lead"
-        briefing:
-          $ref: "#/components/schemas/BriefingSettings"
+        morning:
+          $ref: "#/components/schemas/MorningSettings"
         agent:
           description: The model Kumo runs on.
           type: object

@@ -54,6 +54,8 @@ export type MailOptions = {
   readonly info: Info;
   readonly comingUp?: () => readonly CalendarItem[];
   readonly onHealth?: (account: Account, health: Health) => void;
+  // When Kumo reads a new mail, and undefined once no account is connected.
+  readonly onReading?: (at: string | undefined) => void;
   readonly createSource?: CreateMailSource;
   readonly sentPollMs?: number;
 };
@@ -393,6 +395,7 @@ export const createMailbox = ({
   info,
   comingUp = () => [],
   onHealth = ignore,
+  onReading = ignore,
   createSource = createMailSource,
   sentPollMs = 5 * 60 * 1000,
 }: MailOptions): Mailbox => {
@@ -669,6 +672,7 @@ export const createMailbox = ({
       restored.update((current) => new Set([...current].filter((id) => id !== mail.messageId)));
       return;
     }
+    onReading(toTimestamp(clock.now()));
     if (isBlocked(mail.from.address) && (await binBlocked(connection, mail))) return;
     const judged = await judge(account, mail);
     if (await sort(connection, mail, judged)) return;
@@ -731,6 +735,7 @@ export const createMailbox = ({
       watching.set(connection);
       connections.update((all) => new Map([...all, [account, connection]]));
     }
+    if (connections.get().size === 0) onReading(undefined);
   };
 
   const draftCards = (): readonly Card[] => desk.cards().filter((card) => card.kind === "draft" && card.draft);
@@ -1031,11 +1036,12 @@ export const createMailbox = ({
               )
             : [];
           for (const old of replaced) {
-            desk.removeCard(old.id);
             const removed = old.draft ? await source.removeDraft(old.draft.message_id) : ok(undefined);
             if (!removed.ok) info("A replaced draft couldn't be removed", { error: removed.failure });
           }
-          const card = desk.addCard({
+          const [kept, ...dropped] = replaced;
+          for (const old of dropped) desk.removeCard(old.id);
+          const fresh: NewCard = {
             kind: "draft",
             title: textOf(input, "title").trim() || draftTitle(to[0] ?? "", answering),
             options: [{ label: "Drop it" }],
@@ -1050,8 +1056,11 @@ export const createMailbox = ({
               message_id: saved.value.messageId,
               ...(answering && { in_reply_to: answering.messageId }),
             },
-          });
-          return { text: `Saved the draft in Drafts and put it on the Desk as ${card.id}.` };
+          };
+          // The new draft takes the old one's place on the Desk, marked changed.
+          if (kept) desk.replaceCard(kept.id, fresh);
+          const id = kept?.id ?? desk.addCard(fresh).id;
+          return { text: `Saved the draft in Drafts and put it on the Desk as ${id}.` };
         }),
     },
     {

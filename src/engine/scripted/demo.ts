@@ -287,15 +287,15 @@ const showGettingStarted: Act["act"] = async (callTool) => {
   await callTool("show_getting_started", {});
 };
 
-const briefNow: Act["act"] = async (callTool) => {
-  await callTool("brief_now", {});
+const momentNow: Act["act"] = async (callTool) => {
+  await callTool("moment_now", {});
 };
 
 const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {
   const chosen = [
     { pattern: /\bdesk\b/u, act: fillDesk, said: "I've put a question and an offer on your Desk." },
     { pattern: /\btimes\b/u, act: offerTimes, said: "Pick the times that are clear at work; they're on your Desk." },
-    { pattern: /\bbriefing\b/u, act: briefNow, said: "Your briefing is at the top of the Desk." },
+    { pattern: /\bmoment\b/u, act: momentNow, said: "My line for the moment is at the top of the Desk." },
     { pattern: /\binvite\b/u, act: showInvite, said: "Tess's invite is on your Desk." },
     { pattern: /\bmail\b/u, act: showMail, said: "A booking came in; there's a draft for you on the Desk." },
     { pattern: /\bstart\b/u, act: showGettingStarted, said: "I've read your mail. Here's what I found." },
@@ -309,7 +309,9 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
 export const demoWork =
   (callTool: CallTool): Engine["work"] =>
   async (prompt, run) => {
-    if (prompt.includes("You asked them on the Desk")) return ok("Noted; nothing more was needed.");
+    if (prompt.includes("You asked them on the Desk") || prompt.includes("At the top of their Desk")) {
+      return ok("Noted; nothing more was needed.");
+    }
     if (!prompt.includes("Post your first question")) return fail("The demo does no background work.");
     await callTool("post", { text: "While I read: what would make the next month a good one for you?" }, run);
     return ok("Asked.");
@@ -317,14 +319,13 @@ export const demoWork =
 
 export const demoAnswers: Complete = (_prompt, schema) => {
   const fields = Object.keys(schema.properties ?? {});
-  if (fields.includes("lines")) {
+  if (fields.includes("important")) {
     return Promise.resolve(
       ok({
-        lines: [
-          { text: "Tess sent the Teams link for Thursday; it's on the event.", card: "" },
-          { text: "Body: easy 30 minutes or rest; big afternoon.", card: "" },
-        ],
-        handled: 9,
+        text: "Hotel Orto needs a word before Friday; the rest of today can bend around your 2 o'clock.",
+        options: ["Ask me tonight"],
+        reply: true,
+        important: true,
       }),
     );
   }

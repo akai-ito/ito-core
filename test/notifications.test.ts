@@ -122,38 +122,53 @@ describe("notifications", () => {
     apns.close();
   });
 
-  it("send a card that can wait without a sound, and one that matters now with one", async () => {
-    const clock = createVirtualClock(Date.parse("2026-11-10T12:00:00.000Z"));
-    const store = createStore(openDatabase(path.join(home, "cards.db")), clock, randomIdentifiers);
+  it("notify once for Kumo's line while it's unread, never for one read on the Desk, and not as a post", async () => {
+    const start = Date.parse("2026-11-10T12:00:00.000Z");
+    const clock = createVirtualClock(start);
+    const store = createStore(openDatabase(path.join(home, "moments.db")), clock, randomIdentifiers);
     store.registerDevice(device.id, device);
-    const levels = createCell<readonly unknown[]>([]);
+    const sent = createCell<readonly Envelope[]>([]);
     const notifier = createNotifier({
       store,
       apns: {
         send: (_device, envelope) => {
-          levels.update((current) => [...current, (envelope as Envelope).aps["interruption-level"]]);
+          sent.update((current) => [...current, envelope as Envelope]);
           return Promise.resolve(ok("sent"));
         },
         close: ignore,
       },
       clock,
       presence: createPresence(),
-      agentName: () => "Ari",
+      agentName: () => "Kumo",
       log: ignore,
       reminderMs: 60_000,
       timeZone: "UTC",
+      graceMs: 30_000,
     });
-    const card = { at: "2026-11-10T12:00:00.000Z", kind: "question" as const, options: [], allows_text: false };
-    store.setDesk({
-      coming_up: [],
-      waiting: [{ ...card, id: "k_1", title: "Unsubscribe from Pizza Place?", quiet: true, question: { text: "?" } }],
+    const say = (id: string, text: string): string => {
+      const message = store.postMessage(text, "moment");
+      const moment = { id, kind: "news" as const, at: message.at, text, message: message.id };
+      store.setDesk({ coming_up: [], waiting: [], handled: 0, moment: { ...moment, options: [], allows_text: false } });
+      return message.id;
+    };
+    const unread = say("o_1", "Maya asked how Monday went.");
+    notifier.moment("o_1", false);
+    clock.runNext(start + 30_000);
+    await expect.poll(() => sent.get().length).toBe(1);
+    const read = say("o_2", "Sam moved climbing to 8.");
+    notifier.moment("o_2", true);
+    const shown = store.desk().moment;
+    if (shown) store.setDesk({ ...store.desk(), moment: { ...shown, read_at: "2026-11-10T12:00:31.000Z" } });
+    clock.runNext(start + 60_000);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(sent.get().map(({ aps }) => aps["interruption-level"])).toEqual(["active"]);
+    expect(openNotification(sent.get()[0]?.ito ?? { v: 1, k: "", n: "", c: "" }, device)).toEqual({
+      kind: "moment",
+      text: "Maya asked how Monday went.",
+      message: unread,
     });
-    await expect.poll(() => levels.get()).toEqual(["passive"]);
-    store.setDesk({
-      coming_up: [],
-      waiting: [{ ...card, id: "k_2", title: "Folders for your mail", question: { text: "?" } }],
-    });
-    await expect.poll(() => levels.get()).toEqual(["passive", "active"]);
+    expect(read).not.toBe(unread);
     notifier.close();
     store.close();
   });

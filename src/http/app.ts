@@ -20,6 +20,7 @@ import type { Motions } from "#motion/motion.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { leadOf, notBeforeOf, registerSettings } from "#http/settings.ts";
 import { registerDesk } from "#http/desk.ts";
+import { toLocal } from "#desk/day.ts";
 import { registerOnboarding } from "#http/onboarding.ts";
 import type { GettingStarted } from "#onboarding/onboarding.ts";
 import type { DeskKeeper } from "#desk/desk.ts";
@@ -58,6 +59,7 @@ export type AppOptions = {
   readonly models: ListModels;
   readonly heartbeatMs: number;
   readonly desk: DeskKeeper;
+  readonly timeZone: string;
   readonly calendar: Calendar;
   readonly onLeadRenamed: () => void;
   readonly gettingStarted: GettingStarted;
@@ -112,6 +114,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     models,
     heartbeatMs,
     desk,
+    timeZone,
     calendar,
     onLeadRenamed,
     gettingStarted,
@@ -174,7 +177,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       version: info.version,
       protocol,
       lead: { name: leadOf(store) },
-      briefing: { not_before: notBeforeOf(store) },
+      morning: { not_before: notBeforeOf(store) },
       agent: {
         ...(model && { model }),
         ...(effort && { effort }),
@@ -189,7 +192,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   registerCapabilities(app, host, schemaFor);
   registerSettings(app, { store, onLeadRenamed, schemaFor });
-  registerDesk(app, { store, desk, schemaFor });
+  registerDesk(app, { store, desk, today: () => toLocal(clock.now(), timeZone).day, schemaFor });
   registerOnboarding(app, { gettingStarted, schemaFor });
   app.post<{
     Body: {

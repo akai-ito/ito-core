@@ -102,7 +102,7 @@ const openBox = (
       return added;
     },
   } as unknown as DeskKeeper;
-  const workTools = createWorkTools({ store: { postMessage: () => ({}) as never }, desk });
+  const workTools = createWorkTools({ post: () => "Told them.", desk });
   const mailbox = createMailbox({
     host: {
       find: (id) => (id === "icloud" ? { id, state: "on", values: icloud, manifest: undefined as never } : undefined),
