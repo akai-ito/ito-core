@@ -124,6 +124,8 @@ const isAbout = (line: Line, area: string | undefined): boolean => {
 };
 
 const shown = (value: unknown): string => {
+  if (typeof value === "number") return String(Number.isSafeInteger(value) ? value : Math.round(value * 10) / 10);
+  if (typeof value === "boolean") return String(value);
   const text = typeof value === "string" ? value : JSON.stringify(value);
   const short = text.length > valueLimit ? `${text.slice(0, valueLimit)}…` : text;
   return typeof value === "string" && /^[^\s"=]+$/u.test(short) ? short : JSON.stringify(short);
