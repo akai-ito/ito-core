@@ -31,7 +31,7 @@ import { codexVersion } from "#engine/codex/binary.ts";
 import { readChoice, restartedDetail, type Engine, type ToolServer } from "#engine/engine.ts";
 import { createApp } from "#http/app.ts";
 import { createGate, createToken, tokenSetting } from "#http/auth.ts";
-import { leadOf } from "#http/settings.ts";
+import { leadOf, notBeforeOf } from "#http/settings.ts";
 import { registerTools, toolsPath } from "#http/tools.ts";
 import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
@@ -73,6 +73,13 @@ import {
   type Problems,
 } from "#problems/problems.ts";
 import { createModestChoice, createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
+import { createBlockStore } from "#day/blocks.ts";
+import { createCheckins, type DemoCheckin } from "#day/checkins.ts";
+import { createNights } from "#day/nights.ts";
+import { createDayPicture, type DayPicture } from "#day/picture.ts";
+import { createQuestions } from "#day/questions.ts";
+import { sampleDay } from "#day/samples.ts";
+import { registerDay } from "#http/day.ts";
 import { contextRun, inToolContext } from "#tools/context.ts";
 
 export type ServerOptions = {
@@ -420,6 +427,7 @@ export const createServer = (options: ServerOptions): Server => {
     },
     ...(options.createMailSource && { createSource: options.createMailSource }),
   });
+  const pictureCell = createCell<DayPicture | undefined>(undefined);
   const calendar = createCalendar({
     host,
     desk,
@@ -430,7 +438,24 @@ export const createServer = (options: ServerOptions): Server => {
     onHealth: (health) => {
       problems.report(calendarId, health, calendarProblem);
     },
+    enrich: (item) => pictureCell.get()?.enrich(item) ?? item,
   });
+  const nights = createNights(store, timeZone);
+  const questions = createQuestions(store, clock, timeZone);
+  const picture = createDayPicture({
+    blocks: createBlockStore(database),
+    calendar,
+    motions,
+    nights,
+    settings: store,
+    clock,
+    timeZone,
+    work: runWork,
+    info,
+    lead: () => leadOf(store),
+    morning: () => notBeforeOf(store),
+  });
+  pictureCell.set(picture);
   calendar.onEventEnded((uid) => {
     jobs.onEventEnded(uid);
   });
@@ -476,6 +501,26 @@ export const createServer = (options: ServerOptions): Server => {
     identifiers,
     lead: () => leadOf(store),
     notify: notifier.moment,
+    info,
+    beforeDay: () => picture.plan(),
+  });
+  const checkins = createCheckins({
+    store,
+    clock,
+    timeZone,
+    presence,
+    isBusy,
+    isGettingStarted: () => gettingStarted.state().state !== "done",
+    nights,
+    picture,
+    questions,
+    moments,
+    complete: quickComplete,
+    choice: createModestChoice(listedModels, () => readChoice(store.setting)),
+    work: runWork,
+    motions,
+    lead: () => leadOf(store),
+    morning: () => notBeforeOf(store),
     info,
   });
   const trust = createTrust({
@@ -596,6 +641,8 @@ export const createServer = (options: ServerOptions): Server => {
     ...createWorkTools({ post: moments.tell, desk }),
     ...trust.tools,
     ...calendar.tools,
+    ...picture.tools,
+    questions.tool,
     ...jobs.tools,
     ...mail.tools,
     ...gettingStarted.tools,
@@ -715,6 +762,35 @@ export const createServer = (options: ServerOptions): Server => {
       },
     },
     {
+      name: "show_day",
+      title: "Show a sample day",
+      audience: "hidden",
+      description:
+        "Put a sample day, Kumo's plan and its guesses, in Coming up, then write the day's line, for the demo.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      call: async () => {
+        desk.setComingUp(sampleDay(clock.now(), timeZone, identifiers));
+        await moments.dayNow();
+        return { text: "Showed a sample day." };
+      },
+    },
+    {
+      name: "show_checkin",
+      title: "Show a check-in",
+      audience: "hidden",
+      description: "Show one of Kumo's check-ins now, whatever the time, for the demo.",
+      inputSchema: {
+        type: "object",
+        properties: { kind: { enum: ["commit", "pre", "past", "question", "drift"] } },
+        required: ["kind"],
+        additionalProperties: false,
+      },
+      call: async (input) => {
+        const said = await checkins.show((input as { readonly kind: DemoCheckin }).kind);
+        return { text: said === "" ? "Nothing to say." : `Said: ${said}` };
+      },
+    },
+    {
       name: "moment_now",
       title: "Write Kumo's line now",
       audience: "hidden",
@@ -746,6 +822,7 @@ export const createServer = (options: ServerOptions): Server => {
     if (event.type === "turn.ended") memory.indexConversation();
   });
   registerJobs(app, { jobs, schemas });
+  registerDay(app, { picture, schemas });
   registerTools(app, {
     token: toolsToken,
     tools: allTools,
@@ -770,6 +847,7 @@ export const createServer = (options: ServerOptions): Server => {
     await backup.close();
     motions.close();
     topics.close();
+    checkins.close();
     moments.close();
     trust.close();
     jobs.close();

@@ -1,7 +1,7 @@
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import { dayMs, minuteMs, startOfDay, toLocal, toMinutes, toSpoken, untilMinutes } from "#desk/day.ts";
-import type { DeskKeeper } from "#desk/desk.ts";
+import type { DeskKeeper, MomentHandler } from "#desk/desk.ts";
 import type { Complete, JsonSchema } from "#engine/engine.ts";
 import { notBeforeOf } from "#http/settings.ts";
 import type { Identifiers } from "#identifiers.ts";
@@ -13,10 +13,27 @@ import type { Info } from "#turns/turns.ts";
 
 // Kumo's line for the moment: it changes only when the moment does (the day's first calm moment, something that
 // matters arriving, a change to the day) and is otherwise left to all quiet. Each line is also a message.
+// A line written elsewhere, such as a check-in on tonight's commitment, said as Kumo's line for the moment.
+export type Line = {
+  readonly kind: Moment["kind"];
+  readonly text: string;
+  readonly detail?: string;
+  readonly options?: readonly string[];
+  readonly allowsText?: boolean;
+  readonly replyLabel?: string;
+  // One notification goes out if it's still unread after a short grace.
+  readonly matters: boolean;
+  readonly isUrgent?: boolean;
+  // How its answers are handled; otherwise Kumo acts on them in the background.
+  readonly handler?: MomentHandler;
+};
+
 export type Moments = {
   // Something they should know now, from background work: it goes into Kumo's next line. While getting
   // started it goes straight into the conversation. Answers how, for the tool's result.
   readonly tell: (text: string, isUrgent: boolean) => string;
+  // Says a line now, after any being written.
+  readonly say: (line: Line) => Promise<Moment>;
   // Writes the day's first line now, whatever the time, for the demo.
   readonly dayNow: () => Promise<void>;
   readonly close: () => void;
@@ -38,6 +55,8 @@ export type MomentsOptions = {
   // A line that matters: one notification goes out if it's still unread after a short grace.
   readonly notify: (moment: string, isUrgent: boolean) => void;
   readonly info: Info;
+  // Before the day's first line: lays out the day, such as Kumo's plan, and says what the line should know.
+  readonly beforeDay?: () => Promise<readonly string[]>;
 };
 
 export const dayWrittenSetting = "moment_day";
@@ -69,6 +88,7 @@ const changesOf = (news: readonly News[]): readonly Change[] =>
 
 type Written = {
   readonly text: string;
+  readonly detail: string;
   readonly options: readonly string[];
   readonly reply: boolean;
   readonly important: boolean;
@@ -78,11 +98,12 @@ const momentSchema: JsonSchema = {
   type: "object",
   properties: {
     text: { type: "string" },
+    detail: { type: "string" },
     options: { type: "array", items: { type: "string" } },
     reply: { type: "boolean" },
     important: { type: "boolean" },
   },
-  required: ["text", "options", "reply", "important"],
+  required: ["text", "detail", "options", "reply", "important"],
   additionalProperties: false,
 };
 
@@ -95,6 +116,7 @@ const toWritten = (answer: unknown): Written => {
     .slice(0, maxOptions);
   return {
     text: textOf(answer, "text").trim(),
+    detail: textOf(answer, "detail").replaceAll(/\s+/gu, " ").trim(),
     options,
     reply: fieldOf(answer, "reply") === true,
     important: fieldOf(answer, "important") === true,
@@ -123,10 +145,17 @@ const cardDetail = (card: Card, timeZone: string): string | undefined => {
   return undefined;
 };
 
+const whoseOf = (item: CalendarItem): string => {
+  if (item.guess) return ` (your guess: ${item.guess.activity})`;
+  return item.calendar.kumo ? " (your block)" : "";
+};
+
 const eventLine = (item: CalendarItem, timeZone: string): string =>
-  `- ${timeOf(item.start, timeZone)} ${item.title}${item.location ? ` at ${item.location}` : ""}${
-    item.calendar.kumo ? " (your block)" : ""
-  }`;
+  `- ${timeOf(item.start, timeZone)} ${item.title}${item.location ? ` at ${item.location}` : ""}${whoseOf(item)}`;
+
+// The message holds the line's words, and its quieter line after them.
+export const messageOf = (text: string, detail: string | undefined): string =>
+  detail === undefined || detail === "" ? text : `${text}\n\n${detail}`;
 
 // What's left of today on their own calendars, by event, for noticing a change to the day.
 const agendaOf = (items: readonly CalendarItem[], from: number, until: number): ReadonlyMap<string, string> =>
@@ -173,6 +202,15 @@ const whyOf = (kind: Moment["kind"]): string => {
     case "change": {
       return "Their day just changed.";
     }
+    case "checkin": {
+      return "A commitment they made is coming due.";
+    }
+    case "drift": {
+      return "Their week's time has drifted from what matters.";
+    }
+    case "question": {
+      return "You have one small question for them.";
+    }
   }
 };
 
@@ -190,6 +228,17 @@ export const toMomentPrompt = (lead: string, now: string, kind: Moment["kind"], 
     "- Only what's here: never invent a fact, a time or a feeling.",
     "- If nothing needs saying, leave text empty: a quiet moment gets no line.",
     "",
+    ...(kind === "day"
+      ? [
+          "- Name the day's shape, such as A free Sunday, with a quiet plan under it. If last night ran past the line",
+          "  they set and you moved things for it, say so plainly and kindly, never scolding, such as You stopped at",
+          "  2:10, so I moved the run to the evening.",
+        ]
+      : []),
+    "",
+    "detail: for the day's first line, when you've planned blocks under the day, their parts in one short line",
+    "joined with · , such as Easy run · groceries and proper meals · 2h prep · in bed by 00:30 so Monday works;",
+    "empty otherwise.",
     "options: up to three short replies they could tap, only when a quick answer fits, such as Ask me tonight.",
     "reply: true when a typed answer fits, such as how something went. important: true only when it can't wait",
     "until they next open Ito.",
@@ -209,6 +258,7 @@ export const createMoments = ({
   lead,
   notify,
   info,
+  beforeDay = () => Promise.resolve([]),
 }: MomentsOptions): Moments => {
   const pending = createCell<readonly News[]>([]);
   const gathering = createCell<{ readonly since: number; readonly cancel: Cancel } | undefined>(undefined);
@@ -221,14 +271,15 @@ export const createMoments = ({
 
   const local = (): ReturnType<typeof toLocal> => toLocal(clock.now(), timeZone);
 
-  const material = (news: readonly News[]): readonly string[] => {
+  const material = (news: readonly News[], before: readonly string[] = []): readonly string[] => {
     const current = store.desk();
     const fresh = new Set(cardsOf(news).map(({ card }) => card));
     const told = toldOf(news).map(({ text }) => `- ${text}`);
     const changes = changesOf(news).map(({ text }) => `- ${text}`);
     const handled = desk.today().filter(({ quiet }) => !quiet);
-    const before = current.moment;
+    const previous = current.moment;
     return [
+      ...before,
       ...(told.length > 0 ? ["What your background work said they should know now:", ...told] : []),
       ...(changes.length > 0 ? ["What changed in their day:", ...changes] : []),
       ...(current.waiting.length > 0
@@ -249,8 +300,29 @@ export const createMoments = ({
             ...handled.slice(0, latestDone).map(({ text }) => `- ${text}`),
           ]
         : []),
-      ...(before ? [`Your line before this one: ${before.text}`] : []),
+      ...(previous ? [`Your line before this one: ${previous.text}`] : []),
     ];
+  };
+
+  // Puts a line on the Desk and in the conversation, with how it's answered.
+  const show = (line: Line): Moment => {
+    const detail = line.detail?.trim() ?? "";
+    const message = store.postMessage(messageOf(line.text, detail), "moment");
+    const moment: Moment = {
+      id: identifiers.moment(),
+      kind: line.kind,
+      at: message.at,
+      text: line.text,
+      ...(detail !== "" && { detail }),
+      message: message.id,
+      options: (line.options ?? []).slice(0, maxOptions).map((label) => ({ label })),
+      allows_text: line.allowsText === true,
+      ...(line.allowsText === true && line.replyLabel !== undefined && { reply_label: line.replyLabel }),
+    };
+    desk.setMoment(moment);
+    if (line.handler) desk.handleMoment(moment.id, line.handler);
+    if (line.matters) notify(moment.id, line.isUrgent === true);
+    return moment;
   };
 
   const holdUntil = (moment: Moment | undefined): void => {
@@ -284,29 +356,28 @@ export const createMoments = ({
   const post = async (kind: Moment["kind"], news: readonly News[]): Promise<void> => {
     const told = toldOf(news);
     const isUrgent = told.some((item) => item.isUrgent);
+    const before = kind === "day" ? await beforeDay() : [];
+    if (isClosed.get()) return;
     const now = toSpoken(clock.now(), timeZone);
-    const answered = await complete(toMomentPrompt(lead(), now, kind, material(news)), momentSchema, await choice());
+    const prompt = toMomentPrompt(lead(), now, kind, material(news, before));
+    const answered = await complete(prompt, momentSchema, await choice());
     if (isClosed.get()) return;
     if (!answered.ok) info("Kumo couldn't write its line for the moment", { error: answered.failure });
     // What the background work said in its own words still reaches them when the line couldn't be written.
     const written: Written = answered.ok
       ? toWritten(answered.value)
-      : { text: told.map((item) => item.text).join(" "), options: [], reply: false, important: true };
+      : { text: told.map((item) => item.text).join(" "), detail: "", options: [], reply: false, important: true };
     if (kind === "day" && answered.ok) store.setSetting(dayWrittenSetting, local().day);
     if (written.text === "") return;
-    const message = store.postMessage(written.text, "moment");
-    const moment: Moment = {
-      id: identifiers.moment(),
+    show({
       kind,
-      at: message.at,
       text: written.text,
-      message: message.id,
-      options: written.options.map((label) => ({ label })),
-      allows_text: written.reply,
-    };
-    desk.setMoment(moment);
-    const matters = written.important || told.length > 0 || cardsOf(news).length > 0;
-    if (matters) notify(moment.id, isUrgent);
+      detail: written.detail,
+      options: written.options,
+      allowsText: written.reply,
+      matters: written.important || told.length > 0 || cardsOf(news).length > 0,
+      isUrgent,
+    });
   };
 
   const settled = async (job: Promise<void>): Promise<void> => {
@@ -422,6 +493,18 @@ export const createMoments = ({
       }
       add({ kind: "told", text, isUrgent });
       return "It's in your next line at the top of their Desk, which also goes into the conversation.";
+    },
+    say: (line) => {
+      const previous = queue.get();
+      const job = (async (): Promise<Moment> => {
+        await previous;
+        return show(line);
+      })();
+      const done = async (): Promise<void> => {
+        await job;
+      };
+      queue.set(settled(done()));
+      return job;
     },
     dayNow: () => write("day"),
     close: () => {

@@ -42,7 +42,9 @@ in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *s
 *ask* a question, *approve* an approval, *remember* writes a page and the journal in memory,
 *recall* looks it up, *trip* and *training* start things in motion, *booked* books the trip's
 Uffizi, *mail* reads a sample mail and puts a draft on the Desk, which Kumo tells you about in its
-line a moment later, and *moment* writes Kumo's first line of the day now.
+line a moment later, and *moment* writes Kumo's first line of the day now. *plan* lays out a sample
+day of Kumo's plan and guesses in Coming up; *tonight*, *line* and *past* show the evening
+check-ins; *question* asks the day's question; and *drift* names a week that drifted.
 
 Before reaching for your phone, check a real turn from the machine itself, with the server running
 and your token in `TOKEN`. The stream should show the turn start, statuses, the reply's text
@@ -132,12 +134,24 @@ mail. At the top of the Desk, Kumo speaks for the moment, not the clock: a line 
 calm moment after your morning time, however late you open Ito, when something that matters arrives,
 or when your day changes, and otherwise all quiet. Each line is also a message in the conversation,
 written with your chosen model thinking modestly; once you've seen it on the Desk, no notification
-goes out for it. In the conversation, Ari reaches the same mail through `ito mail` commands and a
-skill file, rather than more tools in every turn: ask it to go through the recruiters who wrote this
-month, and it searches, reads each thread, and drafts the replies you agree to. Ask it to tidy your
-inbox, and it goes through what's there a page at a time and moves mails together; a move of more
-than 25, such as an old folder into one of yours, waits for one Apply on the Desk, and Done keeps it
-as one line with an undo. Each mail step in the chat says what it did, such as "Binned “50% off”
+goes out for it.
+
+With iCloud connected, Kumo keeps a picture of your day on its own calendar, never yours: each
+morning, before its first line, it plans soft blocks for what keeps your goals going (the session
+from a training block, prep for a coming interview, proper meals, winding down) and guesses the rest
+(working, building, seeing people, chilling). Coming up shows them all, guesses marked as guesses
+with why; tell Kumo one was wrong there, or in the chat, and its next guesses learn from it. In the
+evening, if you're likely to build, its line asks once when you'll stop and what's next; near and
+past that line it says plainly what tomorrow still fits or what it costs, and the next morning it
+moves the plan rather than scold. When your week's time drifts from what matters, it says so once,
+in numbers, and at most once a day it asks one small question you can skip.
+
+In the conversation, Ari reaches the same mail through `ito mail` commands and a skill file, rather
+than more tools in every turn: ask it to go through the recruiters who wrote this month, and it
+searches, reads each thread, and drafts the replies you agree to. Ask it to tidy your inbox, and it
+goes through what's there a page at a time and moves mails together; a move of more than 25, such as
+an old folder into one of yours, waits for one Apply on the Desk, and Done keeps it as one line with
+an undo. Each mail step in the chat says what it did, such as "Binned “50% off”
 from a shop", and opens onto the mails it read.
 
 Kumo earns your trust one kind of work at a time: sorting mail, the calendar, drafts, and contacts

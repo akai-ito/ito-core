@@ -73,8 +73,10 @@ type NewCard = Omit<Card, "id" | "at">;
 type NewMoment = {
   readonly kind: Moment["kind"];
   readonly text: string;
+  readonly detail?: string;
   readonly options?: readonly string[];
   readonly allowsText?: boolean;
+  readonly replyLabel?: string;
 };
 
 type WorkToday = {
@@ -172,6 +174,12 @@ export type Transcript = {
   readonly answerMoment: (answer: Fields) => void;
   // The line gives way to all quiet: Kumo acted on your answer, or it was read three hours ago.
   readonly quiet: () => void;
+  // Skips the day's question on the Desk.
+  readonly skipMoment: () => void;
+  // Answers one of Kumo's guesses in Coming up; the item comes back as `after`.
+  readonly answerGuess: (item: CalendarItem, answer: Fields, after: CalendarItem) => void;
+  // What Kumo handled today, counted again, such as from nothing at midnight.
+  readonly recount: (handled: number) => void;
   // Kumo did one more thing without you today: its Done entry.
   readonly handled: (entry: { readonly text: string; readonly reason?: string }) => Fields;
   readonly mailRead: () => void;
@@ -1491,20 +1499,31 @@ export const createTranscript = (header: Header): Transcript => {
     );
   };
 
-  const moment = ({ kind, text, options = [], allowsText = false }: NewMoment): Moment => {
+  const moment = ({ kind, text, detail, options = [], allowsText = false, replyLabel }: NewMoment): Moment => {
     const message = newId("m");
     const at = timestamp();
+    const said = detail === undefined ? text : `${text}\n\n${detail}`;
     emit("message.posted", {
-      message: { id: message, role: "agent", kind: "moment", text, at, position: nextPosition(), outcome: "completed" },
+      message: {
+        id: message,
+        role: "agent",
+        kind: "moment",
+        text: said,
+        at,
+        position: nextPosition(),
+        outcome: "completed",
+      },
     });
     const written: Moment = {
       id: newId("o"),
       kind,
       at,
       text,
+      ...(detail !== undefined && { detail }),
       message,
       options: options.map((label) => ({ label })),
       allows_text: allowsText,
+      ...(replyLabel !== undefined && { reply_label: replyLabel }),
     };
     withMoment(written);
     return written;
@@ -1537,6 +1556,28 @@ export const createTranscript = (header: Header): Transcript => {
 
   const quiet = (): void => {
     withMoment(undefined);
+  };
+
+  // A new day: what Kumo handled counts from nothing again.
+  const recount = (handled: number): void => {
+    changeDesk((desk) => ({ ...desk, handled }));
+  };
+
+  const skipMoment = (): void => {
+    const current = currentMoment();
+    request("POST", `/v0/desk/moment/${current.id}/answer`, { body: { skip: true } });
+    withMoment(undefined);
+    response(202, { moment: current });
+  };
+
+  // Answers one of Kumo's guesses in Coming up: the item comes back as it is now, no longer a guess.
+  const answerGuess = (item: CalendarItem, answer: Fields, after: CalendarItem): void => {
+    request("POST", `/v0/desk/guesses/${item.id}/answer`, { body: answer });
+    changeDesk((desk) => ({
+      ...desk,
+      coming_up: desk.coming_up.map((shown) => (shown.id === item.id ? after : shown)),
+    }));
+    response(200, { event: after });
   };
 
   const handled = (entry: { readonly text: string; readonly reason?: string }): Fields => {
@@ -1759,6 +1800,9 @@ export const createTranscript = (header: Header): Transcript => {
     readMoment,
     answerMoment,
     quiet,
+    skipMoment,
+    answerGuess,
+    recount,
     handled,
     mailRead,
     getWork,

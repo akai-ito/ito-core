@@ -405,8 +405,33 @@ export interface paths {
      *     when it `allows_text`. The line shows `state: working`, with your `answer`, while Kumo acts
      *     on it in the background, then gives way to all quiet; Done says what you answered and what
      *     followed. If Kumo couldn't act, the line comes back to answer again, and Done says why.
+     *     The day's question (`kind` `question`) can also be skipped: it gives way at once, with
+     *     nothing in Done, and Kumo never asks it again.
      */
     post: operations["answerMoment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/desk/guesses/{item}/answer": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Answer one of Kumo's guesses
+     * @description Says whether one of Kumo's guesses at your day (a Coming up item with `guess`) was right,
+     *     or what it really was. Kumo writes it into its calendar at once, as yours rather than a
+     *     guess, and its next guesses learn from it. The answer is the item as it is now, and
+     *     `desk.changed` follows.
+     */
+    post: operations["answerGuess"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2123,11 +2148,30 @@ export interface components {
     CardResult: {
       card: components["schemas"]["Card"];
     };
-    /** @description Your answer to Kumo's line, one of `option` or `text`. */
+    /** @description Your answer to Kumo's line, one of `option`, `text` or, for the day's question, `skip`. */
     MomentAnswer: {
       /** @description The label of the option you tapped. */
       option?: string;
       /** @description A typed reply. */
+      text?: string;
+      /**
+       * @description Skips the day's question (`kind` `question`). It gives way at once, and Kumo never asks it again.
+       * @constant
+       */
+      skip?: true;
+    };
+    /**
+     * @description Your answer to one of Kumo's guesses at your day, one of: `right`; the `activity` it really
+     *     was, from Not right?; or `text` for something else, which becomes its title.
+     */
+    GuessAnswer: {
+      /**
+       * @description The guess was right.
+       * @constant
+       */
+      right?: true;
+      activity?: components["schemas"]["Activity"];
+      /** @description What it really was, in a few words, such as "Dentist, then errands". */
       text?: string;
     };
     MomentResult: {
@@ -2407,6 +2451,17 @@ export interface components {
     Timestamp: string;
     /** @description A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-mira`. */
     MotionId: string;
+    /**
+     * @description What you're doing, in Kumo's picture of your day: `people` is seeing people, and `other` anything else, named in the title. Show one you don't recognise by its title.
+     * @enum {unknown}
+     */
+    Activity: "working" | "building" | "training" | "people" | "studying" | "chilling" | "other";
+    /** @description Kumo's guess at what you're doing then, from your past weeks, what you've said and what it can see. Once you've answered it, it's no longer a guess. */
+    Guess: {
+      activity: components["schemas"]["Activity"];
+      /** @description Why Kumo thinks so, in a line, such as "Your usual weekday at the desk, from the last four weeks." */
+      why: string;
+    };
     /** @description An event on one of your calendars, as the box reads it from iCloud. Open it with the event whose `uid` matches, in Apple's own views. */
     CalendarItem: {
       id: components["schemas"]["CalendarItemId"];
@@ -2431,6 +2486,8 @@ export interface components {
        * @enum {unknown}
        */
       status?: "hold" | "tentative" | "confirmed";
+      /** @description Only on Kumo's guesses at your day, on its own calendar: draw it as a guess, with why on a tap, and answer it with `POST /v0/desk/guesses/{item}/answer`. Kumo's plan for your day (a run, prep, a proper lunch, winding down) is on its calendar too, without it. */
+      guess?: components["schemas"]["Guess"];
     };
     /** @description Getting started: Kumo reads your recent mail and calendar and talks with you briefly in the conversation, then shows what it found: beliefs to confirm, bookings it added and what it put in motion. */
     Onboarding: {
@@ -2627,19 +2684,23 @@ export interface components {
     Moment: {
       id: components["schemas"]["MomentId"];
       /**
-       * @description What brought it: `day`, the first line of the day; `news`, something that matters arrived; `change`, your day changed. Show a kind you don't recognise like any other.
+       * @description What brought it: `day`, the first line of the day; `news`, something that matters arrived; `change`, your day changed; `checkin`, a commitment you made, such as when to stop tonight, coming due; `drift`, your week's time drifting from what matters; `question`, the day's one small question, which you can skip. Show a kind you don't recognise like any other.
        * @enum {unknown}
        */
-      kind: "day" | "news" | "change";
+      kind: "day" | "news" | "change" | "checkin" | "drift" | "question";
       at: components["schemas"]["Timestamp"];
       /** @description One or two sentences, plain words. */
       text: string;
+      /** @description A quieter line under the words, such as the plan under a free day: "Easy run · groceries and proper meals · 2h prep · in bed by 00:30". It's in the message too, after the words. */
+      detail?: string;
       /** @description The `moment` message in the conversation that holds the same words. */
       message: components["schemas"]["MessageId"];
       /** @description Up to three short replies, such as "Ask me tonight". A tap answers Kumo, like a card's option. */
       options: components["schemas"]["AskOption"][];
       /** @description Whether a typed reply fits, for Reply. */
       allows_text: boolean;
+      /** @description What Reply says when a typed reply fits, such as "Note it" for the next step tonight. Reply when absent. */
+      reply_label?: string;
       /** @description When an app first showed it on the Desk, as told with `POST /v0/desk/moment/{moment}/read`. Once it's read, no notification goes out for it. */
       read_at?: components["schemas"]["Timestamp"];
       /**
@@ -3186,6 +3247,7 @@ export type JobList = components["schemas"]["JobList"];
 export type CardAnswer = components["schemas"]["CardAnswer"];
 export type CardResult = components["schemas"]["CardResult"];
 export type MomentAnswer = components["schemas"]["MomentAnswer"];
+export type GuessAnswer = components["schemas"]["GuessAnswer"];
 export type MomentResult = components["schemas"]["MomentResult"];
 export type Work = components["schemas"]["Work"];
 export type Trust = components["schemas"]["Trust"];
@@ -3222,6 +3284,8 @@ export type CalendarItemId = components["schemas"]["CalendarItemId"];
 export type When = components["schemas"]["When"];
 export type Timestamp = components["schemas"]["Timestamp"];
 export type MotionId = components["schemas"]["MotionId"];
+export type Activity = components["schemas"]["Activity"];
+export type Guess = components["schemas"]["Guess"];
 export type CalendarItem = components["schemas"]["CalendarItem"];
 export type Onboarding = components["schemas"]["Onboarding"];
 export type MessageId = components["schemas"]["MessageId"];
@@ -3858,6 +3922,42 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  answerGuess: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        item: components["schemas"]["CalendarItemId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "activity": "building"
+         *     }
+         */
+        "application/json": components["schemas"]["GuessAnswer"];
+      };
+    };
+    responses: {
+      /** @description Answered. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      503: components["responses"]["Unavailable"];
     };
   };
   getWork: {

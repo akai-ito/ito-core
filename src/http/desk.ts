@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
-import type { CardAnswer, DeskKeeper } from "#desk/desk.ts";
+import type { CardAnswer, DeskKeeper, MomentAnswer } from "#desk/desk.ts";
 import type { RouteSchema } from "#http/validation.ts";
 import type { WorkKind } from "#protocol/types.ts";
 import type { Store } from "#store/store.ts";
@@ -46,7 +46,7 @@ export const registerDesk = (app: FastifyInstance, { store, desk, trust, today, 
             .send(toErrorResult("not_found", `No moment ${request.params.moment}.`, "That line has moved on.")),
   );
 
-  app.post<{ Params: { readonly moment: string }; Body: CardAnswer }>(
+  app.post<{ Params: { readonly moment: string }; Body: MomentAnswer }>(
     "/v0/desk/moment/:moment/answer",
     { schema: schemaFor("answerMoment") },
     async (request, reply) => {

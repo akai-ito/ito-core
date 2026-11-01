@@ -8,6 +8,7 @@ import { defaultVoice, voices } from "#voice/voices.ts";
 import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "./florence.ts";
 import { sub20Id, sub20Training } from "./sub20.ts";
 import { gatherMs, readHoldMs } from "#desk/moments.ts";
+import { quoteOf } from "#desk/desk.ts";
 import { momentGraceMs } from "#notifications/notifier.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
@@ -4014,6 +4015,254 @@ const scenarios: readonly (() => Transcript)[] = [
         reset,
       ),
     });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "74-the-day-made-visible",
+      scenario: 74,
+      title: "The day made visible",
+      summary:
+        "A free Sunday. Before its first line of the day, Kumo plans the day on its own calendar: a run from the " +
+        "training block, groceries, prep for Thursday's interview and winding down, plus its guess at the evening. " +
+        "Each shows in Coming up as it lands, the guess marked as one, with why. Kumo's line names the day's shape, " +
+        "with the plan under it. You tap the guess: not right, you'll be building. It becomes yours on Kumo's " +
+        "calendar, no longer a guess.",
+      guarantees: ["G33", "G41", "G44"],
+    });
+    transcript.begin("2026-11-15T07:20:00.000Z");
+    transcript.world("capability_on", {
+      capability: "icloud",
+      values: { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop" },
+    });
+    transcript.connect();
+    transcript.wait(1000);
+    const kumo = { name: "Kumo", kumo: true };
+    const blocks = [
+      {
+        kind: "plan",
+        title: "Easy run, week 1 of 6",
+        start: "2026-11-15T10:30:00.000Z",
+        end: "2026-11-15T11:00:00.000Z",
+        activity: "training",
+        why: "Week 1 of the sub-20 block: easy miles",
+      },
+      {
+        kind: "plan",
+        title: "Groceries",
+        start: "2026-11-15T12:00:00.000Z",
+        end: "2026-11-15T12:45:00.000Z",
+        activity: "errands",
+        why: "So there's food in for proper meals this week",
+      },
+      {
+        kind: "plan",
+        title: "Interview prep, 2h",
+        start: "2026-11-15T15:00:00.000Z",
+        end: "2026-11-15T17:00:00.000Z",
+        activity: "studying",
+        why: "The Northwind interview is on Thursday",
+      },
+      {
+        kind: "guess",
+        title: "Chilling",
+        start: "2026-11-15T19:00:00.000Z",
+        end: "2026-11-15T22:00:00.000Z",
+        activity: "chilling",
+        why: "Sunday evenings you usually switch off.",
+      },
+      {
+        kind: "plan",
+        title: "Wind down",
+        start: "2026-11-15T23:45:00.000Z",
+        end: "2026-11-16T00:30:00.000Z",
+        activity: "rest",
+        why: "In bed by 00:30 so Monday works",
+      },
+    ];
+    transcript.world("kumo_works", { calls: blocks.map((input) => ({ tool: "plan_block", input })) });
+    const line = "A free Sunday, with a quiet plan under it.";
+    const detail = "Easy run · groceries and proper meals · 2h prep for Northwind · in bed by 00:30 so Monday works";
+    transcript.world("moment_written", { text: line, detail, options: [], reply: false, important: false });
+    transcript.time("2026-11-15T07:30:00.000Z");
+    const items = blocks.map(({ kind, title, start, end, activity, why }) =>
+      transcript.calendarItem({
+        uid: transcript.eventUid(),
+        title,
+        start,
+        end,
+        all_day: false,
+        calendar: kumo,
+        status: "confirmed",
+        ...(kind === "guess" && { guess: { activity: activity as "chilling", why } }),
+      }),
+    );
+    for (const index of items.keys()) {
+      transcript.comingUp(
+        items.slice(0, index + 1).toSorted((left, right) => Date.parse(left.start) - Date.parse(right.start)),
+      );
+    }
+    transcript.moment({ kind: "day", text: line, detail });
+    transcript.wait(1500);
+    transcript.readMoment();
+    transcript.wait(40 * 60 * 1000);
+    const evening = items[3];
+    if (!evening) throw new Error("no evening guess");
+    const building = Object.fromEntries(
+      Object.entries({ ...evening, title: "Building" }).filter(([field]) => field !== "guess"),
+    ) as typeof evening;
+    transcript.answerGuess(evening, { activity: "building" }, building);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "75-tonight-s-line",
+      scenario: 75,
+      title: "Tonight's line",
+      summary:
+        "Kumo guesses you'll build tonight, so at 20:30 its line asks once: building tonight, stop at 1, next step? " +
+        "You answer in words, and that's tonight's commitment. At 00:45, with the app closed, its line says what's " +
+        "left and what tomorrow still fits, and sends one quiet notification. You open Ito after 1, so past the " +
+        "line Kumo is firmer: every half hour now comes out of tomorrow's run or prep. You stop.",
+      guarantees: ["G38", "G41", "G42", "G45"],
+    });
+    transcript.begin("2026-11-11T20:25:00.000Z");
+    transcript.world("capability_on", {
+      capability: "icloud",
+      values: { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop" },
+    });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(1000);
+    const kumo = { name: "Kumo", kumo: true };
+    const placed = [
+      {
+        kind: "guess",
+        title: "Building",
+        start: "2026-11-11T21:00:00.000Z",
+        end: "2026-11-12T02:00:00.000Z",
+        activity: "building",
+        why: "Most weeknights this month you've built until about 2.",
+      },
+      {
+        kind: "plan",
+        title: "Easy run",
+        start: "2026-11-12T09:45:00.000Z",
+        end: "2026-11-12T10:15:00.000Z",
+        activity: "training",
+        why: "Thursday's session in the training block",
+      },
+      {
+        kind: "plan",
+        title: "Interview prep, 1h",
+        start: "2026-11-12T18:30:00.000Z",
+        end: "2026-11-12T19:30:00.000Z",
+        activity: "studying",
+        why: "The Northwind interview is next week",
+      },
+    ];
+    const items = placed.map(({ kind, title, start, end, activity, why }, index) => {
+      transcript.world("agent_calls", { tool: "plan_block", input: placed[index] });
+      const item = transcript.calendarItem({
+        uid: transcript.eventUid(),
+        title,
+        start,
+        end,
+        all_day: false,
+        calendar: kumo,
+        status: "confirmed",
+        ...(kind === "guess" && { guess: { activity: activity as "building", why } }),
+      });
+      return item;
+    });
+    for (const index of items.keys()) transcript.comingUp(items.slice(0, index + 1));
+    const ask = "Building tonight? Stop at 1, next step being…?";
+    transcript.world("kumo_writes", { text: ask, stop: "01:00" });
+    transcript.time("2026-11-11T20:30:00.000Z");
+    transcript.moment({
+      kind: "checkin",
+      text: ask,
+      options: ["Stop at 1", "Not tonight"],
+      allowsText: true,
+      replyLabel: "Next step",
+    });
+    transcript.wait(1500);
+    transcript.readMoment();
+    transcript.wait(20_000);
+    const step = "the empty state of the sync screen";
+    transcript.world("kumo_writes", { stop: "01:00", next_step: step });
+    const answer = `Yes, 1. Next: ${step}`;
+    transcript.answerMoment({ text: answer });
+    transcript.handled({
+      text: `You answered “${quoteOf(ask)}”: ${answer}`,
+      reason: "Tonight's line is 1; I'll check in at 12:45.",
+    });
+    transcript.quiet();
+    transcript.wait(5000);
+    transcript.disconnect("app_closed");
+    transcript.time("2026-11-12T00:00:00.000Z");
+    transcript.recount(0);
+    const before =
+      "15 minutes to your 1. Note the next step now? Tomorrow's run and prep still fit if you're asleep by 1:30.";
+    transcript.world("kumo_writes", { text: before, options: [] });
+    transcript.time("2026-11-12T00:45:00.000Z");
+    transcript.moment({
+      kind: "checkin",
+      text: before,
+      options: ["Snooze 15m"],
+      allowsText: true,
+      replyLabel: "Note it",
+    });
+    transcript.wait(momentGraceMs);
+    transcript.momentUnread();
+    transcript.time("2026-11-12T01:08:00.000Z");
+    transcript.world("app_opened");
+    transcript.connect();
+    transcript.wait(1500);
+    transcript.readMoment();
+    const past = "Every half hour now comes out of tomorrow's run or the interview prep. Your call. Which?";
+    transcript.world("kumo_writes", { text: past, options: ["The run", "The prep"] });
+    transcript.time("2026-11-12T01:15:00.000Z");
+    transcript.moment({ kind: "checkin", text: past, options: ["The run", "The prep", "I'm stopping"] });
+    transcript.wait(1500);
+    transcript.readMoment();
+    transcript.wait(30_000);
+    transcript.answerMoment({ option: "I'm stopping" });
+    transcript.handled({
+      text: `You answered “${quoteOf(past)}”: I'm stopping`,
+      reason: "Good night. Tomorrow's plan stands.",
+    });
+    transcript.quiet();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "76-today-s-question",
+      scenario: 76,
+      title: "Today's question",
+      summary:
+        "Kumo isn't sure whether Thursday climbing is something to guard, so its work proposes one small question. " +
+        "When you next look at Ito in the afternoon, a calm moment, it becomes Kumo's line, marked as the day's " +
+        "question. You skip it: it goes at once, nothing is recorded, and it's never asked again.",
+      guarantees: ["G41", "G46"],
+    });
+    transcript.begin("2026-11-11T15:00:00.000Z");
+    const question = "Is Thursday climbing with Leo something I should guard, or fine to move when work piles up?";
+    transcript.world("agent_calls", {
+      tool: "ask_today",
+      input: { text: question, options: ["Guard it", "Fine to move"], about: "Thursday climbing" },
+    });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.presence(true);
+    transcript.moment({ kind: "question", text: question, options: ["Guard it", "Fine to move"] });
+    transcript.wait(1500);
+    transcript.readMoment();
+    transcript.wait(4000);
+    transcript.skipMoment();
     return transcript;
   },
 ];

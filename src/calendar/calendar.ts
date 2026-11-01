@@ -19,6 +19,15 @@ export type Calendar = {
   readonly isBusy: () => boolean;
   readonly refresh: () => Promise<void>;
   readonly addEvent: (event: NewCalendarEvent, isKumo?: boolean) => Promise<Result<CalendarItem, string>>;
+  // Moves, renames or re-notes an event by its uid, such as one of Kumo's blocks.
+  readonly changeEvent: (uid: string, changes: Partial<NewCalendarEvent>) => Promise<Result<CalendarItem, string>>;
+  readonly removeEvent: (uid: string) => Promise<Result<undefined, string>>;
+  // Whether iCloud is set up, so there's a calendar to read and write.
+  readonly isConnected: () => boolean;
+  // Every event from yesterday to a week ahead, as last read, before Kumo's picture is added.
+  readonly listItems: () => readonly CalendarItem[];
+  // After each good read of the calendar.
+  readonly onRefreshed: (listener: () => void) => void;
   readonly onEventEnded: (listener: (uid: string) => void) => void;
   readonly onAdded: (listener: (item: CalendarItem) => void) => void;
   readonly close: () => void;
@@ -33,6 +42,8 @@ export type CalendarOptions = {
   readonly createSource: (values: Values) => CalendarSource;
   readonly onHealth?: (health: Health) => void;
   readonly pollMs?: number;
+  // Adds Kumo's picture to an item it shows, such as whether it's a guess.
+  readonly enrich?: (item: CalendarItem) => CalendarItem;
 };
 
 const hourMs = 60 * 60 * 1000;
@@ -101,6 +112,8 @@ const eventInput = (input: unknown): NewCalendarEvent => ({
 
 const ignore = (): void => undefined;
 
+const asIs = (item: CalendarItem): CalendarItem => item;
+
 export const createCalendar = ({
   host,
   desk,
@@ -110,6 +123,7 @@ export const createCalendar = ({
   createSource,
   onHealth = ignore,
   pollMs = 2 * 60 * 1000,
+  enrich = asIs,
 }: CalendarOptions): Calendar => {
   const cached = createCell<{ readonly key: string; readonly source: CalendarSource } | undefined>(undefined);
   const events = createCell<readonly CalendarEvent[]>([]);
@@ -118,6 +132,7 @@ export const createCalendar = ({
   const refreshing = createCell<Promise<void>>(Promise.resolve());
   const endedListeners = createCell<readonly ((uid: string) => void)[]>([]);
   const addedListeners = createCell<readonly ((item: CalendarItem) => void)[]>([]);
+  const refreshedListeners = createCell<readonly (() => void)[]>([]);
   const seenEnded = createCell<ReadonlySet<string>>(new Set());
 
   const source = (): CalendarSource | undefined => {
@@ -153,7 +168,7 @@ export const createCalendar = ({
       })
       .filter((event) => !isInvite(event))
       .toSorted((left, right) => toMs(left.start) - toMs(right.start))
-      .map((event) => toCalendarItem(event));
+      .map((event) => enrich(toCalendarItem(event)));
 
   const hasCard = (uid: string): boolean => desk.cards().some((card) => card.invite?.event.uid === uid);
 
@@ -217,6 +232,7 @@ export const createCalendar = ({
     }
     onHealth({ ok: true });
     events.set(listed.value);
+    for (const listener of refreshedListeners.get()) listener();
     const invites = listed.value.filter((event) => isInvite(event) && !hasCard(event.uid));
     for (const invite of invites) {
       await holdFor(calendar, invite);
@@ -274,9 +290,33 @@ export const createCalendar = ({
     const created = await calendar.create(target.value, event);
     if (!created.ok) return created;
     await refresh();
-    const item = toCalendarItem(created.value);
+    const item = enrich(toCalendarItem(created.value));
     for (const listener of addedListeners.get()) listener(item);
     return ok(item);
+  };
+
+  const changeEvent = async (
+    uid: string,
+    changes: Partial<NewCalendarEvent>,
+  ): Promise<Result<CalendarItem, string>> => {
+    const calendar = source();
+    if (!calendar) return fail("iCloud isn't set up, so there's no calendar to change.");
+    const event = findEvent(uid);
+    if (!event) return fail("There's no such event in the next week.");
+    const changed = await calendar.update(event, changes);
+    if (!changed.ok) return changed;
+    await refresh();
+    return ok(enrich(toCalendarItem(changed.value)));
+  };
+
+  const removeEvent = async (uid: string): Promise<Result<undefined, string>> => {
+    const calendar = source();
+    const event = findEvent(uid);
+    if (!calendar || !event) return fail("There's no such event in the next week.");
+    const removed = await calendar.remove(event);
+    if (!removed.ok) return removed;
+    await refresh();
+    return ok(undefined);
   };
 
   const describe = (event: CalendarEvent): string =>
@@ -415,11 +455,22 @@ export const createCalendar = ({
         .get()
         .some(
           (event) =>
-            !event.allDay && event.myStatus !== "declined" && toMs(event.start) <= now && now < toMs(event.end),
+            !event.allDay &&
+            !event.calendar.isKumo &&
+            event.myStatus !== "declined" &&
+            toMs(event.start) <= now &&
+            now < toMs(event.end),
         );
     },
     refresh,
     addEvent,
+    changeEvent,
+    removeEvent,
+    isConnected: () => source() !== undefined,
+    listItems: () => events.get().map((event) => toCalendarItem(event)),
+    onRefreshed: (listener) => {
+      refreshedListeners.update((current) => [...current, listener]);
+    },
     onEventEnded: (listener) => {
       endedListeners.update((current) => [...current, listener]);
     },

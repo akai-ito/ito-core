@@ -580,16 +580,24 @@ export const replay = async (name: string): Promise<void> => {
       case "moment_written": {
         const {
           text,
+          detail = "",
           options = [],
           reply = false,
           important = false,
         } = step as unknown as {
           readonly text: string;
+          readonly detail?: string;
           readonly options?: readonly string[];
           readonly reply?: boolean;
           readonly important?: boolean;
         };
-        asides.update((current) => [...current, { text, options, reply, important }]);
+        asides.update((current) => [...current, { text, detail, options, reply, important }]);
+        await advance(time);
+        return;
+      }
+      case "kumo_writes": {
+        const answer = Object.fromEntries(Object.entries(step).filter(([key]) => key !== "world" && key !== "at"));
+        asides.update((current) => [...current, answer]);
         await advance(time);
         return;
       }

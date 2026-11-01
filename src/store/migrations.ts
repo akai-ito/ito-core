@@ -155,4 +155,11 @@ export const migrations: readonly string[] = [
   `UPDATE desk SET body = json_set(json_remove(body, '$.briefing'), '$.handled', 0);
   UPDATE settings SET key = 'morning_not_before' WHERE key = 'briefing_not_before';
   DELETE FROM settings WHERE key = 'briefing_day';`,
+  // Kumo's picture of your day: its plan and its guesses, on its own calendar, with why.
+  `CREATE TABLE kumo_blocks (
+    uid TEXT PRIMARY KEY,
+    start TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX kumo_blocks_by_start ON kumo_blocks (start);`,
 ];
