@@ -31,6 +31,9 @@ These commands are for when they bring mail up, or when a conversation needs it.
   same command again with it for the next page.
 - Read the whole thread before you summarise or answer one: the latest mail alone misses what was
   agreed earlier.
+- A mail from someone in their Contacts says so under From, with their card's uid and People page.
+  When a mail shows a new detail about someone, such as a phone or an address in a signature or a
+  new job, keep their card current with `ito contacts`, as the contacts skill says.
 - When they ask you to go through a set of mails, such as every startup that wrote to them, search
   widely and read each thread. Then give one line each: who, what they want, where it stands, and
   what you'd do. Put the ones that matter first. Then do what they agree to.
@@ -39,6 +42,10 @@ These commands are for when they bring mail up, or when a conversation needs it.
 
 - `draft` writes into their Drafts folder and puts the draft on the Desk. It's never sent; tell them
   in a line that it's ready. With `--reply-to`, the recipient and subject follow the mail it answers.
+- To write to someone, give their name: `--to "Clara Voss"` finds the address in their Contacts,
+  the one for the context: a label you give, such as `--to "Clara Voss (work)"`, the one they last
+  wrote from or they last wrote to, or their preferred one. It says which it picked and why. When
+  it can't tell, it lists them: pick by what the mail is about, or ask them.
 - Write as them, in their own voice and length, the way they write to that kind of person. Never
   invent a fact: leave a [placeholder] for what you don't know, such as a salary or a notice period.
 - Write the body in light Markdown: paragraphs, `**bold**`, `*italics*`, lists and

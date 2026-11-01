@@ -164,6 +164,8 @@ const isInMindPage = (shelf: Shelf | InMindPage): shelf is InMindPage =>
 
 const onlyPeople = "Only a page about one person has a circle.";
 
+const onlyPeopleContact = "Only a page about one person links to a contact.";
+
 const tooLong = (title: string, length: number): string =>
   `${title} is ${String(length)} characters, over the ${String(inMindLimit)} it can hold. Keep it to what matters ` +
   "on every turn, and move the detail to a page on a shelf.";
@@ -372,6 +374,7 @@ export const createMemory = ({
       const gist = toOneLine(textOf(input, "gist")) || existing?.gist;
       const note = toOneLine(textOf(input, "note")) || undefined;
       const circle = toOneLine(textOf(input, "circle")) || existing?.circle;
+      const contact = toOneLine(textOf(input, "contact")) || readParsed(location.value)?.contact;
       const text =
         markdown === ""
           ? undefined
@@ -379,6 +382,7 @@ export const createMemory = ({
               title,
               ...(gist !== undefined && { gist }),
               ...(circle !== undefined && { circle }),
+              ...(contact !== undefined && { contact }),
               aliases: stringsOf(input, "aliases"),
               links: stringsOf(input, "links"),
               markdown,
@@ -464,6 +468,8 @@ export const createMemory = ({
       const gist = toOneLine(textOf(input, "gist")) || existing.gist;
       const circle = toOneLine(textOf(input, "circle"));
       if (circle !== "" && location.value.shelf !== "people") return fail(onlyPeople);
+      const contact = toOneLine(textOf(input, "contact"));
+      if (contact !== "" && location.value.shelf !== "people") return fail(onlyPeopleContact);
       const listOr = (field: string, fallback: readonly string[]): readonly string[] =>
         Array.isArray(fieldOf(input, field)) ? stringsOf(input, field) : fallback;
       const text = formatPage({
@@ -471,6 +477,7 @@ export const createMemory = ({
         title,
         ...(gist !== undefined && { gist }),
         ...(circle !== "" && { circle }),
+        ...(contact !== "" && { contact }),
         aliases: listOr("aliases", existing.aliases),
         links: listOr("links", existing.links),
         markdown: markdown.value,
@@ -502,10 +509,13 @@ export const createMemory = ({
       }
       const circle = toOneLine(textOf(input, "circle"));
       if (circle !== "" && location.value.shelf !== "people") return fail(onlyPeople);
+      const contact = toOneLine(textOf(input, "contact"));
+      if (contact !== "" && location.value.shelf !== "people") return fail(onlyPeopleContact);
       const text = formatPage({
         title,
         gist: toOneLine(textOf(input, "gist")),
         ...(circle !== "" && { circle }),
+        ...(contact !== "" && { contact }),
         aliases: stringsOf(input, "aliases"),
         links: stringsOf(input, "links"),
         markdown,

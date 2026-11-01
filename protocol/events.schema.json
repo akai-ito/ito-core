@@ -2467,7 +2467,7 @@
           "minLength": 1
         },
         "area": {
-          "description": "What it's about: `notifications`, `mail`, `calendar`, `capabilities` or `memory`. Show an area you don't know plainly.",
+          "description": "What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities` or `memory`. Show an area you don't know plainly.",
           "type": "string",
           "minLength": 1
         },

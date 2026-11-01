@@ -157,6 +157,15 @@ an old folder into one of yours, waits for one Apply on the Desk, and Done keeps
 an undo. Each mail step in the chat says what it did, such as "Binned “50% off”
 from a shop", and opens onto the mails it read.
 
+Your iCloud Contacts come with the same iCloud connection, over CardDAV, with nothing more to set
+up. They're the source of truth for the facts about people (labelled emails and phones, addresses,
+birthdays, work, related names), and Kumo keeps them current on its own from what it reads, such as
+a new number in a signature or a birthday you mention. Each change is in Done with its reason and an
+undo that puts the card back; merging or deleting cards always waits for one question on the Desk.
+The story about a person stays on their People page in memory, linked to their card. Drafts find
+people's addresses in Contacts by name, and a few days before the birthday of someone you're close
+to, Kumo's line says so. In the conversation it's `ito contacts` commands and a skill file.
+
 Drafts go into Drafts as proper formatted mail: Kumo writes in light Markdown, and the draft is HTML
 with a clean plain-text copy, photos you sent in the chat (or that Kumo found on the web) shown
 inline, small files attached, and your own signature at the end, exactly as you send it. Kumo learns

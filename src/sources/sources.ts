@@ -27,7 +27,7 @@ const icloud: Manifest = {
   kind: "source",
   title: "iCloud",
   symbol: "icloud",
-  summary: "Your iCloud Mail and Calendar, read and kept by Kumo on your box.",
+  summary: "Your iCloud Mail, Calendar and Contacts, read and kept by Kumo on your box.",
   setup: [
     {
       name: "apple_id",
@@ -46,14 +46,14 @@ const icloud: Manifest = {
         "2. In Sign-In and Security, choose App-Specific Passwords.",
         "3. Add one called Ito, and paste it here.",
         "",
-        "It goes to your box only. One connection covers Mail and Calendar.",
+        "It goes to your box only. One connection covers Mail, Calendar and Contacts.",
       ].join("\n"),
       connect: { kind: "link", title: "Open Apple Account", url: "https://account.apple.com/account/manage" },
     },
   ],
   operations: [],
   skill: "",
-  uses: { hosts: ["caldav.icloud.com", "imap.mail.me.com", "smtp.mail.me.com"], folders: [] },
+  uses: { hosts: ["caldav.icloud.com", "contacts.icloud.com", "imap.mail.me.com", "smtp.mail.me.com"], folders: [] },
 };
 
 const outlook: Manifest = {

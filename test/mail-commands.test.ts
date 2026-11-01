@@ -21,6 +21,9 @@ import { fail } from "#result.ts";
 import { createServer, databaseFile, type Server } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore } from "#store/store.ts";
+import { createContactsSource } from "#contacts/carddav.ts";
+import { claraCard } from "./support/contact-cards.ts";
+import { startFakeCardDav, type FakeCardDav } from "./support/fake-carddav.ts";
 import { createFakeMail } from "./support/fake-mail.ts";
 import { draftShape } from "./support/mime.ts";
 
@@ -115,6 +118,7 @@ describe("mail in the conversation, through ito mail commands", () => {
   const mail = createFakeMail(() => new Date().toISOString());
   const server = createCell<Server | undefined>(undefined);
   const context = createCell<EngineContext | undefined>(undefined);
+  const carddav = createCell<FakeCardDav | undefined>(undefined);
 
   const running = (): { readonly server: Server; readonly context: EngineContext } => {
     const current = server.get();
@@ -172,6 +176,10 @@ describe("mail in the conversation, through ito mail commands", () => {
     mail.arrive(offer);
     mail.arrive(promo);
     for (const receipt of oldReceipts) mail.keep("Receipts (old)", receipt);
+    // Their contacts, in a fake iCloud.
+    const contacts = await startFakeCardDav();
+    carddav.set(contacts);
+    contacts.seed("Contacts", "clara.vcf", claraCard);
     const started = createServer({
       embedder: wordEmbedder,
       dataDirectory: home,
@@ -179,6 +187,12 @@ describe("mail in the conversation, through ito mail commands", () => {
       timeZone: "UTC",
       createMailSource: mail.create,
       createCalendarSource: noCalendar,
+      createContactsSource: () =>
+        createContactsSource({
+          appleId: contacts.appleId,
+          appPassword: contacts.appPassword,
+          serverUrl: contacts.serverUrl,
+        }),
       createEngine: (given) => {
         context.set(given);
         return createScriptEngine(systemClock, (_turn, _inputs, now) => ({
@@ -198,6 +212,7 @@ describe("mail in the conversation, through ito mail commands", () => {
 
   afterAll(async () => {
     await server.get()?.close();
+    await carddav.get()?.close();
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -214,7 +229,7 @@ describe("mail in the conversation, through ito mail commands", () => {
     expect(skill).toContain(`${launcher} mail draft: Write a draft`);
     expect(skill).toContain(`${launcher} mail inbox: List what's in their inbox now`);
     expect(skill).toContain(`${launcher} mail move: Move many mails at once`);
-    expect(skill).toContain("  --to <string> (repeat for more): One email address each time");
+    expect(skill).toContain("  --to <string> (repeat for more): One email address, or a name in their Contacts");
     expect(skill).toContain("ito mail draft --to clara.voss@northwind.example --to tess.harlow@halcyon.example");
   });
 
@@ -362,6 +377,41 @@ describe("mail in the conversation, through ito mail commands", () => {
     expect(unsigned?.attachments?.map(({ filename }) => filename)).toEqual(["plan.pdf"]);
     expect(unsignedCard?.draft?.signature).toBeUndefined();
     expect(unsignedCard?.draft?.attachments).toEqual([{ name: "plan.pdf", kind: "file", inline: false }]);
+  });
+
+  it("drafts to someone by name, with the address their Contacts and their mail point to", async () => {
+    const drafted = await command([
+      "draft",
+      "--to",
+      "Clara Voss",
+      "--subject",
+      "Lunch?",
+      "--body",
+      "Free Thursday?",
+      "--title",
+      "Lunch with Clara",
+    ]);
+    const unknown = await command(["draft", "--to", "Quillfield", "--subject", "Hi", "--body", "Hello"]);
+    const card = drafts().find(({ title }) => title === "Lunch with Clara");
+
+    expect(card?.draft?.to).toEqual(["clara.voss@northwind.example"]);
+    expect(mail.drafts().at(-1)?.to).toEqual([{ address: "clara.voss@northwind.example", name: "Clara Voss" }]);
+    expect(drafted.text).toContain(
+      "From Contacts, Clara Voss: clara.voss@northwind.example, the address they last wrote from.",
+    );
+    expect(unknown.text).toBe(
+      "“Quillfield” isn't in their Contacts. Give an email address, or look them up with ito contacts search.",
+    );
+  });
+
+  it("looks people up with ito contacts commands, from a skill file of their own", async () => {
+    const found = await command(["search", "--query", "clara"], undefined, "contacts");
+    const instructions = running().context.instructions();
+    const skill = readFileSync(path.join(home, "skills", "contacts", "SKILL.md"), "utf8");
+
+    expect(found.text).toContain("Clara Voss · Head of Product at Northwind, Product");
+    expect(instructions).toContain("- contacts: their iCloud Contacts, the source of truth");
+    expect(skill).toContain(`${launcher} contacts update: Change someone's card`);
   });
 
   it("refuses a picture or a file from outside the workspace, saying so", async () => {
