@@ -117,17 +117,17 @@ Connect iCloud, Outlook or Gmail in Ari's Settings › Capabilities, and Kumo, t
 the background, reads every mail as it arrives: it puts bookings on your calendar, drafts replies in
 your voice into your Drafts folder, and records what it did in Done, with an undo. It never sends a
 mail. At the top of the Desk, Kumo speaks for the moment, not the clock: a line or two at the first
-calm moment after your morning time, however late you open Ito, when something that matters
-arrives, or when your day changes, and otherwise all quiet. Each line is also a message in the
-conversation, written with your chosen model thinking modestly; once you've seen it on the Desk, no
-notification goes out for it. In the conversation, Ari reaches the same mail through `ito mail` commands and a skill file,
-rather than more tools in every turn: ask it to go through the recruiters who wrote this month, and
-it searches, reads each thread, and drafts the replies you agree to.
+calm moment after your morning time, however late you open Ito, when something that matters arrives,
+or when your day changes, and otherwise all quiet. Each line is also a message in the conversation,
+written with your chosen model thinking modestly; once you've seen it on the Desk, no notification
+goes out for it. In the conversation, Ari reaches the same mail through `ito mail` commands and a
+skill file, rather than more tools in every turn: ask it to go through the recruiters who wrote this
+month, and it searches, reads each thread, and drafts the replies you agree to.
 
 Ari notifies you while you're away: when a reply finishes, when something fails, when it asks you
-something, and when Kumo's line matters and you haven't seen it. To switch notifications on, create an APNs key in your Apple Developer account
-(Certificates, Identifiers & Profiles, then Keys, with Apple Push Notifications service), download
-its `.p8` file once, and run:
+something, and when Kumo's line matters and you haven't seen it. To switch notifications on, create
+an APNs key in your Apple Developer account (Certificates, Identifiers & Profiles, then Keys, with
+Apple Push Notifications service), download its `.p8` file once, and run:
 
 ```sh
 node bin/ito.ts push setup --key AuthKey_ABC123DEFG.p8 --key-id ABC123DEFG \
