@@ -157,6 +157,12 @@ an old folder into one of yours, waits for one Apply on the Desk, and Done keeps
 an undo. Each mail step in the chat says what it did, such as "Binned “50% off”
 from a shop", and opens onto the mails it read.
 
+Drafts go into Drafts as proper formatted mail: Kumo writes in light Markdown, and the draft is HTML
+with a clean plain-text copy, photos you sent in the chat (or that Kumo found on the web) shown
+inline, small files attached, and your own signature at the end, exactly as you send it. Kumo learns
+each account's signature from your recent sent mail, and adds none if you don't use one. The Desk's
+draft card shows the formatted words, the signature and what's attached.
+
 Kumo earns your trust one kind of work at a time: sorting mail, the calendar, drafts, and contacts
 later. Each starts at Learning, where a quiet card each morning offers yesterday's calls to glance
 at. After a clean stretch, 20 calls and two weeks with no correction, it moves to Spot checks, where

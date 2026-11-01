@@ -85,6 +85,33 @@ const stored = (name: string, receivedAt: string, flags: readonly string[] = [])
   flags,
 });
 
+// An older mail they sent from Outlook on the web, in HTML with their signature's logo inline.
+const signedInHtml = wire(
+  [
+    "From: Sam Rivera <sam@example.com>",
+    "To: Tess Harlow <tess.harlow@halcyon.example>",
+    "Subject: Thursday",
+    "Date: Sat, 20 Sep 2026 09:00:00 +0000",
+    "Message-ID: <signed-1@example.com>",
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/related; boundary="rel"',
+    "",
+    "--rel",
+    'Content-Type: text/html; charset="UTF-8"',
+    "",
+    '<p>Thursday works for me.</p><div id="Signature"><p>Sam Rivera</p><p><img src="cid:logo@northwind.example"></p></div>',
+    "--rel",
+    "Content-Type: image/png",
+    "Content-ID: <logo@northwind.example>",
+    'Content-Disposition: inline; filename="logo.png"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    "iVBORw0KGgo=",
+    "--rel--",
+    "",
+  ].join("\n"),
+);
+
 const arrival = (count: number): string =>
   wire(
     [
@@ -486,7 +513,10 @@ describe("over IMAP", () => {
             Drafts: { "special-use": "\\Drafts" },
             "Sent Messages": {
               "special-use": "\\Sent",
-              messages: [stored("workshop-question", "2026-10-29T14:40:06Z", ["\\Seen"])],
+              messages: [
+                { raw: signedInHtml, internaldate: new Date("2026-09-20T09:00:01Z"), flags: ["\\Seen"] },
+                stored("workshop-question", "2026-10-29T14:40:06Z", ["\\Seen"]),
+              ],
             },
             "Deleted Messages": { "special-use": "\\Trash" },
             Receipts: { messages: [{ raw: arrival(41), internaldate: new Date("2026-10-30T10:00:00Z"), flags: [] }] },
@@ -769,6 +799,24 @@ describe("over IMAP", () => {
     expect(sent.ok ? sent.value.map(({ messageId, folder }) => [folder, messageId]) : sent.failure).toEqual([
       ["Sent Messages", ids.question],
     ]);
+  });
+
+  it("reads the last mails in Sent whole, newest first, with their HTML and the pictures they carried", async () => {
+    const source = connect();
+    const bodies = await source.sentBodies(5);
+    const latest = await source.sentBodies(1);
+    if (!bodies.ok || !latest.ok) throw new Error("Sent couldn't be read.");
+
+    expect(bodies.value.map(({ text }) => text.trim().split("\n", 1)[0])).toEqual([
+      "How about Thursday morning instead of Friday?",
+      "Thursday works for me.",
+    ]);
+    expect(bodies.value[0]?.html).toBeUndefined();
+    expect(bodies.value[1]).toMatchObject({
+      html: expect.stringContaining('<div id="Signature"><p>Sam Rivera</p>') as unknown,
+      images: [{ cid: "logo@northwind.example", filename: "logo.png", contentType: "image/png" }],
+    });
+    expect(latest.value).toHaveLength(1);
   });
 
   it("reads Sent again on a fresh connection when the session drops under the read", async () => {

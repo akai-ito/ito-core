@@ -22,6 +22,7 @@ import { createServer, databaseFile, type Server } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore } from "#store/store.ts";
 import { createFakeMail } from "./support/fake-mail.ts";
+import { draftShape } from "./support/mime.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-mail-commands-"));
 const launcher = path.join(home, "bin", "ito");
@@ -54,6 +55,10 @@ const oldReceipts = Array.from({ length: 30 }, (_, index) => ({
   subject: `Receipt ${String(index + 1)}`,
   text: "Paid, thank you.",
 }));
+
+const jpeg = Buffer.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70]);
+
+const signature = "Sam\nProduct Engineer, Halcyon";
 
 const absent = (): Promise<never> => Promise.resolve(fail("No calendar in this test.") as never);
 
@@ -156,6 +161,13 @@ describe("mail in the conversation, through ito mail commands", () => {
     // A skill file an earlier version wrote for the mail account, which has no commands of its own.
     mkdirSync(path.join(home, "skills", "icloud"), { recursive: true });
     writeFileSync(path.join(home, "skills", "icloud", "SKILL.md"), "---\nname: icloud\n---\n");
+    // A picture they attached in the chat, as the engine saves it in the workspace, and a file Kumo made.
+    mkdirSync(path.join(home, "workspace", "uploads"), { recursive: true });
+    writeFileSync(path.join(home, "workspace", "uploads", "beach.jpg"), jpeg);
+    writeFileSync(path.join(home, "workspace", "plan.pdf"), "%PDF-1.7");
+    // What they sent lately, which ends with their signature.
+    mail.sentWhole("icloud", { text: `Sounds good.\n\nCheers,\nSam\n\n${signature}`, images: [] });
+    mail.sentWhole("icloud", { text: `Thursday works.\n\n${signature}`, images: [] });
     // In the inbox before the server watches it, so neither mail arrives as new.
     mail.arrive(offer);
     mail.arrive(promo);
@@ -278,7 +290,8 @@ describe("mail in the conversation, through ito mail commands", () => {
     const missing = await command(["draft", "--replaces", "card_gone", "--body", "Hello"]);
 
     expect(fixed.text).toBe(
-      `Saved the draft in Drafts and put it on the Desk as ${first?.id ?? ""}, in place of the earlier one.`,
+      `Saved the draft in Drafts and put it on the Desk as ${first?.id ?? ""}, in place of the earlier one. ` +
+        "Their signature from their sent mail is at the end.",
     );
     expect(drafts().filter((card) => card.draft?.subject === "Coffee next week?")).toEqual([
       expect.objectContaining({
@@ -290,6 +303,93 @@ describe("mail in the conversation, through ito mail commands", () => {
     ]);
     expect(mail.removedDrafts()).toContain(first?.draft?.message_id);
     expect(missing.text).toMatch(/^There's no draft card_gone on the Desk to replace\. Drafts there: /u);
+  });
+
+  it("drafts formatted mail with a picture from the chat, a file and their signature, kept when redrafted", async () => {
+    const body = "Here's **the plan**:\n\n- Fly out Friday\n- Back Sunday\n\n![Leo at the beach](uploads/beach.jpg)";
+    const drafted = await command([
+      "draft",
+      "--to",
+      "leo@halcyon.example",
+      "--subject",
+      "The weekend",
+      "--body",
+      body,
+      "--attach",
+      "plan.pdf",
+      "--title",
+      "Weekend plan for Leo",
+    ]);
+    const card = drafts().find(({ title }) => title === "Weekend plan for Leo");
+    const saved = mail.drafts().at(-1);
+    if (!card || !saved) throw new Error("The draft wasn't saved.");
+
+    expect(drafted.text).toBe(
+      `Saved the draft in Drafts and put it on the Desk as ${card.id}. Their signature from their sent mail is at ` +
+        "the end. It carries beach.jpg (inline) and plan.pdf.",
+    );
+    expect(card.draft).toMatchObject({
+      body,
+      signature,
+      attachments: [
+        { name: "beach.jpg", kind: "image", inline: true },
+        { name: "plan.pdf", kind: "file", inline: false },
+      ],
+    });
+    expect(saved.body).toBe(
+      `Here's the plan:\n\n- Fly out Friday\n- Back Sunday\n\n[image: Leo at the beach]\n\n${signature}`,
+    );
+    expect(saved.html).toContain("<strong>the plan</strong>");
+    expect(saved.html).toContain("<div>Sam<br>Product Engineer, Halcyon</div>");
+    expect(await draftShape(saved)).toEqual([
+      "multipart/mixed",
+      [
+        ["multipart/alternative", ["text/plain", ["multipart/related", ["text/html", "image/jpeg"]]]],
+        "application/pdf",
+      ],
+    ]);
+
+    await command(["draft", "--replaces", card.id, "--body", "Here's the *new* plan."]);
+    const redrafted = mail.drafts().at(-1);
+    await command(["draft", "--replaces", card.id, "--no-signature"]);
+    const unsigned = mail.drafts().at(-1);
+    const unsignedCard = drafts().find(({ id }) => id === card.id);
+
+    expect(redrafted?.body).toBe(`Here's the new plan.\n\n${signature}`);
+    expect(redrafted?.attachments?.map(({ filename }) => filename)).toEqual(["plan.pdf"]);
+    expect(redrafted?.inline).toEqual([]);
+    expect(unsigned?.body).toBe("Here's the new plan.");
+    expect(unsigned?.attachments?.map(({ filename }) => filename)).toEqual(["plan.pdf"]);
+    expect(unsignedCard?.draft?.signature).toBeUndefined();
+    expect(unsignedCard?.draft?.attachments).toEqual([{ name: "plan.pdf", kind: "file", inline: false }]);
+  });
+
+  it("refuses a picture or a file from outside the workspace, saying so", async () => {
+    const before = mail.drafts().length;
+    const outside = await command([
+      "draft",
+      "--to",
+      "leo@halcyon.example",
+      "--subject",
+      "Hi",
+      "--body",
+      "Here.",
+      "--attach",
+      "../ito.db",
+    ]);
+    const missing = await command([
+      "draft",
+      "--to",
+      "leo@halcyon.example",
+      "--subject",
+      "Hi",
+      "--body",
+      "![Leo](uploads/gone.jpg)",
+    ]);
+
+    expect(outside.text).toBe("../ito.db isn't in your workspace, so it can't go in a mail.");
+    expect(missing.text).toBe("There's no uploads/gone.jpg in your workspace.");
+    expect(mail.drafts()).toHaveLength(before);
   });
 
   it("moves a few mails at once, as one line in the Done list", async () => {

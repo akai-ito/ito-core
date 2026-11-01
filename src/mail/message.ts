@@ -1,5 +1,7 @@
 import { simpleParser, type AddressObject, type EmailAddress, type HeaderLines, type ParsedMail } from "mailparser";
 import MailComposer from "nodemailer/lib/mail-composer";
+import type { InlinePart, Part } from "#mail/compose.ts";
+import { parseHtml, plainText } from "#mail/html.ts";
 
 export type Address = { readonly address: string; readonly name?: string };
 
@@ -27,10 +29,23 @@ export type Draft = {
   readonly to: readonly Address[];
   readonly cc?: readonly Address[];
   readonly subject: string;
+  // The plain text part.
   readonly body: string;
+  // The HTML part, with any pictures it shows inline as parts by Content-ID, and files attached.
+  readonly html?: string;
+  readonly inline?: readonly InlinePart[];
+  readonly attachments?: readonly Part[];
   readonly inReplyTo?: string;
   readonly references?: readonly string[];
   readonly replaces?: string;
+};
+
+// A mail they sent, whole, for learning their signature: its own words, its HTML, and the pictures it carried
+// inline by Content-ID, such as a logo.
+export type SentBody = {
+  readonly text: string;
+  readonly html?: string;
+  readonly images: readonly InlinePart[];
 };
 
 export type MailMeta = {
@@ -193,6 +208,20 @@ export const parseMail = async (source: Buffer | string, meta: MailMeta): Promis
     meta,
   );
 
+export const parseSentBody = async (source: Buffer | string): Promise<SentBody> => {
+  const parsed = await simpleParser(source, { skipImageLinks: true, keepCidLinks: true });
+  const html = typeof parsed.html === "string" && parsed.html.trim() !== "" ? parsed.html : undefined;
+  // A mail in HTML alone, inside multipart/related, comes with no text, so its text is read from the HTML.
+  const text = parsed.text ?? (html === undefined ? "" : plainText(parseHtml(html)));
+  return {
+    text,
+    ...(html !== undefined && { html }),
+    images: parsed.attachments.flatMap(({ cid, filename = "image", contentType, content }) =>
+      cid === undefined || cid === "" ? [] : { cid, filename, contentType, content },
+    ),
+  };
+};
+
 const toMimeAddress = ({ address, name = "" }: Address): { readonly address: string; readonly name: string } => ({
   address,
   name,
@@ -204,14 +233,30 @@ const replyReferences = (draft: Pick<Draft, "inReplyTo" | "references">): readon
   ...new Set([...(draft.references ?? []), ...(draft.inReplyTo === undefined ? [] : [draft.inReplyTo])]),
 ];
 
+// Plain text alone, or multipart/alternative with the HTML; pictures shown inline sit with the HTML in
+// multipart/related, by Content-ID, and attached files make it multipart/mixed.
 export const toDraftMime = (draft: Draft, messageId: string, date: Date): Promise<Buffer> => {
   const references = replyReferences(draft);
+  const html = draft.html ?? "";
+  const inline = html === "" ? [] : (draft.inline ?? []);
+  const attachments = [
+    ...inline.map(({ filename, contentType, content, cid }) => ({
+      filename,
+      contentType,
+      content,
+      cid,
+      contentDisposition: "inline" as const,
+    })),
+    ...(draft.attachments ?? []).map(({ filename, contentType, content }) => ({ filename, contentType, content })),
+  ];
   return new MailComposer({
     from: toMimeAddress(draft.from),
     to: draft.to.map(toMimeAddress),
     ...(draft.cc !== undefined && draft.cc.length > 0 && { cc: draft.cc.map(toMimeAddress) }),
     subject: draft.subject,
     text: draft.body,
+    ...(html !== "" && { html }),
+    ...(attachments.length > 0 && { attachments }),
     messageId: bracket(messageId),
     date,
     ...(draft.inReplyTo !== undefined && { inReplyTo: bracket(draft.inReplyTo) }),
