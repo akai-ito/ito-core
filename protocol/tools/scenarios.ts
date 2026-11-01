@@ -156,8 +156,9 @@ const sourcesOff: readonly Readonly<Record<string, unknown>>[] = [
       {
         name: "apple_id",
         kind: "text",
-        title: "Apple ID",
+        title: "Email address",
         description: "The email address you sign in to iCloud with.",
+        placeholder: "you@icloud.com",
       },
       {
         name: "app_password",
@@ -186,7 +187,13 @@ const sourcesOff: readonly Readonly<Record<string, unknown>>[] = [
     version: "0.1",
     state: "off",
     fields: [
-      { name: "address", kind: "text", title: "Outlook address", description: "Your Outlook.com address." },
+      {
+        name: "address",
+        kind: "text",
+        title: "Email address",
+        description: "The email address you sign in to Outlook.com with.",
+        placeholder: "you@outlook.com",
+      },
       {
         name: "token",
         kind: "secret",
@@ -213,7 +220,13 @@ const sourcesOff: readonly Readonly<Record<string, unknown>>[] = [
     version: "0.1",
     state: "off",
     fields: [
-      { name: "address", kind: "text", title: "Gmail address", description: "Your Gmail address." },
+      {
+        name: "address",
+        kind: "text",
+        title: "Email address",
+        description: "The email address you sign in to Gmail with.",
+        placeholder: "you@gmail.com",
+      },
       {
         name: "app_password",
         kind: "secret",

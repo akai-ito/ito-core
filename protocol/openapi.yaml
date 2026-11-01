@@ -1790,6 +1790,9 @@ components:
         kind: { enum: [text, secret, toggle, choice] }
         title: { type: string }
         description: { type: string }
+        placeholder:
+          description: What to show in the empty field, such as you@icloud.com.
+          type: string
         optional:
           description: True when the capability can run without it.
           type: boolean

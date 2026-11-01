@@ -1321,6 +1321,8 @@ export interface components {
       kind: "text" | "secret" | "toggle" | "choice";
       title: string;
       description?: string;
+      /** @description What to show in the empty field, such as you@icloud.com. */
+      placeholder?: string;
       /** @description True when the capability can run without it. */
       optional?: boolean;
       /** @description `choice` only: what can be picked. */

@@ -19,6 +19,7 @@ export type Field = {
   readonly kind: FieldKind;
   readonly title: string;
   readonly description?: string;
+  readonly placeholder?: string;
   readonly optional?: boolean;
   readonly options?: readonly { readonly value: string; readonly label: string }[];
   readonly connect?: DeviceConnect | LinkConnect;
