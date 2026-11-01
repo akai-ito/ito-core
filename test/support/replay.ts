@@ -16,7 +16,8 @@ import { startFakeCalDav } from "./fake-caldav.ts";
 import { createFakeMail, type ArrivingMail } from "./fake-mail.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
-import type { Attachment } from "#protocol/types.ts";
+import type { Attachment, WorkKind } from "#protocol/types.ts";
+import type { Rung } from "#work/trust.ts";
 import type { Readiness, VoiceContext } from "#voice/loop.ts";
 import { apnsSettings } from "#notifications/apns.ts";
 import { openNotification } from "#notifications/crypto.ts";
@@ -287,6 +288,8 @@ export const replay = async (name: string): Promise<void> => {
       name: "studio",
 
       clock,
+      // Every call on spot checks gets its "Was this right?" card, so the transcripts can show one.
+      random: () => 0,
       push: { hosts: { production: apns.origin, sandbox: apns.origin } },
       capabilities,
       timeZone: "UTC",
@@ -612,6 +615,14 @@ export const replay = async (name: string): Promise<void> => {
         await advance(time);
         const { url, file } = step as unknown as { readonly url: string; readonly file: string };
         web.update((current) => new Map([...current, [url, file]]));
+        return;
+      }
+      case "trust_holds": {
+        await advance(time);
+        const { ladder } = step as unknown as { readonly ladder: Readonly<Record<WorkKind, Rung>> };
+        for (const [work, rung] of Object.entries(ladder) as [WorkKind, Rung][]) {
+          live.get()?.server.trust.hold(work, rung);
+        }
         return;
       }
       case "pairing_code_shown": {

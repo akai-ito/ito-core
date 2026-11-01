@@ -57,6 +57,8 @@ export type MailOptions = {
   readonly stakesChoice?: StakesChoice;
   // What's in motion for them, such as a job search, so the attention pass knows what's live.
   readonly matters?: () => readonly string[];
+  // How they like their mail sorted, in their words from How to help you, kept from their corrections.
+  readonly preferences?: () => string;
   readonly info: Info;
   readonly comingUp?: () => readonly CalendarItem[];
   readonly onHealth?: (account: Account, health: Health) => void;
@@ -222,7 +224,18 @@ const toJudgement = (answer: unknown): Judgement | undefined => {
 const mattersLines = (matters: readonly string[]): readonly string[] =>
   matters.length === 0 ? [] : [`What's in motion for them now: ${matters.join("; ")}.`];
 
-const attentionPrompt = (account: string, mail: Mail, folders: string, matters: readonly string[]): string =>
+const preferenceLines = (preferences: string): readonly string[] =>
+  preferences === ""
+    ? []
+    : ["How they like their mail sorted, from their corrections, which comes first:", preferences];
+
+const attentionPrompt = (
+  account: string,
+  mail: Mail,
+  folders: string,
+  matters: readonly string[],
+  preferences: string,
+): string =>
   [
     "You read every mail for the person and decide what it needs, so their inbox holds only what needs them. Judge",
     "by consequences, not tone: who sent it, a real deadline, the cost of waiting a day, and whether it touches",
@@ -241,6 +254,7 @@ const attentionPrompt = (account: string, mail: Mail, folders: string, matters: 
     "Stakes are high when a real person wrote it, or it touches money, a deadline, an interview, an opportunity",
     "such as a role or a company reaching out, or something in motion for them; low for routine and automated mail.",
     ...mattersLines(matters),
+    ...preferenceLines(preferences),
     "Give the reason in a line and how confident you are, from 0 to 1.",
     "",
     describe(account, mail),
@@ -583,6 +597,7 @@ export const createMailbox = ({
   work,
   stakesChoice = () => Promise.resolve(undefined),
   matters = () => [],
+  preferences = () => "",
   info,
   comingUp = () => [],
   onHealth = ignore,
@@ -688,7 +703,7 @@ export const createMailbox = ({
 
   const judge = async (account: string, mail: Mail): Promise<Judgement> => {
     const answered = await complete(
-      attentionPrompt(account, mail, folders.note(), matters()),
+      attentionPrompt(account, mail, folders.note(), matters(), preferences().trim()),
       attentionSchema,
       await quickChoice(),
     );

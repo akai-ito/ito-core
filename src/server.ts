@@ -44,11 +44,13 @@ import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
 import { packageVersion } from "#version.ts";
-import type { ModelChoice } from "#protocol/types.ts";
+import type { DoneEntry, ModelChoice } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
+import { toLocal } from "#desk/day.ts";
 import { createDesk } from "#desk/desk.ts";
 import { createMoments } from "#desk/moments.ts";
 import { createWorkTools } from "#work/tools.ts";
+import { createTrust, sectionOf, type Trust } from "#work/trust.ts";
 import { createJobs, type Jobs } from "#jobs/jobs.ts";
 import { registerJobs } from "#http/jobs.ts";
 import { createJobStore } from "#store/jobs.ts";
@@ -92,6 +94,8 @@ export type ServerOptions = {
   readonly createMailSource?: CreateMailSource;
   readonly github?: GitHubHosts;
   readonly backupCheckMs?: number;
+  // Picks the trust ladder's spot checks; a test fixes it.
+  readonly random?: () => number;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
@@ -122,6 +126,7 @@ export type Server = {
   readonly calendar: Calendar;
   readonly mail: Mailbox;
   readonly problems: Problems;
+  readonly trust: Trust;
   readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
@@ -148,6 +153,13 @@ const motionSkill: OwnSkill = {
 };
 
 const dayMs = 24 * 60 * 60 * 1000;
+
+const demoMail = (subject: string): NonNullable<DoneEntry["mail"]> => ({
+  account: "icloud",
+  message_id: `demo-${randomUUID()}@acme.com`,
+  from: "Acme",
+  subject,
+});
 const textRetentionMs = 30 * dayMs;
 const defaultHeartbeatMs = 15_000;
 
@@ -250,7 +262,14 @@ export const createServer = (options: ServerOptions): Server => {
     skills,
     instructions: () => voiceText.replaceAll("{lead}", () => leadOf(store)) + skills(),
     inMind: () =>
-      [memory.inMindText(), motions.inMindText(), jobs.inMindText(), gettingStarted.inMindText(), callContext()]
+      [
+        memory.inMindText(),
+        motions.inMindText(),
+        jobs.inMindText(),
+        trust.inMindText(),
+        gettingStarted.inMindText(),
+        callContext(),
+      ]
         .filter(Boolean)
         .join("\n\n"),
     callTool: (name, input, run) => callTool(name, input, run),
@@ -316,6 +335,11 @@ export const createServer = (options: ServerOptions): Server => {
     return done;
   };
   const timeZone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // One part of their How to help you page, such as how they like their mail sorted.
+  const howToHelp = (section: string): string => {
+    const page = memory.page("memory:helping-you");
+    return page.ok ? sectionOf(page.value.markdown, section) : "";
+  };
   const desk = createDesk({ store, identifiers, clock, timeZone, work: runWork, info });
   const jobs = createJobs({
     store: createJobStore(database),
@@ -385,6 +409,7 @@ export const createServer = (options: ServerOptions): Server => {
         .list()
         .filter(({ status }) => status === "active")
         .map(({ kind, title }) => `${title} (${kind})`),
+    preferences: () => howToHelp("Sorting mail"),
     info,
     comingUp: () => store.desk().coming_up,
     onHealth: (account, health) => {
@@ -453,6 +478,17 @@ export const createServer = (options: ServerOptions): Server => {
     notify: notifier.moment,
     info,
   });
+  const trust = createTrust({
+    store,
+    desk,
+    clock,
+    timeZone,
+    tell: moments.tell,
+    work: runWork,
+    isGettingStarted: () => gettingStarted.state().state !== "done",
+    ...(options.random && { random: options.random }),
+    info,
+  });
 
   const app = createApp({
     store,
@@ -473,6 +509,7 @@ export const createServer = (options: ServerOptions): Server => {
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     desk,
+    trust,
     timeZone,
     calendar,
     gettingStarted,
@@ -507,12 +544,57 @@ export const createServer = (options: ServerOptions): Server => {
     newId: () => identifiers.attachment(),
     fetchImage: (url, signal) => fetcher(url, { signal }),
   });
+  // A made-up day for the demo: what Kumo did, where it stands on the ladder, and a card to glance at.
+  const showWork = (): void => {
+    const filed = { kind: "mail_filed", account: "icloud", id: "demo", back: "inbox" };
+    const cleared = [
+      ["Bank statement", "Routine, nothing due"],
+      ["CI passed on ito-core", "You saw it on the PR"],
+      ["Weekly running summary", "Nothing new"],
+      ["Water bill", "Direct debit, nothing to do"],
+      ["Daily digest from Acme", "You rarely open these"],
+      ["Leo: “ha, see you there”", "A reply, no action"],
+    ] as const;
+    const clearedToday = Array.from({ length: 38 }, (_, at) => cleared[at % cleared.length] ?? cleared[0]);
+    for (const [text, reason] of clearedToday) desk.addDone({ text, reason, mail: demoMail(text), quiet: true });
+    const handled = [
+      { text: "Drafted a thank-you to Tess Harlow at Halcyon", reason: "She sent the next steps.", work: "drafts" },
+      { text: "Drafted a reply to Clara Voss at Northwind", reason: "She asked for times next week.", work: "drafts" },
+      { text: "Northwind: Clara's note → Job search", reason: "A reply to yours; nothing to answer yet." },
+      { text: "Climbing with Leo → your calendar, 20:00", reason: "Leo confirmed by mail.", work: "calendar" },
+      { text: "Acme Pizza promos: unsubscribed, binned", reason: "You haven't opened one since March." },
+      {
+        text: "Quillfield Dental moved to Fri 13, 9:30",
+        reason: "Their mail confirmed the new time.",
+        work: "calendar",
+      },
+      { text: "Electricity bill → Admin, due 14 Nov", reason: "A bill with a date on it; a reminder's set." },
+    ] as const;
+    for (const entry of handled.toReversed()) {
+      desk.addDone({
+        text: entry.text,
+        reason: entry.reason,
+        quiet: false,
+        ...("work" in entry ? { work: entry.work } : { mail: demoMail(entry.text), undo: filed }),
+      });
+    }
+    const daysAgo = (days: number): string => toTimestamp(clock.now() - days * dayMs);
+    trust.hold("sorting", { step: "trusted", since: daysAgo(1), change: { kind: "climb", days: 15 } });
+    trust.hold("calendar", {
+      step: "spot_checks",
+      since: daysAgo(2),
+      change: { kind: "corrected", quote: "Quillfield Dental moved to Thu 12", at: daysAgo(2), stepped: true },
+    });
+    trust.hold("drafts", { step: "learning", since: daysAgo(9), change: { kind: "start" } });
+    trust.review(toLocal(clock.now(), timeZone).day, "Today");
+  };
   const coreTools: readonly Tool[] = [
     createAskTool(turns),
     imageTool,
     ...memory.tools,
     ...motions.tools,
     ...createWorkTools({ post: moments.tell, desk }),
+    ...trust.tools,
     ...calendar.tools,
     ...jobs.tools,
     ...mail.tools,
@@ -622,6 +704,17 @@ export const createServer = (options: ServerOptions): Server => {
       },
     },
     {
+      name: "show_work",
+      title: "Show a sample day of Kumo's work",
+      audience: "hidden",
+      description: "Fill today's Done and the trust ladder with a sample day, and a card to glance at, for the demo.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      call: () => {
+        showWork();
+        return Promise.resolve({ text: "Filled today's work with a sample day." });
+      },
+    },
+    {
       name: "moment_now",
       title: "Write Kumo's line now",
       audience: "hidden",
@@ -678,6 +771,7 @@ export const createServer = (options: ServerOptions): Server => {
     motions.close();
     topics.close();
     moments.close();
+    trust.close();
     jobs.close();
     gettingStarted.close();
     calendar.close();
@@ -710,6 +804,7 @@ export const createServer = (options: ServerOptions): Server => {
     calendar,
     mail,
     problems,
+    trust,
     callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();

@@ -321,6 +321,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/done/{entry}/wrong": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Tell Kumo it got something wrong
+     * @description "That was wrong", on anything Kumo did. Kumo undoes it where it can (as with
+     *     `POST /v0/done/{entry}/undo`, and otherwise with its own tools in the background), keeps what
+     *     to do differently as a preference, and records that in Done. When it's one of Kumo's own calls
+     *     (the entry's `work`), that kind of work steps back one rung on the trust ladder, and Kumo's
+     *     next line says so. Say what was wrong in `text`, or send `{}` and Kumo works it out. The answer
+     *     is the entry, with `corrected_at`. Saying it again only adds your words.
+     */
+    post: operations["correctDone"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/desk": {
     parameters: {
       query?: never;
@@ -399,12 +424,35 @@ export interface paths {
      * Read Kumo's work today
      * @description Kumo's work today, local time, for "47 in: 3 need you, 6 handled, 38 cleared": what it
      *     handled, and the mail it read and cleared with nothing needed, each newest first with its
-     *     reason and whether it can be undone. What needs you is the Desk's `waiting`. Earlier days
-     *     are in `GET /v0/done`.
+     *     reason and whether it can be undone. What needs you is the Desk's `waiting`. `trust` is how
+     *     much Kumo checks with you for each kind of work it has done. Another day's work, such as the
+     *     day a review card asks you to glance at, comes with `day`; everything is in `GET /v0/done`.
      */
     get: operations["getWork"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/trust/{work}/reset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Show me everything again
+     * @description Puts one kind of Kumo's work back to Learning, whatever its rung: Kumo shows you its calls
+     *     again, with a card a day to glance at them, and climbs only after a fresh clean stretch.
+     *     Saying "show me everything again" in the conversation does the same.
+     */
+    post: operations["resetTrust"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2085,14 +2133,46 @@ export interface components {
     MomentResult: {
       moment: components["schemas"]["Moment"];
     };
-    /** @description Kumo's work today. It will grow, such as with how much Kumo checks with you. */
+    /** @description Kumo's work for a day, today unless you asked for another, and how much it checks with you. */
     Work: {
-      /** @description Today, local time, such as `2026-11-05`. */
+      /** @description The local day, such as `2026-11-05`. */
       day: string;
-      /** @description What Kumo did without you today, newest first. */
+      /** @description What Kumo did without you that day, newest first. */
       handled: components["schemas"]["DoneEntry"][];
-      /** @description The mail Kumo read and left alone today (`quiet`), newest first. */
+      /** @description The mail Kumo read and left alone that day (`quiet`), newest first. */
       cleared: components["schemas"]["DoneEntry"][];
+      /**
+       * @description The trust ladder, now: one rung for each kind of work Kumo has done, in a fixed order.
+       *     Draw each as three steps filled to its `step`, with its `line` under it.
+       */
+      trust: components["schemas"]["Trust"][];
+    };
+    /**
+     * @description How much Kumo checks with you for one kind of work. `learning`: it shows you its calls, with a
+     *     card a day to glance at them. `spot_checks`: about one call in five may get a quiet "Was this
+     *     right?" card. `trusted`: only what needs you. It climbs a rung after a clean stretch (enough
+     *     calls and about two weeks with no correction), and a "That was wrong" steps it back one.
+     */
+    Trust: {
+      work: components["schemas"]["WorkKind"];
+      /** @description Its name, such as "Sorting mail". */
+      title: string;
+      /**
+       * @description Show a step you don't recognise as Learning.
+       * @enum {unknown}
+       */
+      step: "learning" | "spot_checks" | "trusted";
+      /** @description Kumo's line on where it stands and why, such as "Two weeks without a correction on sorting." */
+      line: string;
+      /** @description When its current stretch began, with its first call, a climb, a correction or a reset. */
+      since: components["schemas"]["Timestamp"];
+    };
+    TrustResult: {
+      trust: components["schemas"]["Trust"];
+    };
+    /** @description What was wrong, in your words; `{}` just says it was wrong. */
+    CorrectDone: {
+      text?: string;
     };
     NewEvent: {
       title: string;
@@ -2489,6 +2569,11 @@ export interface components {
      * @description A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.
      */
     UploadId: string;
+    /**
+     * @description A kind of Kumo's work, each with its own place on the trust ladder: `sorting`, the mail it files, bins and clears; `calendar`, what it puts on, moves or takes off your calendars; `drafts`, the replies it writes for you; `contacts`, what it changes in your contacts. Show a kind you don't recognise by the title Kumo's work gives it.
+     * @enum {unknown}
+     */
+    WorkKind: "sorting" | "calendar" | "drafts" | "contacts";
     /** @description One thing Kumo did without you, for the Done list. Reply to it with a message whose `done` names it, and the correction becomes a preference. */
     DoneEntry: {
       id: components["schemas"]["DoneId"];
@@ -2511,6 +2596,10 @@ export interface components {
       undo: boolean;
       /** @description A mail Kumo read and left alone: "read, nothing needed". Fold these into one line a day. */
       quiet: boolean;
+      /** @description The kind of work it was, when it's one of Kumo's own calls: what the trust ladder counts. Absent for anything else, such as acting on your answer to a card. */
+      work?: components["schemas"]["WorkKind"];
+      /** @description When you said it was wrong, with `POST /v0/done/{entry}/wrong`. Show it as noted rather than offering That was wrong again. */
+      corrected_at?: components["schemas"]["Timestamp"];
     };
     /** @description Opaque. The server makes it when Kumo schedules a look. */
     JobId: string;
@@ -2626,6 +2715,12 @@ export interface components {
       /** @description Something Kumo isn't sure about, such as whether a mail it binned was right. */
       question?: {
         text: string;
+      };
+      /** @description On a `question` card: Kumo is still learning a kind of work, so once a day it asks you to glance at its calls, such as "Yesterday I sorted 44 mails. Glance?". Its first option opens Kumo's work for `day`, showing only these kinds of work; answer the card with the option you tapped, as for any card. */
+      review?: {
+        /** @description The local day of the calls, such as `2026-11-10`, for `GET /v0/work?day=`. */
+        day: string;
+        work: components["schemas"]["WorkKind"][];
       };
       /** @description Kumo offers to take something on, such as a need that keeps coming up. Accepting lets Kumo do it in the background. */
       offer?: {
@@ -3093,6 +3188,9 @@ export type CardResult = components["schemas"]["CardResult"];
 export type MomentAnswer = components["schemas"]["MomentAnswer"];
 export type MomentResult = components["schemas"]["MomentResult"];
 export type Work = components["schemas"]["Work"];
+export type Trust = components["schemas"]["Trust"];
+export type TrustResult = components["schemas"]["TrustResult"];
+export type CorrectDone = components["schemas"]["CorrectDone"];
 export type NewEvent = components["schemas"]["NewEvent"];
 export type EventResult = components["schemas"]["EventResult"];
 export type Lead = components["schemas"]["Lead"];
@@ -3148,6 +3246,7 @@ export type Call = components["schemas"]["Call"];
 export type TopicId = components["schemas"]["TopicId"];
 export type Topic = components["schemas"]["Topic"];
 export type UploadId = components["schemas"]["UploadId"];
+export type WorkKind = components["schemas"]["WorkKind"];
 export type DoneEntry = components["schemas"]["DoneEntry"];
 export type JobId = components["schemas"]["JobId"];
 export type Job = components["schemas"]["Job"];
@@ -3646,6 +3745,41 @@ export interface operations {
       404: components["responses"]["NotFound"];
     };
   };
+  correctDone: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entry: components["schemas"]["DoneId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "text": "I needed that one"
+         *     }
+         */
+        "application/json": components["schemas"]["CorrectDone"];
+      };
+    };
+    responses: {
+      /** @description Noted. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DoneResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
   getDesk: {
     parameters: {
       query?: never;
@@ -3728,7 +3862,10 @@ export interface operations {
   };
   getWork: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description A local day, such as `2026-11-10`. Today if left out. */
+        day?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -3746,6 +3883,32 @@ export interface operations {
         };
       };
       401: components["responses"]["TokenRejected"];
+    };
+  };
+  resetTrust: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        work: components["schemas"]["WorkKind"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Back to Learning. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TrustResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
     };
   };
   answerCard: {

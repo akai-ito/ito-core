@@ -287,6 +287,10 @@ const showGettingStarted: Act["act"] = async (callTool) => {
   await callTool("show_getting_started", {});
 };
 
+const showWork: Act["act"] = async (callTool) => {
+  await callTool("show_work", {});
+};
+
 const momentNow: Act["act"] = async (callTool) => {
   await callTool("moment_now", {});
 };
@@ -299,6 +303,7 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
     { pattern: /\binvite\b/u, act: showInvite, said: "Tess's invite is on your Desk." },
     { pattern: /\bmail\b/u, act: showMail, said: "A booking came in; there's a draft for you on the Desk." },
     { pattern: /\bstart\b/u, act: showGettingStarted, said: "I've read your mail. Here's what I found." },
+    { pattern: /\bwork\b/u, act: showWork, said: "Here's my day so far, in my work on the Desk." },
   ].find(({ pattern }) => pattern.test(text));
   if (!chosen) return undefined;
   const actAt = lastAt(start) + 300;
@@ -312,6 +317,7 @@ export const demoWork =
     if (prompt.includes("You asked them on the Desk") || prompt.includes("At the top of their Desk")) {
       return ok("Noted; nothing more was needed.");
     }
+    if (prompt.includes("They told you this was wrong")) return ok("Noted on How to help you for next time.");
     if (!prompt.includes("Post your first question")) return fail("The demo does no background work.");
     await callTool("post", { text: "While I read: what would make the next month a good one for you?" }, run);
     return ok("Asked.");

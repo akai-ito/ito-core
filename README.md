@@ -140,6 +140,16 @@ than 25, such as an old folder into one of yours, waits for one Apply on the Des
 as one line with an undo. Each mail step in the chat says what it did, such as "Binned “50% off”
 from a shop", and opens onto the mails it read.
 
+Kumo earns your trust one kind of work at a time: sorting mail, the calendar, drafts, and contacts
+later. Each starts at Learning, where a quiet card each morning offers yesterday's calls to glance
+at. After a clean stretch, 20 calls and two weeks with no correction, it moves to Spot checks, where
+about one call in five may get a quiet "Was this right?", and then to Trusted, where only what needs
+you reaches you; Kumo's line says each time. "That was wrong" on anything in Kumo's work undoes it
+where it can, keeps what to do differently on your How to help you page (the attention pass reads
+the "Sorting mail" part as it sorts), and steps that kind back one rung. "Show me everything again",
+in the conversation or in Kumo's work, puts a kind back to Learning. The stretch is two settings,
+`trust_climb_calls` and `trust_climb_days`.
+
 Ari notifies you while you're away: when a reply finishes, when something fails, when it asks you
 something, and when Kumo's line matters and you haven't seen it. To switch notifications on, create
 an APNs key in your Apple Developer account (Certificates, Identifiers & Profiles, then Keys, with

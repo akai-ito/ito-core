@@ -2,11 +2,14 @@ import type { FastifyInstance } from "fastify";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
 import type { CardAnswer, DeskKeeper } from "#desk/desk.ts";
 import type { RouteSchema } from "#http/validation.ts";
+import type { WorkKind } from "#protocol/types.ts";
 import type { Store } from "#store/store.ts";
+import type { Trust } from "#work/trust.ts";
 
 export type DeskOptions = {
   readonly store: Pick<Store, "desk" | "listDone" | "findDone">;
   readonly desk: DeskKeeper;
+  readonly trust: Pick<Trust, "ladder" | "correct" | "reset">;
   readonly today: () => string;
   readonly schemaFor: (operationId: string) => RouteSchema;
 };
@@ -15,7 +18,7 @@ const toErrorResult = (code: CommandFailureCode, detail: string, message?: strin
   error: toCommandError(code, detail, message),
 });
 
-export const registerDesk = (app: FastifyInstance, { store, desk, today, schemaFor }: DeskOptions): void => {
+export const registerDesk = (app: FastifyInstance, { store, desk, trust, today, schemaFor }: DeskOptions): void => {
   app.get("/v0/desk", { schema: schemaFor("getDesk") }, () => store.desk());
 
   app.post<{ Params: { readonly card: string }; Body: CardAnswer }>(
@@ -57,14 +60,31 @@ export const registerDesk = (app: FastifyInstance, { store, desk, today, schemaF
     },
   );
 
-  app.get("/v0/work", { schema: schemaFor("getWork") }, () => {
-    const entries = desk.today();
+  app.get<{ Querystring: { readonly day?: string } }>("/v0/work", { schema: schemaFor("getWork") }, (request) => {
+    const { day = today() } = request.query;
+    const entries = day === today() ? desk.today() : desk.doneOn(day);
     return {
-      day: today(),
+      day,
       handled: entries.filter(({ quiet }) => !quiet),
       cleared: entries.filter(({ quiet }) => quiet),
+      trust: trust.ladder(),
     };
   });
+
+  app.post<{ Params: { readonly work: WorkKind } }>(
+    "/v0/trust/:work/reset",
+    { schema: schemaFor("resetTrust") },
+    async (request, reply) => {
+      const reset = trust.reset(request.params.work);
+      return reset.ok
+        ? { trust: reset.value }
+        : reply
+            .code(404)
+            .send(
+              toErrorResult("not_found", `No ${request.params.work} work yet.`, "Kumo hasn't done any of that yet."),
+            );
+    },
+  );
 
   app.get<{ Querystring: { readonly before?: string; readonly limit: number } }>(
     "/v0/done",
@@ -76,6 +96,17 @@ export const registerDesk = (app: FastifyInstance, { store, desk, today, schemaF
       }
       const page = store.listDone(before, limit);
       return { entries: page.entries, has_more: page.hasMore };
+    },
+  );
+
+  app.post<{ Params: { readonly entry: string }; Body: { readonly text?: string } }>(
+    "/v0/done/:entry/wrong",
+    { schema: schemaFor("correctDone") },
+    async (request, reply) => {
+      const corrected = await trust.correct(request.params.entry, request.body.text);
+      return corrected.ok
+        ? { entry: corrected.value }
+        : reply.code(404).send(toErrorResult("not_found", `No entry ${request.params.entry}.`));
     },
   );
 

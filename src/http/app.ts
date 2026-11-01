@@ -39,6 +39,7 @@ import type { Presence } from "#notifications/presence.ts";
 import type { Error as ErrorBody, Presence as PresenceBody, RegisterDevice } from "#protocol/types.ts";
 import type { Store } from "#store/store.ts";
 import { toRetryFailure, type Turns } from "#turns/turns.ts";
+import type { Trust } from "#work/trust.ts";
 
 export type ServerInfo = { readonly name: string; readonly version: string };
 
@@ -61,6 +62,7 @@ export type AppOptions = {
   readonly models: ListModels;
   readonly heartbeatMs: number;
   readonly desk: DeskKeeper;
+  readonly trust: Pick<Trust, "ladder" | "correct" | "reset">;
   readonly timeZone: string;
   readonly calendar: Calendar;
   readonly onLeadRenamed: () => void;
@@ -117,6 +119,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     models,
     heartbeatMs,
     desk,
+    trust,
     timeZone,
     calendar,
     onLeadRenamed,
@@ -195,7 +198,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   registerCapabilities(app, host, schemaFor);
   registerSettings(app, { store, onLeadRenamed, schemaFor });
-  registerDesk(app, { store, desk, today: () => toLocal(clock.now(), timeZone).day, schemaFor });
+  registerDesk(app, { store, desk, trust, today: () => toLocal(clock.now(), timeZone).day, schemaFor });
   registerOnboarding(app, { gettingStarted, schemaFor });
   app.post<{
     Body: {

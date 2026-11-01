@@ -77,7 +77,11 @@ type NewMoment = {
   readonly allowsText?: boolean;
 };
 
-type WorkToday = { readonly handled: readonly Fields[]; readonly cleared: readonly Fields[] };
+type WorkToday = {
+  readonly handled: readonly Fields[];
+  readonly cleared: readonly Fields[];
+  readonly trust?: readonly Fields[];
+};
 
 type NewCalendarItem = Omit<CalendarItem, "id">;
 
@@ -172,6 +176,8 @@ export type Transcript = {
   readonly handled: (entry: { readonly text: string; readonly reason?: string }) => Fields;
   readonly mailRead: () => void;
   readonly getWork: (work: WorkToday) => void;
+  // One more thing Kumo did, counted in what it handled unless it's quiet.
+  readonly addDone: (entry: Fields) => Fields;
   readonly addCard: (card: NewCard) => Card;
   readonly answerCard: (card: string, answer: Fields) => void;
   readonly settleCard: (card: string, replacement?: Partial<Card>) => void;
@@ -1545,7 +1551,18 @@ export const createTranscript = (header: Header): Transcript => {
 
   const getWork = (work: WorkToday): void => {
     request("GET", "/v0/work");
-    response(200, { day: timestamp().slice(0, 10), handled: work.handled, cleared: work.cleared });
+    response(200, {
+      day: timestamp().slice(0, 10),
+      handled: work.handled,
+      cleared: work.cleared,
+      trust: work.trust ?? [],
+    });
+  };
+
+  const addDone = (entry: Fields): Fields => {
+    const done = { id: newId("d"), at: timestamp(), quiet: false, undo: false, ...entry };
+    if (!done.quiet) changeDesk((desk) => ({ ...desk, handled: desk.handled + 1 }));
+    return done;
   };
 
   const addCard = (given: NewCard): Card => {
@@ -1745,6 +1762,7 @@ export const createTranscript = (header: Header): Transcript => {
     handled,
     mailRead,
     getWork,
+    addDone,
     addCard,
     answerCard,
     settleCard,
