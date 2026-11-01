@@ -436,9 +436,9 @@ const findFlorencePictures = (transcript: Transcript): FlorencePictures => {
   ) as FlorencePictures;
 };
 
-const qrtTechnical = {
-  uid: "qrt-technical-1112@qrt.com",
-  title: "QRT technical",
+const halcyonTechnical = {
+  uid: "halcyon-technical-1112@halcyon.example",
+  title: "Halcyon technical",
   start: "2026-11-12T14:00:00.000Z",
   end: "2026-11-12T15:30:00.000Z",
   all_day: false,
@@ -447,18 +447,18 @@ const qrtTechnical = {
   status: "confirmed" as const,
 };
 
-const poppyDraft = {
+const tessDraft = {
   account: "outlook",
   from: "divy@outlook.com",
-  to: ["poppy.ward@qrt.com"],
+  to: ["tess.harlow@halcyon.example"],
   subject: "Re: Thursday's technical",
-  body: "Hi Poppy, Thursday at 2 works great, thanks for moving it. See you on Teams! Divy",
-  message_id: "draft-poppy-0001@ito.local",
-  in_reply_to: "moved-0091@qrt.com",
+  body: "Hi Tess, Thursday at 2 works great, thanks for moving it. See you on Teams! Divy",
+  message_id: "draft-tess-0001@ito.local",
+  in_reply_to: "moved-0091@halcyon.example",
 };
 
-const citadelBody =
-  "Hi Sarah, thanks for reaching out! I'd love a first call. Thursday 13th at 9:00 or Friday 14th at 17:30 " +
+const northwindBody =
+  "Hi Maya, thanks for reaching out! I'd love a first call. Thursday 13th at 9:00 or Friday 14th at 17:30 " +
   "work well for me. Here's my CV, and I'm on LinkedIn too. Best, Divy";
 
 const spokenWav = { "Content-Type": "audio/wav", "Content-Length": "12044" };
@@ -2204,7 +2204,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(300);
     transcript.openStream(call);
     transcript.wait(6000);
-    const user = transcript.youSay("walk-question.pcm", "What did Bora say about the QRT panel?", {
+    const user = transcript.youSay("walk-question.pcm", "What did Bora say about the Halcyon panel?", {
       heard: ["What did Bora", "What did Bora say about the"],
     });
     transcript.startTurn([user]);
@@ -2284,7 +2284,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.time("2026-10-26T07:30:00.000Z");
     transcript.callExchange(
-      "What did Bora say about the QRT panel?",
+      "What did Bora say about the Halcyon panel?",
       "She wants one more round on your design before the panel sits in November.",
       "walk-turn.m4a",
     );
@@ -2940,10 +2940,10 @@ const scenarios: readonly (() => Transcript)[] = [
     );
     transcript.wait(60_000);
     transcript.exchange(
-      "Different thing: what should I tell Bora about the QRT panel?",
+      "Different thing: what should I tell Bora about the Halcyon panel?",
       "Tell her the design is ready for one more round, and ask which part worries her most.",
       [],
-      "QRT panel",
+      "Halcyon panel",
     );
     transcript.wait(30_000);
     transcript.exchange("And when should I send it?", "Before Friday, so she has the weekend to read it.");
@@ -3373,7 +3373,7 @@ const scenarios: readonly (() => Transcript)[] = [
       guarantees: ["G33", "G34"],
     });
     transcript.time("2026-11-11T06:00:00.000Z");
-    const technical = transcript.calendarItem(qrtTechnical);
+    const technical = transcript.calendarItem(halcyonTechnical);
     const janki = transcript.calendarItem({
       uid: "janki-dinner-1111@icloud.com",
       title: "Janki",
@@ -3395,25 +3395,25 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.addCard({
       kind: "draft",
-      title: "Draft to Poppy",
+      title: "Draft to Tess",
       options: [{ label: "Drop it" }],
       allows_text: true,
-      draft: poppyDraft,
+      draft: tessDraft,
     });
     transcript.addCard({
       kind: "invite",
-      title: "QRT technical, Thursday 14:00",
+      title: "Halcyon technical, Thursday 14:00",
       options: [{ label: "Accept", acts: true }, { label: "Maybe" }, { label: "Decline" }],
       allows_text: false,
       invite: { event: technical },
     });
     const times = transcript.addCard({
       kind: "times",
-      title: "Times for a call with Citadel",
+      title: "Times for a call with Northwind",
       options: [{ label: "Draft it", acts: true }],
       allows_text: true,
       times: {
-        purpose: "A first call with Sarah at Citadel",
+        purpose: "A first call with Maya at Northwind",
         slots: [
           { start: "2026-11-13T09:00:00.000Z", end: "2026-11-13T09:30:00.000Z", note: "WFH day" },
           { start: "2026-11-13T12:30:00.000Z", end: "2026-11-13T13:00:00.000Z", note: "WFH day" },
@@ -3431,7 +3431,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.brief({
       kind: "morning",
       lines: [
-        { text: "Poppy sent the Teams link for Thursday; it's on the event.", card: question.id },
+        { text: "Tess sent the Teams link for Thursday; it's on the event.", card: question.id },
         { text: "Body: easy 30 minutes or rest; big afternoon." },
       ],
       handled: 9,
@@ -3461,10 +3461,10 @@ const scenarios: readonly (() => Transcript)[] = [
           tool: "draft",
           input: {
             account: "outlook",
-            to: ["sarah.lee@citadel.com"],
+            to: ["maya.reed@northwind.example"],
             subject: "Re: AI Engineer, FI",
-            body: citadelBody,
-            title: "Draft to Sarah at Citadel",
+            body: northwindBody,
+            title: "Draft to Maya at Northwind",
           },
         },
       ],
@@ -3472,16 +3472,16 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.answerCard(times.id, { slots: [0, 2] });
     transcript.addCard({
       kind: "draft",
-      title: "Draft to Sarah at Citadel",
+      title: "Draft to Maya at Northwind",
       options: [{ label: "Drop it" }],
       allows_text: true,
       draft: {
         account: "outlook",
         from: "divy@outlook.com",
-        to: ["sarah.lee@citadel.com"],
+        to: ["maya.reed@northwind.example"],
         subject: "Re: AI Engineer, FI",
-        body: citadelBody,
-        message_id: "draft-citadel-0001@ito.local",
+        body: northwindBody,
+        message_id: "draft-northwind-0001@ito.local",
       },
     });
     transcript.settleCard(times.id);
@@ -3575,7 +3575,7 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 67,
       title: "An invite",
       summary:
-        "Poppy's invite for the QRT technical arrives. Kumo holds the time on its own calendar, checks for a " +
+        "Tess's invite for the Halcyon technical arrives. Kumo holds the time on its own calendar, checks for a " +
         "clash and puts Accept, Maybe and Decline on the Desk. You accept; iCloud sends the reply itself, and the " +
         "event shows in Coming up.",
       guarantees: ["G34", "G37"],
@@ -3588,23 +3588,23 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.wait(1000);
     transcript.world("invite_arrives", {
-      uid: qrtTechnical.uid,
-      title: qrtTechnical.title,
-      start: qrtTechnical.start,
-      end: qrtTechnical.end,
-      location: qrtTechnical.location,
-      organizer: "Poppy Ward <poppy.ward@qrt.com>",
+      uid: halcyonTechnical.uid,
+      title: halcyonTechnical.title,
+      start: halcyonTechnical.start,
+      end: halcyonTechnical.end,
+      location: halcyonTechnical.location,
+      organizer: "Tess Harlow <tess.harlow@halcyon.example>",
     });
-    const invited = transcript.calendarItem({ ...qrtTechnical, status: "tentative" });
+    const invited = transcript.calendarItem({ ...halcyonTechnical, status: "tentative" });
     const held = transcript.calendarItem({
-      ...qrtTechnical,
-      uid: `hold-${qrtTechnical.uid}`,
+      ...halcyonTechnical,
+      uid: `hold-${halcyonTechnical.uid}`,
       calendar: { name: "Kumo", kumo: true },
       status: "hold",
     });
     const invite = transcript.addCard({
       kind: "invite",
-      title: "QRT technical, Thursday 14:00",
+      title: "Halcyon technical, Thursday 14:00",
       options: [{ label: "Accept", acts: true }, { label: "Maybe" }, { label: "Decline" }],
       allows_text: false,
       invite: { event: invited },
@@ -3629,7 +3629,7 @@ const scenarios: readonly (() => Transcript)[] = [
       guarantees: ["G33", "G38"],
     });
     const lines = [
-      { text: "QRT moved Thursday's technical to 2pm; your calendar has it." },
+      { text: "Halcyon moved Thursday's technical to 2pm; your calendar has it." },
       { text: "Body: easy 30 minutes or rest; big afternoon." },
     ];
     transcript.begin("2026-11-11T07:00:00.000Z");
@@ -3707,9 +3707,9 @@ const scenarios: readonly (() => Transcript)[] = [
       proposal: { beliefs: [{ id: belief, text: sub20, page: "memory:now" }], added: [booked], motions: [] },
     });
     transcript.wait(20_000);
-    sendAndStart(transcript, "Getting the QRT offer sorted, and running three times a week.");
+    sendAndStart(transcript, "Getting the Halcyon offer sorted, and running three times a week.");
     transcript.wait(900);
-    writeWhole(transcript, "Then mornings stay for running, and I'll keep the QRT side moving.");
+    writeWhole(transcript, "Then mornings stay for running, and I'll keep the Halcyon side moving.");
     transcript.endTurn("completed");
     transcript.wait(15_000);
     transcript.answerBelief(belief, { answer: "true" });

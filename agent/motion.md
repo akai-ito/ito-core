@@ -171,13 +171,13 @@ hire.
   "play": ["No firms that only want dashboards", "Never below £140k base", "One polite reply to recruiters, then silence"],
   "options": [
     {
-      "id": "qrt",
+      "id": "halcyon",
       "name": "Senior AI Engineer",
-      "org": "QRT",
+      "org": "Halcyon",
       "stage": "Interviews",
-      "people": [{ "name": "Poppy", "role": "recruiter", "page": "memory:people/poppy" }],
+      "people": [{ "name": "Tess", "role": "recruiter", "page": "memory:people/tess" }],
       "next": { "text": "Second round with the team lead", "at": "2026-11-04T14:00" },
-      "waiting_on": { "who": "Poppy", "since": "2026-10-30" }
+      "waiting_on": { "who": "Tess", "since": "2026-10-30" }
     }
   ]
 }
@@ -191,7 +191,7 @@ hire.
   Move the stage as it moves, and drop `waiting_on` once they answer.
 - **A company new to them** gets a `note` of two lines on what it actually does, from what they
   sent and a web search: its product, who pays for it, and how big it is.
-- The summary says where it stands: "3 live · QRT second round Tue".
+- The summary says where it stands: "3 live · Halcyon second round Tue".
 
 ## Occasions
 
@@ -203,7 +203,7 @@ A dated event with people and prep: an appointment, a birthday, a dinner, a wedd
   "end": "2026-11-14T22:30",
   "timezone": "Europe/London",
   "where": "Brat, Shoreditch",
-  "people": [{ "name": "Poppy", "page": "memory:people/poppy" }],
+  "people": [{ "name": "Tess", "page": "memory:people/tess" }],
   "prep": [{ "id": "book-table", "text": "Book a table for four", "done": false }],
   "check_in": true
 }

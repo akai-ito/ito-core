@@ -265,8 +265,8 @@ const fillDesk: Act["act"] = async (callTool) => {
 const offerTimes: Act["act"] = async (callTool) => {
   await callTool("add_card", {
     kind: "times",
-    title: "Times for a call with Citadel",
-    purpose: "A first call with Sarah at Citadel",
+    title: "Times for a call with Northwind",
+    purpose: "A first call with Maya at Northwind",
     slots: [
       { start: "2026-11-13T09:00:00.000Z", end: "2026-11-13T09:30:00.000Z", note: "WFH day" },
       { start: "2026-11-13T12:30:00.000Z", end: "2026-11-13T13:00:00.000Z", note: "WFH day" },
@@ -296,7 +296,7 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
     { pattern: /\bdesk\b/u, act: fillDesk, said: "I've put a question and an offer on your Desk." },
     { pattern: /\btimes\b/u, act: offerTimes, said: "Pick the times that are clear at work; they're on your Desk." },
     { pattern: /\bbriefing\b/u, act: briefNow, said: "Your briefing is at the top of the Desk." },
-    { pattern: /\binvite\b/u, act: showInvite, said: "Poppy's invite is on your Desk." },
+    { pattern: /\binvite\b/u, act: showInvite, said: "Tess's invite is on your Desk." },
     { pattern: /\bmail\b/u, act: showMail, said: "A booking came in; there's a draft for you on the Desk." },
     { pattern: /\bstart\b/u, act: showGettingStarted, said: "I've read your mail. Here's what I found." },
   ].find(({ pattern }) => pattern.test(text));
@@ -321,7 +321,7 @@ export const demoAnswers: Complete = (_prompt, schema) => {
     return Promise.resolve(
       ok({
         lines: [
-          { text: "Poppy sent the Teams link for Thursday; it's on the event.", card: "" },
+          { text: "Tess sent the Teams link for Thursday; it's on the event.", card: "" },
           { text: "Body: easy 30 minutes or rest; big afternoon.", card: "" },
         ],
         handled: 9,

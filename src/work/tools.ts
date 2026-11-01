@@ -130,7 +130,7 @@ export const createWorkTools = ({ store, desk, markUrgent = notUrgent }: WorkToo
             },
           },
           allows_text: { type: "boolean" },
-          purpose: { type: "string", description: "times: such as “A first call with Sarah at Citadel”." },
+          purpose: { type: "string", description: "times: such as “A first call with Maya at Northwind”." },
           slots: {
             type: "array",
             items: {

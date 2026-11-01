@@ -94,7 +94,7 @@ describe("the Desk", () => {
         kind: "morning",
         handled: 9,
         lines: [
-          { text: "Poppy sent the Teams link for Thursday; it's on the event." },
+          { text: "Tess sent the Teams link for Thursday; it's on the event." },
           { text: "Body: easy 30 minutes or rest; big afternoon." },
         ],
       });

@@ -8,14 +8,14 @@
 {"at":1800,"app":{"method":"GET","path":"/v0/calls/c40b7f14-bcb1-451e-8d2a-797ec1b00d4c/stream"}}
 {"at":1800,"server":{"status":101}}
 {"at":1800,"socket":{"from":"server","frame":{"type":"state","state":"listening"}}}
-{"at":7800,"world":"you_say","text":"What did Bora say about the QRT panel?","heard":["What did Bora","What did Bora say about the"]}
+{"at":7800,"world":"you_say","text":"What did Bora say about the Halcyon panel?","heard":["What did Bora","What did Bora say about the"]}
 {"at":7800,"socket":{"from":"app","audio":"walk-question.pcm"}}
 {"at":7800,"socket":{"from":"server","frame":{"type":"state","state":"hearing"}}}
 {"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Bora","final":false}}}
 {"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Bora say about the","final":false}}}
 {"at":7800,"socket":{"from":"server","frame":{"type":"state","state":"turn_ended"}}}
-{"at":7800,"event":{"id":"e_0002_43013","type":"message.accepted","at":"2026-10-26T07:30:07.800Z","message":{"id":"m_0001_72021","role":"user","text":"What did Bora say about the QRT panel?","at":"2026-10-26T07:30:07.800Z","position":2,"spoken":{"call":"c40b7f14-bcb1-451e-8d2a-797ec1b00d4c","audio":{"id":"f_0001_87874","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
-{"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Bora say about the QRT panel?","final":true,"message":"m_0001_72021"}}}
+{"at":7800,"event":{"id":"e_0002_43013","type":"message.accepted","at":"2026-10-26T07:30:07.800Z","message":{"id":"m_0001_72021","role":"user","text":"What did Bora say about the Halcyon panel?","at":"2026-10-26T07:30:07.800Z","position":2,"spoken":{"call":"c40b7f14-bcb1-451e-8d2a-797ec1b00d4c","audio":{"id":"f_0001_87874","kind":"audio","name":"turn.wav","media_type":"audio/wav","size":8044}}}}}
+{"at":7800,"socket":{"from":"server","frame":{"type":"heard","text":"What did Bora say about the Halcyon panel?","final":true,"message":"m_0001_72021"}}}
 {"at":7800,"event":{"id":"e_0003_93277","type":"turn.started","at":"2026-10-26T07:30:07.800Z","turn":"t_0001_25434","inputs":["m_0001_72021"]}}
 {"at":7800,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
 {"at":8200,"event":{"id":"e_0004_73620","type":"step.started","at":"2026-10-26T07:30:08.200Z","step":{"id":"s_0001_59171","turn":"t_0001_25434","kind":"thinking","title":"Thinking it through","at":"2026-10-26T07:30:08.200Z","position":4}}}

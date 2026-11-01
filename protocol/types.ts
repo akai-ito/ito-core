@@ -2195,7 +2195,7 @@ export interface components {
     /** @description Opaque. A turn is one run of the agent, from its inputs to an answer, a stop or an error. */
     TurnId: string;
     /**
-     * @description Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as "I'll check current prices first."; an app may show notes as live detail instead of in the conversation. A `post` is a message Kumo wrote outside a turn, from work it did in the background, such as "How did the QRT interview go?". Hide a kind you don't recognise.
+     * @description Agent messages only. A `reply` is part of the answer. A `note` is the agent's commentary while it works, such as "I'll check current prices first."; an app may show notes as live detail instead of in the conversation. A `post` is a message Kumo wrote outside a turn, from work it did in the background, such as "How did the Halcyon interview go?". Hide a kind you don't recognise.
      * @enum {unknown}
      */
     MessageKind: "reply" | "note" | "post";
@@ -2334,7 +2334,7 @@ export interface components {
     /** @description A look Kumo scheduled for itself: a follow-up, a check-in after an event, or a standing job it keeps doing. It's judged when it comes due, and moves itself if the moment is bad. */
     Job: {
       id: components["schemas"]["JobId"];
-      /** @description Such as "Ask how the QRT interview went". */
+      /** @description Such as "Ask how the Halcyon interview went". */
       why: string;
       /** @description When it's next due. */
       at?: components["schemas"]["Timestamp"];
@@ -2392,7 +2392,7 @@ export interface components {
       motion?: components["schemas"]["MotionId"];
       /** @description When it began waiting, for "since Wed". */
       at: components["schemas"]["Timestamp"];
-      /** @description One line, such as "Draft to Poppy". */
+      /** @description One line, such as "Draft to Tess". */
       title: string;
       options: components["schemas"]["AskOption"][];
       allows_text: boolean;
@@ -2428,7 +2428,7 @@ export interface components {
       };
       /** @description Times to check against your work calendar, which Kumo can't see. Answer with the slots that are clear. */
       times?: {
-        /** @description Such as "A call with Poppy". */
+        /** @description Such as "A call with Tess". */
         purpose: string;
         slots: components["schemas"]["Slot"][];
       };

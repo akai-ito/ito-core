@@ -571,14 +571,14 @@ export const createServer = (options: ServerOptions): Server => {
         const end = toTimestamp(clock.now() + 27.5 * 60 * 60 * 1000);
         desk.addCard({
           kind: "invite",
-          title: "QRT technical, tomorrow",
+          title: "Halcyon technical, tomorrow",
           options: [{ label: "Accept", acts: true }, { label: "Maybe" }, { label: "Decline" }],
           allows_text: false,
           invite: {
             event: {
               id: identifiers.calendarItem(),
               uid: `demo-${start}@ito.local`,
-              title: "QRT technical",
+              title: "Halcyon technical",
               start,
               end,
               all_day: false,

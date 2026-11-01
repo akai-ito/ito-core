@@ -72,7 +72,7 @@ describe("Kumo's standing jobs", () => {
     const first = await open();
 
     const followUp = await first.callTool("schedule", {
-      why: "Ask how the QRT interview went",
+      why: "Ask how the Halcyon interview went",
       at: "2026-11-01T18:00:00Z",
     });
     const standing = await first.callTool("schedule", {
@@ -93,7 +93,7 @@ describe("Kumo's standing jobs", () => {
     expect(listed).toMatchObject({
       status: 200,
       jobs: [
-        { why: "Ask how the QRT interview went", at: "2026-11-01T18:00:00.000Z" },
+        { why: "Ask how the Halcyon interview went", at: "2026-11-01T18:00:00.000Z" },
         { standing: { ask: "startups I'd join" }, at: "2026-11-07T09:00:00.000Z" },
       ],
     });
@@ -105,7 +105,7 @@ describe("Kumo's standing jobs", () => {
 
     expect(ran.get()).toHaveLength(1);
     expect(ran.get()[0]?.prompt).toContain(
-      "It's time for a look you scheduled for yourself: “Ask how the QRT interview went”.",
+      "It's time for a look you scheduled for yourself: “Ask how the Halcyon interview went”.",
     );
     expect(ran.get()[0]?.prompt).toContain("call schedule again for a better time");
 

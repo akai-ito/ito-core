@@ -357,7 +357,7 @@ describe("memory", () => {
     git(thread, "add", "people", "places");
     git(thread, "commit", "--quiet", "--message", "Imported from Ariadne");
     await write(memory, { address: "memory:people/bora", title: "Bora", body: "You run with Bora." });
-    await write(memory, { address: "memory:projects/job-search", title: "Job search", body: "QRT next." });
+    await write(memory, { address: "memory:projects/job-search", title: "Job search", body: "Halcyon next." });
     await write(memory, { address: "memory:now", body: "Back from Ljubljana (as of 27 Oct)." });
 
     expect(await memory.boostedNames()).toEqual(["Bora", "Ljubljana"]);

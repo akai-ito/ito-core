@@ -62,8 +62,8 @@ const toolCalled = async (tools: readonly Tool[], name: string, input: unknown):
   if (called?.isError === true) throw new Error(called.text);
 };
 
-const clearCitadel: Act = async (prompt, tools) => {
-  const [, card = ""] = /Confirm the Citadel interviews.*\((k_\d+)\)/u.exec(prompt) ?? [];
+const clearNorthwind: Act = async (prompt, tools) => {
+  const [, card = ""] = /Confirm the Northwind interviews.*\((k_\d+)\)/u.exec(prompt) ?? [];
   if (card !== "") await toolCalled(tools, "clear_card", { card, reason: "You confirmed them by mail" });
 };
 
@@ -242,41 +242,41 @@ describe("the mailbox", () => {
     const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");
     box.mail.arrive({
       account: "icloud",
-      message_id: "interview-11-11@citadel.example",
-      from: "Grayson McIntyre <Grayson.McIntyre@citadel.com>",
+      message_id: "interview-11-11@northwind.example",
+      from: "Owen Hartley <Owen.Hartley@northwind.example>",
       to: ["divy@icloud.com"],
-      subject: "Divy Bramhecha - Citadel Interview Confirmation 11/11",
+      subject: "Divy Bramhecha - Northwind Interview Confirmation 11/11",
       text: "Could you confirm the 11 November interviews?",
     });
     box.mail.arrive({
       account: "icloud",
-      message_id: "second-notice@banningdental.example",
-      from: "Banning Dental <blackfriars@mail.banningdental.co.uk>",
+      message_id: "second-notice@quillfielddental.example",
+      from: "Quillfield Dental <reception@mail.quillfielddental.example>",
       to: ["divy@icloud.com"],
       subject: "Second Notice - Outstanding Balance",
       text: "Your balance is outstanding.",
     });
-    await draftTool?.call({ reply_to: "interview-11-11@citadel.example", body: "Hi Grayson, confirmed." });
-    await draftTool?.call({ reply_to: "second-notice@banningdental.example", body: "Could I have it itemised?" });
+    await draftTool?.call({ reply_to: "interview-11-11@northwind.example", body: "Hi Owen, confirmed." });
+    await draftTool?.call({ reply_to: "second-notice@quillfielddental.example", body: "Could I have it itemised?" });
     expect(box.cards().map(({ draft }) => draft?.in_reply_to)).toEqual([
-      "interview-11-11@citadel.example",
-      "second-notice@banningdental.example",
+      "interview-11-11@northwind.example",
+      "second-notice@quillfielddental.example",
     ]);
 
     box.mail.send(
       "icloud",
-      sent("2026-11-10T22:30:00.000Z", "", "Hi Grayson, confirmed.", {
+      sent("2026-11-10T22:30:00.000Z", "", "Hi Owen, confirmed.", {
         messageId: "apple-1@icloud.com",
-        to: [{ address: "Grayson.McIntyre@citadel.com", name: "Grayson McIntyre" }],
-        subject: "Re: Divy Bramhecha - Citadel Interview Confirmation 11/11",
-        references: ["interview-11-11@citadel.example"],
+        to: [{ address: "Owen.Hartley@northwind.example", name: "Owen Hartley" }],
+        subject: "Re: Divy Bramhecha - Northwind Interview Confirmation 11/11",
+        references: ["interview-11-11@northwind.example"],
       }),
     );
     box.mail.send(
       "icloud",
       sent("2026-11-10T22:31:00.000Z", "", "Could I have it itemised?", {
         messageId: "apple-2@icloud.com",
-        to: [{ address: "BLACKFRIARS@mail.banningdental.co.uk" }],
+        to: [{ address: "RECEPTION@mail.quillfielddental.example" }],
         subject: "RE:  Second Notice - Outstanding Balance",
       }),
     );
@@ -292,7 +292,7 @@ describe("the mailbox", () => {
     const block: CalendarItem = {
       id: "e_1",
       uid: "admin-1@kumo",
-      title: "Admin: Citadel reply and dental invoice",
+      title: "Admin: Northwind reply and dental invoice",
       start: "2026-11-11T18:00:00.000Z",
       end: "2026-11-11T18:20:00.000Z",
       all_day: false,
@@ -305,21 +305,21 @@ describe("the mailbox", () => {
       title: "Dinner",
       calendar: { name: "Home", kumo: false },
     };
-    const box = openBox("quiet", [], clearCitadel, [block, theirs]);
+    const box = openBox("quiet", [], clearNorthwind, [block, theirs]);
     const card = box.addCard({
       kind: "times",
-      title: "Confirm the Citadel interviews",
+      title: "Confirm the Northwind interviews",
       options: [{ label: "Draft it", acts: true }],
       allows_text: true,
       times: {
-        purpose: "Interviews with Sarah at Citadel",
+        purpose: "Interviews with Maya at Northwind",
         slots: [{ start: "2026-11-12T09:00:00.000Z", end: "2026-11-12T10:00:00.000Z" }],
       },
     });
     box.mail.send(
       "icloud",
-      sent("2026-11-10T21:40:00.000Z", "invite-1@citadel.example", "Thursday at 9 works, thank you!", {
-        to: [{ address: "sarah@citadel.example" }],
+      sent("2026-11-10T21:40:00.000Z", "invite-1@northwind.example", "Thursday at 9 works, thank you!", {
+        to: [{ address: "maya@northwind.example" }],
         subject: "Re: Interviews",
       }),
     );
@@ -333,14 +333,14 @@ describe("the mailbox", () => {
     expect(box.prompts()).toHaveLength(1);
     expect(box.prompts()[0]).toContain("Thursday at 9 works, thank you!");
     expect(box.prompts()[0]).toContain(
-      `- Confirm the Citadel interviews: Interviews with Sarah at Citadel (${card.id})`,
+      `- Confirm the Northwind interviews: Interviews with Maya at Northwind (${card.id})`,
     );
     expect(box.prompts()[0]).toContain(
-      "- Admin: Citadel reply and dental invoice, 2026-11-11T18:00:00.000Z to 2026-11-11T18:20:00.000Z (admin-1@kumo)",
+      "- Admin: Northwind reply and dental invoice, 2026-11-11T18:00:00.000Z to 2026-11-11T18:20:00.000Z (admin-1@kumo)",
     );
     expect(box.prompts()[0]).not.toContain("Dinner");
     expect(box.done()).toMatchObject([
-      { text: "Took “Confirm the Citadel interviews” off Waiting on you", reason: "You confirmed them by mail" },
+      { text: "Took “Confirm the Northwind interviews” off Waiting on you", reason: "You confirmed them by mail" },
     ]);
     await box.mailbox.close();
   });
