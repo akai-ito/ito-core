@@ -21,9 +21,20 @@ import {
   type SourceOptions,
   type UidGroup,
 } from "#mail/imap.ts";
+import {
+  composeLetter,
+  createFindPart,
+  largestPartBytes,
+  plainOf,
+  withSignature,
+  type InlinePart,
+  type Letter,
+  type Signature,
+} from "#mail/compose.ts";
 import { createMailFolders, sameName, type FileInto } from "#mail/folders.ts";
 import { createOutlookToken } from "#mail/outlook.ts";
 import type { Account } from "#mail/providers.ts";
+import { learnSignature, signatureSample } from "#mail/signature.ts";
 import type { Health } from "#problems/problems.ts";
 import type { CalendarItem, Card, DoneEntry, ModelChoice, Step } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -66,6 +77,8 @@ export type MailOptions = {
   readonly onReading?: (at: string | undefined) => void;
   readonly createSource?: CreateMailSource;
   readonly sentPollMs?: number;
+  // Kumo's workspace, where pictures and files for a draft come from, such as uploads from the chat.
+  readonly workspace?: string;
 };
 
 const decisions = ["promotion", "notice", "newsletter", "record", "work", "urgent"] as const;
@@ -114,6 +127,10 @@ export const asksSetting = "mail_unsubscribe_asks";
 
 export const sentSetting = "mail_sent";
 
+export const signatureSetting = "mail_signature";
+
+export const draftPartsSetting = "mail_draft_parts";
+
 const accounts: readonly Account[] = ["icloud", "outlook", "gmail"];
 
 const dayMs = 24 * 60 * 60 * 1000;
@@ -140,6 +157,82 @@ const attentionSchema: JsonSchema = {
   required: ["decision", "stakes", "folder", "reason", "confidence"],
   additionalProperties: false,
 };
+
+// What a draft carried besides its words, so redrafting it keeps them: files attached, and whether it's signed.
+type DraftParts = { readonly attach: readonly string[]; readonly signature: boolean };
+
+type StoredImage = {
+  readonly cid: string;
+  readonly filename: string;
+  readonly content_type: string;
+  readonly content: string;
+};
+
+type StoredSignature = {
+  readonly learned_at: string;
+  readonly text?: string;
+  readonly html?: string;
+  readonly images?: readonly StoredImage[];
+};
+
+type DraftAttachment = NonNullable<NonNullable<Card["draft"]>["attachments"]>[number];
+
+const toStoredImage = ({ cid, filename, contentType, content }: InlinePart): StoredImage => ({
+  cid,
+  filename,
+  content_type: contentType,
+  content: content.toString("base64"),
+});
+
+const toStoredSignature = (at: string, signature: Signature | undefined): StoredSignature => ({
+  learned_at: at,
+  ...(signature && {
+    text: signature.text,
+    ...(signature.html !== undefined && { html: signature.html }),
+    images: signature.images.map((image) => toStoredImage(image)),
+  }),
+});
+
+const fromStoredSignature = (stored: StoredSignature): Signature | undefined =>
+  stored.text === undefined
+    ? undefined
+    : {
+        text: stored.text,
+        ...(stored.html !== undefined && { html: stored.html }),
+        images: (stored.images ?? []).map(({ cid, filename, content_type: contentType, content }) => ({
+          cid,
+          filename,
+          contentType,
+          content: Buffer.from(content, "base64"),
+        })),
+      };
+
+const toStored = (text: string | undefined): StoredSignature | undefined => {
+  if (text === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(text) as Partial<StoredSignature>;
+    return typeof parsed.learned_at === "string" ? (parsed as StoredSignature) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const attachmentsOf = (letter: Letter, signature: Signature | undefined): readonly DraftAttachment[] => {
+  const signed = new Set(signature?.images.map(({ cid }) => cid));
+  return [
+    ...letter.inline
+      .filter(({ cid }) => !signed.has(cid))
+      .map(({ filename }) => ({ name: filename, kind: "image" as const, inline: true })),
+    ...letter.attachments.map(({ filename, contentType }) => ({
+      name: filename,
+      kind: contentType.startsWith("image/") ? ("image" as const) : ("file" as const),
+      inline: false,
+    })),
+  ];
+};
+
+// The words alone, so a sent mail matches its draft whatever its app did to the formatting.
+const wordsOf = (text: string): string => (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).join(" ");
 
 const rewriteSchema: JsonSchema = {
   type: "object",
@@ -340,7 +433,7 @@ const learnPrompt = (card: Card, sent: Mail): string =>
     "They sent a draft you wrote, after changing it. Note what to do differently next time, briefly, under",
     '"Writing as you" on their How to help you page. If the change was only about facts, note nothing.',
     "",
-    `Your draft:\n${card.draft?.body ?? ""}`,
+    `Your draft:\n${plainOf(card.draft?.body ?? "")}`,
     "",
     `What they sent:\n${sent.text}`,
   ].join("\n");
@@ -431,6 +524,7 @@ type StepMail = NonNullable<Step["mails"]>[number];
 export const batchAsksSetting = "mail_batch_asks";
 
 const pageSize = 20;
+const largestPartMegabytes = largestPartBytes / (1024 * 1024);
 // More mails than this in one move wait for them to agree on the Desk.
 export const askAbove = 25;
 const applyLabel = "Apply";
@@ -604,6 +698,7 @@ export const createMailbox = ({
   onReading = ignore,
   createSource = createMailSource,
   sentPollMs = 5 * 60 * 1000,
+  workspace,
 }: MailOptions): Mailbox => {
   const connections = createCell<ReadonlyMap<Account, Connection>>(new Map());
   const arrivals = createCell<Promise<void>>(Promise.resolve());
@@ -614,6 +709,8 @@ export const createMailbox = ({
   const logger = (message: string, details: Readonly<Record<string, unknown>>): void => {
     info(message, details);
   };
+
+  const findPart = createFindPart({ workspace, fetch: fetcher });
 
   const outlookToken = (values: Values): (() => Promise<Result<string, string>>) =>
     createOutlookToken({
@@ -1007,7 +1104,12 @@ export const createMailbox = ({
     const card = draftCards().find((candidate) => matches(candidate, account, mail));
     if (!card) return;
     desk.removeCard(card.id);
-    const isChanged = mail.text.trim() !== (card.draft?.body ?? "").trim();
+    forgetParts(card.id);
+    const drafted = withSignature(
+      plainOf(card.draft?.body ?? ""),
+      card.draft?.signature === undefined ? undefined : { text: card.draft.signature, images: [] },
+    );
+    const isChanged = wordsOf(mail.text) !== wordsOf(drafted);
     if (isChanged) await work(learnPrompt(card, mail));
   };
 
@@ -1039,6 +1141,47 @@ export const createMailbox = ({
     );
   };
 
+  const partsAll = (): Readonly<Record<string, DraftParts>> => {
+    try {
+      const parsed = JSON.parse(store.setting(draftPartsSetting) ?? "{}") as unknown;
+      return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, DraftParts>) : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const partsOf = (card: string | undefined): DraftParts | undefined =>
+    card === undefined ? undefined : partsAll()[card];
+
+  // Kept only for drafts still on the Desk.
+  const keepParts = (card: string, parts: DraftParts): void => {
+    const waiting = new Set(draftCards().map(({ id }) => id));
+    const kept = Object.entries({ ...partsAll(), [card]: parts }).filter(([id]) => waiting.has(id) || id === card);
+    store.setSetting(draftPartsSetting, JSON.stringify(Object.fromEntries(kept)));
+  };
+
+  const forgetParts = (card: string): void => {
+    const kept = Object.entries(partsAll()).filter(([id]) => id !== card);
+    store.setSetting(draftPartsSetting, JSON.stringify(Object.fromEntries(kept)));
+  };
+
+  // Their signature for an account, learned from what they sent lately and kept for a day. Without one, none.
+  const signatureOf = async ({ account, user, source }: Connection): Promise<Signature | undefined> => {
+    const key = `${signatureSetting}:${account}:${user}`;
+    const saved = toStored(store.setting(key));
+    // Learned again once a day, so a new signature is picked up within the day.
+    if (saved && clock.now() - Date.parse(saved.learned_at) < dayMs) return fromStoredSignature(saved);
+    const bodies = await source.sentBodies(signatureSample);
+    if (!bodies.ok) {
+      info("Sent mail couldn't be read for the signature, so Kumo uses the one it knew", { error: bodies.failure });
+      return saved && fromStoredSignature(saved);
+    }
+    const learned = learnSignature(bodies.value);
+    const stored = toStoredSignature(toTimestamp(clock.now()), learned);
+    store.setSetting(key, JSON.stringify(stored));
+    return learned;
+  };
+
   const rewrite = async (card: Card, change: string): Promise<NewCard | undefined> => {
     const { draft } = card;
     const connection = draft ? connectionOf(draft.account) : undefined;
@@ -1046,6 +1189,8 @@ export const createMailbox = ({
     const answered = await complete(
       [
         "Rewrite this draft reply as asked, in the person's own voice. Keep what's right; change only what's asked.",
+        "It's light Markdown: keep its formatting, and any picture (![…](…)) where it fits. Their signature is",
+        "added after it, so don't sign with it.",
         "",
         `Draft:\n${draft.body}`,
         "",
@@ -1058,12 +1203,27 @@ export const createMailbox = ({
       info("A draft couldn't be rewritten", { error: answered.ok ? "an empty draft" : answered.failure });
       return toNewCard(card);
     }
+    const parts = partsOf(card.id) ?? { attach: [], signature: draft.signature !== undefined };
+    const signature = parts.signature ? await signatureOf(connection) : undefined;
+    const letter = await composeLetter({
+      markdown: body,
+      attach: parts.attach,
+      find: findPart,
+      ...(signature && { signature }),
+    });
+    if (!letter.ok) {
+      info("A rewritten draft couldn't be put together", { error: letter.failure });
+      return toNewCard(card);
+    }
     const saved = await connection.source.draft({
       from: toAddress(draft.from),
       to: draft.to.map((address) => toAddress(address)),
       ...(draft.cc && { cc: draft.cc.map((address) => toAddress(address)) }),
       subject: draft.subject,
-      body,
+      body: letter.value.text,
+      html: letter.value.html,
+      inline: letter.value.inline,
+      attachments: letter.value.attachments,
       ...(draft.in_reply_to !== undefined && { inReplyTo: draft.in_reply_to }),
       replaces: draft.message_id,
     });
@@ -1072,12 +1232,25 @@ export const createMailbox = ({
       return toNewCard(card);
     }
     const { kind, title, options, allows_text: allowsText } = card;
+    const { account, from, to, cc, subject, in_reply_to: inReplyTo } = draft;
+    const attachments = attachmentsOf(letter.value, signature);
     return {
       kind,
       title,
       options,
       allows_text: allowsText,
-      draft: { ...draft, body, message_id: saved.value.messageId },
+      draft: {
+        account,
+        from,
+        to,
+        ...(cc && { cc }),
+        subject,
+        ...(inReplyTo !== undefined && { in_reply_to: inReplyTo }),
+        body,
+        message_id: saved.value.messageId,
+        ...(signature && { signature: signature.text }),
+        ...(attachments.length > 0 && { attachments: [...attachments] }),
+      },
     };
   };
 
@@ -1092,6 +1265,7 @@ export const createMailbox = ({
     if (draft && connection && answer.option === "Drop it") {
       const removed = await connection.source.removeDraft(draft.message_id);
       if (!removed.ok) info("A draft couldn't be removed", { error: removed.failure });
+      forgetParts(card.id);
     }
     return;
   });
@@ -1453,7 +1627,9 @@ export const createMailbox = ({
       description:
         "Write a draft into their Drafts folder and put it on the Desk for them to send. Never sent by you. With " +
         "reply_to, it answers that mail: to and subject follow it. With replaces, it takes the place of a draft " +
-        "already on the Desk, keeping whatever you don't give again. Write in their voice.",
+        "already on the Desk, keeping whatever you don't give again. Write in their voice, in light Markdown; it " +
+        "goes as formatted mail with a plain-text copy, with pictures inline, files attached and their own signature " +
+        "at the end.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1466,13 +1642,29 @@ export const createMailbox = ({
           to: draftField,
           cc: draftField,
           subject: { type: "string" },
-          body: { type: "string", description: "Plain text, as it will be sent." },
+          body: {
+            type: "string",
+            description:
+              "Light Markdown: paragraphs, **bold**, *italics*, lists and [links](https://…). Put a picture in where " +
+              "it belongs with ![what it shows](uploads/photo.jpg): a file in your workspace, such as one they " +
+              "attached in the chat, or an https address. Don't sign with their signature; it's added.",
+          },
+          attach: {
+            type: "array",
+            items: { type: "string" },
+            description: `A file to attach, from your workspace or an https address, up to ${String(largestPartMegabytes)} MB; repeat it for more.`,
+          },
+          signature: {
+            type: "boolean",
+            description: "Their signature goes at the end; --no-signature leaves it off, only when they ask.",
+          },
           title: { type: "string", description: "The card's title, such as “Note to Hotel Orto”." },
         },
         additionalProperties: false,
       },
       call: (input) =>
-        withSource(textOf(input, "account"), async ({ account, user, source }) => {
+        withSource(textOf(input, "account"), async (connection) => {
+          const { account, user, source } = connection;
           const replacing = textOf(input, "replaces").trim();
           const earlier = replacing === "" ? undefined : draftCards().find((card) => card.id === replacing);
           if (replacing !== "" && earlier?.draft?.account !== account) {
@@ -1494,12 +1686,33 @@ export const createMailbox = ({
           if (body === "" || subject === "" || to.length === 0) {
             return failed("A draft needs who it's to, a subject and a body, or reply_to.");
           }
+          // A redraft keeps what the earlier one carried; a new draft is signed and carries nothing.
+          const earlierParts = before
+            ? (partsOf(earlier.id) ?? { attach: [], signature: before.signature !== undefined })
+            : { attach: [], signature: true };
+          const givenAttach = fieldOf(input, "attach");
+          const givenSignature = fieldOf(input, "signature");
+          const parts: DraftParts = {
+            attach: Array.isArray(givenAttach) ? listOf(givenAttach) : earlierParts.attach,
+            signature: typeof givenSignature === "boolean" ? givenSignature : earlierParts.signature,
+          };
+          const signature = parts.signature ? await signatureOf(connection) : undefined;
+          const letter = await composeLetter({
+            markdown: body,
+            attach: parts.attach,
+            find: findPart,
+            ...(signature && { signature }),
+          });
+          if (!letter.ok) return failed(letter.failure);
           const saved = await source.draft({
             from: toAddress(user),
             to: to.map((address) => toAddress(address)),
             ...(cc.length > 0 && { cc: cc.map((address) => toAddress(address)) }),
             subject,
-            body,
+            body: letter.value.text,
+            html: letter.value.html,
+            inline: letter.value.inline,
+            attachments: letter.value.attachments,
             ...(answering && {
               inReplyTo: answering.messageId,
               references: [...answering.references, answering.messageId],
@@ -1522,7 +1735,11 @@ export const createMailbox = ({
           const [kept, ...dropped] = replaced.toSorted(
             (left, right) => Number(right.id === replacing) - Number(left.id === replacing),
           );
-          for (const old of dropped) desk.removeCard(old.id);
+          for (const old of dropped) {
+            desk.removeCard(old.id);
+            forgetParts(old.id);
+          }
+          const attachments = attachmentsOf(letter.value, signature);
           const fresh: NewCard = {
             kind: "draft",
             title: textOf(input, "title").trim() || (earlier?.title ?? draftTitle(to[0] ?? "", answering)),
@@ -1537,18 +1754,32 @@ export const createMailbox = ({
               body,
               message_id: saved.value.messageId,
               ...(answering && { in_reply_to: answering.messageId }),
+              ...(signature && { signature: signature.text }),
+              ...(attachments.length > 0 && { attachments: [...attachments] }),
             },
           };
           // The new draft takes the old one's place on the Desk, marked changed.
           if (kept) desk.replaceCard(kept.id, fresh);
           const id = kept?.id ?? desk.addCard(fresh).id;
+          keepParts(id, parts);
           const whom = answering?.from.name ?? to[0] ?? "";
+          const signed = parts.signature
+            ? signature
+              ? " Their signature from their sent mail is at the end."
+              : " Their sent mail has no signature, so none is added."
+            : "";
+          const carried =
+            attachments.length === 0
+              ? ""
+              : ` It carries ${listed(attachments.map(({ name, inline }) => (inline ? `${name} (inline)` : name)))}.`;
           return {
-            text: `Saved the draft in Drafts and put it on the Desk as ${id}${kept ? ", in place of the earlier one" : ""}.`,
+            text:
+              `Saved the draft in Drafts and put it on the Desk as ${id}${kept ? ", in place of the earlier one" : ""}.` +
+              `${signed}${carried}`,
             step: {
               title: `${kept ? "Redrafted" : "Drafted"} ${answering ? "a reply" : "a mail"} to ${whom}`,
               note: `To ${to.join(", ")}`,
-              mails: [{ from: "You", subject, date: toTimestamp(clock.now()), text: body }],
+              mails: [{ from: "You", subject, date: toTimestamp(clock.now()), text: letter.value.text }],
             },
           };
         }),

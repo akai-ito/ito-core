@@ -5,12 +5,14 @@ import { systemClock, type Cancel } from "#clock.ts";
 import {
   fromSyntheticMessageId,
   parseMail,
+  parseSentBody,
   threadIds,
   threadOf,
   toDraftMime,
   uniqueByMessageId,
   type Draft,
   type Mail,
+  type SentBody,
 } from "#mail/message.ts";
 import { providers, signInHints, type Account, type Endpoint } from "#mail/providers.ts";
 import { sendLetter, type Credentials } from "#mail/smtp.ts";
@@ -18,7 +20,7 @@ import { unsubscribeFrom } from "#mail/unsubscribe.ts";
 import type { Health } from "#problems/problems.ts";
 import { fail, ok, type Result } from "#result.ts";
 
-export type { Address, Draft, Mail, Unsubscribe } from "#mail/message.ts";
+export type { Address, Draft, Mail, SentBody, Unsubscribe } from "#mail/message.ts";
 export { providers } from "#mail/providers.ts";
 
 export type Filing = "archive" | "bin" | "inbox" | "flag" | "unflag";
@@ -100,6 +102,8 @@ export type MailSource = {
   readonly hasWritten: (address: string) => Promise<Result<boolean, string>>;
   readonly unsubscribe: (mail: Mail) => Promise<Result<"posted" | "mailed", string>>;
   readonly sent: (since: string) => Promise<Result<readonly Mail[], string>>;
+  // The last few mails in Sent, whole, newest first, for learning their signature.
+  readonly sentBodies: (limit: number) => Promise<Result<readonly SentBody[], string>>;
   readonly close: () => Promise<void>;
 };
 
@@ -1083,6 +1087,29 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return mails.ok ? ok(mails.value.toSorted(byDate)) : mails;
     });
 
+  const sentBodies: MailSource["sentBodies"] = (limit) =>
+    runReading("reading sent mail", async (opened) => {
+      const folder = opened.folders.sent;
+      if (folder === undefined) return ok([]);
+      return inFolder(opened.client, folder, async (): Promise<Result<readonly SentBody[], string>> => {
+        const uids = await searchUids(opened.client, { all: true });
+        if (!uids.ok) return uids;
+        const latest = uids.value.toSorted((left, right) => left - right).slice(-limit);
+        if (latest.length === 0) return ok([]);
+        const bodies = createCell<readonly SentBody[]>([]);
+        const messages = opened.client.fetch(toUidSet(latest), { uid: true, source: true }, { uid: true });
+        for await (const message of messages) {
+          if (message.source === undefined) {
+            continue;
+          }
+
+          const body = await parseSentBody(message.source);
+          bodies.update((current) => [body, ...current]);
+        }
+        return ok(bodies.get());
+      });
+    });
+
   const close: MailSource["close"] = async () => {
     for (const stop of watchers.get()) stop();
     const opened = await sessions.get();
@@ -1109,6 +1136,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     hasWritten,
     unsubscribe,
     sent,
+    sentBodies,
     close,
   };
 };

@@ -435,6 +435,7 @@ export const createServer = (options: ServerOptions): Server => {
       desk.setLastMail(at);
     },
     ...(options.createMailSource && { createSource: options.createMailSource }),
+    workspace: path.join(options.dataDirectory, "workspace"),
   });
   const pictureCell = createCell<DayPicture | undefined>(undefined);
   const calendar = createCalendar({

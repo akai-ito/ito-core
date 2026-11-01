@@ -2786,12 +2786,26 @@ export interface components {
         to: string[];
         cc?: string[];
         subject: string;
-        /** @description Plain text, as it will be sent. */
+        /** @description The mail's words in light Markdown (paragraphs, bold, italics, lists and links), as it's formatted in Drafts: draw it formatted. A picture in it, written `![what it shows](…)`, is listed in `attachments`; leave it out of the words. */
         body: string;
         /** @description The draft's own Message-ID, without angle brackets. */
         message_id: string;
         /** @description The Message-ID of the mail it answers. */
         in_reply_to?: string;
+        /** @description Their own signature, as plain text, learned from the mail they send from this account and added at the end. Draw it quietly under the words. Absent when they have none or asked for none. */
+        signature?: string;
+        /** @description The pictures it shows inline and the files attached, in order. Absent when there are none. */
+        attachments?: {
+          /** @description The file's name, such as `IMG_2041.jpg`. */
+          name: string;
+          /**
+           * @description `image` or `file`. Show a kind you don't recognise as a file.
+           * @enum {unknown}
+           */
+          kind: "image" | "file";
+          /** @description Shown in the mail's words rather than attached. */
+          inline: boolean;
+        }[];
       };
       /** @description An invitation, held on Kumo's calendar until you answer; your answer goes back through iCloud. */
       invite?: {

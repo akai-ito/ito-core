@@ -1,5 +1,5 @@
 import { createCell } from "#cell.ts";
-import type { Destination, Draft, Mail, MailQuery, MailSource, SourceOptions, UidGroup } from "#mail/imap.ts";
+import type { Destination, Draft, Mail, MailQuery, MailSource, SentBody, SourceOptions, UidGroup } from "#mail/imap.ts";
 import type { Health } from "#problems/problems.ts";
 import { fail, ok } from "#result.ts";
 
@@ -29,6 +29,9 @@ export type FakeMail = {
   readonly moved: () => readonly Moved[];
   readonly unsubscribed: () => readonly string[];
   readonly send: (account: string, mail: Mail) => void;
+  // A mail they sent, whole, as the signature is learned from: the newest last.
+  readonly sentWhole: (account: string, body: SentBody) => void;
+  readonly breakSentBodies: (broken: boolean) => void;
   readonly breakReading: () => void;
   readonly dropSent: (times: number) => void;
   readonly health: (account: string, health: Health) => void;
@@ -72,6 +75,8 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const sentMail = createCell<ReadonlyMap<string, readonly Mail[]>>(new Map());
   const isBroken = createCell(false);
   const sentDrops = createCell(0);
+  const bodies = createCell<ReadonlyMap<string, readonly SentBody[]>>(new Map());
+  const isSentBroken = createCell(false);
   const healthListeners = createCell<ReadonlyMap<string, (health: Health) => void>>(new Map());
 
   const boxOf = (account: string): Box => boxes.get().get(account) ?? { inbox: [], watchers: new Set() };
@@ -205,6 +210,12 @@ export const createFakeMail = (now: () => string): FakeMail => {
       sentDrops.update((count) => count - 1);
       return Promise.resolve(fail("Mail couldn't finish reading sent mail: Connection not available"));
     },
+    sentBodies: (limit) =>
+      Promise.resolve(
+        isSentBroken.get()
+          ? fail("Mail couldn't finish reading sent mail: Connection not available")
+          : ok((bodies.get().get(account) ?? []).slice(-limit).toReversed()),
+      ),
     close: () => Promise.resolve(),
   });
 
@@ -245,6 +256,12 @@ export const createFakeMail = (now: () => string): FakeMail => {
     unsubscribed: () => unsubscribes.get(),
     send: (account, mail) => {
       sentMail.update((all) => new Map([...all, [account, [...(all.get(account) ?? []), mail]]]));
+    },
+    sentWhole: (account, body) => {
+      bodies.update((all) => new Map([...all, [account, [...(all.get(account) ?? []), body]]]));
+    },
+    breakSentBodies: (broken) => {
+      isSentBroken.set(broken);
     },
     breakReading: () => {
       isBroken.set(true);
