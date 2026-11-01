@@ -2429,7 +2429,7 @@ const scenarios: readonly (() => Transcript)[] = [
     const asked = transcript.youSay("walk-question.pcm", "When's the design review?");
     transcript.startTurn([asked]);
     transcript.wait(900);
-    writeWhole(transcript, "It's on Wednesday at ten. Maya and Leo will both be there.", 1);
+    writeWhole(transcript, "It's on Wednesday at ten. Hana and Leo will both be there.", 1);
     transcript.endTurn("completed");
     transcript.wait(800);
     const cut = transcript.unplayed();
@@ -2438,7 +2438,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(50);
     for (const sentence of cut) transcript.played(sentence, true);
     transcript.wait(900);
-    writeWhole(transcript, "I'll ask Maya for Thursday.", 1);
+    writeWhole(transcript, "I'll ask Hana for Thursday.", 1);
     transcript.endTurn("completed");
     transcript.wait(2000);
     for (const sentence of transcript.unplayed()) transcript.played(sentence);

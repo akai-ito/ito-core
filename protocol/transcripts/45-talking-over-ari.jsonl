@@ -18,13 +18,13 @@
 {"at":5300,"socket":{"from":"server","frame":{"type":"state","state":"working"}}}
 {"at":6200,"event":{"id":"e_0004_76559","type":"turn.status","at":"2026-10-27T07:40:06.200Z","turn":"t_0001_31388","kind":"writing","label":"Writing"}}
 {"at":6200,"event":{"id":"e_0005_33457","type":"message.started","at":"2026-10-27T07:40:06.200Z","message":{"id":"m_0002_10070","role":"agent","kind":"reply","turn":"t_0001_31388","text":"","at":"2026-10-27T07:40:06.200Z","position":5}}}
-{"at":6200,"event":{"id":"e_0006_35432","type":"message.delta","at":"2026-10-27T07:40:06.200Z","message":"m_0002_10070","offset":0,"text":"It's on Wednesday at ten. Maya and Leo will both be there."}}
+{"at":6200,"event":{"id":"e_0006_35432","type":"message.delta","at":"2026-10-27T07:40:06.200Z","message":"m_0002_10070","offset":0,"text":"It's on Wednesday at ten. Hana and Leo will both be there."}}
 {"at":6200,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
 {"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s1","text":"It's on Wednesday at ten."}}}
 {"at":6200,"socket":{"from":"server","audio_ms":250}}
 {"at":6200,"socket":{"from":"server","frame":{"type":"said","id":"s1"}}}
 {"at":6200,"event":{"id":"e_0007_68001","type":"message.ended","at":"2026-10-27T07:40:06.200Z","message":"m_0002_10070","outcome":"completed","length":58}}
-{"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Maya and Leo will both be there."}}}
+{"at":6200,"socket":{"from":"server","frame":{"type":"saying","id":"s2","text":"Hana and Leo will both be there."}}}
 {"at":6200,"socket":{"from":"server","audio_ms":250}}
 {"at":6200,"socket":{"from":"server","frame":{"type":"said","id":"s2"}}}
 {"at":6200,"event":{"id":"e_0008_83582","type":"turn.ended","at":"2026-10-27T07:40:06.200Z","turn":"t_0001_31388","outcome":"completed"}}
@@ -41,10 +41,10 @@
 {"at":7050,"socket":{"from":"app","frame":{"type":"played","id":"s2"}}}
 {"at":7950,"event":{"id":"e_0011_93146","type":"turn.status","at":"2026-10-27T07:40:07.950Z","turn":"t_0002_55430","kind":"writing","label":"Writing"}}
 {"at":7950,"event":{"id":"e_0012_85834","type":"message.started","at":"2026-10-27T07:40:07.950Z","message":{"id":"m_0004_30759","role":"agent","kind":"reply","turn":"t_0002_55430","text":"","at":"2026-10-27T07:40:07.950Z","position":12}}}
-{"at":7950,"event":{"id":"e_0013_60723","type":"message.delta","at":"2026-10-27T07:40:07.950Z","message":"m_0004_30759","offset":0,"text":"I'll ask Maya for Thursday."}}
+{"at":7950,"event":{"id":"e_0013_60723","type":"message.delta","at":"2026-10-27T07:40:07.950Z","message":"m_0004_30759","offset":0,"text":"I'll ask Hana for Thursday."}}
 {"at":7950,"event":{"id":"e_0014_91319","type":"message.ended","at":"2026-10-27T07:40:07.950Z","message":"m_0004_30759","outcome":"completed","length":27}}
 {"at":7950,"socket":{"from":"server","frame":{"type":"state","state":"speaking"}}}
-{"at":7950,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"I'll ask Maya for Thursday."}}}
+{"at":7950,"socket":{"from":"server","frame":{"type":"saying","id":"s3","text":"I'll ask Hana for Thursday."}}}
 {"at":7950,"socket":{"from":"server","audio_ms":250}}
 {"at":7950,"socket":{"from":"server","frame":{"type":"said","id":"s3"}}}
 {"at":7950,"event":{"id":"e_0015_49236","type":"turn.ended","at":"2026-10-27T07:40:07.950Z","turn":"t_0002_55430","outcome":"completed"}}

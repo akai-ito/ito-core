@@ -20,10 +20,10 @@ describe("what Ari says on a call", () => {
   it("says a long sentence in clauses, cutting at the punctuation nearest its middle", () => {
     const long =
       "I looked through every note from the trip last spring, including the ones from the train, and the main " +
-      "thing is that the budget review moved to Friday afternoon so the draft has to reach Maya by Thursday.";
+      "thing is that the budget review moved to Friday afternoon so the draft has to reach Hana by Thursday.";
     expect(toClauses(long)).toEqual([
       "I looked through every note from the trip last spring, including the ones from the train,",
-      "and the main thing is that the budget review moved to Friday afternoon so the draft has to reach Maya by Thursday.",
+      "and the main thing is that the budget review moved to Friday afternoon so the draft has to reach Hana by Thursday.",
     ]);
     expect(toClauses(Array.from({ length: 60 }, () => "word").join(" ")).map(words)).toEqual([15, 15, 15, 15]);
     expect(toClauses("Short and sweet.")).toEqual(["Short and sweet."]);

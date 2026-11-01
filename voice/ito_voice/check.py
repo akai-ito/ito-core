@@ -26,7 +26,7 @@ short_sentence = "Sure, I can do that."
 medium_sentence = "She wants one more round on your design before the panel meets again in November."
 long_sentence = (
     "I looked through the notes from Tuesday, and the main thing is that the budget review moved to Friday, "
-    "so we should send the draft to Maya before Thursday evening."
+    "so we should send the draft to Hana before Thursday evening."
 )
 everyday = [
     "Can you remind me to call the dentist tomorrow morning?",
