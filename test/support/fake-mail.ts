@@ -17,6 +17,7 @@ export type FakeMail = {
   readonly hold: (account: string, count: number) => void;
   readonly expectDrafts: (ids: readonly string[]) => void;
   readonly drafts: () => readonly Draft[];
+  readonly removedDrafts: () => readonly string[];
   readonly send: (account: string, mail: Mail) => void;
   readonly breakReading: () => void;
 };
@@ -28,10 +29,14 @@ const toAddress = (text: string): Mail["from"] => {
   return named?.address === undefined ? { address: text } : { address: named.address, name: named.name ?? "" };
 };
 
+const has = (text: string, wanted: string | undefined): boolean =>
+  wanted === undefined || text.toLowerCase().includes(wanted.toLowerCase());
+
 export const createFakeMail = (now: () => string): FakeMail => {
   const boxes = createCell<ReadonlyMap<string, Box>>(new Map());
   const draftIds = createCell<readonly string[]>([]);
   const saved = createCell<readonly Draft[]>([]);
+  const removed = createCell<readonly string[]>([]);
   const sentMail = createCell<ReadonlyMap<string, readonly Mail[]>>(new Map());
   const isBroken = createCell(false);
 
@@ -74,7 +79,15 @@ export const createFakeMail = (now: () => string): FakeMail => {
       const found = boxOf(account).inbox.find((mail) => mail.messageId === messageId);
       return Promise.resolve(found ? ok(found) : fail("That mail isn't in this account any more."));
     },
-    search: () => Promise.resolve(ok([])),
+    search: (query) => {
+      const found = boxOf(account).inbox.filter(
+        (mail) =>
+          has(`${mail.from.name ?? ""} ${mail.from.address}`, query.from) &&
+          has(mail.subject, query.subject) &&
+          has(mail.text, query.text),
+      );
+      return Promise.resolve(ok(found));
+    },
     thread: (messageId) => {
       const found = boxOf(account).inbox.find((mail) => mail.messageId === messageId);
       return Promise.resolve(ok(found ? [found] : []));
@@ -85,7 +98,10 @@ export const createFakeMail = (now: () => string): FakeMail => {
       saved.update((all) => [...all, draft]);
       return Promise.resolve(ok({ messageId: next }));
     },
-    removeDraft: () => Promise.resolve(ok(undefined)),
+    removeDraft: (messageId) => {
+      removed.update((all) => [...all, messageId]);
+      return Promise.resolve(ok(undefined));
+    },
     file: () => Promise.resolve(ok(undefined)),
     unsubscribe: () => Promise.resolve(ok("posted" as const)),
     sent: () => Promise.resolve(ok(sentMail.get().get(account) ?? [])),
@@ -119,6 +135,7 @@ export const createFakeMail = (now: () => string): FakeMail => {
       draftIds.set(ids);
     },
     drafts: () => saved.get(),
+    removedDrafts: () => removed.get(),
     send: (account, mail) => {
       sentMail.update((all) => new Map([...all, [account, [...(all.get(account) ?? []), mail]]]));
     },
