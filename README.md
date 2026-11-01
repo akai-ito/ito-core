@@ -101,17 +101,29 @@ more go to Ito's log.
 Ari remembers you in the Thread, a git repository of Markdown pages in `~/.ito/thread` that you can
 read without Ito: your portrait, what's going on now, how you like to be helped, pages on people,
 goals, projects, places and topics, and a journal. Ari writes it as you talk, and finds things in it
-and in past conversations with a small embedding model it downloads once and runs on the CPU. To
-back it up, create a private repository and point the Thread at it; Ito pushes after each change
-with this machine's own git credentials:
+and in past conversations with a small embedding model it downloads once and runs on the CPU.
+
+To back it up, tap *Back up to GitHub* in Ari's Settings › Memory and approve the code on GitHub.
+Your server finds your private `ito-thread` repository, or makes one, and GitHub asks you to install
+Ito Memory, Ito's GitHub app, on just that repository; from then on Ito pushes after each change.
+The app can only read and write the repositories it's installed on, and make that one; GitHub hands
+its token to your server, never to the phone, and the server renews it itself. If a backup stops,
+because the repository went or GitHub stopped accepting the sign-in, Settings and the Desk say so
+and how to fix it; Ito never falls back to the machine's own credentials. *Disconnect* forgets the
+token and keeps the repository. A repository that already holds memory carries on: Ito
+fast-forwards to what's there, and a new server with nothing in its Thread yet takes on the backup.
+
+Or, without the app, point the Thread at any git remote, and Ito pushes after each change with this
+machine's own git credentials:
 
 ```sh
 node bin/ito.ts memory remote git@github.com:<you>/ito-thread.git
 ```
 
-If pages change on the remote, say by merging a pull request there, `node bin/ito.ts memory pull`
-fast-forwards the Thread, and Ari takes the new pages into its search the next time it uses memory.
-It refuses, rather than merge, when pages changed on both sides.
+If pages change on the remote, say by merging a pull request there, Ito fast-forwards to them the
+next time a push is turned away, or at once with `node bin/ito.ts memory pull`, and Ari takes the new
+pages into its search the next time it uses memory. Either way it refuses, rather than merge, when
+pages changed on both sides.
 
 Connect iCloud, Outlook or Gmail in Ari's Settings › Capabilities, and Kumo, the agent working in
 the background, reads every mail as it arrives: it puts bookings on your calendar, drafts replies in
