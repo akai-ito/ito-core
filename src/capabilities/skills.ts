@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { toUsage } from "#capabilities/commands.ts";
 import type { Offered } from "#capabilities/host.ts";
@@ -24,9 +24,18 @@ export const toSkill = (capability: Offered, command: string): string =>
     "",
   ].join("\n");
 
-export const writeSkills = (directory: string, offered: readonly Offered[], command: string): string => {
-  for (const capability of offered) {
+// A capability with no operations, such as a mail account that Ito's own mail tools read, has no commands to
+// offer, so the agent never hears of it: neither a skill file nor a line in the list.
+const hasCommands = ({ manifest }: Offered): boolean => manifest.operations.length > 0;
+
+export const writeSkills = (directory: string, capabilities: readonly Offered[], command: string): string => {
+  const offered = capabilities.filter((capability) => hasCommands(capability));
+  for (const capability of capabilities) {
     const file = skillFile(directory, capability.id);
+    if (!hasCommands(capability)) {
+      rmSync(path.dirname(file), { recursive: true, force: true });
+      continue;
+    }
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, toSkill(capability, command));
   }

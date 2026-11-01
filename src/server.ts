@@ -614,7 +614,7 @@ export const createServer = (options: ServerOptions): Server => {
     },
   });
   const allTools = (): readonly Tool[] =>
-    [...coreTools, ...doors.tools()].map((tool) => noteRun(withCheckedInput(tool)));
+    [...coreTools, ...doors.tools()].map((tool) => groups.reporting(noteRun(withCheckedInput(tool))));
   const callTool = async (name: string, input: unknown, run?: string): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
     return tool

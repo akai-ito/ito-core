@@ -1889,8 +1889,29 @@ export interface components {
       motion?: components["schemas"]["MotionId"];
       /** @description `motion`: the thing's version after the change. */
       version?: number;
-      /** @description `motion`: Ari's note on the change, such as "Booked the Uffizi, 8:15 Saturday". */
+      /** @description `motion`: Ari's note on the change, such as "Booked the Uffizi, 8:15 Saturday". `tool`: why, in a line, such as the reason a mail was binned. */
       note?: string;
+      /** @description `tool`: what this step did in a word or two, for counting a run of steps like it, such as `binned` or `into Money & receipts`. */
+      tally?: string;
+      /** @description `tool`: how a run of steps of the same operation reads as one line, with `{count}` for how many: `present` while one of them runs, `past` once they're over, such as "Sorted {count} mails". Each step still has its own title. Absent for a tool whose steps don't share a line. */
+      run_title?: {
+        present: string;
+        past: string;
+      };
+      /** @description `tool`: the mails the step read, found or moved, so it can open onto them rather than their ids: at most 50, in the order the step gave them. A mail it read carries its `text`, cut at a few thousand characters, with `cut` when there was more. */
+      mails?: {
+        /** @description The sender's name, or address when there's no name. */
+        from: string;
+        subject: string;
+        date: components["schemas"]["Timestamp"];
+        /** @description The mail as plain text, without the quoted history. */
+        text?: string;
+        /**
+         * @description Present when `text` stops short of the whole mail.
+         * @constant
+         */
+        cut?: true;
+      }[];
       /** @description `plan`: why the plan is what it is. */
       explanation?: string;
       /** @description `plan`: its items, in order, each with its state. */

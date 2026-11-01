@@ -19,6 +19,8 @@ export type MailFolders = {
   readonly place: (mail: MailReference, folder: string, reason: string) => Promise<Result<string, string>>;
   // Adds a folder they asked for, and files the mail into it.
   readonly add: (mail: MailReference, folder: string, reason: string) => Promise<Result<string, string>>;
+  // Adds a folder they asked for to theirs, once they have some.
+  readonly addName: (folder: string, reason: string) => void;
   readonly propose: (evidence: readonly string[]) => Promise<void>;
   readonly names: () => readonly string[];
   readonly note: () => string;
@@ -81,7 +83,8 @@ const parsed = (text = "null"): unknown => {
   }
 };
 
-const sameName = (left: string, right: string): boolean => left.trim().toLowerCase() === right.trim().toLowerCase();
+export const sameName = (left: string, right: string): boolean =>
+  left.trim().toLowerCase() === right.trim().toLowerCase();
 
 const namesOf = (value: unknown): readonly string[] =>
   (Array.isArray(value) ? (value as readonly unknown[]) : [])
@@ -245,6 +248,13 @@ export const createMailFolders = ({ store, desk, complete, info, fileInto, evide
     return ok(`It stays in the inbox until they've chosen their folders, then goes into ${folder}.`);
   };
 
+  const addName = (folder: string, reason: string): void => {
+    const chosen = names();
+    if (chosen.length === 0 || chosen.some((name) => sameName(name, folder))) return;
+    store.setSetting(foldersSetting, JSON.stringify([...chosen, folder.trim()]));
+    desk.addDone({ text: `Added a mail folder: ${folder.trim()}`, ...(reason !== "" && { reason }), quiet: false });
+  };
+
   // Ask again on startup for a proposal whose card is still waiting.
   const pending = proposal();
   if (pending && desk.cards().some((card) => card.id === pending.card)) {
@@ -263,12 +273,10 @@ export const createMailFolders = ({ store, desk, complete, info, fileInto, evide
     add: async (mail, folder, reason) => {
       const chosen = names();
       if (chosen.length === 0) return hold(mail, folder, reason);
-      if (chosen.every((name) => !sameName(name, folder))) {
-        store.setSetting(foldersSetting, JSON.stringify([...chosen, folder.trim()]));
-        desk.addDone({ text: `Added a mail folder: ${folder.trim()}`, ...(reason !== "" && { reason }), quiet: false });
-      }
+      addName(folder, reason);
       return fileNow(mail, chosen.find((name) => sameName(name, folder)) ?? folder.trim(), reason);
     },
+    addName,
     propose,
     names,
     note: () => {

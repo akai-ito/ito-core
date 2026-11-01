@@ -59,6 +59,10 @@ const takeFlag = (schema: JsonSchema, { input, rest }: Parsed): Result<Parsed, s
   const text = inline ?? next;
   if (text === undefined) return fail(`--${flag} needs a value.`);
   const isArray = typeOf(property) === "array";
+  // A list takes one value a flag, so a JSON list or commas given to one flag would become one odd value.
+  if (isArray && typeOf(property.items ?? {}) === "string" && /^\s*\[/u.test(text)) {
+    return fail(`--${flag} takes one value each time: repeat --${flag} for each, rather than giving a list.`);
+  }
   const value = toValue(isArray ? (property.items ?? {}) : property, text, flag);
   if (!value.ok) return value;
   const earlier = input[name];
@@ -85,7 +89,8 @@ export const toInput = (schema: JsonSchema, rest: readonly string[]): Result<Inp
 
 const flagLine = (schema: JsonSchema, [name, property]: readonly [string, Property]): string => {
   const kind = typeOf(property);
-  const value = kind === "boolean" ? "" : kind === "array" ? " <value>…" : ` <${kind || "json"}>`;
+  const item = typeOf(property.items ?? {}) || "json";
+  const value = kind === "boolean" ? "" : kind === "array" ? ` <${item}> (repeat for more)` : ` <${kind || "json"}>`;
   const required = requiredOf(schema).includes(name) ? " (required)" : "";
   return `  --${toFlag(name)}${value}${required}${property.description ? `: ${property.description}` : ""}`;
 };

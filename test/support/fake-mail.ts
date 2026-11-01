@@ -1,5 +1,5 @@
 import { createCell } from "#cell.ts";
-import type { Draft, Mail, MailSource, SourceOptions } from "#mail/imap.ts";
+import type { Destination, Draft, Mail, MailQuery, MailSource, SourceOptions, UidGroup } from "#mail/imap.ts";
 import type { Health } from "#problems/problems.ts";
 import { fail, ok } from "#result.ts";
 
@@ -19,6 +19,9 @@ export type Moved = { readonly account: string; readonly messageId: string; read
 export type FakeMail = {
   readonly create: (options: SourceOptions) => MailSource;
   readonly arrive: (mail: ArrivingMail) => void;
+  // Mail already in one of the account's folders, such as one an earlier assistant made.
+  readonly keep: (folder: string, mail: ArrivingMail) => void;
+  readonly folderOf: (account: string, messageId: string) => string | undefined;
   readonly hold: (account: string, count: number) => void;
   readonly expectDrafts: (ids: readonly string[]) => void;
   readonly drafts: () => readonly Draft[];
@@ -40,6 +43,24 @@ const toAddress = (text: string): Mail["from"] => {
 
 const has = (text: string, wanted: string | undefined): boolean =>
   wanted === undefined || text.toLowerCase().includes(wanted.toLowerCase());
+
+const folderPaths: Readonly<Record<string, string>> = { inbox: "INBOX", archive: "Archive", bin: "Trash" };
+
+const pathOf = (destination: Destination): string =>
+  typeof destination === "object" ? destination.folder : (folderPaths[destination] ?? destination);
+
+const matches = (mail: Mail, query: MailQuery): boolean =>
+  (query.folder === undefined ||
+    mail.folder.toLowerCase() === (folderPaths[query.folder] ?? query.folder).toLowerCase()) &&
+  has(`${mail.from.name ?? ""} ${mail.from.address}`, query.from) &&
+  has(mail.subject, query.subject) &&
+  has(mail.text, query.text);
+
+const byFolder = (mails: readonly Mail[]): readonly UidGroup[] =>
+  [...Map.groupBy(mails, (mail) => mail.folder)].map(([folder, inFolder]) => ({
+    folder,
+    uids: inFolder.map(({ uid }) => uid),
+  }));
 
 export const createFakeMail = (now: () => string): FakeMail => {
   const boxes = createCell<ReadonlyMap<string, Box>>(new Map());
@@ -99,18 +120,61 @@ export const createFakeMail = (now: () => string): FakeMail => {
     },
     recent: () =>
       Promise.resolve(isBroken.get() ? fail("The mail server refused the sign-in.") : ok(boxOf(account).inbox)),
+    folders: () => {
+      const counted = [...Map.groupBy(boxOf(account).inbox, (mail) => mail.folder)].map(([name, mails]) => ({
+        name,
+        ...(name === "INBOX" && { use: "inbox" as const }),
+        messages: mails.length,
+        unseen: 0,
+      }));
+      return Promise.resolve(ok(counted));
+    },
+    select: (selection) => {
+      const mails = boxOf(account).inbox.filter((mail) =>
+        "messageIds" in selection ? selection.messageIds.includes(mail.messageId) : matches(mail, selection.query),
+      );
+      return Promise.resolve(ok({ groups: byFolder(mails), mails }));
+    },
+    move: (groups, destination, onProgress) => {
+      const to = pathOf(destination);
+      const moving = boxOf(account).inbox.filter((mail) =>
+        groups.some(({ folder, uids }) => folder === mail.folder && mail.folder !== to && uids.includes(mail.uid)),
+      );
+      change(account, (box) => ({
+        ...box,
+        inbox: box.inbox.map((mail) => (moving.includes(mail) ? { ...mail, folder: to } : mail)),
+      }));
+      moves.update((all) => [...all, ...moving.map(({ messageId }) => ({ account, messageId, to }))]);
+      onProgress?.(moving.length, moving.length);
+      return Promise.resolve(
+        ok({
+          moved: moving.length,
+          destination: to,
+          placed: byFolder(moving).map(({ folder, uids }) => ({ origin: folder, uids })),
+        }),
+      );
+    },
     read: (messageId) => {
       const found = boxOf(account).inbox.find((mail) => mail.messageId === messageId);
       return Promise.resolve(found ? ok(found) : fail("That mail isn't in this account any more."));
     },
     search: (query) => {
-      const found = boxOf(account).inbox.filter(
-        (mail) =>
-          has(`${mail.from.name ?? ""} ${mail.from.address}`, query.from) &&
-          has(mail.subject, query.subject) &&
-          has(mail.text, query.text),
+      const found = boxOf(account)
+        .inbox.filter((mail) => matches(mail, query))
+        .toReversed();
+      const start = Number(query.more ?? "0");
+      const limit = query.limit ?? 20;
+      const shown = found.slice(start, start + limit);
+      const after = Math.max(0, found.length - start - shown.length);
+      return Promise.resolve(
+        ok({
+          mails: shown,
+          total: found.length,
+          after,
+          searched: [query.folder ?? "INBOX"],
+          ...(after > 0 && { more: String(start + limit) }),
+        }),
       );
-      return Promise.resolve(ok(found));
     },
     thread: (messageId) => {
       const found = boxOf(account).inbox.find((mail) => mail.messageId === messageId);
@@ -146,6 +210,11 @@ export const createFakeMail = (now: () => string): FakeMail => {
 
   return {
     create,
+    keep: (folder, { account, ...mail }) => {
+      const kept = { ...toMail(account, mail, boxOf(account).inbox.length + 1), folder };
+      change(account, (box) => ({ ...box, inbox: [...box.inbox, kept] }));
+    },
+    folderOf: (account, messageId) => boxOf(account).inbox.find((mail) => mail.messageId === messageId)?.folder,
     arrive: ({ account, ...mail }) => {
       const arrived = toMail(account, mail, boxOf(account).inbox.length + 1);
       change(account, (box) => ({ ...box, inbox: [...box.inbox, arrived] }));

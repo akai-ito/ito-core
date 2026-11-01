@@ -56,6 +56,9 @@ export const createDoors = ({ host, currentTurn, command }: DoorsOptions): Doors
             : `There's no capability called ${id}.`,
         );
       }
+      if (capability.manifest.operations.length === 0) {
+        return fail(`${capability.manifest.title} has no commands of its own; Ito's own tools use it.`);
+      }
       if (isHelp(name)) return ok(toUsage(command, capability.manifest));
       const operation = capability.manifest.operations.find((candidate) => candidate.name === name);
       if (!operation)

@@ -99,6 +99,8 @@ const arrival = (count: number): string =>
     ].join("\n"),
   );
 
+const byText = (left: string, right: string): number => left.localeCompare(right);
+
 const refuseToMail = (): Promise<never> => Promise.reject(new Error("Nothing should be mailed."));
 
 const gone = { ok: false, failure: "That mail isn't in this account any more." };
@@ -585,7 +587,7 @@ describe("over IMAP", () => {
     const filed = await source.read(ids.booking);
     expect(filed.ok ? filed.value.folder : filed.failure).toBe("Bookings & travel");
     const found = await source.search({ from: "noreply@stays.example" });
-    expect(found.ok ? found.value.map(({ messageId }) => messageId) : found.failure).toEqual([ids.booking]);
+    expect(found.ok ? found.value.mails.map(({ messageId }) => messageId) : found.failure).toEqual([ids.booking]);
     expect(await source.fileInto(ids.newsletter, "receipts")).toEqual({ ok: true, value: undefined });
     const moved = await source.read(ids.newsletter);
     expect(moved.ok ? moved.value.folder : moved.failure).toBe("Receipts");
@@ -648,22 +650,118 @@ describe("over IMAP", () => {
   it("searches by sender, subject and words, newest first, in their own folders too", async () => {
     const source = connect();
     const bySender = await source.search({ from: "lena@studio.example" });
-    expect(bySender.ok ? bySender.value.map(({ messageId }) => messageId) : bySender.failure).toEqual([
+    expect(bySender.ok ? bySender.value.mails.map(({ messageId }) => messageId) : bySender.failure).toEqual([
       "arrival-41@studio.example",
       ids.reply,
       ids.start,
     ]);
     const bySubject = await source.search({ subject: "autumn trails" });
-    expect(bySubject.ok ? bySubject.value.map(({ messageId }) => messageId) : bySubject.failure).toEqual([
+    expect(bySubject.ok ? bySubject.value.mails.map(({ messageId }) => messageId) : bySubject.failure).toEqual([
       ids.newsletter,
     ]);
     const byWords = await source.search({ text: "projector", since: "2026-10-29" });
-    expect(byWords.ok ? byWords.value.map(({ messageId }) => messageId) : byWords.failure).toEqual([ids.reply]);
+    expect(byWords.ok ? byWords.value.mails.map(({ messageId }) => messageId) : byWords.failure).toEqual([ids.reply]);
     expect(await source.search({})).toEqual({
       ok: false,
-      failure: "Say what to look for: a sender, a subject, words or a date.",
+      failure: "Say what to look for: a sender, a subject, words, a date or a folder, such as --folder inbox.",
     });
     expect(await source.search({ since: "someday" })).toEqual({ ok: false, failure: '"someday" isn\'t a date.' });
+  });
+
+  it("lists a folder a page at a time, newest first, without skipping what was filed in between", async () => {
+    const source = connect();
+    const first = await source.search({ folder: "inbox", limit: 1 });
+    if (!first.ok) throw new Error(first.failure);
+    expect(first.value).toMatchObject({ total: 3, after: 2, searched: ["INBOX"] });
+    expect(first.value.mails.map(({ messageId }) => messageId)).toEqual([ids.reply]);
+    expect(await source.file(ids.reply, "archive")).toEqual({ ok: true, value: undefined });
+
+    const second = await source.search({ folder: "inbox", limit: 1, more: first.value.more });
+    if (!second.ok) throw new Error(second.failure);
+    expect(second.value.mails.map(({ messageId }) => messageId)).toEqual([ids.booking]);
+    const last = await source.search({ folder: "inbox", limit: 5, more: second.value.more });
+    if (!last.ok) throw new Error(last.failure);
+    expect(last.value).toMatchObject({ total: 2, after: 0 });
+    expect(last.value.more).toBeUndefined();
+    expect(last.value.mails.map(({ messageId }) => messageId)).toEqual([ids.newsletter]);
+  });
+
+  it("searches one folder by its role or name, and says when there's no such folder", async () => {
+    const source = connect();
+    const archived = await source.search({ from: "lena@studio.example", folder: "archive" });
+    expect(archived.ok ? archived.value.mails.map(({ messageId }) => messageId) : archived.failure).toEqual([
+      ids.start,
+    ]);
+    const receipts = await source.search({ folder: "receipts" });
+    expect(receipts.ok && receipts.value).toMatchObject({ total: 1, searched: ["Receipts"] });
+    const nowhere = await source.search({ folder: "Old filing" });
+    expect(nowhere.ok ? "" : nowhere.failure).toBe(
+      "There's no folder called Old filing. The account's folders: INBOX, Sent Messages, Drafts, Archive, Junk, " +
+        "Deleted Messages, Receipts.",
+    );
+    expect(await source.search({ folder: "inbox", more: "not-a-cursor" })).toEqual({
+      ok: false,
+      failure: '"not-a-cursor" isn\'t a cursor a search gave.',
+    });
+  });
+
+  it("counts the mail in every folder", async () => {
+    const listed = await connect().folders();
+    expect(listed.ok ? listed.value : listed.failure).toEqual(
+      expect.arrayContaining([
+        { name: "INBOX", use: "inbox", messages: 3, unseen: 3 },
+        { name: "Archive", use: "archive", messages: 1, unseen: 1 },
+        { name: "Receipts", messages: 1, unseen: 1 },
+        { name: "Junk", use: "junk", messages: 1, unseen: 1 },
+      ]),
+    );
+  });
+
+  it("picks out mails across folders and moves them with one UID MOVE a folder, then back", async () => {
+    const source = connect();
+    const picked = await source.select({
+      messageIds: [ids.booking, ids.newsletter, "arrival-41@studio.example", "missing@example.com"],
+    });
+    if (!picked.ok) throw new Error(picked.failure);
+    expect(picked.value.groups).toEqual([
+      { folder: "INBOX", uids: [1, 2] },
+      { folder: "Receipts", uids: [1] },
+    ]);
+    expect(picked.value.mails.map(({ messageId }) => messageId).toSorted(byText)).toEqual(
+      [ids.booking, ids.newsletter, "arrival-41@studio.example"].toSorted(byText),
+    );
+    const moves = createCell<readonly string[]>([]);
+    const move = running().getCommandHandler("UID MOVE");
+    running().setCommandHandler("UID MOVE", (connection, parsed, data, callback) => {
+      moves.update((current) => [...current, data]);
+      move(connection, parsed, data, callback);
+    });
+    const progress = createCell<readonly (readonly number[])[]>([]);
+
+    const moved = await source.move(picked.value.groups, { folder: "Money & receipts" }, (done, total) => {
+      progress.update((current) => [...current, [done, total]]);
+    });
+
+    if (!moved.ok) throw new Error(moved.failure);
+    expect(moved.value).toMatchObject({ moved: 3, destination: "Money & receipts" });
+    expect(moves.get()).toHaveLength(2);
+    expect(progress.get()).toEqual([
+      [2, 3],
+      [3, 3],
+    ]);
+    const filed = await source.search({ folder: "Money & receipts" });
+    expect(filed.ok && filed.value.total).toBe(3);
+    const fromInbox = moved.value.placed.find(({ origin }) => origin === "INBOX");
+    expect(fromInbox?.uids).toHaveLength(2);
+    const back = await source.move([{ folder: "Money & receipts", uids: fromInbox?.uids ?? [] }], "inbox");
+    expect(back.ok && back.value.moved).toBe(2);
+    const booking = await source.read(ids.booking);
+    expect(booking.ok ? booking.value.folder : booking.failure).toBe("INBOX");
+  });
+
+  it("picks out everything a search finds in a folder", async () => {
+    const picked = await connect().select({ query: { folder: "inbox", from: "stays.example" } });
+    expect(picked.ok ? picked.value.groups : picked.failure).toEqual([{ folder: "INBOX", uids: [2] }]);
   });
 
   it("reads the Sent folder", async () => {
