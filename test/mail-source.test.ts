@@ -482,6 +482,11 @@ describe("over IMAP", () => {
               messages: [stored("workshop-question", "2026-10-29T14:40:06Z", ["\\Seen"])],
             },
             "Deleted Messages": { "special-use": "\\Trash" },
+            Receipts: { messages: [{ raw: arrival(41), internaldate: new Date("2026-10-30T10:00:00Z"), flags: [] }] },
+            Junk: {
+              "special-use": "\\Junk",
+              messages: [{ raw: arrival(42), internaldate: new Date("2026-10-30T11:00:00Z"), flags: [] }],
+            },
           },
         },
       },
@@ -505,7 +510,7 @@ describe("over IMAP", () => {
   });
 
   it("logs in, counts the folders and learns the addresses used to send", async () => {
-    expect(await connect().check()).toEqual({ ok: true, value: { addresses: ["sam@example.com"], folders: 5 } });
+    expect(await connect().check()).toEqual({ ok: true, value: { addresses: ["sam@example.com"], folders: 7 } });
   });
 
   it("explains a refused sign-in in plain words", async () => {
@@ -515,12 +520,13 @@ describe("over IMAP", () => {
     expect(checked.ok ? "" : checked.failure).toContain("app-specific password");
   });
 
-  it("catches up on the inbox and the archive since a date", async () => {
+  it("catches up on every folder that holds mail they received since a date, but not Junk", async () => {
     const recent = await connect().recent("2026-10-25T00:00:00.000Z");
     expect(recent.ok ? recent.value.map(({ messageId, folder }) => [folder, messageId]) : recent.failure).toEqual([
       ["INBOX", ids.booking],
       ["Archive", ids.start],
       ["INBOX", ids.reply],
+      ["Receipts", "arrival-41@studio.example"],
     ]);
   });
 
@@ -589,10 +595,11 @@ describe("over IMAP", () => {
     ]);
   });
 
-  it("searches by sender, subject and words, newest first", async () => {
+  it("searches by sender, subject and words, newest first, in their own folders too", async () => {
     const source = connect();
     const bySender = await source.search({ from: "lena@studio.example" });
     expect(bySender.ok ? bySender.value.map(({ messageId }) => messageId) : bySender.failure).toEqual([
+      "arrival-41@studio.example",
       ids.reply,
       ids.start,
     ]);

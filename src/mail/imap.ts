@@ -67,6 +67,9 @@ type Folders = {
   readonly sent?: string;
   readonly drafts?: string;
   readonly trash?: string;
+  // Every folder that holds mail they received, the inbox first: their own folders and the archive, but not
+  // Sent, Drafts, Trash or Junk. Gmail's All Mail already holds every label.
+  readonly received: readonly string[];
   readonly count: number;
 };
 
@@ -84,6 +87,16 @@ const idleRestartMs = 4 * 60_000;
 const firstRetryMs = 1000;
 const lastRetryMs = 5 * 60_000;
 const inboxPath = "INBOX";
+const notReceived: ReadonlySet<string> = new Set([
+  "\\Sent",
+  "\\Drafts",
+  "\\Trash",
+  "\\Junk",
+  "\\Flagged",
+  "\\Important",
+]);
+// Folders some servers list that never hold received mail, such as Outlook's Outbox and Exchange's own.
+const notMail = /^(?:notes|outbox|conversation history|sync issues|rss feeds|rss subscriptions)$/iu;
 const gone = "That mail isn't in this account any more.";
 
 export const backoffMs = (attempt: number): number =>
@@ -104,18 +117,29 @@ const describe = (error: unknown): string => (error instanceof Error ? error.mes
 const specialPath = (list: readonly ListResponse[], use: string): string | undefined =>
   list.find((entry) => entry.specialUse === use)?.path;
 
-const toFolders = (list: readonly ListResponse[]): Folders => ({
-  inbox: specialPath(list, "\\Inbox") ?? inboxPath,
-  archive: specialPath(list, "\\Archive") ?? specialPath(list, "\\All"),
-  sent: specialPath(list, "\\Sent"),
-  drafts: specialPath(list, "\\Drafts"),
-  trash: specialPath(list, "\\Trash"),
-  count: list.filter((entry) => !entry.flags.has("\\Noselect")).length,
-});
-
 const present = (folders: readonly (string | undefined)[]): readonly string[] => [
   ...new Set(folders.filter((folder) => folder !== undefined)),
 ];
+
+const isSelectable = (entry: ListResponse): boolean =>
+  !entry.flags.has("\\Noselect") && !entry.flags.has("\\NonExistent");
+
+const isReceived = (entry: ListResponse): boolean =>
+  isSelectable(entry) && !notReceived.has(entry.specialUse ?? "") && !notMail.test(entry.name);
+
+const toFolders = (list: readonly ListResponse[]): Folders => {
+  const inbox = specialPath(list, "\\Inbox") ?? inboxPath;
+  const all = specialPath(list, "\\All");
+  return {
+    inbox,
+    archive: specialPath(list, "\\Archive") ?? all,
+    sent: specialPath(list, "\\Sent"),
+    drafts: specialPath(list, "\\Drafts"),
+    trash: specialPath(list, "\\Trash"),
+    received: all === undefined ? present([inbox, ...list.filter(isReceived).map(({ path }) => path)]) : [inbox, all],
+    count: list.filter((entry) => !entry.flags.has("\\Noselect")).length,
+  };
+};
 
 const toIso = (value: Date | string | undefined): string | undefined => {
   const date = value === undefined ? undefined : new Date(value);
@@ -344,7 +368,10 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   };
 
   const everywhere = ({ folders }: Session): readonly string[] =>
-    present([folders.inbox, folders.archive, folders.sent, folders.drafts, folders.trash]);
+    present([...folders.received, folders.archive, folders.sent, folders.drafts, folders.trash]);
+
+  const kept = ({ folders }: Session): readonly string[] =>
+    present([...folders.received, folders.archive, folders.sent]);
 
   const findMail = async (opened: Session, messageId: string): Promise<Result<Found, string>> => {
     const place = await locate(opened.client, everywhere(opened), messageId);
@@ -574,8 +601,8 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     run("reading recent mail", async (opened) => {
       const query = sinceQuery(since);
       if (!query.ok) return query;
-      const { inbox, archive } = opened.folders;
-      const mails = await mailsIn(opened.client, present([inbox, archive]), query.value, undefined, true);
+      const { received, archive } = opened.folders;
+      const mails = await mailsIn(opened.client, present([...received, archive]), query.value, undefined, true);
       return mails.ok ? ok(mails.value.filter((mail) => !mail.flags.includes("\\Draft")).toSorted(byDate)) : mails;
     });
 
@@ -597,8 +624,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       };
       if (Object.keys(criteria).length === 0)
         return fail("Say what to look for: a sender, a subject, words or a date.");
-      const { inbox, archive, sent } = opened.folders;
-      const mails = await mailsIn(opened.client, present([inbox, archive, sent]), criteria, searchLimit);
+      const mails = await mailsIn(opened.client, kept(opened), criteria, searchLimit);
       return mails.ok ? ok(mails.value.toSorted(byDate).toReversed().slice(0, searchLimit)) : mails;
     });
 
@@ -618,8 +644,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
           ...(threadId === undefined ? [] : [{ threadId }]),
         ],
       };
-      const { inbox, archive, sent } = opened.folders;
-      const mails = await mailsIn(opened.client, present([inbox, archive, sent]), query);
+      const mails = await mailsIn(opened.client, kept(opened), query);
       return mails.ok ? ok(threadOf(mail.messageId, [mail, ...mails.value])) : mails;
     });
 
