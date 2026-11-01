@@ -72,6 +72,8 @@ type Progress = {
 type Condition = Readonly<Record<string, never>> | { readonly "if-match": string } | { readonly "if-none-match": "*" };
 
 const rejected = "iCloud rejected that email address or app-specific password.";
+
+export const isRejected = (failure: string): boolean => failure === rejected;
 const changedSince = "That event changed in iCloud since it was read; read it again first.";
 const kumoName = "Kumo";
 const answerMs = 30_000;

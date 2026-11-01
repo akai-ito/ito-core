@@ -151,10 +151,31 @@ voiceprint of you, kept in `~/.ito/voice` and never sent anywhere, so people tal
 hold your turn open. If espeak-ng, which says names Kokoro doesn't know, won't load from its Python
 package, install it with `sudo apt install espeak-ng`.
 
+When something on the box needs you, the app says so until it's fixed: on the Desk, in a quiet
+line per problem that opens how to fix it, and at the top of Settings. That's notifications that
+can't be sent (a phone wants them, but there's no APNs key), a mail or calendar account that
+refuses its sign-in or keeps failing for ten minutes (a reconnect never counts), and a capability
+that needs setting up. Each clears on its own once it's fixed.
+
+`ito serve` writes its log to `~/.ito/logs` as well as to the terminal, one file a day, kept for 14
+days, so it's there however the server was started: in tmux, under systemd or launchd. The log
+stays on the box, and it can hold mail subjects. To read it:
+
+```sh
+node bin/ito.ts logs                          # today, as readable lines
+node bin/ito.ts logs --problems --since 7:00  # warnings and errors since 7 this morning
+node bin/ito.ts logs --about mail --since 2h  # one area: mail, calendar, notifications, voice,
+                                              # capabilities, memory, motion, kumo or requests
+node bin/ito.ts logs --since 2026-10-31 --raw # the JSON lines themselves
+```
+
+Each readable line has the local time, the level, the message and its details. Requests to the
+API only show with `--about requests`.
+
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, the agent's working directory in `workspace`, its memory in
-`thread`, the embedding and voice models in `models`, and each capability's own folder in
-`capabilities`.
+`thread`, the embedding and voice models in `models`, each capability's own folder in
+`capabilities`, and the log in `logs`.
 
 ## What it will do
 

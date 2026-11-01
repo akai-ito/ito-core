@@ -18,6 +18,7 @@ import {
 import { createMailFolders, type FileInto } from "#mail/folders.ts";
 import { createOutlookToken } from "#mail/outlook.ts";
 import type { Account } from "#mail/providers.ts";
+import type { Health } from "#problems/problems.ts";
 import type { CalendarItem, Card, DoneEntry, ModelChoice } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { outlookClientId, outlookScope, outlookTokenUrl } from "#sources/sources.ts";
@@ -52,6 +53,7 @@ export type MailOptions = {
   readonly matters?: () => readonly string[];
   readonly info: Info;
   readonly comingUp?: () => readonly CalendarItem[];
+  readonly onHealth?: (account: Account, health: Health) => void;
   readonly createSource?: CreateMailSource;
   readonly sentPollMs?: number;
 };
@@ -390,6 +392,7 @@ export const createMailbox = ({
   matters = () => [],
   info,
   comingUp = () => [],
+  onHealth = ignore,
   createSource = createMailSource,
   sentPollMs = 5 * 60 * 1000,
 }: MailOptions): Mailbox => {
@@ -701,6 +704,7 @@ export const createMailbox = ({
         current.stop();
         void current.source.close();
         connections.update((all) => new Map([...all].filter(([key]) => key !== account)));
+        onHealth(account, { ok: true });
       }
       if (!config) continue;
       const markKey = `${watermarkSetting}:${account}:${config.user}`;
@@ -713,6 +717,9 @@ export const createMailbox = ({
         ...(saved !== undefined && { watermark: JSON.parse(saved) as SavedWatermark }),
         onWatermark: (watermark) => {
           store.setSetting(markKey, JSON.stringify(watermark));
+        },
+        onHealth: (health) => {
+          onHealth(account, health);
         },
       });
       const watching = createCell<Connection | undefined>(undefined);

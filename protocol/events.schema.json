@@ -94,6 +94,9 @@
         },
         {
           "$ref": "#/$defs/OnboardingChanged"
+        },
+        {
+          "$ref": "#/$defs/ProblemsChanged"
         }
       ]
     },
@@ -837,6 +840,14 @@
         "onboarding": {
           "$ref": "#/$defs/Onboarding",
           "description": "Present until getting started is done."
+        },
+        "problems": {
+          "description": "What's wrong on the server right now, while anything is. Absent when nothing is.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Problem"
+          }
         }
       }
     },
@@ -2300,6 +2311,62 @@
                 "$ref": "#/$defs/MotionId"
               }
             }
+          }
+        }
+      }
+    },
+    "Problem": {
+      "description": "Something wrong on the server that needs you, shown until it's fixed, when it clears on its own: notifications that can't be sent, a mail or calendar account that keeps failing, or a capability that needs setting up. A blip that sorts itself out, such as a reconnect, isn't one.",
+      "type": "object",
+      "required": ["id", "area", "title", "detail", "fix"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable while it lasts, such as `push` or `mail:outlook`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "area": {
+          "description": "What it's about: `notifications`, `mail`, `calendar` or `capabilities`. Show an area you don't know plainly.",
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "description": "One plain line, such as \"Notifications can't be sent\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "detail": {
+          "description": "What's wrong and what it means for you, in a sentence or two.",
+          "type": "string",
+          "minLength": 1
+        },
+        "fix": {
+          "description": "How to fix it, in plain steps.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ProblemsChanged": {
+      "title": "problems.changed",
+      "description": "What's wrong on the server changed: a problem appeared, or one was fixed. It carries the whole list, empty once nothing is wrong.",
+      "type": "object",
+      "required": ["id", "type", "at", "problems"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "problems.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "problems": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Problem"
           }
         }
       }

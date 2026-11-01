@@ -200,6 +200,12 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
         .run(toJson(event.onboarding));
       return;
     }
+    case "problems.changed": {
+      database
+        .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('problems', ?)")
+        .run(toJson(event.problems));
+      return;
+    }
     case "desk.changed": {
       database.prepare("INSERT OR REPLACE INTO desk (id, body) VALUES (1, ?)").run(toJson(event.desk));
       return;

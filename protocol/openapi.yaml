@@ -166,6 +166,32 @@ paths:
                 capabilities: [{ id: reports, version: "0.2" }]
         "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/problems:
+    get:
+      tags: [Connecting]
+      operationId: getProblems
+      summary: Read what's wrong on the server
+      description: |
+        What's wrong on the server right now and how to fix each: notifications that can't be
+        sent, a mail or calendar account that keeps failing (a refused sign-in at once, anything
+        else after ten minutes), or a capability that needs setting up. Each clears on its own
+        once it's fixed. `problems.changed` carries every change, and the snapshot holds the list
+        while it isn't empty.
+      responses:
+        "200":
+          description: The problems, empty when nothing is wrong.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [problems]
+                properties:
+                  problems:
+                    type: array
+                    items: { $ref: "events.schema.json#/$defs/Problem" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/events:
     get:
       tags: [Conversation]

@@ -57,6 +57,15 @@ import type { Values } from "#capabilities/manifest.ts";
 import { toSources } from "#sources/sources.ts";
 import { mailGroup } from "#mail/group.ts";
 import { createMailbox, type CreateMailSource, type Mailbox } from "#mail/mail.ts";
+import {
+  calendarId,
+  calendarProblem,
+  capabilityProblem,
+  createProblems,
+  mailProblem,
+  pushProblem,
+  type Problems,
+} from "#problems/problems.ts";
 import { createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
 import { contextRun, inToolContext } from "#tools/context.ts";
 
@@ -105,6 +114,7 @@ export type Server = {
   readonly calls: Calls;
   readonly calendar: Calendar;
   readonly mail: Mailbox;
+  readonly problems: Problems;
   readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
@@ -321,6 +331,19 @@ export const createServer = (options: ServerOptions): Server => {
     await listening.get();
     return engine.models();
   };
+  const problems = createProblems({
+    clock,
+    standing: () => [
+      ...(store.devices().length > 0 && readApnsCredentials(store) === undefined ? [pushProblem] : []),
+      ...host.list().flatMap((capability) => capabilityProblem(capability) ?? []),
+    ],
+    publish: (current) => {
+      store.setProblems(current);
+    },
+  });
+  host.subscribe(() => {
+    problems.refresh();
+  });
   const mail = createMailbox({
     host,
     store,
@@ -338,9 +361,22 @@ export const createServer = (options: ServerOptions): Server => {
         .map(({ kind, title }) => `${title} (${kind})`),
     info,
     comingUp: () => store.desk().coming_up,
+    onHealth: (account, health) => {
+      problems.report(`mail:${account}`, health, mailProblem(account));
+    },
     ...(options.createMailSource && { createSource: options.createMailSource }),
   });
-  const calendar = createCalendar({ host, desk, clock, timeZone, info, createSource: calendarSourceFor });
+  const calendar = createCalendar({
+    host,
+    desk,
+    clock,
+    timeZone,
+    info,
+    createSource: calendarSourceFor,
+    onHealth: (health) => {
+      problems.report(calendarId, health, calendarProblem);
+    },
+  });
   calendar.onEventEnded((uid) => {
     jobs.onEventEnded(uid);
   });
@@ -602,9 +638,11 @@ export const createServer = (options: ServerOptions): Server => {
   };
   compact();
   turns.recover();
+  problems.start();
 
   const shutdown = async (): Promise<void> => {
     compaction.get()?.();
+    problems.close();
     motions.close();
     topics.close();
     briefings.close();
@@ -638,6 +676,7 @@ export const createServer = (options: ServerOptions): Server => {
     calls,
     calendar,
     mail,
+    problems,
     callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();

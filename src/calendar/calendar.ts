@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
-import type { CalendarSource } from "#calendar/caldav.ts";
+import { isRejected, type CalendarSource } from "#calendar/caldav.ts";
 import type { CalendarEvent, CalendarInfo, NewCalendarEvent, Partstat } from "#calendar/icalendar.ts";
 import type { Host } from "#capabilities/host.ts";
 import type { Values } from "#capabilities/manifest.ts";
 import type { DeskKeeper } from "#desk/desk.ts";
+import type { Health } from "#problems/problems.ts";
 import type { CalendarItem, Card } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { icloudSource } from "#sources/sources.ts";
@@ -30,6 +31,7 @@ export type CalendarOptions = {
   readonly timeZone: string;
   readonly info: Info;
   readonly createSource: (values: Values) => CalendarSource;
+  readonly onHealth?: (health: Health) => void;
   readonly pollMs?: number;
 };
 
@@ -97,6 +99,8 @@ const eventInput = (input: unknown): NewCalendarEvent => ({
   ...(textOf(input, "notes") !== "" && { notes: textOf(input, "notes") }),
 });
 
+const ignore = (): void => undefined;
+
 export const createCalendar = ({
   host,
   desk,
@@ -104,6 +108,7 @@ export const createCalendar = ({
   timeZone,
   info,
   createSource,
+  onHealth = ignore,
   pollMs = 2 * 60 * 1000,
 }: CalendarOptions): Calendar => {
   const cached = createCell<{ readonly key: string; readonly source: CalendarSource } | undefined>(undefined);
@@ -199,13 +204,18 @@ export const createCalendar = ({
 
   const pull = async (): Promise<void> => {
     const calendar = source();
-    if (!calendar) return;
+    if (!calendar) {
+      onHealth({ ok: true });
+      return;
+    }
     const now = clock.now();
     const listed = await calendar.events(toTimestamp(now - dayMs), toTimestamp(now + 8 * dayMs));
     if (!listed.ok) {
       info("The calendar couldn't be read", { error: listed.failure });
+      onHealth({ ok: false, reason: listed.failure, isAuth: isRejected(listed.failure) });
       return;
     }
+    onHealth({ ok: true });
     events.set(listed.value);
     const invites = listed.value.filter((event) => isInvite(event) && !hasCard(event.uid));
     for (const invite of invites) {

@@ -53,7 +53,8 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "motion.removed":
     case "message.posted":
     case "desk.changed":
-    case "onboarding.changed": {
+    case "onboarding.changed":
+    case "problems.changed": {
       return false;
     }
   }
@@ -133,7 +134,8 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
     case "motion.removed":
     case "message.posted":
     case "desk.changed":
-    case "onboarding.changed": {
+    case "onboarding.changed":
+    case "problems.changed": {
       return;
     }
   }
