@@ -423,7 +423,10 @@ export const createServer = (options: ServerOptions): Server => {
     app.log.error({ err: error }, message);
   });
   logInfo.set((message, details) => {
-    app.log.info(details, message);
+    // A note that carries an error or a reason is something that went wrong: a warning, so
+    // `ito logs --problems` finds it.
+    if ("error" in details || "reason" in details) app.log.warn(details, message);
+    else app.log.info(details, message);
   });
   const doors = createDoors({ host, currentTurn: () => store.runningTurn()?.id, command: launcher });
   const imageTool = createImageTool({
