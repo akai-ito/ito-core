@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import type { CalendarSource } from "#calendar/caldav.ts";
@@ -288,6 +288,11 @@ export const createCalendar = ({
         type: "boolean",
         description: "Put it on Kumo's own calendar: holds, travel, prep, evening admin blocks.",
       },
+      hold: {
+        type: "boolean",
+        description:
+          "A time that's only proposed, such as for an interview: held on Kumo's calendar until it's settled.",
+      },
     },
     required: ["title", "start", "end"],
     additionalProperties: false,
@@ -320,12 +325,15 @@ export const createCalendar = ({
       title: "Add to the calendar",
       description:
         "Add a confirmed commitment to their own calendar, with a note saying where it came from, or with kumo a block " +
-        "on Kumo's calendar: travel (leave at), prep, or a short evening admin block.",
+        "on Kumo's calendar: travel (leave at), prep, or a short evening admin block. With hold, a proposed time held " +
+        "on Kumo's calendar; delete the hold once the time is settled.",
       inputSchema: eventSchema,
       call: async (input) => {
+        const flags = input as { readonly kumo?: unknown; readonly hold?: unknown } | undefined;
+        const isHold = flags?.hold === true;
         const added = await addEvent(
-          eventInput(input),
-          (input as { readonly kumo?: unknown } | undefined)?.kumo === true,
+          { ...eventInput(input), ...(isHold && { uid: `${holdPrefix}${randomUUID()}` }) },
+          isHold || flags?.kumo === true,
         );
         return added.ok ? { text: `Added ${added.value.title} (${added.value.uid}).` } : failed(added.failure);
       },

@@ -189,6 +189,8 @@ hire.
 - **Options** go best first. Each has its `stage` in a word or two, such as "Screened" or
   "Interviews", the people in it, its `next` step and when, and who it's `waiting_on` since when.
   Move the stage as it moves, and drop `waiting_on` once they answer.
+- **A company new to them** gets a `note` of two lines on what it actually does, from what they
+  sent and a web search: its product, who pays for it, and how big it is.
 - The summary says where it stands: "3 live · QRT second round Tue".
 
 ## Occasions

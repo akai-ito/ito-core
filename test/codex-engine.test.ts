@@ -444,6 +444,21 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(currentModel().lastRun()).toEqual({ model: "gpt-6-luna", effort: "medium" });
   });
 
+  it("does background work in a thread of its own, on the model and effort it's given", async () => {
+    settings.setSetting(choiceSetting, JSON.stringify({ model: "gpt-6.1-sol", effort: "low" }));
+
+    const done = await currentEngine().work("[[reply]] File the receipt", "run-light", {
+      model: "gpt-6-luna",
+      effort: "medium",
+    });
+    const light = currentModel().lastRun();
+    await currentEngine().work("[[reply]] Read the recruiter's mail", "run-chosen");
+
+    expect(done.ok).toBe(true);
+    expect(light).toEqual({ model: "gpt-6-luna", effort: "medium" });
+    expect(currentModel().lastRun()).toEqual({ model: "gpt-6.1-sol", effort: "low" });
+  });
+
   it("answers a one-off prompt in a side thread, as JSON in the shape asked for", async () => {
     const conversation = settings.setting(threadSetting);
     const schema = { type: "object", properties: { gists: { type: "array" } }, required: ["gists"] };
