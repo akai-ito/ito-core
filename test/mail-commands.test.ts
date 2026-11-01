@@ -147,7 +147,7 @@ describe("mail in the conversation, through ito mail commands", () => {
     await started.app.listen({ host: "127.0.0.1", port: 0 });
     await started.host.ready;
     await vi.waitFor(() => {
-      expect(started.mail.hasSource()).toBe(true);
+      expect(started.mail.accounts()).not.toHaveLength(0);
     });
   });
 
