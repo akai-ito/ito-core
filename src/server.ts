@@ -337,6 +337,7 @@ export const createServer = (options: ServerOptions): Server => {
         .filter(({ status }) => status === "active")
         .map(({ kind, title }) => `${title} (${kind})`),
     info,
+    comingUp: () => store.desk().coming_up,
     ...(options.createMailSource && { createSource: options.createMailSource }),
   });
   const calendar = createCalendar({ host, desk, clock, timeZone, info, createSource: calendarSourceFor });

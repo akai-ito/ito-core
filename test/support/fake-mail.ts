@@ -26,6 +26,7 @@ export type FakeMail = {
   readonly unsubscribed: () => readonly string[];
   readonly send: (account: string, mail: Mail) => void;
   readonly breakReading: () => void;
+  readonly dropSent: (times: number) => void;
 };
 
 type Box = { readonly inbox: readonly Mail[]; readonly watchers: ReadonlySet<(mail: Mail) => void> };
@@ -47,6 +48,7 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const unsubscribes = createCell<readonly string[]>([]);
   const sentMail = createCell<ReadonlyMap<string, readonly Mail[]>>(new Map());
   const isBroken = createCell(false);
+  const sentDrops = createCell(0);
 
   const boxOf = (account: string): Box => boxes.get().get(account) ?? { inbox: [], watchers: new Set() };
 
@@ -126,7 +128,11 @@ export const createFakeMail = (now: () => string): FakeMail => {
       unsubscribes.update((all) => [...all, mail.messageId]);
       return Promise.resolve(ok("posted" as const));
     },
-    sent: () => Promise.resolve(ok(sentMail.get().get(account) ?? [])),
+    sent: () => {
+      if (sentDrops.get() === 0) return Promise.resolve(ok(sentMail.get().get(account) ?? []));
+      sentDrops.update((count) => count - 1);
+      return Promise.resolve(fail("Mail couldn't finish reading sent mail: Connection not available"));
+    },
     close: () => Promise.resolve(),
   });
 
@@ -165,6 +171,9 @@ export const createFakeMail = (now: () => string): FakeMail => {
     },
     breakReading: () => {
       isBroken.set(true);
+    },
+    dropSent: (times) => {
+      sentDrops.set(times);
     },
   };
 };

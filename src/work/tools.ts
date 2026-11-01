@@ -152,6 +152,40 @@ export const createWorkTools = ({ store, desk, markUrgent = notUrgent }: WorkToo
       },
     },
     {
+      name: "clear_card",
+      title: "Take a card off the Desk",
+      audience: "work",
+      description:
+        "Take a question, offer or times card off Waiting on you once it's settled without them, such as when " +
+        "they answered it in their own mail. It's recorded in their Done list with the reason.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          card: { type: "string", description: "The card's id, such as k_…" },
+          reason: { type: "string", description: "Why it's settled, in a line." },
+        },
+        required: ["card", "reason"],
+        additionalProperties: false,
+      },
+      call: (input) => {
+        const id = lineOf(input, "card");
+        const card = desk.cards().find((waiting) => waiting.id === id);
+        if (!card) return Promise.resolve(failed(`No card ${id} is waiting on them.`));
+        if (card.kind === "draft" || card.kind === "invite") {
+          return Promise.resolve(failed("Drafts leave once they're sent or dropped, and invites once answered."));
+        }
+        const reason = lineOf(input, "reason");
+        desk.removeCard(card.id);
+        desk.addDone({
+          text: `Took “${card.title}” off Waiting on you`,
+          ...(reason !== "" && { reason }),
+          ...(card.motion !== undefined && { motion: card.motion }),
+          quiet: false,
+        });
+        return Promise.resolve({ text: `Took ${card.title} off the Desk.` });
+      },
+    },
+    {
       name: "done",
       title: "Record what you did",
       audience: "work",
