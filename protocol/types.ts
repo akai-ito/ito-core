@@ -2326,6 +2326,8 @@ export interface components {
       title: string;
       options: components["schemas"]["AskOption"][];
       allows_text: boolean;
+      /** @description Whether it can wait, such as asking to unsubscribe from a shop you once wrote to: a quiet card arrives without a sound. Absent means it matters now. */
+      quiet?: boolean;
       /**
        * @description `working` while the box acts on your answer, such as rewriting a draft. Absent while it waits on you.
        * @constant

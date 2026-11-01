@@ -482,6 +482,11 @@ describe("over IMAP", () => {
               messages: [stored("workshop-question", "2026-10-29T14:40:06Z", ["\\Seen"])],
             },
             "Deleted Messages": { "special-use": "\\Trash" },
+            Receipts: { messages: [{ raw: arrival(41), internaldate: new Date("2026-10-30T10:00:00Z"), flags: [] }] },
+            Junk: {
+              "special-use": "\\Junk",
+              messages: [{ raw: arrival(42), internaldate: new Date("2026-10-30T11:00:00Z"), flags: [] }],
+            },
           },
         },
       },
@@ -505,7 +510,7 @@ describe("over IMAP", () => {
   });
 
   it("logs in, counts the folders and learns the addresses used to send", async () => {
-    expect(await connect().check()).toEqual({ ok: true, value: { addresses: ["sam@example.com"], folders: 5 } });
+    expect(await connect().check()).toEqual({ ok: true, value: { addresses: ["sam@example.com"], folders: 7 } });
   });
 
   it("explains a refused sign-in in plain words", async () => {
@@ -515,12 +520,13 @@ describe("over IMAP", () => {
     expect(checked.ok ? "" : checked.failure).toContain("app-specific password");
   });
 
-  it("catches up on the inbox and the archive since a date", async () => {
+  it("catches up on every folder that holds mail they received since a date, but not Junk", async () => {
     const recent = await connect().recent("2026-10-25T00:00:00.000Z");
     expect(recent.ok ? recent.value.map(({ messageId, folder }) => [folder, messageId]) : recent.failure).toEqual([
       ["INBOX", ids.booking],
       ["Archive", ids.start],
       ["INBOX", ids.reply],
+      ["Receipts", "arrival-41@studio.example"],
     ]);
   });
 
@@ -544,6 +550,29 @@ describe("over IMAP", () => {
     expect(await source.file(ids.booking, "bin")).toEqual({ ok: true, value: undefined });
     expect(await folderOf()).toBe("Deleted Messages");
     expect(await source.file("missing@example.com", "archive")).toEqual(gone);
+  });
+
+  it("files a mail into a folder of theirs, making it first, and still finds it there", async () => {
+    const source = connect();
+    expect(await source.fileInto(ids.booking, "Bookings & travel")).toEqual({ ok: true, value: undefined });
+    const filed = await source.read(ids.booking);
+    expect(filed.ok ? filed.value.folder : filed.failure).toBe("Bookings & travel");
+    const found = await source.search({ from: "noreply@stays.example" });
+    expect(found.ok ? found.value.map(({ messageId }) => messageId) : found.failure).toEqual([ids.booking]);
+    expect(await source.fileInto(ids.newsletter, "receipts")).toEqual({ ok: true, value: undefined });
+    const moved = await source.read(ids.newsletter);
+    expect(moved.ok ? moved.value.folder : moved.failure).toBe("Receipts");
+    expect(await source.file(ids.booking, "inbox")).toEqual({ ok: true, value: undefined });
+    const back = await source.read(ids.booking);
+    expect(back.ok ? back.value.folder : back.failure).toBe("INBOX");
+    expect(await source.fileInto("missing@example.com", "Receipts")).toEqual(gone);
+  });
+
+  it("knows whom they've written to, by address or by domain", async () => {
+    const source = connect();
+    expect(await source.hasWritten("lena@studio.example")).toEqual({ ok: true, value: true });
+    expect(await source.hasWritten("studio.example")).toEqual({ ok: true, value: true });
+    expect(await source.hasWritten("deals@stays.example")).toEqual({ ok: true, value: false });
   });
 
   it("saves a draft reply, replaces it and removes it", async () => {
@@ -589,10 +618,11 @@ describe("over IMAP", () => {
     ]);
   });
 
-  it("searches by sender, subject and words, newest first", async () => {
+  it("searches by sender, subject and words, newest first, in their own folders too", async () => {
     const source = connect();
     const bySender = await source.search({ from: "lena@studio.example" });
     expect(bySender.ok ? bySender.value.map(({ messageId }) => messageId) : bySender.failure).toEqual([
+      "arrival-41@studio.example",
       ids.reply,
       ids.start,
     ]);

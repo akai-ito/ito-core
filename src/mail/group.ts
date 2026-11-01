@@ -6,8 +6,8 @@ export const mailGroup: ToolGroup = {
   id: "mail",
   title: "Mail",
   summary:
-    "their mail: find it, read whole threads, draft replies in their voice (never sent), archive, bin, " +
-    "unsubscribe and block, with ito mail commands",
+    "their mail: find it, read whole threads, draft replies in their voice (never sent), file into their " +
+    "folders, bin, unsubscribe and block, with ito mail commands",
   skill: readFileSync(new URL("../../agent/mail.md", import.meta.url), "utf8"),
   operations: [
     { name: "search", tool: "mail_search", running: "Searching mail", done: "Searched mail" },

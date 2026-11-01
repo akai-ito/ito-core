@@ -40,6 +40,10 @@ export type MailSource = {
   readonly draft: (draft: Draft) => Promise<Result<{ readonly messageId: string }, string>>;
   readonly removeDraft: (messageId: string) => Promise<Result<undefined, string>>;
   readonly file: (messageId: string, filing: Filing) => Promise<Result<undefined, string>>;
+  // Moves a mail into the folder of that name, making the folder first when the account hasn't one.
+  readonly fileInto: (messageId: string, folder: string) => Promise<Result<undefined, string>>;
+  // Whether they've ever written to an address, or to anyone at a domain.
+  readonly hasWritten: (address: string) => Promise<Result<boolean, string>>;
   readonly unsubscribe: (mail: Mail) => Promise<Result<"posted" | "mailed", string>>;
   readonly sent: (since: string) => Promise<Result<readonly Mail[], string>>;
   readonly close: () => Promise<void>;
@@ -63,10 +67,14 @@ export type SavedWatermark = { readonly uidValidity: string; readonly next: numb
 
 type Folders = {
   readonly inbox: string;
+  readonly list: readonly ListResponse[];
   readonly archive?: string;
   readonly sent?: string;
   readonly drafts?: string;
   readonly trash?: string;
+  // Every folder that holds mail they received, the inbox first: their own folders and the archive, but not
+  // Sent, Drafts, Trash or Junk. Gmail's All Mail already holds every label.
+  readonly received: readonly string[];
   readonly count: number;
 };
 
@@ -84,6 +92,16 @@ const idleRestartMs = 4 * 60_000;
 const firstRetryMs = 1000;
 const lastRetryMs = 5 * 60_000;
 const inboxPath = "INBOX";
+const notReceived: ReadonlySet<string> = new Set([
+  "\\Sent",
+  "\\Drafts",
+  "\\Trash",
+  "\\Junk",
+  "\\Flagged",
+  "\\Important",
+]);
+// Folders some servers list that never hold received mail, such as Outlook's Outbox and Exchange's own.
+const notMail = /^(?:notes|outbox|conversation history|sync issues|rss feeds|rss subscriptions)$/iu;
 const gone = "That mail isn't in this account any more.";
 
 export const backoffMs = (attempt: number): number =>
@@ -104,18 +122,30 @@ const describe = (error: unknown): string => (error instanceof Error ? error.mes
 const specialPath = (list: readonly ListResponse[], use: string): string | undefined =>
   list.find((entry) => entry.specialUse === use)?.path;
 
-const toFolders = (list: readonly ListResponse[]): Folders => ({
-  inbox: specialPath(list, "\\Inbox") ?? inboxPath,
-  archive: specialPath(list, "\\Archive") ?? specialPath(list, "\\All"),
-  sent: specialPath(list, "\\Sent"),
-  drafts: specialPath(list, "\\Drafts"),
-  trash: specialPath(list, "\\Trash"),
-  count: list.filter((entry) => !entry.flags.has("\\Noselect")).length,
-});
-
 const present = (folders: readonly (string | undefined)[]): readonly string[] => [
   ...new Set(folders.filter((folder) => folder !== undefined)),
 ];
+
+const isSelectable = (entry: ListResponse): boolean =>
+  !entry.flags.has("\\Noselect") && !entry.flags.has("\\NonExistent");
+
+const isReceived = (entry: ListResponse): boolean =>
+  isSelectable(entry) && !notReceived.has(entry.specialUse ?? "") && !notMail.test(entry.name);
+
+const toFolders = (list: readonly ListResponse[]): Folders => {
+  const inbox = specialPath(list, "\\Inbox") ?? inboxPath;
+  const all = specialPath(list, "\\All");
+  return {
+    inbox,
+    list,
+    archive: specialPath(list, "\\Archive") ?? all,
+    sent: specialPath(list, "\\Sent"),
+    drafts: specialPath(list, "\\Drafts"),
+    trash: specialPath(list, "\\Trash"),
+    received: all === undefined ? present([inbox, ...list.filter(isReceived).map(({ path }) => path)]) : [inbox, all],
+    count: list.filter((entry) => !entry.flags.has("\\Noselect")).length,
+  };
+};
 
 const toIso = (value: Date | string | undefined): string | undefined => {
   const date = value === undefined ? undefined : new Date(value);
@@ -344,7 +374,10 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   };
 
   const everywhere = ({ folders }: Session): readonly string[] =>
-    present([folders.inbox, folders.archive, folders.sent, folders.drafts, folders.trash]);
+    present([...folders.received, folders.archive, folders.sent, folders.drafts, folders.trash]);
+
+  const kept = ({ folders }: Session): readonly string[] =>
+    present([...folders.received, folders.archive, folders.sent]);
 
   const findMail = async (opened: Session, messageId: string): Promise<Result<Found, string>> => {
     const place = await locate(opened.client, everywhere(opened), messageId);
@@ -574,8 +607,8 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     run("reading recent mail", async (opened) => {
       const query = sinceQuery(since);
       if (!query.ok) return query;
-      const { inbox, archive } = opened.folders;
-      const mails = await mailsIn(opened.client, present([inbox, archive]), query.value, undefined, true);
+      const { received, archive } = opened.folders;
+      const mails = await mailsIn(opened.client, present([...received, archive]), query.value, undefined, true);
       return mails.ok ? ok(mails.value.filter((mail) => !mail.flags.includes("\\Draft")).toSorted(byDate)) : mails;
     });
 
@@ -597,8 +630,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       };
       if (Object.keys(criteria).length === 0)
         return fail("Say what to look for: a sender, a subject, words or a date.");
-      const { inbox, archive, sent } = opened.folders;
-      const mails = await mailsIn(opened.client, present([inbox, archive, sent]), criteria, searchLimit);
+      const mails = await mailsIn(opened.client, kept(opened), criteria, searchLimit);
       return mails.ok ? ok(mails.value.toSorted(byDate).toReversed().slice(0, searchLimit)) : mails;
     });
 
@@ -618,8 +650,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
           ...(threadId === undefined ? [] : [{ threadId }]),
         ],
       };
-      const { inbox, archive, sent } = opened.folders;
-      const mails = await mailsIn(opened.client, present([inbox, archive, sent]), query);
+      const mails = await mailsIn(opened.client, kept(opened), query);
       return mails.ok ? ok(threadOf(mail.messageId, [mail, ...mails.value])) : mails;
     });
 
@@ -645,6 +676,27 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return removed.value ? ok(undefined) : fail("That draft isn't in the Drafts folder any more.");
     });
 
+  const folderNamed = ({ folders }: Session, name: string): string | undefined => {
+    const wanted = name.trim().toLowerCase();
+    return folders.list.find(
+      (entry) => isSelectable(entry) && (entry.name.toLowerCase() === wanted || entry.path.toLowerCase() === wanted),
+    )?.path;
+  };
+
+  const ensureFolder = async (opened: Session, name: string): Promise<Result<string, string>> => {
+    const found = folderNamed(opened, name);
+    if (found !== undefined) return ok(found);
+    const delimiter = opened.folders.list.find((entry) => entry.delimiter)?.delimiter ?? "/";
+    // A name is one folder at the top, never a path into others.
+    const wanted = name.replaceAll(delimiter, "-").trim();
+    if (wanted === "") return fail("A folder needs a name.");
+    const created = await opened.client.mailboxCreate(wanted);
+    const folders = toFolders(await opened.client.list());
+    sessions.set(Promise.resolve(ok({ client: opened.client, folders })));
+    log("Made a mail folder", { folder: created.path });
+    return ok(created.path);
+  };
+
   const file: MailSource["file"] = (messageId, filing) =>
     run("filing the mail", async (opened) => {
       const place = await locate(opened.client, everywhere(opened), messageId);
@@ -660,6 +712,24 @@ export const createMailSource = (options: SourceOptions): MailSource => {
         const signIn = await credentials();
         return signIn.ok ? sendLetter(smtp, signIn.value, letter) : signIn;
       },
+    });
+
+  const fileInto: MailSource["fileInto"] = (messageId, folder) =>
+    run("filing the mail", async (opened) => {
+      const place = await locate(opened.client, everywhere(opened), messageId);
+      if (!place.ok) return place;
+      if (place.value === undefined) return fail(gone);
+      const target = await ensureFolder(opened, folder);
+      return target.ok ? move(opened, place.value, target.value, folder) : target;
+    });
+
+  const hasWritten: MailSource["hasWritten"] = (address) =>
+    run("reading sent mail", async (opened) => {
+      const { sent } = opened.folders;
+      if (sent === undefined) return ok(false);
+      const query: SearchObject = { or: [{ to: address }, { cc: address }] };
+      const uids = await inFolder(opened.client, sent, () => searchUids(opened.client, query));
+      return uids.ok ? ok(uids.value.length > 0) : uids;
     });
 
   const sent: MailSource["sent"] = (since) =>
@@ -679,5 +749,21 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     await signOff(opened.value.client);
   };
 
-  return { account, check, watch, recent, read, search, thread, draft, removeDraft, file, unsubscribe, sent, close };
+  return {
+    account,
+    check,
+    watch,
+    recent,
+    read,
+    search,
+    thread,
+    draft,
+    removeDraft,
+    file,
+    fileInto,
+    hasWritten,
+    unsubscribe,
+    sent,
+    close,
+  };
 };
