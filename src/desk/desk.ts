@@ -10,6 +10,16 @@ import type { Info } from "#turns/turns.ts";
 
 export type CardAnswer = { readonly option?: string; readonly slots?: readonly number[]; readonly text?: string };
 
+// An answer to Kumo's line: an option or words, or skipping the day's question.
+export type MomentAnswer = { readonly option?: string; readonly text?: string; readonly skip?: true };
+
+// How one of Kumo's lines is answered, ahead of acting on it in the background, such as a commitment for tonight.
+export type MomentHandler = {
+  // Acts on the answer: what followed, in a line for Done, or why it couldn't, and the line comes back.
+  readonly answer: (moment: Moment, answer: CardAnswer) => Promise<Result<string, string>>;
+  readonly skip?: (moment: Moment) => void;
+};
+
 export type NewCard = Omit<Card, "id" | "at" | "state" | "answer">;
 
 export type NewDone = Omit<DoneEntry, "id" | "at" | "undo"> & { readonly undo?: unknown };
@@ -34,7 +44,9 @@ export type DeskKeeper = {
   readonly replaceCard: (id: string, card: NewCard) => void;
   readonly setMoment: (moment: Moment | undefined) => void;
   readonly readMoment: (id: string) => boolean;
-  readonly answerMoment: (id: string, answer: CardAnswer) => Result<Moment, string>;
+  readonly answerMoment: (id: string, answer: MomentAnswer) => Result<Moment, string>;
+  // Answers one line its own way, until the line moves on.
+  readonly handleMoment: (id: string, handler: MomentHandler) => void;
   readonly setComingUp: (items: readonly CalendarItem[]) => void;
   // When Kumo last read a new mail, or undefined once no mail account is connected.
   readonly setLastMail: (at: string | undefined) => void;
@@ -161,6 +173,7 @@ const checked = (card: Card, answer: CardAnswer): Result<CardAnswer, string> => 
 
 export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: DeskOptions): DeskKeeper => {
   const handlers = createCell<ReadonlyMap<Card["kind"], CardHandler>>(new Map());
+  const momentHandlers = createCell<ReadonlyMap<string, MomentHandler>>(new Map());
   const cardHandlers = createCell<ReadonlyMap<string, CardHandler>>(new Map());
   const undoers = createCell<readonly Undoer[]>([]);
   const doneListeners = createCell<readonly DoneListener[]>([]);
@@ -273,15 +286,21 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     return undefined;
   };
 
-  const actOnMoment = async (moment: Moment, answer: CardAnswer): Promise<void> => {
-    const said = answer.option ?? answer.text ?? "";
+  const workOnMoment = async (moment: Moment, answer: CardAnswer): Promise<Result<string, string>> => {
     const prompt = [
       `At the top of their Desk, and in the conversation, you said: ${moment.text}`,
-      `They answered: ${said}`,
+      `They answered: ${answer.option ?? answer.text ?? ""}`,
       "Act on it if anything follows, such as noting what they told you, moving something or scheduling a look.",
       "End with one line for their Done list saying what you did, or that nothing more was needed.",
     ].join("\n");
     const done = await work(prompt);
+    return done.ok ? ok(lastLine(done.value)) : done;
+  };
+
+  const actOnMoment = async (moment: Moment, answer: CardAnswer): Promise<void> => {
+    const said = answer.option ?? answer.text ?? "";
+    const handler = momentHandlers.get().get(moment.id);
+    const done = await (handler ? handler.answer(moment, answer) : workOnMoment(moment, answer));
     if (!done.ok) {
       info("Kumo couldn't act on an answer to its line, so the line is back", {
         moment: moment.id,
@@ -295,7 +314,7 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
       changeMoment(moment.id, withoutAnswer);
       return;
     }
-    const followed = lastLine(done.value);
+    const followed = done.value;
     addDone({
       text: `You answered “${quoteOf(moment.text)}”: ${said}`,
       ...(followed !== "" && { reason: followed }),
@@ -340,6 +359,7 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     },
     replaceCard,
     setMoment: (moment) => {
+      momentHandlers.update((current) => new Map([...current].filter(([id]) => id === moment?.id)));
       changeDesk((desk) => (moment ? { ...desk, moment } : without(desk, "moment")));
     },
     readMoment: (id) => {
@@ -351,6 +371,12 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
       const moment = store.desk().moment;
       if (moment?.id !== id) return fail("not_found");
       if (moment.state === "working") return fail("Kumo is already acting on your answer.");
+      if (given.skip === true) {
+        if (moment.kind !== "question") return fail("Only the day's question can be skipped.");
+        momentHandlers.get().get(id)?.skip?.(moment);
+        changeMoment(id, gone);
+        return ok(moment);
+      }
       const answer = checkedMoment(moment, given);
       if (!answer.ok) return answer;
       const { option, text } = answer.value;
@@ -362,6 +388,9 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
       changeMoment(id, () => working);
       background(() => actOnMoment(moment, answer.value));
       return ok(working);
+    },
+    handleMoment: (id, handler) => {
+      momentHandlers.update((current) => new Map([...current, [id, handler]]));
     },
     setComingUp: (items) => {
       changeDesk((desk) => ({ ...desk, coming_up: [...items] }));

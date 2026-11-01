@@ -571,6 +571,8 @@ paths:
         when it `allows_text`. The line shows `state: working`, with your `answer`, while Kumo acts
         on it in the background, then gives way to all quiet; Done says what you answered and what
         followed. If Kumo couldn't act, the line comes back to answer again, and Done says why.
+        The day's question (`kind` `question`) can also be skipped: it gives way at once, with
+        nothing in Done, and Kumo never asks it again.
       parameters:
         - name: moment
           in: path
@@ -593,6 +595,39 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/desk/guesses/{item}/answer:
+    post:
+      tags: [Desk]
+      operationId: answerGuess
+      summary: Answer one of Kumo's guesses
+      description: |
+        Says whether one of Kumo's guesses at your day (a Coming up item with `guess`) was right,
+        or what it really was. Kumo writes it into its calendar at once, as yours rather than a
+        guess, and its next guesses learn from it. The answer is the item as it is now, and
+        `desk.changed` follows.
+      parameters:
+        - name: item
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/CalendarItemId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GuessAnswer" }
+            example: { activity: building }
+      responses:
+        "200":
+          description: Answered.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v0/work:
     get:
       tags: [Desk]
@@ -2257,7 +2292,7 @@ components:
       properties:
         card: { $ref: "events.schema.json#/$defs/Card" }
     MomentAnswer:
-      description: Your answer to Kumo's line, one of `option` or `text`.
+      description: Your answer to Kumo's line, one of `option`, `text` or, for the day's question, `skip`.
       type: object
       additionalProperties: false
       minProperties: 1
@@ -2272,6 +2307,28 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+        skip:
+          description: Skips the day's question (`kind` `question`). It gives way at once, and Kumo never asks it again.
+          const: true
+    GuessAnswer:
+      description: |
+        Your answer to one of Kumo's guesses at your day, one of: `right`; the `activity` it really
+        was, from Not right?; or `text` for something else, which becomes its title.
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      maxProperties: 1
+      properties:
+        right:
+          description: The guess was right.
+          const: true
+        activity:
+          $ref: "events.schema.json#/$defs/Activity"
+        text:
+          description: What it really was, in a few words, such as "Dentist, then errands".
+          type: string
+          minLength: 1
+          maxLength: 60
     MomentResult:
       type: object
       required: [moment]

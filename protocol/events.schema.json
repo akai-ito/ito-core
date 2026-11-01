@@ -1768,8 +1768,32 @@
         "status": {
           "description": "`hold` for a time Kumo is keeping free, `tentative` for maybe, `confirmed` otherwise.",
           "enum": ["hold", "tentative", "confirmed"]
+        },
+        "guess": {
+          "$ref": "#/$defs/Guess",
+          "description": "Only on Kumo's guesses at your day, on its own calendar: draw it as a guess, with why on a tap, and answer it with `POST /v0/desk/guesses/{item}/answer`. Kumo's plan for your day (a run, prep, a proper lunch, winding down) is on its calendar too, without it."
         }
       }
+    },
+    "Guess": {
+      "description": "Kumo's guess at what you're doing then, from your past weeks, what you've said and what it can see. Once you've answered it, it's no longer a guess.",
+      "type": "object",
+      "required": ["activity", "why"],
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "$ref": "#/$defs/Activity"
+        },
+        "why": {
+          "description": "Why Kumo thinks so, in a line, such as \"Your usual weekday at the desk, from the last four weeks.\"",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Activity": {
+      "description": "What you're doing, in Kumo's picture of your day: `people` is seeing people, and `other` anything else, named in the title. Show one you don't recognise by its title.",
+      "enum": ["working", "building", "training", "people", "studying", "chilling", "other"]
     },
     "Moment": {
       "description": "Kumo's line for the moment, at the top of the Desk: one or two sentences, right for now, which order and connect what's below rather than repeat it. It comes at the first calm moment after your morning time, when something that matters arrives, or when your day changes, and it's the same words as a `moment` message in the conversation. It goes three hours after it was read, at midnight, or once you've answered it and Kumo has acted. Draw its buttons from `options`; `allows_text` offers Reply.",
@@ -1780,14 +1804,19 @@
           "$ref": "#/$defs/MomentId"
         },
         "kind": {
-          "description": "What brought it: `day`, the first line of the day; `news`, something that matters arrived; `change`, your day changed. Show a kind you don't recognise like any other.",
-          "enum": ["day", "news", "change"]
+          "description": "What brought it: `day`, the first line of the day; `news`, something that matters arrived; `change`, your day changed; `checkin`, a commitment you made, such as when to stop tonight, coming due; `drift`, your week's time drifting from what matters; `question`, the day's one small question, which you can skip. Show a kind you don't recognise like any other.",
+          "enum": ["day", "news", "change", "checkin", "drift", "question"]
         },
         "at": {
           "$ref": "#/$defs/Timestamp"
         },
         "text": {
           "description": "One or two sentences, plain words.",
+          "type": "string",
+          "minLength": 1
+        },
+        "detail": {
+          "description": "A quieter line under the words, such as the plan under a free day: \"Easy run · groceries and proper meals · 2h prep · in bed by 00:30\". It's in the message too, after the words.",
           "type": "string",
           "minLength": 1
         },
@@ -1806,6 +1835,12 @@
         "allows_text": {
           "description": "Whether a typed reply fits, for Reply.",
           "type": "boolean"
+        },
+        "reply_label": {
+          "description": "What Reply says when a typed reply fits, such as \"Note it\" for the next step tonight. Reply when absent.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
         },
         "read_at": {
           "$ref": "#/$defs/Timestamp",
