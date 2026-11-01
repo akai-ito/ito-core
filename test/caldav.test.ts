@@ -133,7 +133,7 @@ describe("iCloud calendars over CalDAV", () => {
   it("turns a wrong password away in plain words and lists the event calendars", async () => {
     expect(await sourceFor("wrong-pass-word").check()).toEqual({
       ok: false,
-      failure: "iCloud rejected that Apple ID or app-specific password.",
+      failure: "iCloud rejected that email address or app-specific password.",
     });
     expect(await sourceFor().check()).toEqual({
       ok: true,

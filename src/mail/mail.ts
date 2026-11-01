@@ -18,7 +18,7 @@ import {
 import { createMailFolders, type FileInto } from "#mail/folders.ts";
 import { createOutlookToken } from "#mail/outlook.ts";
 import type { Account } from "#mail/providers.ts";
-import type { Card, DoneEntry, ModelChoice } from "#protocol/types.ts";
+import type { CalendarItem, Card, DoneEntry, ModelChoice } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { outlookClientId, outlookScope, outlookTokenUrl } from "#sources/sources.ts";
 import type { Store } from "#store/store.ts";
@@ -33,8 +33,8 @@ export type Progress = (read: number, total: number) => void;
 export type Mailbox = {
   readonly tools: readonly Tool[];
   readonly check: (account: Account, values: Values) => Promise<CheckResult>;
-  readonly catchUp: (onProgress: Progress) => Promise<Result<undefined, string>>;
-  readonly hasSource: () => boolean;
+  readonly catchUp: (onProgress: Progress, only?: readonly string[]) => Promise<Result<undefined, string>>;
+  readonly accounts: () => readonly Account[];
   readonly close: () => Promise<void>;
 };
 
@@ -51,6 +51,7 @@ export type MailOptions = {
   // What's in motion for them, such as a job search, so the attention pass knows what's live.
   readonly matters?: () => readonly string[];
   readonly info: Info;
+  readonly comingUp?: () => readonly CalendarItem[];
   readonly createSource?: CreateMailSource;
   readonly sentPollMs?: number;
 };
@@ -85,6 +86,10 @@ type UnsubscribeAsk = {
   readonly sender: string;
 };
 
+type SentMark = { readonly read_at: string; readonly seen: readonly string[] };
+
+type SentMail = { readonly account: string; readonly mail: Mail };
+
 export const blockedSetting = "mail_blocked";
 
 export const watermarkSetting = "mail_watermark";
@@ -95,12 +100,16 @@ export const keptListsSetting = "mail_kept_lists";
 
 export const asksSetting = "mail_unsubscribe_asks";
 
+export const sentSetting = "mail_sent";
+
 const accounts: readonly Account[] = ["icloud", "outlook", "gmail"];
 
 const dayMs = 24 * 60 * 60 * 1000;
 const catchUpDays = 90;
 const chunkSize = 100;
 const textLimit = 6000;
+const sentTextLimit = 2000;
+const draftSlackMs = 10 * 60 * 1000;
 const sentSample = 30;
 const evidenceDays = 30;
 const evidenceLimit = 300;
@@ -129,6 +138,8 @@ const rewriteSchema: JsonSchema = {
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
+const ignore = (): void => undefined;
+
 const textValue = (values: Values, name: string): string => {
   const value = values[name];
   return typeof value === "string" ? value.trim() : "";
@@ -144,6 +155,16 @@ const listOf = (value: unknown): readonly string[] =>
     .map((item) => item);
 
 const reSubject = (subject: string): string => (/^re:/iu.test(subject) ? subject : `Re: ${subject}`);
+
+const subjectKey = (subject: string): string =>
+  subject
+    .replace(/^(?:\s*(?:re|fwd?|aw|sv)\s*:)+/iu, "")
+    .replaceAll(/\s+/gu, " ")
+    .trim()
+    .toLowerCase();
+
+const addressKey = (text: string): string =>
+  (/<(?<address>[^<>]+)>/u.exec(text)?.groups?.address ?? text).trim().toLowerCase();
 
 const firstName = (address: string): string => {
   const local = address.split("@", 1)[0] ?? address;
@@ -161,15 +182,16 @@ const draftTitle = (to: string, original: Mail | undefined): string =>
     ? `Draft to ${firstName(to)}${domainName(to) === "" ? "" : ` at ${domainName(to)}`}`
     : `Draft to ${original.from.name}`;
 
-const describe = (account: string, mail: Mail): string =>
+const describe = (account: string, mail: Mail, limit = textLimit): string =>
   [
     `From: ${mail.from.name === undefined ? mail.from.address : `${mail.from.name} <${mail.from.address}>`}`,
     `To: ${mail.to.map(({ address }) => address).join(", ")}`,
     `Subject: ${mail.subject}`,
     `Date: ${mail.date}`,
     `Account: ${account}, Message-ID: ${mail.messageId}`,
+    ...(mail.inReplyTo === undefined ? [] : [`In reply to: ${mail.inReplyTo}`]),
     "",
-    mail.text.slice(0, textLimit),
+    mail.text.slice(0, limit),
   ].join("\n");
 
 const toJudgement = (answer: unknown): Judgement | undefined => {
@@ -258,6 +280,37 @@ const voicePrompt = (mails: readonly Mail[]): string =>
     ...mails.map((mail) => `To ${mail.to.map(({ address }) => address).join(", ")}, ${mail.subject}:\n${mail.text}`),
   ].join("\n\n");
 
+const cardLine = (card: Card): string =>
+  `- ${[card.title, card.question?.text, card.offer?.text, card.times?.purpose].filter(Boolean).join(": ")} (${card.id})`;
+
+const blockLine = ({ title, start, end, uid }: CalendarItem): string => `- ${title}, ${start} to ${end} (${uid})`;
+
+const sentPrompt = (sent: readonly SentMail[], cards: readonly Card[], blocks: readonly CalendarItem[]): string =>
+  [
+    "They sent these mails themselves, from their own mail app or from a draft of yours:",
+    "",
+    sent.map(({ account, mail }) => describe(account, mail, sentTextLimit)).join("\n\n---\n\n"),
+    "",
+    "Bring what each one belongs to up to date, as you would for a mail that arrives. If it answers something",
+    "in motion, it now waits on the other side: set waiting_on to them, since today, move the stage or the next",
+    "step, add it to a case's timeline, or finish the thing if the mail settles it.",
+    ...(cards.length > 0
+      ? [
+          "Waiting on you on their Desk; take off with clear_card any card one of these mails has answered:",
+          ...cards.map(cardLine),
+        ]
+      : []),
+    ...(blocks.length > 0
+      ? [
+          "Your blocks coming up on Kumo's calendar; remove with delete_event any that was for work these mails",
+          "have done, or shorten it with change_event to what's left:",
+          ...blocks.map(blockLine),
+        ]
+      : []),
+    "Leave a mail that belongs to nothing you keep. Each change carries its own note, so don't record these",
+    "with done, and don't post.",
+  ].join("\n");
+
 const learnPrompt = (card: Card, sent: Mail): string =>
   [
     "They sent a draft you wrote, after changing it. Note what to do differently next time, briefly, under",
@@ -275,6 +328,18 @@ const toNewCard = (card: Card): NewCard => {
 
 const summarise = (account: string, mail: Mail): string =>
   `- ${mail.date.slice(0, 16)} · ${senderOf(mail)} · ${mail.subject} (${account} ${mail.messageId})`;
+
+const toSentMark = (text: string | undefined): SentMark | undefined => {
+  if (text === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(text) as Partial<SentMark>;
+    return typeof parsed.read_at === "string" && !Number.isNaN(Date.parse(parsed.read_at))
+      ? { read_at: parsed.read_at, seen: listOf(parsed.seen) }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 const isFiledUndo = (payload: unknown): payload is FiledUndo => fieldOf(payload, "kind") === "mail_filed";
 
@@ -324,13 +389,13 @@ export const createMailbox = ({
   stakesChoice = () => Promise.resolve(undefined),
   matters = () => [],
   info,
+  comingUp = () => [],
   createSource = createMailSource,
   sentPollMs = 5 * 60 * 1000,
 }: MailOptions): Mailbox => {
   const connections = createCell<ReadonlyMap<Account, Connection>>(new Map());
   const arrivals = createCell<Promise<void>>(Promise.resolve());
   const restored = createCell<ReadonlySet<string>>(new Set());
-  const sentSince = createCell(toTimestamp(clock.now() - dayMs));
   const sentTimer = createCell<Cancel | undefined>(undefined);
   const isClosed = createCell(false);
 
@@ -665,36 +730,82 @@ export const createMailbox = ({
 
   const matches = (card: Card, account: string, sent: Mail): boolean => {
     const { draft } = card;
-    if (draft?.account !== account || sent.date < card.at) return false;
-    if (draft.in_reply_to !== undefined) return sent.inReplyTo === draft.in_reply_to;
+    if (draft?.account !== account || Date.parse(sent.date) < Date.parse(card.at) - draftSlackMs) return false;
+    if (sent.messageId === draft.message_id) return true;
+    const parent = draft.in_reply_to;
+    if (parent !== undefined && (sent.inReplyTo === parent || sent.references.includes(parent))) return true;
+    if (parent !== undefined && sent.inReplyTo !== undefined) return false;
+    const recipients = new Set(draft.to.map((wanted) => addressKey(wanted)));
     return (
-      sent.subject.trim() === draft.subject.trim() &&
-      sent.to.some(({ address }) => draft.to.some((wanted) => wanted.toLowerCase() === address.toLowerCase()))
+      subjectKey(sent.subject) === subjectKey(draft.subject) &&
+      sent.to.some(({ address }) => recipients.has(addressKey(address)))
     );
   };
 
+  const bringUpToDate = async (sent: readonly SentMail[]): Promise<void> => {
+    const cards = desk.cards().filter(({ kind }) => kind !== "draft" && kind !== "invite");
+    const blocks = comingUp().filter(({ calendar }) => calendar.kumo);
+    const done = await work(sentPrompt(sent, cards, blocks));
+    if (done.ok) return;
+    for (const { account, mail } of sent) {
+      desk.addDone({
+        text: `Couldn't bring things up to date with your mail "${mail.subject}"`,
+        reason: done.failure,
+        mail: { account, message_id: mail.messageId, from: "You", subject: mail.subject },
+        quiet: false,
+      });
+    }
+  };
+
+  const sentKey = ({ account, user }: Connection): string => `${sentSetting}:${account}:${user}`;
+
+  const readSent = async (
+    connection: Connection,
+  ): Promise<{ readonly fresh: readonly Mail[]; readonly keep: () => void }> => {
+    const key = sentKey(connection);
+    const mark = toSentMark(store.setting(key));
+    const readAt = clock.now();
+    // IMAP searches Sent by day in the server's own time zone, so read a day back and skip what was seen.
+    const since = (mark === undefined ? readAt : Date.parse(mark.read_at)) - dayMs;
+    const sent = await connection.source.sent(toTimestamp(since));
+    if (!sent.ok) {
+      info("Sent mail couldn't be read, so Kumo reads it next time", {
+        account: connection.account,
+        error: sent.failure,
+      });
+      return { fresh: [], keep: ignore };
+    }
+    const seen = new Set(mark?.seen);
+    return {
+      fresh: sent.value.filter(({ messageId }) => !seen.has(messageId)),
+      keep: () => {
+        const kept: SentMark = { read_at: toTimestamp(readAt), seen: sent.value.map(({ messageId }) => messageId) };
+        store.setSetting(key, JSON.stringify(kept));
+      },
+    };
+  };
+
+  const matchDraft = async (account: string, mail: Mail): Promise<void> => {
+    const card = draftCards().find((candidate) => matches(candidate, account, mail));
+    if (!card) return;
+    desk.removeCard(card.id);
+    const isChanged = mail.text.trim() !== (card.draft?.body ?? "").trim();
+    if (isChanged) await work(learnPrompt(card, mail));
+  };
+
   const watchSent = async (): Promise<void> => {
-    const waiting = draftCards();
-    if (waiting.length === 0) {
-      sentSince.set(toTimestamp(clock.now() - dayMs));
-      return;
-    }
-    const since = sentSince.get();
-    sentSince.set(toTimestamp(clock.now()));
+    const fresh = createCell<readonly SentMail[]>([]);
+    const reads = createCell<readonly (() => void)[]>([]);
     for (const connection of connections.get().values()) {
-      const sent = await connection.source.sent(since);
-      if (!sent.ok) {
-        info("Sent mail couldn't be read", { account: connection.account, error: sent.failure });
-        continue;
-      }
-      for (const mail of sent.value) {
-        const card = waiting.find((candidate) => matches(candidate, connection.account, mail));
-        if (!card) continue;
-        desk.removeCard(card.id);
-        const isChanged = mail.text.trim() !== (card.draft?.body ?? "").trim();
-        if (isChanged) await work(learnPrompt(card, mail));
+      const { fresh: mails, keep } = await readSent(connection);
+      reads.update((current) => [...current, keep]);
+      for (const mail of mails) {
+        await matchDraft(connection.account, mail);
+        fresh.update((current) => [...current, { account: connection.account, mail }]);
       }
     }
+    if (fresh.get().length > 0) await bringUpToDate(fresh.get());
+    for (const keep of reads.get()) keep();
   };
 
   const pollSent = (): void => {
@@ -1062,19 +1173,19 @@ export const createMailbox = ({
     }
   };
 
-  const catchUp = async (onProgress: Progress): Promise<Result<undefined, string>> => {
+  const catchUp = async (onProgress: Progress, only?: readonly string[]): Promise<Result<undefined, string>> => {
     const since = toTimestamp(clock.now() - catchUpDays * dayMs);
+    const reading = connections
+      .get()
+      .values()
+      .filter(({ account }) => only?.includes(account) ?? true)
+      .toArray();
     const readRecent = async ({ account, source }: Connection): Promise<Result<readonly string[], string>> => {
       const recent = await source.recent(since);
       if (!recent.ok) info("Recent mail couldn't be read", { account, error: recent.failure });
       return recent.ok ? ok(recent.value.map((mail) => summarise(account, mail))) : recent;
     };
-    const read = await Promise.all(
-      connections
-        .get()
-        .values()
-        .map((connection) => readRecent(connection)),
-    );
+    const read = await Promise.all(reading.map((connection) => readRecent(connection)));
     const [unread = "No mail is set up."] = read.flatMap((result) => (result.ok ? [] : result.failure));
     if (read.every((result) => !result.ok)) return fail(unread);
     const lines = read.flatMap((result) => (result.ok ? result.value : []));
@@ -1090,13 +1201,10 @@ export const createMailbox = ({
     if (parts > 0 && failures.get() === parts) return fail("Kumo couldn't read any of it.");
     await folders.propose(lines);
     const sent = await Promise.all(
-      connections
-        .get()
-        .values()
-        .map(async ({ source }) => {
-          const found = await source.sent(since);
-          return found.ok ? found.value : [];
-        }),
+      reading.map(async ({ source }) => {
+        const found = await source.sent(since);
+        return found.ok ? found.value : [];
+      }),
     );
     const sample = sent.flat().slice(-sentSample);
     if (sample.length > 0) await work(voicePrompt(sample));
@@ -1111,7 +1219,7 @@ export const createMailbox = ({
     tools,
     check,
     catchUp,
-    hasSource: () => connections.get().size > 0,
+    accounts: () => connections.get().keys().toArray(),
     close: async () => {
       isClosed.set(true);
       unsubscribe();

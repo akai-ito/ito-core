@@ -245,6 +245,27 @@ paths:
             application/json:
               schema: { $ref: "events.schema.json#/$defs/Onboarding" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/onboarding/replay:
+    post:
+      tags: [Onboarding]
+      operationId: replayOnboarding
+      summary: Run getting started again
+      description: |
+        Opens getting started again once it's done, to see it again. Nothing is wiped: accounts
+        already connected stay connected, and the 90-day catch-up runs only for an account that
+        connects now. Without one, Kumo names what it believes from memory, and the proposal's
+        `motions` is everything in motion now. Every app hears `onboarding.changed` with `reading`,
+        and Kumo asks its first question again as a post. While getting started runs, it changes
+        nothing.
+      responses:
+        "200":
+          description: Getting started, open again.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Onboarding" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/onboarding/beliefs/{belief}:
     post:
       tags: [Onboarding]
@@ -486,8 +507,11 @@ paths:
       description: |
         Answers a card waiting on you: tap one of its `options`, pick the clear `slots` of a
         `times` card, or type `text`. For a draft, `text` asks for a change, such as "a bit more
-        casual", and Kumo rewrites the same draft. The card shows `state: working` while the box
-        acts, then leaves the Desk when it's done, or comes back changed; `desk.changed` says which.
+        casual", and Kumo rewrites the same draft. The card shows `state: working`, with your
+        `answer`, while the box acts, then leaves the Desk when it's done, or comes back changed;
+        `desk.changed` says which. Once Kumo has acted on an answer to a question, an offer or
+        times, the Done list says what you answered and what followed. If Kumo couldn't act, the
+        card comes back to answer again, and Done says why.
       parameters:
         - name: card
           in: path
@@ -1790,6 +1814,9 @@ components:
         kind: { enum: [text, secret, toggle, choice] }
         title: { type: string }
         description: { type: string }
+        placeholder:
+          description: What to show in the empty field, such as you@icloud.com.
+          type: string
         optional:
           description: True when the capability can run without it.
           type: boolean
@@ -1947,27 +1974,7 @@ components:
       properties:
         jobs: { type: array, items: { $ref: "events.schema.json#/$defs/Job" } }
     CardAnswer:
-      description: One of `option`, `slots` or `text`.
-      type: object
-      additionalProperties: false
-      minProperties: 1
-      maxProperties: 1
-      properties:
-        option:
-          description: The label of the option you tapped.
-          type: string
-          minLength: 1
-        slots:
-          description: "`times` cards: the indexes of the slots that are clear, in the card's order."
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items: { type: integer, minimum: 0 }
-        text:
-          description: A typed answer; for a draft, the change you want.
-          type: string
-          minLength: 1
-          maxLength: 4000
+      $ref: "events.schema.json#/$defs/CardAnswer"
     CardResult:
       type: object
       required: [card]

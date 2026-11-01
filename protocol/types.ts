@@ -146,6 +146,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/onboarding/replay": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Run getting started again
+     * @description Opens getting started again once it's done, to see it again. Nothing is wiped: accounts
+     *     already connected stay connected, and the 90-day catch-up runs only for an account that
+     *     connects now. Without one, Kumo names what it believes from memory, and the proposal's
+     *     `motions` is everything in motion now. Every app hears `onboarding.changed` with `reading`,
+     *     and Kumo asks its first question again as a post. While getting started runs, it changes
+     *     nothing.
+     */
+    post: operations["replayOnboarding"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/onboarding/beliefs/{belief}": {
     parameters: {
       query?: never;
@@ -327,8 +352,11 @@ export interface paths {
      * Answer a card
      * @description Answers a card waiting on you: tap one of its `options`, pick the clear `slots` of a
      *     `times` card, or type `text`. For a draft, `text` asks for a change, such as "a bit more
-     *     casual", and Kumo rewrites the same draft. The card shows `state: working` while the box
-     *     acts, then leaves the Desk when it's done, or comes back changed; `desk.changed` says which.
+     *     casual", and Kumo rewrites the same draft. The card shows `state: working`, with your
+     *     `answer`, while the box acts, then leaves the Desk when it's done, or comes back changed;
+     *     `desk.changed` says which. Once Kumo has acted on an answer to a question, an offer or
+     *     times, the Done list says what you answered and what followed. If Kumo couldn't act, the
+     *     card comes back to answer again, and Done says why.
      */
     post: operations["answerCard"];
     delete?: never;
@@ -1321,6 +1349,8 @@ export interface components {
       kind: "text" | "secret" | "toggle" | "choice";
       title: string;
       description?: string;
+      /** @description What to show in the empty field, such as you@icloud.com. */
+      placeholder?: string;
       /** @description True when the capability can run without it. */
       optional?: boolean;
       /** @description `choice` only: what can be picked. */
@@ -1843,7 +1873,7 @@ export interface components {
     JobList: {
       jobs: components["schemas"]["Job"][];
     };
-    /** @description One of `option`, `slots` or `text`. */
+    /** @description Your answer to a card: one of `option`, `slots` or `text`. */
     CardAnswer: {
       /** @description The label of the option you tapped. */
       option?: string;
@@ -2116,7 +2146,7 @@ export interface components {
         beliefs: components["schemas"]["Belief"][];
         /** @description Future bookings the catch-up put on your calendar. */
         added: components["schemas"]["CalendarItem"][];
-        /** @description The things the catch-up put in motion, for "Here's what's in motion". */
+        /** @description The things the catch-up put in motion, for "Here's what's in motion"; when getting started runs again, everything in motion now. */
         motions: components["schemas"]["MotionId"][];
       };
     };
@@ -2333,6 +2363,8 @@ export interface components {
        * @constant
        */
       state?: "working";
+      /** @description `working` only: the answer you gave, as you gave it, to show while the box acts. */
+      answer?: components["schemas"]["CardAnswer"];
       /** @description A reply Kumo wrote into your Drafts folder. Kumo never sends it: open it in Mail with `message://` and the draft's Message-ID, and send it yourself. */
       draft?: {
         /** @description The mail account it's in, such as `icloud` or `outlook`. */
@@ -3101,6 +3133,28 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Done. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Onboarding"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  replayOnboarding: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Getting started, open again. */
       200: {
         headers: {
           "Ito-Protocol": components["headers"]["ItoProtocol"];

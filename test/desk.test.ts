@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { systemClock } from "#clock.ts";
 import { toMessageId } from "#conversation/ids.ts";
-import { demoAnswers, demoScripts } from "#engine/scripted/demo.ts";
+import { demoAnswers, demoScripts, demoWork } from "#engine/scripted/demo.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import { toLevel } from "#notifications/manners.ts";
@@ -19,13 +19,21 @@ afterAll(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const openDesk = () => {
+const openDesk = (canWork = true) => {
   const server = createServer({
-    dataDirectory: home,
+    dataDirectory: canWork ? home : path.join(home, "idle"),
     name: "desk",
     embedder: wordEmbedder,
     timeZone: "UTC",
-    createEngine: ({ callTool }) => createScriptEngine(systemClock, demoScripts, callTool, undefined, demoAnswers),
+    createEngine: ({ callTool }) =>
+      createScriptEngine(
+        systemClock,
+        demoScripts,
+        callTool,
+        undefined,
+        demoAnswers,
+        canWork ? demoWork(callTool) : undefined,
+      ),
   });
   server.store.setSetting(tokenSetting, hashToken(token));
   const say = async (text: string): Promise<void> => {
@@ -66,13 +74,21 @@ describe("the Desk", () => {
 
       expect(wrong.statusCode).toBe(400);
       expect(right.statusCode).toBe(202);
-      expect(right.json()).toMatchObject({ card: { title: "Binned a Revolut mail", state: "working" } });
+      expect(right.json()).toMatchObject({
+        card: { title: "Binned a Revolut mail", state: "working", answer: { option: "Right" } },
+      });
       expect(offered.statusCode).toBe(202);
       await vi.waitFor(
         () => {
           expect(server.store.desk().waiting).toEqual([]);
         },
         { timeout: 5000, interval: 50 },
+      );
+      expect(server.store.listDone(undefined, 10).entries.map(({ text, reason }) => [text, reason])).toEqual(
+        expect.arrayContaining([
+          ["You answered “Binned a Revolut mail”: Right", "Noted; nothing more was needed."],
+          ["You answered “Italian practice?”: Yes", "Noted; nothing more was needed."],
+        ]),
       );
       expect(server.store.desk().briefing).toMatchObject({
         kind: "morning",
@@ -82,6 +98,33 @@ describe("the Desk", () => {
           { text: "Body: easy 30 minutes or rest; big afternoon." },
         ],
       });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("puts a card back, with why in Done, when Kumo couldn't act on the answer", async () => {
+    const { server, say, answer } = openDesk(false);
+    await server.app.listen({ host: "127.0.0.1", port: 0 });
+    try {
+      await say("Fill the desk");
+      const answered = await answer("Binned a Revolut mail", { option: "Right" });
+
+      expect(answered.statusCode).toBe(202);
+      await vi.waitFor(
+        () => {
+          expect(server.store.desk().waiting.find(({ title }) => title === "Binned a Revolut mail")).toMatchObject({
+            kind: "question",
+            options: [{ label: "Right", acts: true }, { label: "Keep it" }],
+          });
+          expect(server.store.listDone(undefined, 10).entries[0]).toMatchObject({
+            text: "Couldn't act on your answer to “Binned a Revolut mail”; it's back on your Desk",
+            reason: "The scripted engine does no background work.",
+          });
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(server.store.desk().waiting.find(({ title }) => title === "Binned a Revolut mail")?.state).toBeUndefined();
     } finally {
       await server.close();
     }

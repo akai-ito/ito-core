@@ -25,12 +25,16 @@ import { postOneClick, toLetter, unsubscribeFrom, type Fetch } from "#mail/unsub
 
 type Connection = { readonly directNotifications?: boolean; readonly socket?: { readonly destroy: () => void } };
 
+type CommandHandler = (connection: Connection, parsed: unknown, data: string, callback: () => void) => void;
+
 type Hoodiecrow = {
   readonly listen: (port: number, host: string, callback: () => void) => void;
   readonly close: (callback: () => void) => void;
   readonly address: () => AddressInfo;
   readonly appendMessage: (folder: string, flags: readonly string[], receivedAt: Date, raw: string) => unknown;
   readonly connections: ReadonlySet<Connection>;
+  readonly getCommandHandler: (command: string) => CommandHandler;
+  readonly setCommandHandler: (command: string, handler: CommandHandler) => void;
 };
 
 const createHoodiecrow = createRequire(import.meta.url)("hoodiecrow-imap") as (
@@ -644,6 +648,26 @@ describe("over IMAP", () => {
     expect(sent.ok ? sent.value.map(({ messageId, folder }) => [folder, messageId]) : sent.failure).toEqual([
       ["Sent Messages", ids.question],
     ]);
+  });
+
+  it("reads Sent again on a fresh connection when the session drops under the read", async () => {
+    const source = connect();
+    await source.sent("2026-10-01");
+    const search = running().getCommandHandler("UID SEARCH");
+    const drops = createCell(1);
+    running().setCommandHandler("UID SEARCH", (connection, parsed, data, callback) => {
+      if (drops.get() === 0) {
+        search(connection, parsed, data, callback);
+        return;
+      }
+      drops.set(0);
+      connection.socket?.destroy();
+    });
+
+    const sent = await source.sent("2026-10-01");
+
+    expect(drops.get()).toBe(0);
+    expect(sent.ok ? sent.value.map(({ messageId }) => messageId) : sent.failure).toEqual([ids.question]);
   });
 
   it("hears new mail while IDLE, and what arrived while it was disconnected", async () => {

@@ -21,6 +21,7 @@ const toField = (field: Field, values: Values): CapabilityField => {
     kind: field.kind,
     title: field.title,
     ...(field.description !== undefined && { description: field.description }),
+    ...(field.placeholder !== undefined && { placeholder: field.placeholder }),
     ...(field.optional === true && { optional: true }),
     ...(field.options && { options: field.options.map(({ value: option, label }) => ({ value: option, label })) }),
     ...(field.kind === "secret" ? { set: isSet } : isSet && { value }),

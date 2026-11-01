@@ -32,8 +32,9 @@ const icloud: Manifest = {
     {
       name: "apple_id",
       kind: "text",
-      title: "Apple ID",
+      title: "Email address",
       description: "The email address you sign in to iCloud with.",
+      placeholder: "you@icloud.com",
     },
     {
       name: "app_password",
@@ -63,7 +64,13 @@ const outlook: Manifest = {
   symbol: "envelope",
   summary: "Your Outlook.com mail, read by Kumo on your box. Kumo writes drafts and never sends.",
   setup: [
-    { name: "address", kind: "text", title: "Outlook address", description: "Your Outlook.com address." },
+    {
+      name: "address",
+      kind: "text",
+      title: "Email address",
+      description: "The email address you sign in to Outlook.com with.",
+      placeholder: "you@outlook.com",
+    },
     {
       name: "token",
       kind: "secret",
@@ -98,7 +105,13 @@ const gmail: Manifest = {
   symbol: "envelope",
   summary: "Your Gmail, read by Kumo on your box. Kumo writes drafts and never sends.",
   setup: [
-    { name: "address", kind: "text", title: "Gmail address", description: "Your Gmail address." },
+    {
+      name: "address",
+      kind: "text",
+      title: "Email address",
+      description: "The email address you sign in to Gmail with.",
+      placeholder: "you@gmail.com",
+    },
     {
       name: "app_password",
       kind: "secret",

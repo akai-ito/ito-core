@@ -13,6 +13,7 @@ export type GettingStarted = {
   readonly tools: readonly Tool[];
   readonly state: () => Onboarding;
   readonly begin: () => void;
+  readonly replay: () => Onboarding;
   readonly answer: (belief: string, given: BeliefAnswer) => Result<undefined, "not_found">;
   readonly finish: () => Onboarding;
   readonly inMindText: () => string;
@@ -23,8 +24,11 @@ export type GettingStartedOptions = {
   readonly store: Pick<Store, "onboarding" | "setOnboarding" | "setting" | "setSetting">;
   readonly identifiers: Pick<Identifiers, "belief">;
   readonly work: (prompt: string) => Promise<Result<string, string>>;
-  readonly catchUp: (onProgress: (read: number, total: number) => void) => Promise<Result<undefined, string>>;
-  readonly hasMail: () => boolean;
+  readonly catchUp: (
+    onProgress: (read: number, total: number) => void,
+    only: readonly string[],
+  ) => Promise<Result<undefined, string>>;
+  readonly mailAccounts: () => readonly string[];
   readonly onSources: (listener: () => void) => () => void;
   readonly onAdded: (listener: (item: CalendarItem) => void) => void;
   readonly motionIds: () => readonly string[];
@@ -32,6 +36,10 @@ export type GettingStartedOptions = {
 };
 
 export const askedSetting = "onboarding_asked";
+
+export const readSetting = "onboarding_read";
+
+export const replaySetting = "onboarding_replay";
 
 const pagePattern = /^memory:[\w/-]+$/u;
 
@@ -52,6 +60,26 @@ const gettingStartedNote = [
   "</getting_started>",
 ].join("\n");
 
+const replayQuestionPrompt = [
+  "They're going through getting started again, to see it; nothing they have is reset. Post your first question",
+  "with post: one short, warm question about what's changed lately, or what would make the next month a good one.",
+  "Their answers come as ordinary messages; you'll ask at most three questions in all.",
+].join("\n");
+
+const replayNote = [
+  "<getting_started>",
+  "They're going through getting started again, to see it; nothing they have is reset. Ask at most three short",
+  "questions in all, one at a time, about what's changed or what they want from the next months; skip any they",
+  "don't want to answer. Then say you'll show what you found. Remember what they tell you.",
+  "</getting_started>",
+].join("\n");
+
+const recapPrompt = [
+  "They're going through getting started again, so there's no mail to read this time. Name a few things you",
+  "believe about them from memory with believe, each with the page it's on, for them to confirm or correct before",
+  "you rely on it: what matters now, not every fact.",
+].join("\n");
+
 const correctionPrompt = (belief: Belief, correction: string): string =>
   [
     `While getting started you checked a belief with them: "${belief.text}", from ${belief.page}.`,
@@ -64,7 +92,7 @@ export const createGettingStarted = ({
   identifiers,
   work,
   catchUp,
-  hasMail,
+  mailAccounts,
   onSources,
   onAdded,
   motionIds,
@@ -76,21 +104,47 @@ export const createGettingStarted = ({
 
   const isDone = (): boolean => store.onboarding().state === "done";
 
+  const isReplay = (): boolean => store.setting(replaySetting) === "true";
+
+  const accountsRead = (): readonly string[] => {
+    try {
+      const read = JSON.parse(store.setting(readSetting) ?? "[]") as unknown;
+      return Array.isArray(read) ? read.filter((account): account is string => typeof account === "string") : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const markRead = (accounts: readonly string[]): void => {
+    const read = new Set([...accountsRead(), ...accounts]);
+    store.setSetting(readSetting, JSON.stringify([...read]));
+  };
+
+  const unread = (): readonly string[] => mailAccounts().filter((account) => !accountsRead().includes(account));
+
   onAdded((item) => {
     if (isReading.get()) added.update((current) => [...current, item]);
   });
 
-  const read = async (): Promise<void> => {
+  const recap = async (): Promise<Result<undefined, string>> => {
+    const done = await work(recapPrompt);
+    if (!done.ok) info("Kumo couldn't name what it believes, so getting started shows none", { error: done.failure });
+    return ok(undefined);
+  };
+
+  const read = async (accounts: readonly string[]): Promise<void> => {
+    const earlier = store.onboarding().proposal;
     const before = new Set(motionIds());
     beliefs.set([]);
     added.set([]);
     isReading.set(true);
     const readAll = async (): Promise<Result<undefined, string>> => {
       try {
+        if (accounts.length === 0) return await recap();
         return await catchUp((mailsRead, total) => {
           if (isDone()) return;
           store.setOnboarding({ state: "reading", progress: { mails_read: mailsRead, mails_total: total } });
-        });
+        }, accounts);
       } finally {
         isReading.set(false);
       }
@@ -102,19 +156,25 @@ export const createGettingStarted = ({
       store.setOnboarding({ state: "reading" });
       return;
     }
+    markRead(accounts);
+    const found = isReplay() ? motionIds() : motionIds().filter((id) => !before.has(id));
     store.setOnboarding({
       state: "ready",
       proposal: {
-        beliefs: [...beliefs.get()],
-        added: [...added.get()],
-        motions: motionIds().filter((id) => !before.has(id)),
+        beliefs: [...(earlier?.beliefs ?? []), ...beliefs.get()],
+        added: [...(earlier?.added ?? []), ...added.get()],
+        motions: [...new Set([...(earlier?.motions ?? []), ...found])],
       },
     });
+    startReading();
   };
 
   const startReading = (): void => {
-    if (isReading.get() || isDone() || store.onboarding().proposal || !hasMail()) return;
-    void read().catch((error: unknown) => {
+    if (isReading.get() || isDone()) return;
+    const fresh = unread();
+    const isRecap = isReplay() && store.onboarding().proposal === undefined;
+    if (!isRecap && fresh.length === 0) return;
+    void read(fresh).catch((error: unknown) => {
       isReading.set(false);
       info("The catch-up didn't finish", { error: String(error) });
     });
@@ -175,6 +235,19 @@ export const createGettingStarted = ({
       }
       startReading();
     },
+    replay: () => {
+      if (!isDone()) return store.onboarding();
+      markRead(mailAccounts());
+      store.setSetting(replaySetting, "true");
+      const again: Onboarding = { state: "reading" };
+      store.setOnboarding(again);
+      void work(replayQuestionPrompt)
+        .catch((error: unknown) => {
+          info("Kumo couldn't ask its first question again", { error: String(error) });
+        })
+        .then(startReading);
+      return again;
+    },
     answer: (id, given) => {
       const belief = store.onboarding().proposal?.beliefs.find((candidate) => candidate.id === id);
       if (!belief) return fail("not_found");
@@ -192,9 +265,13 @@ export const createGettingStarted = ({
     finish: () => {
       const finished: Onboarding = { state: "done" };
       store.setOnboarding(finished);
+      store.setSetting(replaySetting, "false");
       return finished;
     },
-    inMindText: () => (isDone() ? "" : gettingStartedNote),
+    inMindText: () => {
+      if (isDone()) return "";
+      return isReplay() ? replayNote : gettingStartedNote;
+    },
     close: () => {
       unsubscribe();
     },

@@ -1795,6 +1795,36 @@
         }
       }
     },
+    "CardAnswer": {
+      "description": "Your answer to a card: one of `option`, `slots` or `text`.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 1,
+      "properties": {
+        "option": {
+          "description": "The label of the option you tapped.",
+          "type": "string",
+          "minLength": 1
+        },
+        "slots": {
+          "description": "`times` cards: the indexes of the slots that are clear, in the card's order.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "text": {
+          "description": "A typed answer; for a draft, the change you want.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      }
+    },
     "Card": {
       "description": "Something waiting on you on the Desk. It stays until it's done, whatever the date. Draw its buttons from `options`; `allows_text` offers a typed answer, which for a draft asks for a change, such as \"a bit more casual\". Its kind's payload sits under a field of the same name. Show a kind you don't recognise by its title and options.",
       "type": "object",
@@ -1836,6 +1866,10 @@
         "state": {
           "description": "`working` while the box acts on your answer, such as rewriting a draft. Absent while it waits on you.",
           "const": "working"
+        },
+        "answer": {
+          "$ref": "#/$defs/CardAnswer",
+          "description": "`working` only: the answer you gave, as you gave it, to show while the box acts."
         },
         "draft": {
           "description": "A reply Kumo wrote into your Drafts folder. Kumo never sends it: open it in Mail with `message://` and the draft's Message-ID, and send it yourself.",
@@ -2260,7 +2294,7 @@
               }
             },
             "motions": {
-              "description": "The things the catch-up put in motion, for \"Here's what's in motion\".",
+              "description": "The things the catch-up put in motion, for \"Here's what's in motion\"; when getting started runs again, everything in motion now.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/MotionId"

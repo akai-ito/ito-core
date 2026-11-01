@@ -156,8 +156,9 @@ const sourcesOff: readonly Readonly<Record<string, unknown>>[] = [
       {
         name: "apple_id",
         kind: "text",
-        title: "Apple ID",
+        title: "Email address",
         description: "The email address you sign in to iCloud with.",
+        placeholder: "you@icloud.com",
       },
       {
         name: "app_password",
@@ -186,7 +187,13 @@ const sourcesOff: readonly Readonly<Record<string, unknown>>[] = [
     version: "0.1",
     state: "off",
     fields: [
-      { name: "address", kind: "text", title: "Outlook address", description: "Your Outlook.com address." },
+      {
+        name: "address",
+        kind: "text",
+        title: "Email address",
+        description: "The email address you sign in to Outlook.com with.",
+        placeholder: "you@outlook.com",
+      },
       {
         name: "token",
         kind: "secret",
@@ -213,7 +220,13 @@ const sourcesOff: readonly Readonly<Record<string, unknown>>[] = [
     version: "0.1",
     state: "off",
     fields: [
-      { name: "address", kind: "text", title: "Gmail address", description: "Your Gmail address." },
+      {
+        name: "address",
+        kind: "text",
+        title: "Email address",
+        description: "The email address you sign in to Gmail with.",
+        placeholder: "you@gmail.com",
+      },
       {
         name: "app_password",
         kind: "secret",
@@ -3432,6 +3445,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(1500);
     transcript.getDesk();
     transcript.wait(3000);
+    transcript.world("kumo_works", { calls: [] });
     transcript.answerCard(question.id, { option: "Right" });
     transcript.settleCard(question.id);
     transcript.wait(2000);
@@ -3698,6 +3712,45 @@ const scenarios: readonly (() => Transcript)[] = [
     writeWhole(transcript, "Then mornings stay for running, and I'll keep the QRT side moving.");
     transcript.endTurn("completed");
     transcript.wait(15_000);
+    transcript.answerBelief(belief, { answer: "true" });
+    transcript.wait(5000);
+    transcript.finishOnboarding();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "70-getting-started-again",
+      scenario: 70,
+      title: "Getting started again",
+      summary:
+        "Getting started is done and iCloud is connected. You choose to see it again from Settings. Nothing is " +
+        "wiped and no mail is read again: Kumo asks its first question once more and names what it believes from " +
+        "memory. You confirm the belief and finish.",
+      guarantees: ["G39"],
+    });
+    transcript.begin("2026-11-12T19:00:00.000Z");
+    transcript.world("capability_on", {
+      capability: "icloud",
+      values: { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop" },
+    });
+    transcript.connect();
+    transcript.wait(5000);
+    const question = "Good to see this again. What's changed since we last did it?";
+    const sub20 = "You're training for a sub-20 5K, with parkrun on Saturdays.";
+    transcript.world("kumo_works", { calls: [], post: question });
+    transcript.world("kumo_works", { calls: [{ tool: "believe", input: { text: sub20, page: "memory:now" } }] });
+    transcript.request("POST", "/v0/onboarding/replay");
+    const again = { state: "reading" as const };
+    transcript.onboarding(again);
+    transcript.response(200, again);
+    transcript.post(question);
+    const belief = transcript.belief();
+    transcript.onboarding({
+      state: "ready",
+      proposal: { beliefs: [{ id: belief, text: sub20, page: "memory:now" }], added: [], motions: [] },
+    });
+    transcript.wait(30_000);
     transcript.answerBelief(belief, { answer: "true" });
     transcript.wait(5000);
     transcript.finishOnboarding();

@@ -337,6 +337,7 @@ export const createServer = (options: ServerOptions): Server => {
         .filter(({ status }) => status === "active")
         .map(({ kind, title }) => `${title} (${kind})`),
     info,
+    comingUp: () => store.desk().coming_up,
     ...(options.createMailSource && { createSource: options.createMailSource }),
   });
   const calendar = createCalendar({ host, desk, clock, timeZone, info, createSource: calendarSourceFor });
@@ -348,10 +349,14 @@ export const createServer = (options: ServerOptions): Server => {
     identifiers,
     work: runWork,
     catchUp: mail.catchUp,
-    hasMail: mail.hasSource,
+    mailAccounts: mail.accounts,
     onSources: (listener) => host.subscribe(listener),
     onAdded: calendar.onAdded,
-    motionIds: () => motions.list().map(({ id }) => id),
+    motionIds: () =>
+      motions
+        .list()
+        .filter(({ status }) => status === "active")
+        .map(({ id }) => id),
     info,
   });
   const isBusy = (): boolean => calendar.isBusy();
