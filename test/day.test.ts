@@ -236,6 +236,9 @@ describe("what Kumo knows you're doing", () => {
     clock.moveTo(Date.parse("2026-11-12T19:30:00.000Z"));
     expect(status.isAsleep()).toBe(false);
 
+    status.setFocus("tablet", "other");
+    expect(status.lines()).toEqual(["Now: a Focus of theirs has been on since 19:30, last heard 1 minute ago."]);
+    status.setFocus("tablet", undefined);
     status.setFocus("phone", "work");
     status.setFocus("phone", "work");
     clock.moveTo(Date.parse("2026-11-13T11:29:00.000Z"));
@@ -244,6 +247,8 @@ describe("what Kumo knows you're doing", () => {
     expect(logged.get()).toEqual([
       { message: "A Focus changed", device: "phone", focus: "sleep" },
       { message: "A Focus changed", device: "phone", focus: "sleep" },
+      { message: "A Focus changed", device: "tablet", focus: "other" },
+      { message: "A Focus changed", device: "tablet", focus: "off", was: "other" },
       { message: "A Focus changed", device: "phone", focus: "work" },
       { message: "A Focus changed", device: "phone", focus: "off", was: "work" },
     ]);

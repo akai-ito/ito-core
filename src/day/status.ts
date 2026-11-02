@@ -46,12 +46,13 @@ type Held = { readonly kind: FocusKind; readonly since: number; readonly heard: 
 
 type Said = { readonly text: string; readonly since: string; readonly until: string };
 
+// Whose Focus, as a prompt says it: "their Sleep Focus", or for one they didn't say, "a Focus of theirs".
 const focusNames: Readonly<Record<FocusKind, string>> = {
-  sleep: "Sleep",
-  work: "Work",
-  fitness: "Fitness",
-  personal: "Personal",
-  other: "a",
+  sleep: "their Sleep Focus",
+  work: "their Work Focus",
+  fitness: "their Fitness Focus",
+  personal: "their Personal Focus",
+  other: "a Focus of theirs",
 };
 
 // A Focus that's never said to be off stops counting, in case its device went quiet: a Sleep Focus at the morning
@@ -155,7 +156,7 @@ export const createStatus = ({ settings, clock, timeZone, nights, info }: Status
       return [
         ...(focused
           ? [
-              `Now: their ${focusNames[focused.kind]} Focus has been on since ${clockOf(focused.since, timeZone)}, ` +
+              `Now: ${focusNames[focused.kind]} has been on since ${clockOf(focused.since, timeZone)}, ` +
                 `last heard ${lengthOf(clock.now() - focused.heard)} ago.`,
             ]
           : []),
