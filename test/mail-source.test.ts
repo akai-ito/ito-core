@@ -156,6 +156,7 @@ describe("reading a mail", () => {
       messageId: ids.booking,
       references: [],
       from: { address: "noreply@stays.example", name: "Stays" },
+      replyTo: [{ address: "reservations@hoteldulac.example", name: "Hôtel du Lac" }],
       to: [{ address: "sam@example.com", name: "Sam Rivera" }],
       cc: [],
       subject: "Your booking is confirmed – Hôtel du Lac, Annecy",
