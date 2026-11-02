@@ -81,6 +81,10 @@ const sentLately: readonly Mail[] = [
   flags: [],
 }));
 
+// A saved draft's headers, as its MIME has them in Drafts.
+const headersOf = async (draft: Draft | undefined): Promise<Readonly<Record<string, string>>> =>
+  draft === undefined ? {} : mimeTree(await toDraftMime(draft, "draft@icloud.com", new Date())).headers;
+
 const fromOf = async (draft: Draft | undefined): Promise<string | undefined> =>
   draft && mimeTree(await toDraftMime(draft, "from@icloud.com", new Date())).headers.from;
 
@@ -727,5 +731,45 @@ describe("mail in the conversation, through ito mail commands", () => {
     expect(drafts().find((card) => card.draft?.in_reply_to === "deck-1@halcyon.example")?.draft?.from).toBe(
       "sam@halcyon.example",
     );
+  });
+
+  it("replies to everyone on a mail, and to its sender alone when told", async () => {
+    const offsite = "offsite-1@northwind.example";
+    mail.keep("INBOX", {
+      account: "icloud",
+      message_id: offsite,
+      from: "Clara Voss <clara.voss@northwind.example>",
+      to: ["Sam Rivera <sam@icloud.com>", "Tess Harlow <tess.harlow@halcyon.example>"],
+      cc: ["Mira <mira@icloud.com>", "Sam Rivera <sam@halcyon.example>"],
+      subject: "Offsite dates",
+      text: "Does the week of 16 November work for everyone?",
+    });
+    const reply = (): Card | undefined => drafts().find((card) => card.draft?.in_reply_to === offsite);
+
+    const read = await command(["read", "--message-id", offsite]);
+    const toAll = await command(["draft", "--reply-to", offsite, "--body", "That week works for me."]);
+    const everyone = { card: reply()?.draft, headers: await headersOf(mail.drafts().at(-1)) };
+    await command(["draft", "--reply-to", offsite, "--body", "That week works for me.", "--no-reply-all"]);
+    const senderAlone = { card: reply()?.draft, headers: await headersOf(mail.drafts().at(-1)) };
+
+    expect(read.text).toContain("\nCc: mira@icloud.com, sam@halcyon.example\n");
+    expect(toAll.text).toContain(
+      "It's to everyone on the mail: To clara.voss@northwind.example, tess.harlow@halcyon.example; Cc " +
+        "mira@icloud.com.",
+    );
+    expect(everyone.card).toMatchObject({
+      from: "sam@icloud.com",
+      to: ["clara.voss@northwind.example", "tess.harlow@halcyon.example"],
+      cc: ["mira@icloud.com"],
+    });
+    expect(everyone.headers).toMatchObject({
+      from: "Sam Rivera <sam@icloud.com>",
+      to: "Clara Voss <clara.voss@northwind.example>, Tess Harlow <tess.harlow@halcyon.example>",
+      cc: "Mira <mira@icloud.com>",
+    });
+    expect(senderAlone.card).toMatchObject({ to: ["clara.voss@northwind.example"] });
+    expect(senderAlone.card?.cc).toBeUndefined();
+    expect(senderAlone.headers.to).toBe("Clara Voss <clara.voss@northwind.example>");
+    expect(senderAlone.headers.cc).toBeUndefined();
   });
 });

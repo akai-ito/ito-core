@@ -348,12 +348,28 @@ const draftTitle = (to: string, name: string | undefined): string =>
     ? `Draft to ${firstName(to)}${domainName(to) === "" ? "" : ` at ${domainName(to)}`}`
     : `Draft to ${name}`;
 
-// Whom a reply goes to, as a mail app's Reply has it: where the mail asks answers to go, or else its sender. A reply
-// to a mail of their own goes to the people it went to.
-const replyRecipients = (mail: Mail, isOwn: (address: string) => boolean): readonly Address[] => {
-  if (!isOwn(mail.from.address)) return mail.replyTo ?? [mail.from];
-  const others = mail.to.filter(({ address }) => !isOwn(address));
-  return others.length > 0 ? others : [mail.from];
+const addressesOf = (addresses: readonly Address[] = []): readonly string[] => addresses.map(({ address }) => address);
+
+const uniqueAddresses = (addresses: readonly Address[]): readonly Address[] =>
+  addresses.filter(
+    (first, index) => addresses.findIndex(({ address }) => isSameAddress(address, first.address)) === index,
+  );
+
+// Whom a reply goes to. Its first recipient is as a mail app's Reply has it: where the mail asks answers to go, or
+// else its sender; for a mail of their own, the people it went to. Reply All, the default, keeps everyone else on
+// the mail too, in To and in Cc as they were, but never them.
+const replyRecipients = (
+  mail: Mail,
+  isOwn: (address: string) => boolean,
+  isAll: boolean,
+): { readonly to: readonly Address[]; readonly cc: readonly Address[] } => {
+  const others = (addresses: readonly Address[]): readonly Address[] =>
+    addresses.filter(({ address }) => !isOwn(address));
+  const theirs = others(mail.to);
+  const first = isOwn(mail.from.address) ? theirs : (mail.replyTo ?? [mail.from]);
+  const to = uniqueAddresses([...(first.length > 0 ? first : [mail.from]), ...(isAll ? theirs : [])]);
+  const isInTo = ({ address }: Address): boolean => to.some((already) => isSameAddress(already.address, address));
+  return { to, cc: isAll ? uniqueAddresses(others(mail.cc)).filter((copied) => !isInTo(copied)) : [] };
 };
 
 const toNewCard = (card: Card): NewCard => {
@@ -1649,9 +1665,12 @@ export const createMailbox = ({
       const { to: givenTo, cc: givenCc, found } = named.value;
       const identity = await identityOf(connection);
       if (!identity.ok) return failed(identity.failure);
-      const answered = answering && replyRecipients(answering, identity.value.isOwn).map(({ address }) => address);
-      const to = givenTo.length > 0 ? givenTo : (before?.to ?? answered ?? []);
-      const cc = givenCc.length > 0 ? givenCc : (before?.cc ?? []);
+      const givenAll = fieldOf(input, "reply_all");
+      const answered = answering && replyRecipients(answering, identity.value.isOwn, givenAll !== false);
+      // A redraft keeps whom it was to, unless they're given again or reply_all says whom anew.
+      const isKept = before !== undefined && typeof givenAll !== "boolean";
+      const to = givenTo.length > 0 ? givenTo : isKept ? before.to : addressesOf(answered?.to);
+      const cc = givenCc.length > 0 ? givenCc : isKept ? (before.cc ?? []) : addressesOf(answered?.cc);
       // A name as the mail it answers wrote it, such as its sender's.
       const headerName = (address: string | undefined): string | undefined =>
         answering &&
@@ -1747,14 +1766,18 @@ export const createMailbox = ({
         attachments.length === 0
           ? ""
           : ` It carries ${listed(attachments.map(({ name, inline }) => (inline ? `${name} (inline)` : name)))}.`;
+      const copied = cc.length > 0 ? `; Cc ${cc.join(", ")}` : "";
+      // Whom a reply to more than one person reaches, so it's plain when everyone doesn't make sense.
+      const everyone =
+        answering && to.length + cc.length > 1 ? ` It's to everyone on the mail: To ${to.join(", ")}${copied}.` : "";
       return {
         text:
           `Saved the draft in Drafts and put it on the Desk as ${id}${kept ? ", in place of the earlier one" : ""}.` +
-          `${signed}${carried}` +
+          `${everyone}${signed}${carried}` +
           found.map(({ name, address, why }) => ` From Contacts, ${name}: ${address}, ${why}.`).join(""),
         step: {
           title: `${kept ? "Redrafted" : "Drafted"} ${answering ? "a reply" : "a mail"} to ${whom}`,
-          note: `To ${to.join(", ")}`,
+          note: `To ${to.join(", ")}${copied}`,
           mails: [{ from: "You", subject, date: toTimestamp(clock.now()), text: letter.value.text }],
         },
       };
@@ -1891,7 +1914,8 @@ export const createMailbox = ({
       audience: "work",
       description:
         "Write a draft into their Drafts folder and put it on the Desk for them to send. Never sent by you. With " +
-        "reply_to, it answers that mail: to and subject follow it. With replaces, it takes the place of a draft " +
+        "reply_to, it answers that mail: subject and recipients follow it, everyone on it as Reply All has it, and " +
+        "to or cc given replace that list. With replaces, it takes the place of a draft " +
         "already on the Desk, keeping whatever you don't give again. Write in their voice, in light Markdown; it " +
         "goes as formatted mail with a plain-text copy, with pictures inline, files attached and their own signature " +
         "at the end.",
@@ -1922,6 +1946,13 @@ export const createMailbox = ({
           signature: {
             type: "boolean",
             description: "Their signature goes at the end; --no-signature leaves it off, only when they ask.",
+          },
+          reply_all: {
+            type: "boolean",
+            description:
+              "With reply_to, everyone on the mail gets the reply, To and Cc. --no-reply-all answers only the sender " +
+              "(or whom the mail asks answers to go to): when they ask, or when everyone doesn't make sense, such " +
+              "as a mail to a big list.",
           },
           title: { type: "string", description: "The card's title, such as “Note to Hotel Orto”." },
         },

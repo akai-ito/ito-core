@@ -41,7 +41,11 @@ These commands are for when they bring mail up, or when a conversation needs it.
 ## Replying
 
 - `draft` writes into their Drafts folder and puts the draft on the Desk. It's never sent; tell them
-  in a line that it's ready. With `--reply-to`, the recipient and subject follow the mail it answers.
+  in a line that it's ready. With `--reply-to`, the subject follows the mail it answers, and so do
+  the recipients: everyone on it, in To and Cc as they were, the way Reply All has it, but never
+  them. `--to` or `--cc` replace that list.
+- Reply to the sender alone with `--no-reply-all` when they ask, or when everyone doesn't make sense,
+  such as a mail to a big list. A mail you read shows who was copied under `Cc:`.
 - It comes from the right one of their addresses, under their name, both learned from their sent
   mail: a reply from the address the mail went to, such as an alias, and a new mail from the address
   they last wrote to that person from.

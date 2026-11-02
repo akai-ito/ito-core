@@ -171,7 +171,9 @@ with a clean plain-text copy, photos you sent in the chat (or that Kumo found on
 inline, small files attached, and your own signature at the end, exactly as you send it. Kumo learns
 each account's signature from your recent sent mail, and adds none if you don't use one. Sent mail
 also tells it which addresses are yours and the name you send under: a reply comes from the address
-the mail went to, aliases included, and a new mail from the one you last used with that person. The
+the mail went to, aliases included, and a new mail from the one you last used with that person.
+Replies keep everyone on the thread, To and Cc, unless you ask for the sender alone or it's plainly
+a mail to a big list. The
 Desk's draft card shows the formatted words, the signature and what's attached.
 
 Kumo earns your trust one kind of work at a time: sorting mail, the calendar, drafts, and contacts
