@@ -10,12 +10,18 @@ import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import { toLevel } from "#notifications/manners.ts";
 import { toChanges } from "#desk/moments.ts";
-import { quoteOf } from "#desk/desk.ts";
+import { createDesk, quoteOf } from "#desk/desk.ts";
+import { randomIdentifiers } from "#identifiers.ts";
+import { ok } from "#result.ts";
+import { openDatabase } from "#store/database.ts";
+import { createStore } from "#store/store.ts";
+import { createCell } from "#cell.ts";
 import type { CalendarItem } from "#protocol/types.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { createServer } from "#server.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-desk-"));
+const ignore = (): void => undefined;
 const token = "ito_desk_test_not_a_real_token_00000000000000000000000";
 
 afterAll(() => {
@@ -214,6 +220,61 @@ describe("the Desk", () => {
     } finally {
       await server.close();
     }
+  });
+
+  it("acts on a card or a line once, when the same answer comes twice", async () => {
+    const store = createStore(openDatabase(path.join(home, "twice.db")), systemClock, randomIdentifiers);
+    const acted = createCell(0);
+    const releases = createCell<readonly (() => void)[]>([]);
+    const desk = createDesk({
+      store,
+      identifiers: randomIdentifiers,
+      clock: systemClock,
+      timeZone: "UTC",
+      work: async () => {
+        acted.update((count) => count + 1);
+        await new Promise<void>((resolve) => {
+          releases.update((current) => [...current, resolve]);
+        });
+        return ok("Noted.");
+      },
+      info: ignore,
+    });
+    const card = desk.addCard({
+      kind: "offer",
+      title: "Italian practice?",
+      options: [{ label: "Yes" }, { label: "Not now" }],
+      allows_text: false,
+      offer: { text: "Lessons?" },
+    });
+    const answers = [
+      desk.answer(card.id, { option: "Yes" }),
+      desk.answer(card.id, { option: "Yes" }),
+      desk.answer(card.id, { option: "Not now" }),
+    ];
+    store.setDesk({
+      ...store.desk(),
+      moment: {
+        id: "o_1",
+        kind: "news",
+        at: card.at,
+        text: "Leo wrote.",
+        message: "m_1",
+        options: [{ label: "Reply" }],
+        allows_text: false,
+      },
+    });
+    const lines = [desk.answerMoment("o_1", { option: "Reply" }), desk.answerMoment("o_1", { option: "Reply" })];
+    await vi.waitFor(() => {
+      expect(releases.get().length).toBeGreaterThan(0);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    for (const release of releases.get()) release();
+    await desk.settled();
+
+    expect([...answers, ...lines].map(({ ok: isOk }) => isOk)).toEqual([true, true, false, true, true]);
+    expect(acted.get()).toBe(2);
+    store.close();
   });
 
   it("keeps notifications quiet by the shared manners", () => {

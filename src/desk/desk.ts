@@ -158,6 +158,21 @@ const withoutAnswer = <Given extends { readonly state?: unknown; readonly answer
     "state" | "answer"
   >;
 
+const alreadyActing = "Kumo is already acting on your answer.";
+
+type Shown = NonNullable<Card["answer"]>;
+
+// An answer as the Desk shows it, with only the parts given.
+const shownAnswer = ({ option, slots, text }: CardAnswer): Shown => ({
+  ...(option !== undefined && { option }),
+  ...(slots && { slots: [...slots] }),
+  ...(text !== undefined && { text }),
+});
+
+// The same answer again, such as the app retrying it, while Kumo acts on the first.
+const isSameAnswer = (shown: Shown | undefined, given: CardAnswer): boolean =>
+  JSON.stringify(shown) === JSON.stringify(shownAnswer(given));
+
 const checked = (card: Card, answer: CardAnswer): Result<CardAnswer, string> => {
   if (answer.option !== undefined && card.options.every(({ label }) => label !== answer.option)) {
     return fail(`${card.title} has no option ${answer.option}.`);
@@ -335,15 +350,10 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     answer: (id, given) => {
       const card = store.desk().waiting.find((waiting) => waiting.id === id);
       if (!card) return fail("not_found");
+      if (card.state === "working") return isSameAnswer(card.answer, given) ? ok(card) : fail(alreadyActing);
       const answer = checked(card, given);
       if (!answer.ok) return answer;
-      const { option, slots, text } = answer.value;
-      const shown = {
-        ...(option !== undefined && { option }),
-        ...(slots && { slots: [...slots] }),
-        ...(text !== undefined && { text }),
-      };
-      const working: Card = { ...card, state: "working", answer: shown };
+      const working: Card = { ...card, state: "working", answer: shownAnswer(answer.value) };
       changeCards((waiting) => waiting.map((waitingCard) => (waitingCard.id === id ? working : waitingCard)));
       background(async () => {
         const replacement = await handlerOf(card)(card, answer.value);
@@ -370,7 +380,9 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     answerMoment: (id, given) => {
       const moment = store.desk().moment;
       if (moment?.id !== id) return fail("not_found");
-      if (moment.state === "working") return fail("Kumo is already acting on your answer.");
+      if (moment.state === "working") {
+        return given.skip !== true && isSameAnswer(moment.answer, given) ? ok(moment) : fail(alreadyActing);
+      }
       if (given.skip === true) {
         if (moment.kind !== "question") return fail("Only the day's question can be skipped.");
         momentHandlers.get().get(id)?.skip?.(moment);
@@ -379,12 +391,7 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
       }
       const answer = checkedMoment(moment, given);
       if (!answer.ok) return answer;
-      const { option, text } = answer.value;
-      const working: Moment = {
-        ...moment,
-        state: "working",
-        answer: { ...(option !== undefined && { option }), ...(text !== undefined && { text }) },
-      };
+      const working: Moment = { ...moment, state: "working", answer: shownAnswer(answer.value) };
       changeMoment(id, () => working);
       background(() => actOnMoment(moment, answer.value));
       return ok(working);

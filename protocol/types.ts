@@ -405,6 +405,7 @@ export interface paths {
      *     when it `allows_text`. The line shows `state: working`, with your `answer`, while Kumo acts
      *     on it in the background, then gives way to all quiet; Done says what you answered and what
      *     followed. If Kumo couldn't act, the line comes back to answer again, and Done says why.
+     *     The same answer sent again while it's working is taken once; a different one is refused.
      *     The day's question (`kind` `question`) can also be skipped: it gives way at once, with
      *     nothing in Done, and Kumo never asks it again.
      */
@@ -501,7 +502,8 @@ export interface paths {
      *     `answer`, while the box acts, then leaves the Desk when it's done, or comes back changed;
      *     `desk.changed` says which. Once Kumo has acted on an answer to a question, an offer or
      *     times, the Done list says what you answered and what followed. If Kumo couldn't act, the
-     *     card comes back to answer again, and Done says why.
+     *     card comes back to answer again, and Done says why. The same answer sent again while the
+     *     card is working, such as a retry, is taken once; a different one is refused.
      */
     post: operations["answerCard"];
     delete?: never;
