@@ -133,6 +133,7 @@ type Folders = {
   readonly sent?: string;
   readonly drafts?: string;
   readonly trash?: string;
+  readonly junk?: string;
   // Every folder that holds mail they received, the inbox first: their own folders and the archive, but not
   // Sent, Drafts, Trash or Junk. Gmail's All Mail already holds every label.
   readonly received: readonly string[];
@@ -215,6 +216,7 @@ const toFolders = (list: readonly ListResponse[]): Folders => {
     sent: specialPath(list, "\\Sent"),
     drafts: specialPath(list, "\\Drafts"),
     trash: specialPath(list, "\\Trash"),
+    junk: specialPath(list, "\\Junk"),
     received: all === undefined ? present([inbox, ...list.filter(isReceived).map(({ path }) => path)]) : [inbox, all],
     count: list.filter((entry) => !entry.flags.has("\\Noselect")).length,
   };
@@ -501,8 +503,10 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     return ok(undefined);
   };
 
+  // Every folder a mail can be found in by its Message-ID, Sent last: a copy of their own there, such as of a mail
+  // they sent themselves or a list they're on, is only taken when there's no other.
   const everywhere = ({ folders }: Session): readonly string[] =>
-    present([...folders.received, folders.archive, folders.sent, folders.drafts, folders.trash]);
+    present([...folders.received, folders.archive, folders.drafts, folders.junk, folders.trash, folders.sent]);
 
   const kept = ({ folders }: Session): readonly string[] =>
     present([...folders.received, folders.archive, folders.sent]);
@@ -785,7 +789,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   ): Result<readonly string[], string> => {
     const wanted = folder?.trim() ?? "";
     if (wanted === "") return ok(all);
-    const { inbox, archive, sent, drafts, trash, list } = opened.folders;
+    const { inbox, archive, sent, drafts, trash, junk } = opened.folders;
     const roles: ReadonlyMap<string, string | undefined> = new Map([
       ["inbox", inbox],
       ["archive", archive],
@@ -793,7 +797,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       ["drafts", drafts],
       ["bin", trash],
       ["trash", trash],
-      ["junk", specialPath(list, "\\Junk")],
+      ["junk", junk],
     ]);
     const role = roles.get(wanted.toLowerCase());
     if (role !== undefined) return ok([role]);
@@ -919,18 +923,29 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return removed.value ? ok(undefined) : fail("That draft isn't in the Drafts folder any more.");
     });
 
+  // The session with the account's folders as they are now.
+  const relist = async ({ client }: Session): Promise<Session> => {
+    const fresh = { client, folders: toFolders(await client.list()) };
+    sessions.set(Promise.resolve(ok(fresh)));
+    return fresh;
+  };
+
   const ensureFolder = async (opened: Session, name: string): Promise<Result<string, string>> => {
-    const found = folderNamed(opened, name);
-    if (found !== undefined) return ok(found);
     const delimiter = opened.folders.list.find((entry) => entry.delimiter)?.delimiter ?? "/";
     // A name is one folder at the top, never a path into others.
     const wanted = name.replaceAll(delimiter, "-").trim();
+    const found = folderNamed(opened, name) ?? folderNamed(opened, wanted);
+    if (found !== undefined) return ok(found);
     if (wanted === "") return fail("A folder needs a name.");
-    const created = await opened.client.mailboxCreate(wanted);
-    const folders = toFolders(await opened.client.list());
-    sessions.set(Promise.resolve(ok({ client: opened.client, folders })));
-    log("Made a mail folder", { folder: created.path });
-    return ok(created.path);
+    try {
+      await opened.client.mailboxCreate(wanted);
+      log("Made a mail folder", { folder: wanted });
+    } catch (error) {
+      // One made since this session listed them, such as for a mail filed at the same moment, is there to use.
+      if (folderNamed(await relist(opened), wanted) === undefined) throw error;
+    }
+    const made = folderNamed(await relist(opened), wanted);
+    return made === undefined ? fail(`The mail server didn't make the folder ${wanted}.`) : ok(made);
   };
 
   const file: MailSource["file"] = (messageId, filing) =>

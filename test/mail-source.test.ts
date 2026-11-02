@@ -24,7 +24,19 @@ import { providers } from "#mail/providers.ts";
 import type { Health } from "#problems/problems.ts";
 import { postOneClick, toLetter, unsubscribeFrom, type Fetch } from "#mail/unsubscribe.ts";
 
-type Connection = { readonly directNotifications?: boolean; readonly socket?: { readonly destroy: () => void } };
+type Connection = {
+  readonly directNotifications?: boolean;
+  readonly socket?: { readonly destroy: () => void };
+  readonly server?: { readonly getMailbox: (path: string) => unknown };
+  readonly sendStatus?: (
+    parsed: unknown,
+    data: string,
+    command: string,
+    text: string,
+    code: string | false,
+    description: string,
+  ) => void;
+};
 
 type CommandHandler = (connection: Connection, parsed: unknown, data: string, callback: () => void) => void;
 
@@ -125,6 +137,21 @@ const arrival = (count: number): string =>
       "",
     ].join("\n"),
   );
+
+// A mail they sent to Lena and copied to themselves: the same Message-ID in Sent and in the inbox.
+const selfCopy = wire(
+  [
+    "From: Sam Rivera <sam@example.com>",
+    "To: Lena Okafor <lena@studio.example>",
+    "Cc: Sam Rivera <sam@example.com>",
+    "Subject: Slides for Thursday",
+    "Date: Thu, 30 Oct 2026 12:00:00 +0000",
+    "Message-ID: <slides-1@example.com>",
+    "",
+    "The slides are attached.",
+    "",
+  ].join("\n"),
+);
 
 const byText = (left: string, right: string): number => left.localeCompare(right);
 
@@ -632,6 +659,64 @@ describe("over IMAP", () => {
     const back = await source.read(ids.booking);
     expect(back.ok ? back.value.folder : back.failure).toBe("INBOX");
     expect(await source.fileInto("missing@example.com", "Receipts")).toEqual(gone);
+  });
+
+  it("bins the inbox copy of a mail they copied to themselves, and its undo leaves Sent alone", async () => {
+    running().appendMessage("Sent Messages", ["\\Seen"], new Date("2026-10-30T12:00:00Z"), selfCopy);
+    running().appendMessage("INBOX", [], new Date("2026-10-30T12:00:01Z"), selfCopy);
+    const source = connect();
+    const count = async (folder: string): Promise<number> => {
+      const found = await source.search({ folder, subject: "Slides for Thursday" });
+      return found.ok ? found.value.total : -1;
+    };
+
+    expect(await source.file("slides-1@example.com", "bin")).toEqual({ ok: true, value: undefined });
+    expect(await source.file("slides-1@example.com", "inbox")).toEqual({ ok: true, value: undefined });
+
+    expect([await count("inbox"), await count("bin"), await count("sent")]).toEqual([1, 0, 1]);
+  });
+
+  it("reads a mail Junk caught, and moves it to the inbox", async () => {
+    const source = connect();
+    const caught = await source.read("arrival-42@studio.example");
+    expect(caught.ok ? caught.value.folder : caught.failure).toBe("Junk");
+
+    expect(await source.file("arrival-42@studio.example", "inbox")).toEqual({ ok: true, value: undefined });
+    const rescued = await source.read("arrival-42@studio.example");
+    expect(rescued.ok ? rescued.value.folder : rescued.failure).toBe("INBOX");
+  });
+
+  it("files into a new folder from two calls at once, and into one whose name needed changing", async () => {
+    // A server without RFC 5530's response codes refuses a folder that's already there with a plain NO.
+    const create = running().getCommandHandler("CREATE");
+    running().setCommandHandler("CREATE", (connection, parsed, data, callback) => {
+      const [named] = (parsed as { readonly attributes?: readonly { readonly value?: string }[] }).attributes ?? [];
+      if (connection.server?.getMailbox(named?.value ?? "") === undefined) {
+        create(connection, parsed, data, callback);
+        return;
+      }
+      connection.sendStatus?.(parsed, data, "NO", "Mailbox already exists", false, "CREATE FAILED");
+      callback();
+    });
+    const source = connect();
+
+    const atOnce = await Promise.all([
+      source.fileInto(ids.booking, "Travel"),
+      source.fileInto(ids.newsletter, "Travel"),
+    ]);
+    const renamed = [
+      await source.fileInto(ids.reply, "Trips/Bookings"),
+      await source.fileInto("arrival-41@studio.example", "Trips/Bookings"),
+    ];
+
+    expect([...atOnce, ...renamed]).toEqual(Array.from({ length: 4 }, () => ({ ok: true, value: undefined })));
+    const folders = await Promise.all(
+      [ids.booking, ids.newsletter, ids.reply, "arrival-41@studio.example"].map(async (id) => {
+        const read = await source.read(id);
+        return read.ok ? read.value.folder : read.failure;
+      }),
+    );
+    expect(folders).toEqual(["Travel", "Travel", "Trips-Bookings", "Trips-Bookings"]);
   });
 
   it("knows whom they've written to, by address or by domain", async () => {
