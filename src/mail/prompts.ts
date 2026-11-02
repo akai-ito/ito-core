@@ -64,7 +64,7 @@ export const describe = (account: string, mail: Mail, limit = textLimit, sender?
     `Subject: ${mail.subject}`,
     `Date: ${mail.date}`,
     `Account: ${account}, Message-ID: ${mail.messageId}`,
-    ...(mail.inReplyTo === undefined ? [] : [`In reply to: ${mail.inReplyTo}`]),
+    ...(mail.inReplyTo === undefined ? [] : [`In-Reply-To: ${mail.inReplyTo}`]),
     "",
     mail.text.slice(0, limit),
   ].join("\n");
@@ -106,7 +106,7 @@ export const attentionPrompt = (
     "- promotion: selling or marketing something, even from a shop or a service they use. It goes to the bin.",
     "- notice: an automated notice with nothing worth keeping once read, such as a delivery update or a social",
     "  notification. It goes to the bin.",
-    "- newsletter: writing they signed up to read, such as an editorial newsletter. It goes to their newsletters.",
+    "- newsletter: writing they signed up to read, such as an editorial newsletter. It goes into Newsletters.",
     "- record: worth keeping but needing nothing from them, such as a receipt, a statement or a confirmation with",
     "  nothing to add. It's filed into a folder.",
     "- work: something to act on, put on the calendar, keep track of or answer, such as a new booking, a bill, a",
@@ -220,9 +220,11 @@ export const learnPrompt = (card: Card, sent: Mail): string =>
     `What they sent:\n${sent.text}`,
   ].join("\n");
 
-export const rewritePrompt = (draft: string, change: string): string =>
+// A draft answering a mail is a reply; one written anew is a new mail.
+export const rewritePrompt = (draft: string, change: string, isReply: boolean): string =>
   [
-    "Rewrite this draft reply as asked, in the person's own voice. Keep what's right; change only what's asked.",
+    `Rewrite this ${isReply ? "draft reply" : "draft of a new mail"} as asked, in the person's own voice. Keep what's`,
+    "right; change only what's asked.",
     "It's light Markdown: keep its formatting, and any picture (![…](…)) where it fits. Their signature is",
     "added after it, so don't sign with it.",
     "",

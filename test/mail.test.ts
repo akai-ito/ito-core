@@ -18,6 +18,8 @@ type Box = {
   readonly done: () => readonly DoneEntry[];
   readonly cards: () => readonly Card[];
   readonly prompts: () => readonly string[];
+  // What the quick model was asked, such as a draft's rewrite.
+  readonly asked: () => readonly string[];
   readonly undo: (entry: DoneEntry) => Promise<Result<undefined, string>>;
   readonly addDraftCard: (card: NewCard, at: string) => Card;
   readonly addCard: (card: NewCard) => Card;
@@ -95,6 +97,7 @@ const openBox = (
   const undoers = createCell<readonly Undoer[]>([]);
   const kinds = createCell<ReadonlyMap<string, CardHandler>>(new Map());
   const prompts = createCell<readonly string[]>([]);
+  const asked = createCell<readonly string[]>([]);
   const results = createCell(works);
   const addCard = (card: NewCard, at = new Date(clock.now()).toISOString()): Card => {
     const added: Card = { ...card, id: `k_${String(cards.get().length + 1)}`, at };
@@ -140,7 +143,10 @@ const openBox = (
     desk,
     clock,
     fetch: () => Promise.reject(new Error("No network in this test.")),
-    complete: () => Promise.resolve(ok({ decision, reason: "A test", confidence: 0.9 })),
+    complete: (prompt) => {
+      asked.update((current) => [...current, prompt]);
+      return Promise.resolve(ok({ decision, reason: "A test", confidence: 0.9 }));
+    },
     quickChoice: () => Promise.resolve(undefined),
     work: async (prompt) => {
       prompts.update((current) => [...current, prompt]);
@@ -160,6 +166,7 @@ const openBox = (
     done: () => done.get(),
     cards: () => cards.get(),
     prompts: () => prompts.get(),
+    asked: () => asked.get(),
     undo: async (entry) => {
       const payload = done.get().find(({ id }) => id === entry.id)?.payload;
       const answered = await Promise.all(undoers.get().map((undoer) => undoer(entry, payload)));
@@ -509,6 +516,38 @@ describe("the mailbox", () => {
         reason: "Mail couldn't finish removing the draft: Connection not available",
       },
     ]);
+    await box.mailbox.close();
+  });
+
+  it("asks for a reply's rewrite as a reply's, and a new mail's as a new mail's", async () => {
+    const box = openBox("work");
+    const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");
+    box.mail.keep("INBOX", booking);
+    await draftTool?.call({ reply_to: booking.message_id, body: "Could you leave the keys?" });
+    await draftTool?.call({ to: ["leo@halcyon.example"], subject: "Sunday", body: "Still on for Sunday?" });
+    const [reply, fresh] = box.cards();
+    if (!reply || !fresh) throw new Error("No drafts were made.");
+
+    await box.answer(reply, { text: "Make it warmer" });
+    await box.answer(fresh, { text: "Make it shorter" });
+
+    const rewrites = box.asked().filter((prompt) => prompt.startsWith("Rewrite this"));
+    expect(rewrites.map((prompt) => prompt.split(" as asked", 1)[0])).toEqual([
+      "Rewrite this draft reply",
+      "Rewrite this draft of a new mail",
+    ]);
+    await box.mailbox.close();
+  });
+
+  it("shows the mail a mail answers in the style of its other headers", async () => {
+    const box = openBox("work");
+    box.mail.keep("INBOX", { ...booking, in_reply_to: "ask-1@icloud.com" });
+
+    const shown = await box.mailbox.tools
+      .find(({ name }) => name === "mail_read")
+      ?.call({ message_id: booking.message_id });
+
+    expect(shown?.text).toContain("\nIn-Reply-To: ask-1@icloud.com\n");
     await box.mailbox.close();
   });
 
