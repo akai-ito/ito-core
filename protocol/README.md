@@ -49,8 +49,11 @@ sequenceDiagram
   own.
 - **Answer** what the agent asks by sending a message, or cancel the ask. Asking ends the agent's
   turn, and the ask waits for you as long as it takes.
-- **Notify** a device while you're not looking: the app registers it with a key it made, and says
-  when the conversation is on screen. Notifications travel encrypted.
+- **Notify** a device: the app registers it with a key it made, and every reply, ask and message
+  from Kumo reaches it at once. Notifications travel encrypted.
+- **Say where you are:** the phone sends its time zone and, roughly, its place. Kumo lives by that
+  time zone, and the Desk shows the weather there.
+- **Plan with Kumo:** list, move and cancel the wake-ups Kumo set, which the Desk shows as its plans.
 
 ## Events
 
