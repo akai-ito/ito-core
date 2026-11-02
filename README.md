@@ -130,7 +130,7 @@ pages changed on both sides.
 Connect iCloud, Outlook or Gmail in Ari's Settings › Capabilities, and Kumo, the agent working in
 the background, reads every mail as it arrives: it puts bookings on your calendar, drafts replies in
 your voice into your Drafts folder, and records what it did in Done, with an undo. It never sends a
-mail. At the top of the Desk, Kumo speaks for the moment, not the clock: a line or two at the first
+mail: a list you can only leave by mail gets that mail drafted onto your Desk, for you to send. At the top of the Desk, Kumo speaks for the moment, not the clock: a line or two at the first
 calm moment after your morning time, however late you open Ito, when something that matters arrives,
 or when your day changes, and otherwise all quiet. Each line is also a message in the conversation,
 written with your chosen model thinking modestly; once you've seen it on the Desk, no notification

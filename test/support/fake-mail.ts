@@ -1,6 +1,7 @@
 import { createCell } from "#cell.ts";
 import type { Destination, Draft, Mail, MailQuery, MailSource, SentBody, SourceOptions, UidGroup } from "#mail/imap.ts";
 import { isSameAddress, rankSenders } from "#mail/message.ts";
+import { toLetter } from "#mail/unsubscribe.ts";
 import type { Health } from "#problems/problems.ts";
 import { fail, ok } from "#result.ts";
 
@@ -18,7 +19,9 @@ export type ArrivingMail = {
   readonly full_text?: string;
   // When it was sent; now by default.
   readonly date?: string;
+  // A one-click unsubscribe link, and a mailto: one, for a list that takes mail to leave.
   readonly unsubscribe?: string;
+  readonly unsubscribe_mailto?: string;
 };
 
 // Where a mail was moved: a filing such as bin, or a folder of theirs by name.
@@ -119,7 +122,12 @@ export const createFakeMail = (now: () => string): FakeMail => {
     date: mail.date ?? now(),
     text: mail.text,
     ...(mail.full_text !== undefined && { fullText: mail.full_text }),
-    ...(mail.unsubscribe !== undefined && { unsubscribe: { post: mail.unsubscribe, url: mail.unsubscribe } }),
+    ...((mail.unsubscribe !== undefined || mail.unsubscribe_mailto !== undefined) && {
+      unsubscribe: {
+        ...(mail.unsubscribe !== undefined && { post: mail.unsubscribe, url: mail.unsubscribe }),
+        ...(mail.unsubscribe_mailto !== undefined && { mailto: mail.unsubscribe_mailto }),
+      },
+    }),
     flags: [],
   });
 
@@ -260,10 +268,14 @@ export const createFakeMail = (now: () => string): FakeMail => {
       Promise.resolve(
         ok((sentMail.get().get(account) ?? []).some((mail) => mail.to.some((to) => has(to.address, address)))),
       ),
+    // One-click when the list has it, or else the mail that leaves it, as the real source gives.
     unsubscribe: (mail) => {
-      if (isUnsubscribeRefused.get()) {
+      const letter = toLetter(mail.unsubscribe?.mailto ?? "");
+      const hasPost = mail.unsubscribe?.post !== undefined;
+      if (isUnsubscribeRefused.get() || (!hasPost && letter === undefined)) {
         return Promise.resolve(fail("This list only unsubscribes on its web page: https://mail.pizza.example/leave"));
       }
+      if (!hasPost && letter !== undefined) return Promise.resolve(ok({ letter }));
       unsubscribes.update((all) => [...all, mail.messageId]);
       return Promise.resolve(ok("posted" as const));
     },

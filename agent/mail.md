@@ -107,5 +107,6 @@ receipts or Newsletters.
   folder with `move --folder <old> --into <theirs>`.
 - `unsubscribe` uses the list's own unsubscribe link. Do it when they ask, or for promotions from a
   sender they've never written to. Ask first for a sender they've written to, and never unsubscribe
-  from a newsletter they read.
+  from a newsletter they read. A list that only takes a mail to leave gets that mail drafted into
+  their Drafts and onto the Desk, since you never send; tell them it's there to send.
 - `block` is for a sender they want gone for good: every future mail from them goes to the bin.

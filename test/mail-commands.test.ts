@@ -813,4 +813,41 @@ describe("mail in the conversation, through ito mail commands", () => {
     expect(redrafted.text.trimEnd()).toBe(`Rewritten: Mention the date\n\n${signature}\n\n${quoted}`);
     expect(redrafted.html).toContain("<div>On 3 Nov 2026, Tess Harlow wrote:</div>");
   });
+
+  it("drafts the mail that unsubscribes from a list which only takes mail, for them to send", async () => {
+    const logo = "logo-1@smashinglogo.example";
+    mail.keep("INBOX", {
+      account: "icloud",
+      message_id: logo,
+      from: "Smashing Logo <news@smashinglogo.example>",
+      to: ["sam@halcyon.example"],
+      subject: "New marks this week",
+      text: "Fresh logos.",
+      unsubscribe_mailto: "mailto:leave@smashinglogo.example?subject=unsubscribe%20sam",
+    });
+
+    const unsubscribed = await command(["unsubscribe", "--message-id", logo]);
+    const card = drafts().find(({ title }) => title === "Unsubscribe from Smashing Logo");
+    const saved = mail.drafts().at(-1);
+
+    expect(unsubscribed.text).toBe(
+      `Smashing Logo only unsubscribes by mail, and you never send, so the mail is in their Drafts and on the Desk ` +
+        `as ${card?.id ?? ""}, “Unsubscribe from Smashing Logo”, for them to send. Tell them it's there.`,
+    );
+    expect(card?.draft).toMatchObject({
+      from: "sam@halcyon.example",
+      to: ["leave@smashinglogo.example"],
+      subject: "unsubscribe sam",
+      body: "unsubscribe",
+      message_id: expect.any(String) as unknown,
+    });
+    expect(await headersOf(saved)).toMatchObject({
+      from: "Sam Rivera <sam@halcyon.example>",
+      to: "leave@smashinglogo.example",
+      subject: "unsubscribe sam",
+    });
+    expect(saved && (await draftShape(saved))).toBe("text/plain");
+    expect(saved?.body).toBe("unsubscribe");
+    expect(running().server.store.listDone(undefined, 1).entries[0]?.text).not.toContain("Smashing Logo");
+  });
 });

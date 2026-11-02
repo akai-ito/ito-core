@@ -283,6 +283,55 @@ describe("an inbox of only what needs you", () => {
     await box.mailbox.close();
   });
 
+  it("drafts the mail that leaves a list which only takes mail, onto the Desk for them to send, once", async () => {
+    const box = openInbox({ decision: "promotion" });
+    const logo: ArrivingMail = {
+      ...promo,
+      message_id: "logo-1@smashinglogo.example",
+      from: "Smashing Logo <news@smashinglogo.example>",
+      unsubscribe: undefined,
+      unsubscribe_mailto: "mailto:leave@smashinglogo.example?subject=Unsubscribe",
+    };
+    box.mail.arrive(logo);
+
+    await settled(() => {
+      expect(box.cards()).toHaveLength(1);
+    });
+    box.mail.arrive({ ...logo, message_id: "logo-2@smashinglogo.example" });
+    await settled(() => {
+      expect(box.done()).toHaveLength(2);
+    });
+
+    expect(box.cards()).toMatchObject([
+      {
+        kind: "draft",
+        title: "Unsubscribe from Smashing Logo",
+        options: [{ label: "Drop it" }],
+        allows_text: false,
+        draft: {
+          account: "icloud",
+          from: "sam@icloud.com",
+          to: ["leave@smashinglogo.example"],
+          subject: "Unsubscribe",
+          body: "unsubscribe",
+        },
+      },
+    ]);
+    expect(box.mail.drafts()).toEqual([
+      {
+        from: { address: "sam@icloud.com" },
+        to: [{ address: "leave@smashinglogo.example" }],
+        subject: "Unsubscribe",
+        body: "unsubscribe",
+      },
+    ]);
+    expect(box.done().map(({ text }) => text)).toEqual([
+      'Binned "Two for one tonight" from Smashing Logo',
+      'Binned "Two for one tonight" from Smashing Logo',
+    ]);
+    await box.mailbox.close();
+  });
+
   it("says once in Done when a list can't be left, and doesn't try again on its next promotion", async () => {
     const box = openInbox({ decision: "promotion" });
     box.mail.refuseUnsubscribes();

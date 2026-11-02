@@ -87,7 +87,6 @@ const offline = (fetcher: typeof fetch): MailSource =>
     user: "sam@example.com",
     auth: { password: "unused" },
     imap: { host: "127.0.0.1", port: 9, secure: false },
-    smtp: { host: "127.0.0.1", port: 9, secure: false },
     fetch: fetcher,
   });
 
@@ -175,8 +174,6 @@ const stillHandling = (): Promise<void> =>
   new Promise(() => {
     // Never settles.
   });
-
-const refuseToMail = (): Promise<never> => Promise.reject(new Error("Nothing should be mailed."));
 
 const gone = { ok: false, failure: "That mail isn't in this account any more." };
 
@@ -459,33 +456,22 @@ describe("unsubscribing", () => {
     expect(calls.get()).toEqual([]);
   });
 
-  it("mails the list when the one-click POST is refused", async () => {
+  it("gives the mail that leaves the list, never sending it, when the one-click POST is refused", async () => {
     const { calls, fetcher } = recorder(500);
-    const letters = createCell<readonly unknown[]>([]);
-    const outcome = await unsubscribeFrom(await parsed("newsletter"), {
-      fetch: fetcher,
-      from: "sam@example.com",
-      send: (letter) => {
-        letters.update((current) => [...current, letter]);
-        return Promise.resolve({ ok: true, value: undefined });
+    const outcome = await unsubscribeFrom(await parsed("newsletter"), fetcher);
+    expect(outcome).toEqual({
+      ok: true,
+      value: {
+        letter: { to: ["leave-77ab@news.fieldnotes.example"], subject: "unsubscribe 77ab", body: "unsubscribe" },
       },
     });
-    expect(outcome).toEqual({ ok: true, value: "mailed" });
     expect(calls.get().map(({ init }) => init?.method)).toEqual(["POST"]);
-    expect(letters.get()).toEqual([
-      {
-        from: "sam@example.com",
-        to: "leave-77ab@news.fieldnotes.example",
-        subject: "unsubscribe 77ab",
-        text: "unsubscribe",
-      },
-    ]);
   });
 
   it("says why when there's nothing to unsubscribe from or the link isn't https", async () => {
     const { calls, fetcher } = recorder(200);
     const narrowed: Fetch = fetcher;
-    expect(await unsubscribeFrom({}, { fetch: narrowed, from: "sam@example.com", send: refuseToMail })).toEqual({
+    expect(await unsubscribeFrom({}, narrowed)).toEqual({
       ok: false,
       failure: "This mail has no unsubscribe link.",
     });
@@ -497,15 +483,19 @@ describe("unsubscribing", () => {
   });
 
   it("reads mailto links", () => {
-    expect(toLetter("mailto:list@lists.example?subject=Remove%20me&body=please+stop", "sam@example.com")).toEqual({
-      from: "sam@example.com",
-      to: "list@lists.example",
+    expect(toLetter("mailto:list@lists.example?subject=Remove%20me&body=please+stop")).toEqual({
+      to: ["list@lists.example"],
       subject: "Remove me",
-      text: "please+stop",
+      body: "please+stop",
     });
-    expect(toLetter("MAILTO:list@lists.example?", "sam@example.com")).toMatchObject({ subject: "unsubscribe" });
-    expect(toLetter("mailto:?subject=x", "sam@example.com")).toBeUndefined();
-    expect(toLetter("https://lists.example", "sam@example.com")).toBeUndefined();
+    expect(toLetter("mailto:a@lists.example,b@lists.example?to=c@lists.example")?.to).toEqual([
+      "a@lists.example",
+      "b@lists.example",
+      "c@lists.example",
+    ]);
+    expect(toLetter("MAILTO:list@lists.example?")).toMatchObject({ subject: "unsubscribe", body: "unsubscribe" });
+    expect(toLetter("mailto:?subject=x")).toBeUndefined();
+    expect(toLetter("https://lists.example")).toBeUndefined();
   });
 });
 
@@ -516,12 +506,9 @@ describe("plumbing helpers", () => {
     expect(toUidSet([])).toBe("");
   });
 
-  it("knows the three providers", () => {
-    expect(providers.icloud).toEqual({
-      imap: { host: "imap.mail.me.com", port: 993, secure: true },
-      smtp: { host: "smtp.mail.me.com", port: 587, secure: false },
-    });
-    expect(providers.outlook.smtp).toEqual({ host: "smtp-mail.outlook.com", port: 587, secure: false });
+  it("knows the three providers, by IMAP alone, since nothing is ever sent", () => {
+    expect(providers.icloud).toEqual({ imap: { host: "imap.mail.me.com", port: 993, secure: true } });
+    expect(providers.outlook.imap.host).toBe("outlook.office365.com");
     expect(providers.gmail.imap.host).toBe("imap.gmail.com");
   });
 });

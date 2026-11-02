@@ -25,12 +25,12 @@ import {
   type SentBody,
 } from "#mail/message.ts";
 import { providers, signInHints, type Account, type Endpoint } from "#mail/providers.ts";
-import { sendLetter, type Credentials } from "#mail/smtp.ts";
-import { unsubscribeFrom } from "#mail/unsubscribe.ts";
+import { unsubscribeFrom, type Unsubscribed } from "#mail/unsubscribe.ts";
 import type { Health } from "#problems/problems.ts";
 import { fail, ok, type Result } from "#result.ts";
 
 export type { Address, Draft, Mail, SentBody, Unsubscribe } from "#mail/message.ts";
+export type { Unsubscribed, UnsubscribeLetter } from "#mail/unsubscribe.ts";
 export { providers } from "#mail/providers.ts";
 
 export type Filing = "archive" | "bin" | "inbox" | "flag" | "unflag";
@@ -120,7 +120,9 @@ export type MailSource = {
   readonly senders: () => Promise<Result<readonly Address[], string>>;
   // The address they last wrote to someone from, from Sent, or undefined when they never have.
   readonly lastFrom: (address: string) => Promise<Result<string | undefined, string>>;
-  readonly unsubscribe: (mail: Mail) => Promise<Result<"posted" | "mailed", string>>;
+  // Leaves the list a mail came from by its one-click link, or gives the mail that leaves a list which only takes
+  // mail, for them to send.
+  readonly unsubscribe: (mail: Mail) => Promise<Result<Unsubscribed, string>>;
   readonly sent: (since: string) => Promise<Result<readonly Mail[], string>>;
   // The last few mails in Sent, whole, newest first, for learning their signature.
   readonly sentBodies: (limit: number) => Promise<Result<readonly SentBody[], string>>;
@@ -134,7 +136,6 @@ export type SourceOptions = {
   readonly user: string;
   readonly auth: Auth;
   readonly imap?: Endpoint;
-  readonly smtp?: Endpoint;
   readonly fetch?: typeof fetch;
   readonly logger?: (message: string, details: Readonly<Record<string, unknown>>) => void;
   readonly watermark?: SavedWatermark;
@@ -143,6 +144,9 @@ export type SourceOptions = {
 };
 
 export type SavedWatermark = { readonly uidValidity: string; readonly next: number };
+
+type Credentials =
+  { readonly user: string; readonly pass: string } | { readonly user: string; readonly accessToken: string };
 
 type Folders = {
   readonly inbox: string;
@@ -353,7 +357,6 @@ const inFolder = async <Value>(client: ImapFlow, folder: string, work: () => Pro
 export const createMailSource = (options: SourceOptions): MailSource => {
   const { account, user } = options;
   const imap = options.imap ?? providers[account].imap;
-  const smtp = options.smtp ?? providers[account].smtp;
   const sessions = createCell<Promise<Result<Session, string>> | undefined>(undefined);
   const watchers = createCell<ReadonlySet<() => void>>(new Set());
 
@@ -1011,15 +1014,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return place.value === undefined ? fail(gone) : fileAt(opened, place.value, filing);
     });
 
-  const unsubscribe: MailSource["unsubscribe"] = (mail) =>
-    unsubscribeFrom(mail, {
-      fetch: options.fetch ?? fetch,
-      from: user.includes("@") ? user : (mail.to[0]?.address ?? user),
-      send: async (letter) => {
-        const signIn = await credentials();
-        return signIn.ok ? sendLetter(smtp, signIn.value, letter) : signIn;
-      },
-    });
+  const unsubscribe: MailSource["unsubscribe"] = (mail) => unsubscribeFrom(mail, options.fetch ?? fetch);
 
   const fileInto: MailSource["fileInto"] = (messageId, folder) =>
     run("filing the mail", async (opened) => {

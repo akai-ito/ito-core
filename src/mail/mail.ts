@@ -22,6 +22,7 @@ import {
   type SavedWatermark,
   type SourceOptions,
   type UidGroup,
+  type UnsubscribeLetter,
 } from "#mail/imap.ts";
 import {
   composeLetter,
@@ -823,18 +824,55 @@ export const createMailbox = ({
     recordMovedOut(account, mail, to, reason);
   };
 
+  // A list that only takes mail to leave, for any account: Kumo never sends, so the mail goes into their Drafts, from
+  // the address the list wrote to, and onto the Desk for them to send.
+  const draftUnsubscribe = async (
+    connection: Connection,
+    mail: Mail,
+    letter: UnsubscribeLetter,
+  ): Promise<Result<Card, string>> => {
+    const identity = await identityOf(connection);
+    if (!identity.ok) return identity;
+    const from = replyFrom(mail, identity.value);
+    const { to, subject, body } = letter;
+    const saved = await connection.source.draft({ from, to: to.map((address) => toAddress(address)), subject, body });
+    if (!saved.ok) return saved;
+    const card = desk.addCard({
+      kind: "draft",
+      title: `Unsubscribe from ${senderOf(mail)}`,
+      options: [{ label: "Drop it" }],
+      allows_text: false,
+      draft: {
+        account: connection.account,
+        from: from.address,
+        to: [...to],
+        subject,
+        body,
+        message_id: saved.value.messageId,
+      },
+    });
+    keepParts(card.id, { attach: [], signature: false, names: namesOf([from]) });
+    return ok(card);
+  };
+
+  // Leaves a mail's list by its one-click link, recorded in Done, or drafts the mail that leaves a list which only
+  // takes mail, giving its card. Either way the sender is settled, and isn't tried again.
   const unsubscribeNow = async (
-    { account, source }: Connection,
+    connection: Connection,
     mail: Mail,
     reason: string,
-  ): Promise<Result<undefined, string>> => {
-    const done = await source.unsubscribe(mail);
+  ): Promise<Result<Card | undefined, string>> => {
+    const done = await connection.source.unsubscribe(mail);
     if (!done.ok) return done;
+    const drafted =
+      done.value === "posted" ? ok(undefined) : await draftUnsubscribe(connection, mail, done.value.letter);
+    if (!drafted.ok) return drafted;
     remember(unsubscribedSetting, mail.from.address.toLowerCase());
+    if (drafted.value) return drafted;
     desk.addDone({
       text: `Unsubscribed from ${senderOf(mail)}`,
       ...(reason !== "" && { reason }),
-      mail: mailReference(account, mail),
+      mail: mailReference(connection.account, mail),
       quiet: false,
     });
     return ok(undefined);
@@ -2146,7 +2184,9 @@ export const createMailbox = ({
       name: "unsubscribe",
       title: "Unsubscribe",
       audience: "work",
-      description: "Unsubscribe them from the list a mail came from, through its unsubscribe link. It's recorded.",
+      description:
+        "Unsubscribe them from the list a mail came from, through its unsubscribe link. It's recorded. A list that " +
+        "only takes a mail to leave gets that mail drafted into their Drafts and put on the Desk, for them to send.",
       inputSchema: {
         type: "object",
         properties: {
@@ -2164,6 +2204,18 @@ export const createMailbox = ({
           const reason = textOf(input, "reason").trim();
           const done = await unsubscribeNow(connection, read.value, reason);
           if (!done.ok) return failed(done.failure);
+          if (done.value) {
+            return {
+              text:
+                `${senderOf(read.value)} only unsubscribes by mail, and you never send, so the mail is in their ` +
+                `Drafts and on the Desk as ${done.value.id}, “${done.value.title}”, for them to send. Tell them it's ` +
+                "there.",
+              step: {
+                title: `Drafted the mail that unsubscribes you from ${senderOf(read.value)}`,
+                note: "It's on your Desk for you to send",
+              },
+            };
+          }
           return {
             text: `Unsubscribed from ${senderOf(read.value)}.`,
             step: { title: `Unsubscribed from ${senderOf(read.value)}`, ...(reason !== "" && { note: reason }) },

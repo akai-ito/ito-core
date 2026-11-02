@@ -2,21 +2,13 @@ export type Account = "icloud" | "outlook" | "gmail";
 
 export type Endpoint = { readonly host: string; readonly port: number; readonly secure: boolean };
 
-export type Provider = { readonly imap: Endpoint; readonly smtp: Endpoint };
+// Only IMAP: Kumo reads and drafts, and never sends.
+export type Provider = { readonly imap: Endpoint };
 
 export const providers: Readonly<Record<Account, Provider>> = {
-  icloud: {
-    imap: { host: "imap.mail.me.com", port: 993, secure: true },
-    smtp: { host: "smtp.mail.me.com", port: 587, secure: false },
-  },
-  outlook: {
-    imap: { host: "outlook.office365.com", port: 993, secure: true },
-    smtp: { host: "smtp-mail.outlook.com", port: 587, secure: false },
-  },
-  gmail: {
-    imap: { host: "imap.gmail.com", port: 993, secure: true },
-    smtp: { host: "smtp.gmail.com", port: 465, secure: true },
-  },
+  icloud: { imap: { host: "imap.mail.me.com", port: 993, secure: true } },
+  outlook: { imap: { host: "outlook.office365.com", port: 993, secure: true } },
+  gmail: { imap: { host: "imap.gmail.com", port: 993, secure: true } },
 };
 
 export const signInHints: Readonly<Record<Account, string>> = {
