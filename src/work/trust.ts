@@ -378,12 +378,13 @@ export const createTrust = ({
     store.doneSince(since).filter((entry) => entry.work === work).length;
 
   const climb = (kind: Kind, rung: Rung): void => {
+    const next = steps[steps.indexOf(rung.step) + 1];
+    if (next === undefined) return;
     const elapsed = clock.now() - Date.parse(rung.since);
     const isClean =
-      callsSince(kind.work, rung.since) >= number(climbCallsSetting, defaultClimbCalls) &&
-      elapsed >= number(climbDaysSetting, defaultClimbDays) * dayMs;
-    const next = steps[steps.indexOf(rung.step) + 1];
-    if (!isClean || next === undefined) return;
+      elapsed >= number(climbDaysSetting, defaultClimbDays) * dayMs &&
+      callsSince(kind.work, rung.since) >= number(climbCallsSetting, defaultClimbCalls);
+    if (!isClean) return;
     const days = Math.round(elapsed / dayMs);
     setRung(kind.work, { step: next, since: now(), change: { kind: "climb", days } });
     const then = next === "trusted" ? kind.trusted.now : "From now on I'll only check about one in five with you.";
@@ -539,18 +540,18 @@ export const createTrust = ({
       if (words !== undefined) background(() => note(entry, words, ok(false)));
       return ok(entry);
     }
-    const undoing = entry.undo ? await desk.undo(id) : ok(undefined);
-    const undone: Result<boolean, string> = undoing.ok ? ok(entry.undo) : fail(undoing.failure);
-    const latest = store.findDone(id)?.entry ?? entry;
-    const corrected: DoneEntry = { ...latest, corrected_at: now() };
+    // Marked before undoing, so the same correction said again meanwhile only adds words.
+    const corrected: DoneEntry = { ...entry, corrected_at: now() };
     store.replaceDone(corrected);
     if (entry.work !== undefined) stepDown(entry.work, entry);
     // A spot check still waiting on the same call has its answer.
     const answered = checks().filter((check) => check.entry === id);
     setChecks(checks().filter((check) => check.entry !== id));
     for (const check of answered) desk.removeCard(check.card);
+    const undoing = entry.undo ? await desk.undo(id) : ok(undefined);
+    const undone: Result<boolean, string> = undoing.ok ? ok(entry.undo) : fail(undoing.failure);
     background(() => note(entry, words, undone));
-    return ok(corrected);
+    return ok(store.findDone(id)?.entry ?? corrected);
   };
 
   const reset = (work: WorkKind): Result<TrustBody, "not_found"> => {
