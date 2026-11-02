@@ -148,6 +148,9 @@ export const sentSetting = "mail_sent";
 
 export const signatureSetting = "mail_signature";
 
+// The addresses they send from and the names they send under, by account, learned from Sent.
+export const sendersSetting = "mail_senders";
+
 export const draftPartsSetting = "mail_draft_parts";
 
 const accounts: readonly Account[] = ["icloud", "outlook", "gmail"];
@@ -228,6 +231,52 @@ const jsonOf = (text: string | undefined): unknown => {
   }
 };
 
+type StoredSenders = { readonly learned_at: string; readonly senders: readonly Address[] };
+
+const toStoredSenders = (text: string | undefined): StoredSenders | undefined => {
+  const parsed = jsonOf(text);
+  const learnedAt = textOf(parsed, "learned_at");
+  const senders = fieldOf(parsed, "senders");
+  if (Number.isNaN(Date.parse(learnedAt)) || !Array.isArray(senders)) return undefined;
+  return {
+    learned_at: learnedAt,
+    senders: (senders as readonly unknown[]).flatMap((sender) => {
+      const [address, name] = [textOf(sender, "address"), textOf(sender, "name")];
+      return address === "" ? [] : { address, ...(name !== "" && { name }) };
+    }),
+  };
+};
+
+// Who they are in an account's mail: which addresses are theirs, the name they send each under, and the address they
+// use most.
+type Identity = {
+  readonly isOwn: (address: string) => boolean;
+  readonly named: (address: string) => Address;
+  readonly usual: string;
+};
+
+// Their addresses are the ones they've sent from and the one they sign in with. One they've never sent from, such
+// as the sign-in, goes under the name they use most.
+const toIdentity = (user: string, senders: readonly Address[]): Identity => {
+  const own = [...senders.map(({ address }) => address), ...(user.includes("@") ? [user] : [])];
+  const usualName = senders.find(({ name }) => name !== undefined)?.name;
+  return {
+    isOwn: (address) => own.some((mine) => isSameAddress(mine, address)),
+    named: (address) => {
+      const name = senders.find((sender) => isSameAddress(sender.address, address))?.name ?? usualName;
+      return name === undefined ? { address } : { address, name };
+    },
+    usual: senders[0]?.address ?? user,
+  };
+};
+
+// A reply comes from the address of theirs the mail went to, such as an alias, or the one they sent it from when it's
+// their own; failing both, such as a mail they were blind-copied on, from the one they use most.
+const replyFrom = (mail: Mail, identity: Identity): Address => {
+  const theirs = [mail.from, ...mail.to, ...mail.cc].find(({ address }) => identity.isOwn(address));
+  return identity.named(theirs?.address ?? identity.usual);
+};
+
 const toStored = (text: string | undefined): StoredSignature | undefined => {
   const parsed = jsonOf(text);
   return typeof fieldOf(parsed, "learned_at") === "string" ? (parsed as StoredSignature) : undefined;
@@ -301,9 +350,9 @@ const draftTitle = (to: string, name: string | undefined): string =>
 
 // Whom a reply goes to, as a mail app's Reply has it: where the mail asks answers to go, or else its sender. A reply
 // to a mail of their own goes to the people it went to.
-const replyRecipients = (mail: Mail, user: string): readonly Address[] => {
-  if (!isSameAddress(mail.from.address, user)) return mail.replyTo ?? [mail.from];
-  const others = mail.to.filter(({ address }) => !isSameAddress(address, user));
+const replyRecipients = (mail: Mail, isOwn: (address: string) => boolean): readonly Address[] => {
+  if (!isOwn(mail.from.address)) return mail.replyTo ?? [mail.from];
+  const others = mail.to.filter(({ address }) => !isOwn(address));
   return others.length > 0 ? others : [mail.from];
 };
 
@@ -1093,6 +1142,36 @@ export const createMailbox = ({
     return ok(learned);
   };
 
+  const sendersKey = (account: Account, user: string): string => `${sendersSetting}:${account}:${user}`;
+
+  const keepSenders = (key: string, senders: readonly Address[]): void => {
+    const kept: StoredSenders = { learned_at: toTimestamp(clock.now()), senders };
+    store.setSetting(key, JSON.stringify(kept));
+  };
+
+  // Who they are in an account's mail, learned from Sent when the account is checked and again once a day. When Sent
+  // can't be read, what was learned before stands; with nothing before, it fails, rather than guess an address.
+  const identityOf = async ({ account, user, source }: Connection): Promise<Result<Identity, string>> => {
+    const key = sendersKey(account, user);
+    const saved = toStoredSenders(store.setting(key));
+    if (saved && clock.now() - Date.parse(saved.learned_at) < dayMs) return ok(toIdentity(user, saved.senders));
+    const learned = await source.senders();
+    if (!learned.ok) {
+      info("Sent mail couldn't be read for their addresses", { error: learned.failure, known: saved !== undefined });
+      return saved
+        ? ok(toIdentity(user, saved.senders))
+        : fail(`Their addresses couldn't be read from their sent mail: ${learned.failure}`);
+    }
+    keepSenders(key, learned.value);
+    return ok(toIdentity(user, learned.value));
+  };
+
+  // A new mail comes from the address they last wrote to its first recipient from, or else the one they use most.
+  const newFrom = async ({ source }: Connection, identity: Identity, to: string): Promise<Result<Address, string>> => {
+    const last = await source.lastFrom(to);
+    return last.ok ? ok(identity.named(last.value ?? identity.usual)) : last;
+  };
+
   // The draft rewritten as they asked on the Desk, saved in place of the one in Drafts, or why it couldn't be.
   const rewrite = async (card: Card, change: string): Promise<Result<NewCard, string>> => {
     const { draft } = card;
@@ -1556,7 +1635,7 @@ export const createMailbox = ({
     const earlier = replacing === "" ? undefined : draftCards().find((card) => card.id === replacing);
     // A draft named to replace is in its own account, whichever they have first.
     return withSource(filled(textOf(input, "account"), earlier?.draft?.account), async (connection) => {
-      const { account, user, source } = connection;
+      const { account, source } = connection;
       if (replacing !== "" && earlier?.draft?.account !== account) {
         return failed(`There's no draft ${replacing} on the Desk to replace. Drafts there: ${draftList()}.`);
       }
@@ -1568,7 +1647,9 @@ export const createMailbox = ({
       const named = await resolveNames(connection, listOf(fieldOf(input, "to")), listOf(fieldOf(input, "cc")));
       if (!named.ok) return failed(named.failure);
       const { to: givenTo, cc: givenCc, found } = named.value;
-      const answered = answering && replyRecipients(answering, user).map(({ address }) => address);
+      const identity = await identityOf(connection);
+      if (!identity.ok) return failed(identity.failure);
+      const answered = answering && replyRecipients(answering, identity.value.isOwn).map(({ address }) => address);
       const to = givenTo.length > 0 ? givenTo : (before?.to ?? answered ?? []);
       const cc = givenCc.length > 0 ? givenCc : (before?.cc ?? []);
       // A name as the mail it answers wrote it, such as its sender's.
@@ -1591,7 +1672,11 @@ export const createMailbox = ({
       if (body === "" || subject === "" || to.length === 0) {
         return failed("A draft needs who it's to, a subject and a body, or reply_to.");
       }
-      const from = toAddress(user);
+      const sender = answering
+        ? ok(replyFrom(answering, identity.value))
+        : await newFrom(connection, identity.value, to[0] ?? "");
+      if (!sender.ok) return failed(sender.failure);
+      const from = sender.value;
       const recipients = { to: to.map((address) => nameOf(address)), cc: cc.map((address) => nameOf(address)) };
       const references = answering ? [...answering.references, answering.messageId] : [];
       const givenAttach = fieldOf(input, "attach");
@@ -1637,7 +1722,7 @@ export const createMailbox = ({
         allows_text: true,
         draft: {
           account,
-          from: user,
+          from: from.address,
           to: [...to],
           ...(cc.length > 0 && { cc: [...cc] }),
           subject,
@@ -2068,9 +2153,9 @@ export const createMailbox = ({
     const source = createSource({ account, user: config.user, auth: config.auth, logger });
     try {
       const checked = await source.check();
-      return checked.ok
-        ? { summary: `Connected: ${String(checked.value.folders)} mail folders.` }
-        : { problem: checked.failure };
+      if (!checked.ok) return { problem: checked.failure };
+      keepSenders(sendersKey(account, config.user), checked.value.senders);
+      return { summary: `Connected: ${String(checked.value.folders)} mail folders.` };
     } finally {
       await source.close();
     }

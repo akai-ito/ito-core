@@ -169,8 +169,10 @@ to, Kumo's line says so. In the conversation it's `ito contacts` commands and a 
 Drafts go into Drafts as proper formatted mail: Kumo writes in light Markdown, and the draft is HTML
 with a clean plain-text copy, photos you sent in the chat (or that Kumo found on the web) shown
 inline, small files attached, and your own signature at the end, exactly as you send it. Kumo learns
-each account's signature from your recent sent mail, and adds none if you don't use one. The Desk's
-draft card shows the formatted words, the signature and what's attached.
+each account's signature from your recent sent mail, and adds none if you don't use one. Sent mail
+also tells it which addresses are yours and the name you send under: a reply comes from the address
+the mail went to, aliases included, and a new mail from the one you last used with that person. The
+Desk's draft card shows the formatted words, the signature and what's attached.
 
 Kumo earns your trust one kind of work at a time: sorting mail, the calendar, drafts, and contacts
 later. Each starts at Learning, where a quiet card each morning offers yesterday's calls to glance

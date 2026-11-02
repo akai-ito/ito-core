@@ -42,6 +42,9 @@ These commands are for when they bring mail up, or when a conversation needs it.
 
 - `draft` writes into their Drafts folder and puts the draft on the Desk. It's never sent; tell them
   in a line that it's ready. With `--reply-to`, the recipient and subject follow the mail it answers.
+- It comes from the right one of their addresses, under their name, both learned from their sent
+  mail: a reply from the address the mail went to, such as an alias, and a new mail from the address
+  they last wrote to that person from.
 - To write to someone, give their name: `--to "Clara Voss"` finds the address in their Contacts,
   the one for the context: a label you give, such as `--to "Clara Voss (work)"`, the one they last
   wrote from or they last wrote to, or their preferred one. It says which it picked and why. When

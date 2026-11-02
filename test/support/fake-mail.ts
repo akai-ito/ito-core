@@ -1,5 +1,6 @@
 import { createCell } from "#cell.ts";
 import type { Destination, Draft, Mail, MailQuery, MailSource, SentBody, SourceOptions, UidGroup } from "#mail/imap.ts";
+import { isSameAddress, rankSenders } from "#mail/message.ts";
 import type { Health } from "#problems/problems.ts";
 import { fail, ok } from "#result.ts";
 
@@ -34,6 +35,8 @@ export type FakeMail = {
   // A mail they sent, whole, as the signature is learned from: the newest last.
   readonly sentWhole: (account: string, body: SentBody) => void;
   readonly breakSentBodies: (broken: boolean) => void;
+  // Reading the addresses they send from fails while broken, as when the connection drops.
+  readonly breakSenders: (broken: boolean) => void;
   readonly breakReading: () => void;
   // The next batch move stops after this many mails, as when the connection drops partway.
   readonly stopMovesAfter: (count: number) => void;
@@ -84,6 +87,7 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const sentDrops = createCell(0);
   const bodies = createCell<ReadonlyMap<string, readonly SentBody[]>>(new Map());
   const isSentBroken = createCell(false);
+  const isSendersBroken = createCell(false);
   const moveLimit = createCell<number | undefined>(undefined);
   const isUnsubscribeRefused = createCell(false);
   const isRemovalRefused = createCell(false);
@@ -125,14 +129,32 @@ export const createFakeMail = (now: () => string): FakeMail => {
     return origin;
   };
 
-  const create = ({ account, user, onHealth }: SourceOptions): MailSource => {
+  const create = ({ account, onHealth }: SourceOptions): MailSource => {
     if (onHealth) healthListeners.update((all) => new Map([...all, [account, onHealth]]));
-    return source(account, user);
+    return source(account);
   };
 
-  const source = (account: string, user: string): MailSource => ({
+  const sentFrom = (account: string): readonly Mail[] => sentMail.get().get(account) ?? [];
+
+  const sendersOf = (account: string): ReturnType<typeof rankSenders> =>
+    rankSenders(sentFrom(account).map(({ from }) => from));
+
+  const isTo = (mail: Mail, address: string): boolean =>
+    [...mail.to, ...mail.cc].some((to) => isSameAddress(to.address, address));
+
+  const source = (account: string): MailSource => ({
     account,
-    check: () => Promise.resolve(ok({ addresses: [user], folders: 4 })),
+    check: () => Promise.resolve(ok({ senders: sendersOf(account), folders: 4 })),
+    senders: () =>
+      Promise.resolve(
+        isSendersBroken.get()
+          ? fail("Mail couldn't finish reading sent mail: Connection not available")
+          : ok(sendersOf(account)),
+      ),
+    lastFrom: (address) => {
+      const last = sentFrom(account).findLast((mail) => isTo(mail, address));
+      return Promise.resolve(ok(last?.from.address.toLowerCase()));
+    },
     watch: (onMail) => {
       change(account, (box) => ({ ...box, watchers: new Set([...box.watchers, onMail]) }));
       return () => {
@@ -296,6 +318,9 @@ export const createFakeMail = (now: () => string): FakeMail => {
     },
     breakSentBodies: (broken) => {
       isSentBroken.set(broken);
+    },
+    breakSenders: (broken) => {
+      isSendersBroken.set(broken);
     },
     breakReading: () => {
       isBroken.set(true);
