@@ -46,6 +46,13 @@ export const mailGroup: ToolGroup = {
       run: { present: "Drafting {count} mails", past: "Drafted {count} mails" },
     },
     {
+      name: "drop",
+      tool: "drop_draft",
+      running: "Dropping a draft",
+      done: "Dropped a draft",
+      run: { present: "Dropping {count} drafts", past: "Dropped {count} drafts" },
+    },
+    {
       name: "file",
       tool: "file_mail",
       running: "Filing a mail",
