@@ -157,6 +157,23 @@ describe("the trust ladder", () => {
     expect(noted?.work).toBeUndefined();
   });
 
+  it("steps back once when a correction is said again before the first is taken in", async () => {
+    const { desk, trust, told, undone, prompts } = open("twice", "2026-11-10T09:00:00.000Z");
+    const entry = desk.addDone(binned("Your order has shipped"));
+    trust.hold("sorting", climbed(15, "trusted", "2026-11-01T09:00:00.000Z"));
+
+    await Promise.all([trust.correct(entry.id), trust.correct(entry.id, "I needed that one")]);
+    await trust.settled();
+
+    expect(trust.ladder()[0]?.step).toBe("spot_checks");
+    expect(undone.get()).toHaveLength(1);
+    expect(told.get()).toHaveLength(1);
+    expect(prompts.get()).toEqual([
+      expect.stringContaining("They said: I needed that one"),
+      expect.stringContaining("They didn't say why"),
+    ]);
+  });
+
   it("only adds words to a correction said again, and stays at Learning without a word in Kumo's line", async () => {
     const { desk, trust, told, prompts } = open("again", "2026-11-10T09:00:00.000Z");
     const entry = desk.addDone({ text: "Put Leo's climbing on your calendar", quiet: false, work: "calendar" });
