@@ -958,11 +958,11 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return ok({ messageId });
     });
 
+  // One already gone from Drafts, such as sent or deleted in their mail app, counts as removed.
   const removeDraft: MailSource["removeDraft"] = (messageId) =>
     run("removing the draft", async (opened) => {
       const removed = await deleteDraft(opened, messageId);
-      if (!removed.ok) return removed;
-      return removed.value ? ok(undefined) : fail("That draft isn't in the Drafts folder any more.");
+      return removed.ok ? ok(undefined) : removed;
     });
 
   // The session with the account's folders as they are now.

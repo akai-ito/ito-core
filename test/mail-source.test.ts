@@ -753,10 +753,8 @@ describe("over IMAP", () => {
 
     expect(await source.removeDraft(second.value.messageId)).toEqual({ ok: true, value: undefined });
     expect(await source.read(second.value.messageId)).toEqual(gone);
-    expect(await source.removeDraft(ids.booking)).toEqual({
-      ok: false,
-      failure: "That draft isn't in the Drafts folder any more.",
-    });
+    // A mail that isn't a draft is never touched; one gone from Drafts already counts as removed.
+    expect(await source.removeDraft(ids.booking)).toEqual({ ok: true, value: undefined });
     expect(await source.read(ids.booking)).toMatchObject({ ok: true, value: { folder: "INBOX" } });
   });
 
