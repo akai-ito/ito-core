@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createCell } from "#cell.ts";
 import type { EngineEvent } from "#engine/engine.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
@@ -38,6 +39,13 @@ const server = createServer({
 });
 
 server.store.setSetting(tokenSetting, hashToken(token));
+
+// What the last turn to fail said went wrong.
+const failures = createCell<readonly string[]>([]);
+server.store.subscribe(({ event }) => {
+  if (event.type === "turn.ended" && event.error)
+    failures.update((current) => [...current, event.error?.message ?? ""]);
+});
 
 const settle = async (): Promise<void> => {
   await new Promise((resolve) => setImmediate(resolve));
@@ -82,7 +90,8 @@ describe("the turn watchdog", () => {
     expect(await send("[[compact 4]] Hi")).toBe("completed");
   });
 
-  it("still fails a compaction that never ends", async () => {
+  it("still fails a compaction that never ends, saying how long it waited", async () => {
     expect(await send("[[compact 30]] Hi")).toBe("failed");
+    expect(failures.get().at(-1)).toBe("The model didn't respond for 10 minutes.");
   });
 });

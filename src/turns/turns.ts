@@ -311,16 +311,18 @@ export const createTurns = (
 
   const isCompacting = (state: Running): boolean => state.steps.values().some(({ kind }) => kind === "compacting");
 
-  const armWatchdog = (turn: TurnId, waitMs = limits.watchdogMs): Cancel =>
-    clock.after(waitMs, () => {
+  // A compaction gets the rest of its longer wait once the usual one runs out.
+  const armWatchdog = (turn: TurnId, isExtended = false): Cancel =>
+    clock.after(isExtended ? Math.max(0, limits.compactingMs - limits.watchdogMs) : limits.watchdogMs, () => {
       const state = current(turn);
       if (state?.phase !== "running" || state.approvals.size > 0) return;
-      if (isCompacting(state) && waitMs === limits.watchdogMs) {
-        const restMs = limits.compactingMs - limits.watchdogMs;
-        change(turn, (latest) => ({ ...latest, cancelWatchdog: armWatchdog(turn, restMs) }));
+      const isCompactingNow = isCompacting(state);
+      if (isCompactingNow && !isExtended) {
+        change(turn, (latest) => ({ ...latest, cancelWatchdog: armWatchdog(turn, true) }));
         return;
       }
-      failTurn(turn, toWatchdogError(limits.watchdogMs, state.writing !== undefined));
+      const silenceMs = isExtended ? Math.max(limits.compactingMs, limits.watchdogMs) : limits.watchdogMs;
+      failTurn(turn, toWatchdogError(silenceMs, state.writing !== undefined, isCompactingNow));
       void interruptEngine(turn, () => engine.restart());
     });
 
