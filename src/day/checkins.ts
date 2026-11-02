@@ -530,13 +530,20 @@ export const createCheckins = ({
     const night = nights.nightOf(now);
     const record = nights.get(night);
     const minutes = minutesOf(now);
-    if (record?.stop !== undefined && record.building !== false && record.stoppedAt === undefined) {
+    // Tonight's line holds the night until they stop, or until its last check-in could be due.
+    const isLineOpen =
+      record?.stop !== undefined &&
+      record.building !== false &&
+      record.stoppedAt === undefined &&
+      now < nights.stopAt(record.night, record.stop) + lastLaterMs;
+    if (record && isLineOpen) {
       if (isAsleep()) return;
       const stage = stageDue(record, now);
       if (stage) await checkIn(record, stage);
       return;
     }
-    if (minutes >= eveningFrom && minutes < eveningUntil && record?.asked === undefined && !isBusy()) {
+    const isEvening = minutes >= eveningFrom && minutes < eveningUntil;
+    if (isEvening && record?.asked === undefined && !isBusy() && !isAsleep()) {
       const reason = likelyToBuild(night);
       if (reason !== undefined) {
         await askCommit(night, reason);

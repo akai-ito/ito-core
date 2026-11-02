@@ -377,6 +377,8 @@ const checkinsWith = (name: string, start: string, building: boolean) => {
   const desk = createCell<Desk>({ coming_up: [], waiting: [], handled: 0 });
   const listeners = createCell<readonly Listener[]>([]);
   const isAsleep = createCell(false);
+  const isWatched = createCell(false);
+  const questions = createQuestions(store, clock, "UTC");
   const evening: CalendarItem = {
     id: "v_build",
     uid: "build@kumo",
@@ -401,7 +403,7 @@ const checkinsWith = (name: string, start: string, building: boolean) => {
     },
     clock,
     timeZone: "UTC",
-    presence: { isWatched: () => false, onWatched: unsubscribed },
+    presence: { isWatched: () => isWatched.get(), onWatched: unsubscribed },
     isBusy: () => false,
     isGettingStarted: () => false,
     nights,
@@ -411,7 +413,7 @@ const checkinsWith = (name: string, start: string, building: boolean) => {
       goals: () => Promise.resolve([]),
       hours: () => ({ guessed: new Map(), planned: new Map() }),
     },
-    questions: createQuestions(store, clock, "UTC"),
+    questions,
     moments: {
       say: (line) => {
         said.update((current) => [...current, line]);
@@ -455,7 +457,7 @@ const checkinsWith = (name: string, start: string, building: boolean) => {
     if (!line?.handler) throw new Error(`no line ${String(index)} to answer`);
     return line.handler.answer({} as Moment, given);
   };
-  return { said, nights, advance, answer, checkins, isAsleep, clock };
+  return { said, nights, advance, answer, checkins, isAsleep, isWatched, questions, clock };
 };
 
 describe("check-ins", () => {
@@ -513,6 +515,30 @@ describe("check-ins", () => {
     await advance("2026-11-12T03:00:00.000Z");
     expect(said.get()).toHaveLength(4);
     expect(nights.get("2026-11-11")).toMatchObject({ stop: "01:00", nextStep: "Wire the empty state" });
+    checkins.close();
+  });
+
+  it("asks the day's question in the morning after a night you never said you'd stopped", async () => {
+    const { said, advance, answer, isWatched, questions, checkins } = checkinsWith(
+      "morning-after",
+      "2026-11-11T20:25:00.000Z",
+      true,
+    );
+    await advance("2026-11-11T20:31:00.000Z");
+    await answer(0, { option: "Stop at 1" });
+    await advance("2026-11-12T09:00:00.000Z");
+    questions.propose({ text: "Guard Thursday climbing?", options: ["Guard it", "Fine to move"], about: "climbing" });
+    isWatched.set(true);
+    await advance("2026-11-12T09:06:00.000Z");
+    expect(said.get().at(-1)).toMatchObject({ kind: "question", text: "Guard Thursday climbing?" });
+    checkins.close();
+  });
+
+  it("doesn't ask about tonight while your Sleep Focus is on", async () => {
+    const { said, advance, isAsleep, checkins } = checkinsWith("asleep-early", "2026-11-11T20:00:00.000Z", true);
+    isAsleep.set(true);
+    await advance("2026-11-11T23:00:00.000Z");
+    expect(said.get()).toEqual([]);
     checkins.close();
   });
 
