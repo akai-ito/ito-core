@@ -25,9 +25,24 @@ export const toLocal = (now: number, timeZone: string): Local => {
   };
 };
 
-// When the local day began, as an instant.
-export const startOfDay = (now: number, timeZone: string): number =>
-  now - toLocal(now, timeZone).minutes * minuteMs - (now % minuteMs);
+const dayIndex = (day: string): number => Date.parse(`${day}T00:00:00.000Z`) / dayMs;
+
+// The instant the local clock shows `minutes` after midnight on `day`, such as `2026-11-05`.
+export const atLocal = (day: string, minutes: number, timeZone: string): number => {
+  const wanted = dayIndex(day) * 24 * 60 + minutes;
+  const corrected = (guess: number): number => {
+    const local = toLocal(guess, timeZone);
+    return guess + (wanted - (dayIndex(local.day) * 24 * 60 + local.minutes)) * minuteMs;
+  };
+  // Twice, so a guess that lands across a change of offset settles.
+  return corrected(corrected(wanted * minuteMs));
+};
+
+// The day after `day`.
+export const nextDay = (day: string): string => new Date((dayIndex(day) + 1) * dayMs).toISOString().slice(0, 10);
+
+// When the local day began, as an instant: its midnight, whatever the change of clock that day.
+export const startOfDay = (now: number, timeZone: string): number => atLocal(toLocal(now, timeZone).day, 0, timeZone);
 
 // `07:30` as minutes after midnight.
 export const toMinutes = (time: string): number => {
@@ -37,9 +52,9 @@ export const toMinutes = (time: string): number => {
 
 // How long until the next time the local clock shows `target` minutes after midnight.
 export const untilMinutes = (now: number, timeZone: string, target: number): number => {
-  const local = toLocal(now, timeZone);
-  const delay = (target - local.minutes) * minuteMs - (now % minuteMs);
-  return delay > 0 ? delay : delay + dayMs;
+  const { day } = toLocal(now, timeZone);
+  const today = atLocal(day, target, timeZone);
+  return (today > now ? today : atLocal(nextDay(day), target, timeZone)) - now;
 };
 
 // "Thursday 5 November, 15:20", for a prompt.

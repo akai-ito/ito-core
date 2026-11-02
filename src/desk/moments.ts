@@ -266,6 +266,7 @@ export const createMoments = ({
   const pending = createCell<readonly News[]>([]);
   const gathering = createCell<{ readonly since: number; readonly cancel: Cancel } | undefined>(undefined);
   const dayTimer = createCell<Cancel | undefined>(undefined);
+  const checking = createCell<Promise<void> | undefined>(undefined);
   const holdTimer = createCell<Cancel | undefined>(undefined);
   const midnight = createCell<Cancel | undefined>(undefined);
   const queue = createCell<Promise<void>>(Promise.resolve());
@@ -449,7 +450,7 @@ export const createMoments = ({
     );
   };
 
-  const checkDay = async (): Promise<void> => {
+  const lookAtDay = async (): Promise<void> => {
     if (isClosed.get()) return;
     if (!isDayDue()) {
       scheduleDay(untilMorning());
@@ -461,8 +462,27 @@ export const createMoments = ({
     }
     gathering.get()?.cancel();
     gathering.set(undefined);
-    await write("day");
+    try {
+      await write("day");
+    } catch {
+      // The queue logs a line that failed; it's tried again in a while.
+    }
     scheduleDay(isDayDue() ? retryMs : untilMorning());
+  };
+
+  // One look at a time: opening Ito while the day's line is being written doesn't write a second.
+  const checkDay = (): Promise<void> => {
+    const running = checking.get();
+    if (running) return running;
+    const next = (async (): Promise<void> => {
+      try {
+        await lookAtDay();
+      } finally {
+        checking.set(undefined);
+      }
+    })();
+    checking.set(next);
+    return next;
   };
 
   const onDesk = (after: Desk): void => {
