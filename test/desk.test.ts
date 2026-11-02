@@ -277,6 +277,33 @@ describe("the Desk", () => {
     store.close();
   });
 
+  it("undoes an entry once, when Undo is tapped twice", async () => {
+    const store = createStore(openDatabase(path.join(home, "undo-twice.db")), systemClock, randomIdentifiers);
+    const desk = createDesk({
+      store,
+      identifiers: randomIdentifiers,
+      clock: systemClock,
+      timeZone: "UTC",
+      work: () => Promise.resolve(ok("")),
+      info: ignore,
+    });
+    const moved = createCell(0);
+    desk.onUndo(async () => {
+      moved.update((count) => count + 1);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return ok(undefined);
+    });
+    const entry = desk.addDone({ text: "Binned a mail from Acme", quiet: false, undo: { kind: "mail_filed" } });
+
+    const [first, second] = await Promise.all([desk.undo(entry.id), desk.undo(entry.id)]);
+
+    expect(first).toMatchObject({ ok: true, value: { text: "Undone: Binned a mail from Acme", undo: false } });
+    expect(second).toEqual(first);
+    expect(moved.get()).toBe(1);
+    expect(await desk.undo(entry.id)).toEqual({ ok: false, failure: "That can't be undone." });
+    store.close();
+  });
+
   it("keeps notifications quiet by the shared manners", () => {
     const now = Date.parse("2026-11-11T12:00:00.000Z");
     const moment = { now, lastSounded: undefined, localHour: 12, isBusy: false } as const;

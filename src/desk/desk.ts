@@ -193,6 +193,7 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
   const undoers = createCell<readonly Undoer[]>([]);
   const doneListeners = createCell<readonly DoneListener[]>([]);
   const pending = createCell<Promise<void>>(Promise.resolve());
+  const undoing = createCell<ReadonlyMap<string, Promise<Result<DoneEntry, string>>>>(new Map());
 
   const at = (): string => toTimestamp(clock.now());
 
@@ -338,6 +339,18 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     changeMoment(moment.id, gone);
   };
 
+  const undoEntry = async (id: string): Promise<Result<DoneEntry, string>> => {
+    const found = store.findDone(id);
+    if (!found) return fail("not_found");
+    if (!found.entry.undo || found.payload === undefined) return fail("That can't be undone.");
+    const results = await Promise.all(undoers.get().map((undoer) => undoer(found.entry, found.payload)));
+    const [failure] = results.flatMap((result) => (result.ok ? [] : result.failure));
+    if (failure !== undefined) return fail(failure);
+    const undone: DoneEntry = { ...found.entry, text: `Undone: ${found.entry.text}`, undo: false };
+    store.replaceDone(undone);
+    return ok(undone);
+  };
+
   const handlerOf = (card: Card): CardHandler =>
     cardHandlers.get().get(card.id) ?? handlers.get().get(card.kind) ?? askKumo;
 
@@ -417,16 +430,19 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     onUndo: (undoer) => {
       undoers.update((current) => [...current, undoer]);
     },
-    undo: async (id) => {
-      const found = store.findDone(id);
-      if (!found) return fail("not_found");
-      if (!found.entry.undo || found.payload === undefined) return fail("That can't be undone.");
-      const results = await Promise.all(undoers.get().map((undoer) => undoer(found.entry, found.payload)));
-      const [failure] = results.flatMap((result) => (result.ok ? [] : result.failure));
-      if (failure !== undefined) return fail(failure);
-      const undone: DoneEntry = { ...found.entry, text: `Undone: ${found.entry.text}`, undo: false };
-      store.replaceDone(undone);
-      return ok(undone);
+    // Undoing one entry again while it's being undone, such as a double tap, waits for the first.
+    undo: (id) => {
+      const running = undoing.get().get(id);
+      if (running) return running;
+      const job = (async (): Promise<Result<DoneEntry, string>> => {
+        try {
+          return await undoEntry(id);
+        } finally {
+          undoing.update((current) => new Map([...current].filter(([entry]) => entry !== id)));
+        }
+      })();
+      undoing.update((current) => new Map([...current, [id, job]]));
+      return job;
     },
     settled: () => pending.get(),
   };
