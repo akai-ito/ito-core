@@ -29,6 +29,8 @@ export type FakeCardDav = {
   readonly writes: () => readonly Written[];
   // Refuses the next sync token, as iCloud does after a long while.
   readonly forgetTokens: () => void;
+  // The card changes on their phone just as a deletion of it arrives, so the deletion finds it changed.
+  readonly editOnDelete: (bookName: string, file: string) => void;
   readonly close: () => Promise<void>;
 };
 
@@ -89,6 +91,7 @@ export const startFakeCardDav = async (): Promise<FakeCardDav> => {
   const revision = createCell(0);
   const written = createCell<readonly Written[]>([]);
   const isForgetful = createCell(false);
+  const editedOnDelete = createCell<ReadonlySet<string>>(new Set());
   const books = createCell<ReadonlyMap<string, FakeBook>>(
     new Map([
       [`${home}card/`, { name: "Contacts", readOnly: false, cards: new Map(), log: [] }],
@@ -223,6 +226,11 @@ export const startFakeCardDav = async (): Promise<FakeCardDav> => {
         return;
       }
       case "DELETE": {
+        if (existing && editedOnDelete.get().has(path)) {
+          change(bookPath, file, existing);
+          send(response, 412);
+          return;
+        }
         if (!existing) send(response, 404);
         else if (book.readOnly) send(response, 403);
         else if (conflicts) send(response, 412);
@@ -269,6 +277,9 @@ export const startFakeCardDav = async (): Promise<FakeCardDav> => {
     writes: () => written.get(),
     forgetTokens: () => {
       isForgetful.set(true);
+    },
+    editOnDelete: (bookName, file) => {
+      editedOnDelete.update((all) => new Set([...all, `${pathOf(bookName)}${file}`]));
     },
     close: async () => {
       server.closeAllConnections();

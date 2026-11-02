@@ -662,3 +662,113 @@ export const newVCard = (name: string, change: Change, now: Date, uid = randomUU
   };
   return applyChange(base, change, now);
 };
+
+// Merging: everything the other cards say that the kept one doesn't, so no detail is lost with the cards removed.
+
+// What the facts already merge, and what belongs to the card itself, such as its own UID or how it shows.
+const ownProperties: ReadonlySet<string> = new Set([
+  "VERSION",
+  "PRODID",
+  "UID",
+  "X-ABUID",
+  "REV",
+  "N",
+  "FN",
+  "NICKNAME",
+  "EMAIL",
+  "TEL",
+  "ADR",
+  "BDAY",
+  "ORG",
+  "TITLE",
+  "NOTE",
+  "X-ABRELATEDNAMES",
+  "RELATED",
+  "KIND",
+  "X-ADDRESSBOOKSERVER-KIND",
+  "X-ADDRESSBOOKSERVER-MEMBER",
+  "X-ABSHOWAS",
+]);
+
+// What a card has one of: another card's comes along only when the kept card has none, such as its photo.
+const singleProperties: ReadonlySet<string> = new Set([
+  "PHOTO",
+  "LOGO",
+  "GENDER",
+  "X-MAIDENNAME",
+  "X-PHONETIC-FIRST-NAME",
+  "X-PHONETIC-MIDDLE-NAME",
+  "X-PHONETIC-LAST-NAME",
+  "X-PHONETIC-ORG",
+]);
+
+// Lines that only describe the line beside them in their group, such as its label.
+const describing: ReadonlySet<string> = new Set(["X-ABLABEL", "X-ABADR"]);
+
+// A card's lines as items: a line alone, or the lines of one group, such as a date with its label.
+const itemsOf = (lines: readonly Line[]): readonly (readonly Line[])[] => [
+  ...lines.filter((line) => line.group === undefined).map((line) => [line]),
+  ...Map.groupBy(
+    lines.filter((line) => line.group !== undefined),
+    (line) => line.group?.toLowerCase() ?? "",
+  ).values(),
+];
+
+const sameValue = (left: Line, right: Line): boolean =>
+  left.name === right.name &&
+  unescapeText(left.value).trim().toLowerCase() === unescapeText(right.value).trim().toLowerCase();
+
+// An item from another card, if the kept lines lack it, in a group of its own among them.
+const carried = (lines: readonly Line[], item: readonly Line[]): readonly Line[] => {
+  const main = item.find((line) => !describing.has(line.name)) ?? item[0];
+  if (main === undefined || ownProperties.has(main.name)) return lines;
+  const isSingle = singleProperties.has(main.name);
+  if (lines.some((line) => (isSingle ? line.name === main.name : sameValue(line, main)))) return lines;
+  if (main.group === undefined) return [...lines, ...item];
+  // Written out anew under its new group, rather than as it came under the old one.
+  const group = nextGroup(lines);
+  return [...lines, ...item.map(({ name, params, value }) => ({ group, name, params, value }))];
+};
+
+// Everything the others say that the kept card doesn't, as one change to it.
+const mergeChange = (kept: Facts, others: readonly Facts[]): Change => {
+  const emails = others
+    .flatMap(({ emails: found }) => found)
+    .filter(({ value }) => kept.emails.every((own) => !sameMail(own.value, value)));
+  const phones = others
+    .flatMap(({ phones: found }) => found)
+    .filter(({ value }) => kept.phones.every((own) => !samePhone(own.value, value)));
+  const birthday = kept.birthday ?? others.find((other) => other.birthday !== undefined)?.birthday;
+  const organisation = kept.organisation ?? others.find((other) => other.organisation !== undefined)?.organisation;
+  const title = kept.title ?? others.find((other) => other.title !== undefined)?.title;
+  const notes = others.flatMap(({ note }) => note ?? []).join("\n");
+  return {
+    addEmails: emails.map(({ value, label }) => ({ value, ...(label !== undefined && { label }) })),
+    addPhones: phones.map(({ value, label }) => ({ value, ...(label !== undefined && { label }) })),
+    addAddresses: others.flatMap(({ addresses }) => addresses),
+    addRelated: others.flatMap(({ related }) => related),
+    ...(kept.birthday === undefined && birthday !== undefined && { birthday }),
+    ...(kept.organisation === undefined && organisation !== undefined && { organisation }),
+    ...(kept.title === undefined && title !== undefined && { title }),
+    ...(kept.nickname === undefined &&
+      others.some(({ nickname }) => nickname !== undefined) && {
+        nickname: others.find(({ nickname }) => nickname !== undefined)?.nickname ?? "",
+      }),
+    ...(notes !== "" && { appendNote: notes }),
+  };
+};
+
+// The kept card with everything the others say: their emails, phones, addresses, people and notes as facts, and
+// every other line it lacks, such as a photo, a date or a profile, as written.
+export const mergeCards = (kept: VCard, others: readonly VCard[], now: Date): VCard => {
+  const changed = applyChange(
+    kept,
+    mergeChange(
+      factsOf(kept, ""),
+      others.map((other) => factsOf(other, "")),
+    ),
+    now,
+  );
+  const lines = others.flatMap((other) => itemsOf(other.lines)).reduce(carried, changed.lines);
+  return { ...changed, lines };
+};

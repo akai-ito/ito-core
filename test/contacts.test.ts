@@ -14,7 +14,7 @@ import { databaseFile } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Store } from "#store/store.ts";
 import type { Tool } from "#tools/mcp.ts";
-import { claraCard } from "./support/contact-cards.ts";
+import { claraCard, folded, photo } from "./support/contact-cards.ts";
 import { startFakeCardDav, type FakeCardDav } from "./support/fake-carddav.ts";
 import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
@@ -36,6 +36,24 @@ const leoWithPhone = writeVCard(
     "LEO-2",
   ),
 );
+
+// Leo's older card, from another phone: his number, an anniversary, his site and his photo.
+const leoFromOldPhone = [
+  "BEGIN:VCARD",
+  "VERSION:3.0",
+  "N:Marsh;Leo;;;",
+  "FN:Leo Marsh",
+  "TEL;type=CELL;type=VOICE:+44 7700 900456",
+  "item1.X-ABDATE;type=pref:2021-09-14",
+  "item1.X-ABLabel:_$!<Anniversary>!$_",
+  "item2.URL;type=pref:https://leomarsh.example",
+  "item2.X-ABLabel:_$!<HomePage>!$_",
+  "X-SOCIALPROFILE;type=linkedin:https://www.linkedin.com/in/leomarsh",
+  folded(photo),
+  "UID:LEO-4",
+  "END:VCARD",
+  "",
+].join("\r\n");
 
 const leoChen = writeVCard(newVCard("Leo Chen", { addEmails: [{ value: "leo@acme.com" }] }, new Date(now), "LEO-3"));
 
@@ -68,6 +86,7 @@ describe("their iCloud Contacts, kept by Kumo", () => {
   const fake = createCell<FakeCardDav | undefined>(undefined);
   const homes = createCell<readonly string[]>([]);
   const boxes = createCell<readonly Box[]>([]);
+  const isConnected = createCell(true);
 
   const server = (): FakeCardDav => {
     const current = fake.get();
@@ -92,7 +111,7 @@ describe("their iCloud Contacts, kept by Kumo", () => {
     const contacts = createContacts({
       host: {
         find: (id) =>
-          id === "icloud"
+          id === "icloud" && isConnected.get()
             ? {
                 id,
                 state: "on",
@@ -137,6 +156,7 @@ describe("their iCloud Contacts, kept by Kumo", () => {
   };
 
   beforeEach(async () => {
+    isConnected.set(true);
     fake.set(await startFakeCardDav());
   });
 
@@ -342,6 +362,90 @@ describe("their iCloud Contacts, kept by Kumo", () => {
 
     expect(server().stored(other)).toBe(leoWithPhone);
     expect(box.desk.cards()).toEqual([]);
+  });
+
+  it("merges everything a card carries, such as a photo, an anniversary and a profile, and splits it again", async () => {
+    const kept = server().seed("Contacts", "leo-1.vcf", leoWithEmail);
+    const other = server().seed("Contacts", "leo-4.vcf", leoFromOldPhone);
+    const box = open();
+    await box.call("contacts_merge", { uid: ["LEO-1", "LEO-4"], reason: "Both are Leo" });
+    const card = box.desk.cards().find(({ title }) => title === "Merge 2 cards for Leo Marsh?");
+
+    box.desk.answer(card?.id ?? "", { option: "Merge" });
+    await box.desk.settled();
+    const merged = (server().stored(kept) ?? "").replaceAll("\r\n ", "");
+    const read = await box.call("contacts_read", { uid: "LEO-1" });
+
+    expect(server().files("Contacts")).toEqual(["leo-1.vcf"]);
+    expect(merged).toContain("item1.X-ABDATE;TYPE=pref:2021-09-14\r\nitem1.X-ABLABEL:_$!<Anniversary>!$_");
+    expect(merged).toContain("item2.URL;TYPE=pref:https://leomarsh.example\r\nitem2.X-ABLABEL:_$!<HomePage>!$_");
+    expect(merged).toContain("X-SOCIALPROFILE;type=linkedin:https://www.linkedin.com/in/leomarsh");
+    expect(merged).toContain(photo);
+    expect(read.text).toContain("anniversary: 14 September 2021");
+
+    const unmerged = await box.desk.undo(box.done()[0]?.id ?? "");
+
+    expect(unmerged.ok).toBe(true);
+    expect(server().stored(kept)).toBe(leoWithEmail);
+    expect(server().stored(other)).toBe(leoFromOldPhone);
+  });
+
+  it("keeps an undo for what merged when a card changed on their phone meanwhile, and says what didn't", async () => {
+    const kept = server().seed("Contacts", "leo-1.vcf", leoWithEmail);
+    const other = server().seed("Contacts", "leo-2.vcf", leoWithPhone);
+    server().seed("Contacts", "leo-4.vcf", leoFromOldPhone);
+    server().editOnDelete("Contacts", "leo-4.vcf");
+    const box = open();
+    await box.call("contacts_merge", { uid: ["LEO-1", "LEO-2", "LEO-4"], reason: "All three are Leo" });
+    const card = box.desk.cards().find(({ title }) => title === "Merge 3 cards for Leo Marsh?");
+
+    box.desk.answer(card?.id ?? "", { option: "Merge" });
+    await box.desk.settled();
+    const entry = box.done().find(({ text }) => text.startsWith("Merged"));
+
+    expect(server().files("Contacts")).toEqual(["leo-1.vcf", "leo-4.vcf"]);
+    expect(entry).toMatchObject({ text: "Merged 2 of 3 cards for Leo Marsh in Contacts", undo: true });
+    expect(box.done().find(({ text }) => text.startsWith("Couldn't"))).toMatchObject({
+      text: "Couldn't merge Leo Marsh in Contacts",
+      reason: "That contact changed in iCloud since it was read; read it again first.",
+    });
+
+    const unmerged = await box.desk.undo(entry?.id ?? "");
+
+    expect(unmerged.ok).toBe(true);
+    expect(server().stored(kept)).toBe(leoWithEmail);
+    expect(server().stored(other)).toBe(leoWithPhone);
+  });
+
+  it("forgets an ask whose card has gone without an answer", async () => {
+    server().seed("Contacts", "leo-1.vcf", leoWithEmail);
+    server().seed("Contacts", "leo-2.vcf", leoWithPhone);
+    const box = open();
+    await box.call("contacts_merge", { uid: ["LEO-1", "LEO-2"], reason: "Both are Leo" });
+    const [cleared] = box.desk.cards();
+    box.desk.removeCard(cleared?.id ?? "");
+
+    await box.call("contacts_delete", { uid: "LEO-2", reason: "An old card" });
+    const [deletion] = box.desk.cards();
+
+    expect(JSON.parse(box.store.setting("contacts_asks") ?? "[]")).toMatchObject([{ card: deletion?.id }]);
+  });
+
+  it("says so when iCloud went before they answered", async () => {
+    server().seed("Contacts", "leo-1.vcf", leoWithEmail);
+    server().seed("Contacts", "leo-2.vcf", leoWithPhone);
+    const box = open();
+    await box.call("contacts_delete", { uid: "LEO-2", reason: "An old card" });
+    const [deletion] = box.desk.cards();
+    isConnected.set(false);
+
+    box.desk.answer(deletion?.id ?? "", { option: "Delete" });
+    await box.desk.settled();
+
+    expect(box.done()).toMatchObject([
+      { text: "Couldn't delete Leo Marsh in Contacts", reason: "iCloud isn't connected any more." },
+    ]);
+    expect(server().files("Contacts")).toEqual(["leo-1.vcf", "leo-2.vcf"]);
   });
 
   it("brings up a birthday a few days ahead, once, for Kumo to judge and tell through its line", async () => {

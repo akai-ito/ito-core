@@ -7,6 +7,7 @@ import {
   applyChange,
   caughtUpPrefix,
   factsOf,
+  mergeCards,
   newVCard,
   parseVCard,
   sameMail,
@@ -269,34 +270,6 @@ const sameText = (left: VCard, right: VCard): boolean => {
   return withoutRevision(left) === withoutRevision(right);
 };
 
-// Everything the others say that the kept card doesn't, as one change to it.
-const mergeChange = (kept: Facts, others: readonly Facts[]): Change => {
-  const emails = others
-    .flatMap(({ emails: found }) => found)
-    .filter(({ value }) => kept.emails.every((own) => !sameMail(own.value, value)));
-  const phones = others
-    .flatMap(({ phones: found }) => found)
-    .filter(({ value }) => kept.phones.every((own) => !samePhone(own.value, value)));
-  const birthday = kept.birthday ?? others.find((other) => other.birthday !== undefined)?.birthday;
-  const organisation = kept.organisation ?? others.find((other) => other.organisation !== undefined)?.organisation;
-  const title = kept.title ?? others.find((other) => other.title !== undefined)?.title;
-  const notes = others.flatMap(({ note }) => note ?? []).join("\n");
-  return {
-    addEmails: emails.map(({ value, label }) => ({ value, ...(label !== undefined && { label }) })),
-    addPhones: phones.map(({ value, label }) => ({ value, ...(label !== undefined && { label }) })),
-    addAddresses: others.flatMap(({ addresses }) => addresses),
-    addRelated: others.flatMap(({ related }) => related),
-    ...(kept.birthday === undefined && birthday !== undefined && { birthday }),
-    ...(kept.organisation === undefined && organisation !== undefined && { organisation }),
-    ...(kept.title === undefined && title !== undefined && { title }),
-    ...(kept.nickname === undefined &&
-      others.some(({ nickname }) => nickname !== undefined) && {
-        nickname: others.find(({ nickname }) => nickname !== undefined)?.nickname ?? "",
-      }),
-    ...(notes !== "" && { appendNote: notes }),
-  };
-};
-
 export const createContacts = ({
   host,
   store,
@@ -535,17 +508,17 @@ export const createContacts = ({
   const rewrite = async (
     source: ContactsSource,
     person: Person,
-    change: Change,
+    edit: (card: VCard, now: Date) => VCard,
     retries = 1,
   ): Promise<Result<{ readonly before: StoredCard; readonly after?: StoredCard }, string>> => {
     const current = await source.read(person.url, person.book);
     if (!current.ok) return current;
     const parsed = parseVCard(current.value.vcard);
     if (!parsed.ok) return parsed;
-    const changed = applyChange(parsed.value, change, new Date(clock.now()));
+    const changed = edit(parsed.value, new Date(clock.now()));
     if (sameText(parsed.value, changed)) return ok({ before: current.value });
     const written = await source.update(current.value, writeVCard(changed));
-    if (!written.ok && isConflict(written.failure) && retries > 0) return rewrite(source, person, change, retries - 1);
+    if (!written.ok && isConflict(written.failure) && retries > 0) return rewrite(source, person, edit, retries - 1);
     return written.ok ? ok({ before: current.value, after: written.value }) : written;
   };
 
@@ -624,10 +597,15 @@ export const createContacts = ({
 
   const asks = (): readonly Ask[] => toAsks(store.setting(asksSetting));
 
+  // The asks still on the Desk: one whose card went without an answer, such as one Kumo cleared, is dropped.
+  const waitingAsks = (): readonly Ask[] => asks().filter((ask) => desk.cards().some((card) => card.id === ask.card));
+
   const dropAsk = (card: string): void => {
     store.setSetting(asksSetting, JSON.stringify(asks().filter((ask) => ask.card !== card)));
   };
 
+  // Merges the cards into the first, from each card as it is now, then removes the others. Whatever was done is
+  // recorded with an undo, even when a card couldn't be removed, such as one changed on their phone meanwhile.
   const mergeNow = async (
     source: ContactsSource,
     group: readonly Person[],
@@ -639,36 +617,55 @@ export const createContacts = ({
     const [unread] = reads.flatMap((read) => (read.ok ? [] : read.failure));
     if (unread !== undefined) return fail(unread);
     const otherCards = reads.flatMap((read) => (read.ok ? read.value : []));
-    const otherFacts = otherCards.flatMap((card) => toPerson(card)?.facts ?? []);
-    const changed = await rewrite(source, kept, mergeChange(kept.facts, otherFacts));
+    const parsed = otherCards.flatMap((card) => {
+      const vcard = parseVCard(card.vcard);
+      return vcard.ok ? [vcard.value] : [];
+    });
+    const changed = await rewrite(source, kept, (card, now) => mergeCards(card, parsed, now));
     if (!changed.ok) return changed;
-    const removed = await Promise.all(otherCards.map((card) => source.remove(card.url, card.etag)));
-    const [unremoved] = removed.flatMap((result) => (result.ok ? [] : result.failure));
-    if (unremoved !== undefined) return fail(unremoved);
-    const aliases = Object.fromEntries(otherFacts.map(({ uid }) => [uid, kept.facts.uid]));
-    store.setSetting(mergedSetting, JSON.stringify({ ...merged(), ...aliases }));
-    const text = `Merged ${String(group.length)} cards for ${kept.facts.name} in Contacts`;
-    recordChange(
-      text,
-      reason,
-      {
-        kind: "contacts_restore",
-        name: kept.facts.name,
-        restores: [
-          {
-            url: kept.url,
-            book: kept.book,
-            before: changed.value.before.vcard,
-            ...(changed.value.after?.etag !== undefined && { after: changed.value.after.etag }),
-          },
-          ...otherCards.map((card) => ({ url: card.url, book: card.book, before: card.vcard })),
-        ],
-        unmerge: otherFacts.map(({ uid }) => uid),
-      },
-      false,
+    const removals = await Promise.all(
+      otherCards.map(async (card) => ({ card, removed: await source.remove(card.url, card.etag) })),
     );
+    const gone = removals.flatMap(({ card, removed }) => (removed.ok ? [card] : []));
+    const [unremoved] = removals.flatMap(({ removed }) => (removed.ok ? [] : removed.failure));
+    const goneUids = gone.flatMap((card) => toPerson(card)?.facts.uid ?? []);
+    const aliases = Object.fromEntries(goneUids.map((uid) => [uid, kept.facts.uid]));
+    store.setSetting(mergedSetting, JSON.stringify({ ...merged(), ...aliases }));
+    const { before, after } = changed.value;
+    const name = kept.facts.name;
+    const text =
+      gone.length === others.length
+        ? `Merged ${String(group.length)} cards for ${name} in Contacts`
+        : gone.length === 0
+          ? `Added the other cards' details to ${name}'s card in Contacts`
+          : `Merged ${String(gone.length + 1)} of ${String(group.length)} cards for ${name} in Contacts`;
+    if (after !== undefined || gone.length > 0) {
+      recordChange(
+        text,
+        reason,
+        {
+          kind: "contacts_restore",
+          name,
+          restores: [
+            ...(after === undefined
+              ? []
+              : [
+                  {
+                    url: kept.url,
+                    book: kept.book,
+                    before: before.vcard,
+                    ...(after.etag !== undefined && { after: after.etag }),
+                  },
+                ]),
+            ...gone.map((card) => ({ url: card.url, book: card.book, before: card.vcard })),
+          ],
+          unmerge: goneUids,
+        },
+        false,
+      );
+    }
     await refresh();
-    return ok(text);
+    return unremoved === undefined ? ok(text) : fail(unremoved);
   };
 
   const deleteNow = async (source: ContactsSource, person: Person, reason: string): Promise<Result<string, string>> => {
@@ -696,16 +693,17 @@ export const createContacts = ({
     dropAsk(card.id);
     if (!ask || (given.option !== "Merge" && given.option !== "Delete")) return undefined;
     const source = sourceOf();
-    if (!source) return undefined;
-    await refresh();
+    if (source) await refresh();
     const group = ask.urls.flatMap((url) => known.get().get(url) ?? []);
     const [first] = group;
     const done =
-      first === undefined || group.length !== ask.urls.length
-        ? fail("A card changed or went from Contacts since you were asked.")
-        : ask.action === "merge"
-          ? await mergeNow(source, group, `You agreed: ${ask.reason}`)
-          : await deleteNow(source, first, `You agreed: ${ask.reason}`);
+      source === undefined
+        ? fail("iCloud isn't connected any more.")
+        : first === undefined || group.length !== ask.urls.length
+          ? fail("A card changed or went from Contacts since you were asked.")
+          : ask.action === "merge"
+            ? await mergeNow(source, group, `You agreed: ${ask.reason}`)
+            : await deleteNow(source, first, `You agreed: ${ask.reason}`);
     if (!done.ok) {
       desk.addDone({
         text: `Couldn't ${ask.action} ${group[0]?.facts.name ?? "the contact"} in Contacts`,
@@ -739,15 +737,15 @@ export const createContacts = ({
     });
     store.setSetting(
       asksSetting,
-      JSON.stringify([...asks(), { card: card.id, action, urls: group.map(({ url }) => url), reason }]),
+      JSON.stringify([...waitingAsks(), { card: card.id, action, urls: group.map(({ url }) => url), reason }]),
     );
     desk.handleCard(card.id, answerAsk);
     return card;
   };
 
-  for (const ask of asks()) {
-    if (desk.cards().some((card) => card.id === ask.card)) desk.handleCard(ask.card, answerAsk);
-  }
+  const waiting = waitingAsks();
+  if (waiting.length < asks().length) store.setSetting(asksSetting, JSON.stringify(waiting));
+  for (const ask of waiting) desk.handleCard(ask.card, answerAsk);
 
   const restore = async ({ restores, unmerge = [] }: ContactsUndo): Promise<Result<undefined, string>> => {
     const source = sourceOf();
@@ -982,7 +980,7 @@ export const createContacts = ({
           const details = changeWords(change.value);
           if (details.length === 0) return failed("Say what to change, such as --email or --job-title.");
           const reason = textOf(input, "reason").trim();
-          const changed = await rewrite(source, person, change.value);
+          const changed = await rewrite(source, person, (card, now) => applyChange(card, change.value, now));
           if (!changed.ok) return failed(changed.failure);
           const { after } = changed.value;
           if (!after) return { text: `${person.facts.name}'s card already says that, so nothing changed.` };
