@@ -899,7 +899,7 @@ export const createServer = (options: ServerOptions): Server => {
 
   const compaction = createCell<Cancel | undefined>(undefined);
   const compact = (): void => {
-    store.compactText(toTimestamp(clock.now() - textRetentionMs));
+    store.compact(toTimestamp(clock.now() - textRetentionMs));
     attachments.sweep(toTimestamp(clock.now() - dayMs));
     compaction.set(clock.after(dayMs, compact));
   };

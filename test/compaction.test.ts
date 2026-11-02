@@ -6,7 +6,9 @@ import { afterAll, describe, expect, it } from "vitest";
 import { toTimestamp } from "#clock.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
-import { createServer, type Server } from "#server.ts";
+import { toEventId } from "#conversation/ids.ts";
+import { createServer, databaseFile, type Server } from "#server.ts";
+import { openDatabase } from "#store/database.ts";
 import type { LoggedEvent } from "#store/projection.ts";
 import { openEventStream } from "./support/event-stream.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
@@ -75,6 +77,53 @@ describe("text compaction", () => {
       const nothing = await current.next(300);
       current.close();
       expect(nothing).toBeUndefined();
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+const desk = (handled: number) => ({ coming_up: [], waiting: [], handled });
+
+describe("Desk history", () => {
+  const deskDirectory = mkdtempSync(path.join(os.tmpdir(), "ito-desk-history-"));
+  const openDeskServer = (): Server =>
+    createServer({
+      embedder: wordEmbedder,
+      dataDirectory: deskDirectory,
+      createEngine: () =>
+        createScriptEngine(clock, () => {
+          throw new Error("This test starts no turns.");
+        }),
+      name: "studio",
+      clock,
+    });
+  const deskEvents = (): number =>
+    (
+      openDatabase(databaseFile(deskDirectory))
+        .prepare("SELECT COUNT(*) AS count FROM events WHERE type = 'desk.changed'")
+        .get() as { readonly count: number }
+    ).count;
+
+  afterAll(() => {
+    rmSync(deskDirectory, { recursive: true, force: true });
+  });
+
+  it("keeps only the last month of Desk changes, and the Desk as it is", async () => {
+    const seeding = openDeskServer();
+    seeding.store.importEvents([
+      { id: "e_old_desk_1", type: "desk.changed", at: longAgo, desk: desk(1) },
+      { id: "e_old_desk_2", type: "desk.changed", at: longAgo, desk: desk(2) },
+      { id: "e_new_desk", type: "desk.changed", at: toTimestamp(clock.now() - dayMs), desk: desk(3) },
+    ]);
+    await seeding.close();
+    expect(deskEvents()).toBe(3);
+
+    const server = openDeskServer();
+    try {
+      expect(deskEvents()).toBe(1);
+      expect(server.store.desk()).toEqual(desk(3));
+      expect(server.store.eventsAfter(toEventId("e_old_desk_2"))).toEqual({ ok: false, failure: "cursor_unknown" });
     } finally {
       await server.close();
     }
