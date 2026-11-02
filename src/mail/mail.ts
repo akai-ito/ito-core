@@ -11,6 +11,7 @@ import {
   createMailSource,
   fromUidSet,
   toUidSet,
+  type Address,
   type Auth,
   type Filing,
   type FolderUse,
@@ -285,16 +286,33 @@ const domainName = (address: string): string => {
   return label.charAt(0).toUpperCase() + label.slice(1);
 };
 
-const draftTitle = (to: string, original: Mail | undefined): string =>
-  original?.from.name === undefined
+const draftTitle = (to: string, name: string | undefined): string =>
+  name === undefined
     ? `Draft to ${firstName(to)}${domainName(to) === "" ? "" : ` at ${domainName(to)}`}`
-    : `Draft to ${original.from.name}`;
+    : `Draft to ${name}`;
+
+const isSameAddress = (left: string, right: string): boolean => addressKey(left) === addressKey(right);
+
+// Whom a reply goes to, as a mail app's Reply has it: where the mail asks answers to go, or else its sender. A reply
+// to a mail of their own goes to the people it went to.
+const replyRecipients = (mail: Mail, user: string): readonly Address[] => {
+  if (!isSameAddress(mail.from.address, user)) return mail.replyTo ?? [mail.from];
+  const others = mail.to.filter(({ address }) => !isSameAddress(address, user));
+  return others.length > 0 ? others : [mail.from];
+};
+
+// Where the mail asks answers to go, when that isn't its sender.
+const replyToLines = ({ from, replyTo = [] }: Mail): readonly string[] =>
+  replyTo.every(({ address }) => isSameAddress(address, from.address))
+    ? []
+    : [`Reply-To: ${replyTo.map(({ address }) => address).join(", ")}`];
 
 // A mail as the agent reads it, with who the sender is in their Contacts when that's known.
 const describe = (account: string, mail: Mail, limit = textLimit, sender?: string): string =>
   [
     `From: ${mail.from.name === undefined ? mail.from.address : `${mail.from.name} <${mail.from.address}>`}`,
     ...(sender === undefined ? [] : [sender]),
+    ...replyToLines(mail),
     `To: ${mail.to.map(({ address }) => address).join(", ")}`,
     `Subject: ${mail.subject}`,
     `Date: ${mail.date}`,
@@ -1743,11 +1761,12 @@ export const createMailbox = ({
         },
         additionalProperties: false,
       },
-      call: (input) =>
-        withSource(textOf(input, "account"), async (connection) => {
+      call: (input) => {
+        const replacing = textOf(input, "replaces").trim();
+        const earlier = replacing === "" ? undefined : draftCards().find((card) => card.id === replacing);
+        // A draft named to replace is in its own account, whichever they have first.
+        return withSource(filled(textOf(input, "account"), earlier?.draft?.account), async (connection) => {
           const { account, user, source } = connection;
-          const replacing = textOf(input, "replaces").trim();
-          const earlier = replacing === "" ? undefined : draftCards().find((card) => card.id === replacing);
           if (replacing !== "" && earlier?.draft?.account !== account) {
             return failed(`There's no draft ${replacing} on the Desk to replace. Drafts there: ${draftList()}.`);
           }
@@ -1759,11 +1778,19 @@ export const createMailbox = ({
           const named = await resolveNames(connection, listOf(fieldOf(input, "to")), listOf(fieldOf(input, "cc")));
           if (!named.ok) return failed(named.failure);
           const { to: givenTo, cc: givenCc, found } = named.value;
-          const to = givenTo.length > 0 ? givenTo : (before?.to ?? (answering ? [answering.from.address] : []));
+          const answered = answering && replyRecipients(answering, user).map(({ address }) => address);
+          const to = givenTo.length > 0 ? givenTo : (before?.to ?? answered ?? []);
           const cc = givenCc.length > 0 ? givenCc : (before?.cc ?? []);
-          const nameOf = (address: string): { readonly address: string; readonly name?: string } => {
-            const person = found.find((recipient) => recipient.address === address);
-            return person ? { address, name: person.name } : toAddress(address);
+          // A name as the mail it answers wrote it, such as its sender's.
+          const headerName = (address: string | undefined): string | undefined =>
+            answering &&
+            [...(answering.replyTo ?? []), answering.from, ...answering.to, ...answering.cc].find(
+              (written) =>
+                address !== undefined && written.name !== undefined && isSameAddress(written.address, address),
+            )?.name;
+          const nameOf = (address: string): Address => {
+            const name = found.find((recipient) => recipient.address === address)?.name ?? headerName(address);
+            return name === undefined ? toAddress(address) : { address, name };
           };
           const subject = filled(textOf(input, "subject"), before?.subject, answering && reSubject(answering.subject));
           const body = filled(textOf(input, "body").trim(), before?.body);
@@ -1826,7 +1853,7 @@ export const createMailbox = ({
           const attachments = attachmentsOf(letter.value, signature);
           const fresh: NewCard = {
             kind: "draft",
-            title: textOf(input, "title").trim() || (earlier?.title ?? draftTitle(to[0] ?? "", answering)),
+            title: textOf(input, "title").trim() || (earlier?.title ?? draftTitle(to[0] ?? "", headerName(to[0]))),
             options: [{ label: "Drop it" }],
             allows_text: true,
             draft: {
@@ -1846,7 +1873,7 @@ export const createMailbox = ({
           if (kept) desk.replaceCard(kept.id, fresh);
           const id = kept?.id ?? desk.addCard(fresh).id;
           keepParts(id, parts);
-          const whom = answering?.from.name ?? to[0] ?? "";
+          const whom = headerName(to[0]) ?? to[0] ?? "";
           const signed = parts.signature
             ? signature
               ? " Their signature from their sent mail is at the end."
@@ -1867,7 +1894,8 @@ export const createMailbox = ({
               mails: [{ from: "You", subject, date: toTimestamp(clock.now()), text: letter.value.text }],
             },
           };
-        }),
+        });
+      },
     },
     {
       name: "file_mail",

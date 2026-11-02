@@ -7,6 +7,7 @@ export type ArrivingMail = {
   readonly account: string;
   readonly message_id: string;
   readonly from: string;
+  readonly reply_to?: string;
   readonly to: readonly string[];
   readonly subject: string;
   readonly text: string;
@@ -92,6 +93,7 @@ export const createFakeMail = (now: () => string): FakeMail => {
     messageId: mail.message_id,
     references: [],
     from: toAddress(mail.from),
+    ...(mail.reply_to !== undefined && { replyTo: [toAddress(mail.reply_to)] }),
     to: mail.to.map((address) => toAddress(address)),
     cc: [],
     subject: mail.subject,

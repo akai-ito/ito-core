@@ -15,6 +15,8 @@ export type Mail = {
   readonly inReplyTo?: string;
   readonly references: readonly string[];
   readonly from: Address;
+  // Where answers go when it isn't the sender, such as a recruiter behind a hiring system's no-reply address.
+  readonly replyTo?: readonly Address[];
   readonly to: readonly Address[];
   readonly cc: readonly Address[];
   readonly subject: string;
@@ -180,6 +182,7 @@ export const toMail = (parsed: ParsedMail, meta: MailMeta): Mail => {
   const [messageId] = toMessageIds(parsed.messageId);
   const [inReplyTo] = toMessageIds(parsed.inReplyTo);
   const [from] = toAddresses(parsed.from);
+  const replyTo = toAddresses(parsed.replyTo);
   const unsubscribe = toUnsubscribe({
     "list-unsubscribe": unfoldHeader(parsed.headerLines, "list-unsubscribe"),
     "list-unsubscribe-post": unfoldHeader(parsed.headerLines, "list-unsubscribe-post"),
@@ -192,6 +195,7 @@ export const toMail = (parsed: ParsedMail, meta: MailMeta): Mail => {
     ...(inReplyTo !== undefined && { inReplyTo }),
     references: toMessageIds(parsed.references),
     from: from ?? { address: "" },
+    ...(replyTo.length > 0 && { replyTo }),
     to: toAddresses(parsed.to),
     cc: toAddresses(parsed.cc),
     subject: parsed.subject ?? "",

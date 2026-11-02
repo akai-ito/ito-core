@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
+import type { Values } from "#capabilities/manifest.ts";
 import type { DeskKeeper, NewCard, NewDone, Undoer } from "#desk/desk.ts";
 import type { Mail } from "#mail/imap.ts";
 import { createMailbox, type Mailbox } from "#mail/mail.ts";
@@ -26,6 +27,10 @@ type Box = {
 type Act = (prompt: string, tools: readonly Tool[]) => Promise<void>;
 
 const icloud = { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop" };
+
+const outlook = { address: "divy@outlook.example", token: "a-token" };
+
+const onlyIcloud: Readonly<Record<string, Values>> = { icloud };
 
 const booking = {
   account: "icloud",
@@ -72,6 +77,7 @@ const openBox = (
   works: readonly Result<string, string>[] = [],
   act: Act = nothing,
   comingUp: readonly CalendarItem[] = [],
+  accounts = onlyIcloud,
 ): Box => {
   const clock = createVirtualClock(Date.parse("2026-11-10T22:00:00.000Z"));
   const mail = createFakeMail(() => new Date(clock.now()).toISOString());
@@ -92,6 +98,9 @@ const openBox = (
     removeCard: (id: string) => {
       cards.update((current) => current.filter((card) => card.id !== id));
     },
+    replaceCard: (id: string, card: NewCard) => {
+      cards.update((current) => current.map((waiting) => (waiting.id === id ? { ...waiting, ...card } : waiting)));
+    },
     handle: ignore,
     onUndo: (undoer: Undoer) => {
       undoers.update((current) => [...current, undoer]);
@@ -105,7 +114,10 @@ const openBox = (
   const workTools = createWorkTools({ post: () => "Told them.", desk });
   const mailbox = createMailbox({
     host: {
-      find: (id) => (id === "icloud" ? { id, state: "on", values: icloud, manifest: undefined as never } : undefined),
+      find: (id) => {
+        const values = accounts[id];
+        return values && { id, state: "on", values, manifest: undefined as never };
+      },
       subscribe: () => ignore,
     },
     store: {
@@ -375,6 +387,62 @@ describe("the mailbox", () => {
         },
       ]);
     });
+    await box.mailbox.close();
+  });
+
+  it("addresses a reply where the mail asks answers to go, and a reply to their own mail to whom it went", async () => {
+    const box = openBox("work");
+    const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");
+    const read = box.mailbox.tools.find(({ name }) => name === "mail_read");
+    box.mail.keep("INBOX", {
+      account: "icloud",
+      message_id: "role-2@hire.example",
+      from: "Northwind Hiring <no-reply@hire.example>",
+      reply_to: "Clara Voss <clara.voss@northwind.example>",
+      to: ["divy@icloud.com"],
+      subject: "Next steps",
+      text: "Could you share times for a call?",
+    });
+    box.mail.keep("Sent Messages", {
+      account: "icloud",
+      message_id: "nudge-1@icloud.com",
+      from: "Divy <divy@icloud.com>",
+      to: ["Tess Harlow <tess.harlow@halcyon.example>"],
+      subject: "The Halcyon deck",
+      text: "Could you send the deck?",
+    });
+
+    const shown = await read?.call({ message_id: "role-2@hire.example" });
+    await draftTool?.call({ reply_to: "role-2@hire.example", body: "Thursday at 10 works." });
+    await draftTool?.call({ reply_to: "nudge-1@icloud.com", body: "Any news on the deck?" });
+
+    expect(shown?.text).toContain("Reply-To: clara.voss@northwind.example\n");
+    expect(box.mail.drafts().map(({ to }) => to)).toEqual([
+      [{ address: "clara.voss@northwind.example", name: "Clara Voss" }],
+      [{ address: "tess.harlow@halcyon.example", name: "Tess Harlow" }],
+    ]);
+    expect(box.cards().map(({ title, draft }) => [title, draft?.to])).toEqual([
+      ["Draft to Clara Voss", ["clara.voss@northwind.example"]],
+      ["Draft to Tess Harlow", ["tess.harlow@halcyon.example"]],
+    ]);
+    await box.mailbox.close();
+  });
+
+  it("replaces a draft in its own account, whichever account they have first", async () => {
+    const box = openBox("work", [], nothing, [], { icloud, outlook });
+    const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");
+    box.mail.keep("INBOX", { ...booking, account: "outlook", to: ["divy@outlook.example"] });
+    await draftTool?.call({ account: "outlook", reply_to: booking.message_id, body: "Could you leave the keys?" });
+    const [card] = box.cards();
+
+    const redrafted = await draftTool?.call({ replaces: card?.id, body: "Could you leave the keys at the desk?" });
+
+    expect(redrafted?.isError).toBeUndefined();
+    expect(redrafted?.text).toContain("in place of the earlier one");
+    expect(box.cards()).toMatchObject([
+      { id: card?.id, draft: { account: "outlook", body: "Could you leave the keys at the desk?" } },
+    ]);
+    expect(box.mail.drafts().map(({ from }) => from.address)).toEqual(["divy@outlook.example", "divy@outlook.example"]);
     await box.mailbox.close();
   });
 });
