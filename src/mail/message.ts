@@ -91,8 +91,8 @@ export const addressKey = (text: string): string =>
 export const isSameAddress = (left: string, right: string): boolean => addressKey(left) === addressKey(right);
 
 // The addresses in these From lines, each once, the most used first, with the name most often written beside it.
-export const rankSenders = (froms: readonly Address[]): readonly Address[] =>
-  [...Map.groupBy(froms, ({ address }) => addressKey(address))]
+export const rankSenders = (written: readonly Address[]): readonly Address[] =>
+  [...Map.groupBy(written, ({ address }) => addressKey(address))]
     .filter(([address]) => address.includes("@"))
     .toSorted(([, left], [, right]) => right.length - left.length)
     .map(([address, uses]) => {

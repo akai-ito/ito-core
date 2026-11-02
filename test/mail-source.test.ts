@@ -617,9 +617,9 @@ describe("over IMAP", () => {
 
   it("knows the address they last wrote to someone from, and only to that very address", async () => {
     const toTess = sentFrom("Sam R <hello@sam.example>", "Tess Harlow <tess.harlow@halcyon.example>", 1);
-    const toContess = sentFrom("Sam Rivera <sam@example.com>", "Contess <contess.harlow@halcyon.example>", 2);
+    const toOldTess = sentFrom("Sam Rivera <sam@example.com>", "Old Tess <old.tess.harlow@halcyon.example>", 2);
     running().appendMessage("Sent Messages", ["\\Seen"], new Date("2026-10-31T11:00:00Z"), toTess);
-    running().appendMessage("Sent Messages", ["\\Seen"], new Date("2026-10-31T12:00:00Z"), toContess);
+    running().appendMessage("Sent Messages", ["\\Seen"], new Date("2026-10-31T12:00:00Z"), toOldTess);
     const source = connect();
 
     expect(await source.lastFrom("Tess.Harlow@halcyon.example")).toEqual({ ok: true, value: "hello@sam.example" });

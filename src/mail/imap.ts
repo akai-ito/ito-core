@@ -647,7 +647,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   const sendersIn = async (opened: Session): Promise<readonly Address[]> => {
     const { sent } = opened.folders;
     if (sent === undefined) return [];
-    const froms = await inFolder(opened.client, sent, async () => {
+    const written = await inFolder(opened.client, sent, async () => {
       const exists = opened.client.mailbox === false ? 0 : opened.client.mailbox.exists;
       if (exists === 0) return [];
       const range = `${String(Math.max(1, exists - addressSample + 1))}:*`;
@@ -659,7 +659,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
         })),
       );
     });
-    return rankSenders(froms);
+    return rankSenders(written);
   };
 
   const check: MailSource["check"] = async () => {
