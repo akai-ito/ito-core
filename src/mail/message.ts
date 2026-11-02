@@ -84,6 +84,12 @@ export const fromSyntheticMessageId = (
   return match?.[1] && match[2] ? { uid: Number(match[1]), folder: decodeURIComponent(match[2]) } : undefined;
 };
 
+// An address as compared, from "Name <address>" or the address alone, whatever its case.
+export const addressKey = (text: string): string =>
+  (/<(?<address>[^<>]+)>/u.exec(text)?.groups?.address ?? text).trim().toLowerCase();
+
+export const isSameAddress = (left: string, right: string): boolean => addressKey(left) === addressKey(right);
+
 const toAddress = ({ address = "", name }: EmailAddress): Address => ({
   address,
   ...(name !== "" && { name }),
@@ -286,8 +292,11 @@ const shares = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean 
 
 const byDate = (left: Mail, right: Mail): number => left.date.localeCompare(right.date);
 
-export const uniqueByMessageId = (mails: readonly Mail[]): readonly Mail[] =>
-  mails.filter((mail, index) => mails.findIndex((other) => other.messageId === mail.messageId) === index);
+// The first of each Message-ID.
+export const uniqueByMessageId = (mails: readonly Mail[]): readonly Mail[] => {
+  const firsts = new Map(mails.toReversed().map((mail) => [mail.messageId, mail]));
+  return mails.filter((mail) => firsts.get(mail.messageId) === mail);
+};
 
 export const groupThreads = (mails: readonly Mail[]): readonly (readonly Mail[])[] =>
   uniqueByMessageId(mails)
