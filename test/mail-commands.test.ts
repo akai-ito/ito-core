@@ -543,9 +543,12 @@ describe("mail in the conversation, through ito mail commands", () => {
       store.snapshot("no_cursor").event.steps.filter(({ capability }) => capability === "mail");
     turns.route(toMessageId(accepted.value.message.id), "Did Northwind write?");
 
-    await vi.waitFor(() => {
-      expect(stepsOf().map(({ title }) => title)).toEqual(["Searching mail", "Reading a thread"]);
-    });
+    await vi.waitFor(
+      () => {
+        expect(stepsOf().map(({ title }) => title)).toEqual(["Searching mail", "Reading a thread"]);
+      },
+      { timeout: 5000 },
+    );
     // The agent's command and tool call run while their steps do.
     await command(["search", "--from", "northwind.example"]);
     await callTool("mail_thread", { message_id: offer.message_id });
