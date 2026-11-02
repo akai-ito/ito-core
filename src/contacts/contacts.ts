@@ -209,13 +209,19 @@ const fileOf = (url: string): string => decodeURIComponent(url.split("/").at(-1)
 
 const isContactsUndo = (payload: unknown): payload is ContactsUndo => fieldOf(payload, "kind") === "contacts_restore";
 
-const parsedList = (text = "[]"): readonly unknown[] => {
+// A setting's JSON, or undefined when there's none or it doesn't parse.
+const jsonOf = (text: string | undefined): unknown => {
+  if (text === undefined) return undefined;
   try {
-    const value = JSON.parse(text) as unknown;
-    return Array.isArray(value) ? (value as readonly unknown[]) : [];
+    return JSON.parse(text) as unknown;
   } catch {
-    return [];
+    return undefined;
   }
+};
+
+const parsedList = (text: string | undefined): readonly unknown[] => {
+  const value = jsonOf(text);
+  return Array.isArray(value) ? (value as readonly unknown[]) : [];
 };
 
 const toAsks = (text: string | undefined): readonly Ask[] =>
@@ -376,12 +382,8 @@ export const createContacts = ({
   };
 
   const merged = (): Readonly<Record<string, string>> => {
-    try {
-      const value = JSON.parse(store.setting(mergedSetting) ?? "{}") as unknown;
-      return typeof value === "object" && value !== null ? (value as Record<string, string>) : {};
-    } catch {
-      return {};
-    }
+    const value = jsonOf(store.setting(mergedSetting));
+    return typeof value === "object" && value !== null ? (value as Record<string, string>) : {};
   };
 
   // A card's UID now, following merges: a page linked to a card that was merged away finds the one kept.
@@ -395,23 +397,24 @@ export const createContacts = ({
     return everyone().find(({ facts }) => facts.uid === wanted);
   };
 
-  const pageOf = async (person: Person): Promise<PersonPage | undefined> => {
-    const pages = await pagesNow();
-    return pages.find((page) => page.contact !== undefined && currentUid(page.contact) === person.facts.uid);
-  };
+  // The People page linked to a card, following merges.
+  const linkedPage = (pages: readonly PersonPage[], person: Person): PersonPage | undefined =>
+    pages.find((page) => page.contact !== undefined && currentUid(page.contact) === person.facts.uid);
 
-  const summary = (person: Person, page?: PersonPage): string => {
-    const { facts } = person;
-    return [
+  const pageOf = async (person: Person): Promise<PersonPage | undefined> => linkedPage(await pagesNow(), person);
+
+  // Who a card is, in a line: name, work, emails and phones.
+  const whoLine = ({ facts }: Person): string =>
+    [
       facts.name,
       workLine(facts),
       [...facts.emails.map((email) => labelled(email)), ...facts.phones.map((phone) => labelled(phone))].join(", "),
-      `uid ${facts.uid}`,
-      ...(page ? [`page ${page.address}`] : []),
     ]
       .filter((part) => part !== undefined && part !== "")
       .join(" · ");
-  };
+
+  const summary = (person: Person, page?: PersonPage): string =>
+    [whoLine(person), `uid ${person.facts.uid}`, ...(page ? [`page ${page.address}`] : [])].join(" · ");
 
   const describe = (person: Person, page: PersonPage | undefined): string => {
     const { facts } = person;
@@ -586,7 +589,7 @@ export const createContacts = ({
     });
   };
 
-  const withSource = async (act: (source: ContactsSource) => Promise<ToolResult>): Promise<ToolResult> => {
+  const withSource = async (act: (source: ContactsSource) => Promise<ToolResult> | ToolResult): Promise<ToolResult> => {
     const source = sourceOf();
     if (!source)
       return failed("iCloud isn't connected, so there are no Contacts to use. It's in Settings › Capabilities.");
@@ -717,7 +720,7 @@ export const createContacts = ({
   const askFirst = (action: Ask["action"], group: readonly Person[], reason: string): Card => {
     const [first] = group;
     const name = first?.facts.name ?? "";
-    const parts = group.map((person) => summary(person).split(" · uid", 1)[0] ?? person.facts.name);
+    const parts = group.map((person) => whoLine(person));
     const card = desk.addCard({
       kind: "question",
       title: action === "merge" ? `Merge ${String(group.length)} cards for ${name}?` : `Delete ${name} from Contacts?`,
@@ -808,8 +811,7 @@ export const createContacts = ({
       call: (input) =>
         withSource(async () => {
           const pages = await pagesNow();
-          const pageFor = (person: Person): PersonPage | undefined =>
-            pages.find((page) => page.contact !== undefined && currentUid(page.contact) === person.facts.uid);
+          const pageFor = (person: Person): PersonPage | undefined => linkedPage(pages, person);
           if (fieldOf(input, "duplicates") === true) {
             const groups = duplicates();
             return {
@@ -1030,21 +1032,19 @@ export const createContacts = ({
           const uids = [...new Set(listOf(fieldOf(input, "uid")))];
           const group = uids.map((uid) => byUid(uid));
           const missing = uids.filter((_uid, index) => group[index] === undefined);
-          if (missing.length > 0)
-            return Promise.resolve(failed(`There's no contact ${listed(missing)}. Find them with search.`));
+          if (missing.length > 0) return failed(`There's no contact ${listed(missing)}. Find them with search.`);
           const found = group.filter((person) => person !== undefined);
-          if (found.length < 2) return Promise.resolve(failed("Give at least two cards' uids to merge."));
+          if (found.length < 2) return failed("Give at least two cards' uids to merge.");
           const locked = found.find((person) => person.book.readOnly);
-          if (locked)
-            return Promise.resolve(failed(`${locked.facts.name} is in ${locked.book.name}, which is read-only.`));
+          if (locked) return failed(`${locked.facts.name} is in ${locked.book.name}, which is read-only.`);
           const card = askFirst("merge", found, textOf(input, "reason").trim());
-          return Promise.resolve({
+          return {
             text: `Asked them on the Desk as ${card.id}: “${card.title}” The cards merge when they tap Merge, so don't ask again in the chat.`,
             step: {
               title: `Asked you about merging ${String(found.length)} cards for ${found[0]?.facts.name ?? ""}`,
               note: "It's on your Desk",
             },
-          });
+          };
         }),
     },
     {
@@ -1066,18 +1066,17 @@ export const createContacts = ({
       call: (input) =>
         withSource(() => {
           const person = byUid(textOf(input, "uid"));
-          if (!person)
-            return Promise.resolve(failed(`There's no contact ${textOf(input, "uid")}. Find it with search.`));
+          if (!person) return failed(`There's no contact ${textOf(input, "uid")}. Find it with search.`);
           if (person.book.readOnly)
-            return Promise.resolve(failed(`${person.facts.name} is in ${person.book.name}, which is read-only.`));
+            return failed(`${person.facts.name} is in ${person.book.name}, which is read-only.`);
           const card = askFirst("delete", [person], textOf(input, "reason").trim());
-          return Promise.resolve({
+          return {
             text: `Asked them on the Desk as ${card.id}: “${card.title}” It goes when they tap Delete, so don't ask again in the chat.`,
             step: {
               title: `Asked you about deleting ${person.facts.name} from your contacts`,
               note: "It's on your Desk",
             },
-          });
+          };
         }),
     },
   ];
@@ -1154,8 +1153,7 @@ export const createContacts = ({
     if (coming.length > 0) {
       const pages = await pagesNow();
       const pageFor = (person: Person): PersonPage | undefined =>
-        pages.find((page) => page.contact !== undefined && currentUid(page.contact) === person.facts.uid) ??
-        pages.find((page) => plain(page.title) === plain(person.facts.name));
+        linkedPage(pages, person) ?? pages.find((page) => plain(page.title) === plain(person.facts.name));
       const done = await work(datesPrompt(coming.map((found) => comingLine(found, pageFor(found.person)))));
       if (!done.ok) {
         info("Kumo couldn't look at the dates coming up, so it tries again later", { error: done.failure });
