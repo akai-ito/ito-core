@@ -1,12 +1,13 @@
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import { toAskId, toTurnId, type AskId } from "#conversation/ids.ts";
-import type { Apns } from "#notifications/apns.ts";
+import { isRefusal, type Apns } from "#notifications/apns.ts";
 import { sealNotification, type Sealed } from "#notifications/crypto.ts";
 import type { Presence } from "#notifications/presence.ts";
 import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
 import type { Ask, Notification } from "#protocol/types.ts";
 import { localHourOf, toLevel } from "#notifications/manners.ts";
+import type { Health } from "#problems/problems.ts";
 import type { LogEntry, Store, StoredDevice } from "#store/store.ts";
 import type { Log } from "#turns/turns.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
@@ -34,6 +35,8 @@ export type NotifierOptions = {
   readonly timeZone?: string;
   readonly isBusy?: () => boolean;
   readonly graceMs?: number;
+  // How the last notification went: turned away or not reached, or through.
+  readonly onHealth?: (health: Health) => void;
 };
 
 export type Notifier = {
@@ -48,6 +51,8 @@ export const defaultReminderMs = 3 * 60 * 60 * 1000;
 export const momentGraceMs = 30 * 1000;
 
 const expiryMs = 24 * 60 * 60 * 1000;
+
+const ignore = (): void => undefined;
 
 const fallbackText = (kind: Notification["kind"], agentName: string): string => {
   switch (kind) {
@@ -104,6 +109,7 @@ export const createNotifier = ({
   timeZone = "UTC",
   isBusy = () => false,
   graceMs = momentGraceMs,
+  onHealth = ignore,
 }: NotifierOptions): Notifier => {
   const askingTurns = createCell<ReadonlySet<string>>(new Set());
   const lastSounded = createCell<number | undefined>(undefined);
@@ -112,15 +118,20 @@ export const createNotifier = ({
   const deliveries = createCell<Promise<void>>(Promise.resolve());
 
   const deliver = async (notification: Notification, level: PushLevel): Promise<void> => {
+    const failures = createCell<readonly string[]>([]);
     for (const device of store.devices()) {
       const sent = await apns.send(
         device,
         toEnvelope(notification, level, device, agentName()),
         clock.now() + expiryMs,
       );
-      if (!sent.ok) log("A notification didn't go out", sent.failure);
-      else if (sent.value === "gone") store.removeDevice(device.id);
+      if (!sent.ok) {
+        log("A notification didn't go out", sent.failure);
+        failures.update((current) => [...current, sent.failure]);
+      } else if (sent.value === "gone") store.removeDevice(device.id);
     }
+    const [failure] = failures.get();
+    onHealth(failure === undefined ? { ok: true } : { ok: false, reason: failure, isAuth: isRefusal(failure) });
   };
 
   const deliverAfter = async (previous: Promise<void>, notification: Notification, level: PushLevel): Promise<void> => {

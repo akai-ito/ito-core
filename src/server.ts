@@ -75,6 +75,8 @@ import {
   mailProblem,
   memoryBackupId,
   memoryBackupProblem,
+  pushDeliveryId,
+  pushDeliveryProblem,
   pushProblem,
   type Problems,
 } from "#problems/problems.ts";
@@ -547,6 +549,14 @@ export const createServer = (options: ServerOptions): Server => {
     reminderMs: push.reminderMs,
     timeZone,
     isBusy,
+    // Push that isn't set up at all is its own standing problem.
+    onHealth: (health) => {
+      problems.report(
+        pushDeliveryId,
+        readApnsCredentials(store) === undefined ? { ok: true } : health,
+        pushDeliveryProblem,
+      );
+    },
   });
   const moments = createMoments({
     store,

@@ -71,9 +71,14 @@ const reasonOf = (body: string): string => {
   }
 };
 
+const refusedPrefix = "APNs answered";
+
+// Whether APNs answered and turned the notification away, rather than not being reached.
+export const isRefusal = (failure: string): boolean => failure.startsWith(refusedPrefix);
+
 const toOutcome = (status: number, body: string): Result<ApnsOutcome, string> => {
   if (status === 200) return ok("sent");
-  return status === 410 ? ok("gone") : fail(`APNs answered ${String(status)}: ${reasonOf(body)}`);
+  return status === 410 ? ok("gone") : fail(`${refusedPrefix} ${String(status)}: ${reasonOf(body)}`);
 };
 
 export const createApns = (
