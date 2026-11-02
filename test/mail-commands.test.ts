@@ -11,13 +11,15 @@ import { toMessageId } from "#conversation/ids.ts";
 import type { EngineContext } from "#server.ts";
 import type { TimedEvent } from "#engine/scripted/script-engine.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
+import type { Complete } from "#engine/engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { commandsPath } from "#http/tools.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { foldersSetting } from "#mail/folders.ts";
+import { toDraftMime } from "#mail/message.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import type { Card, Step } from "#protocol/types.ts";
-import { fail } from "#result.ts";
+import { fail, ok } from "#result.ts";
 import { createServer, databaseFile, type Server } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore } from "#store/store.ts";
@@ -25,7 +27,7 @@ import { createContactsSource } from "#contacts/carddav.ts";
 import { claraCard } from "./support/contact-cards.ts";
 import { startFakeCardDav, type FakeCardDav } from "./support/fake-carddav.ts";
 import { createFakeMail } from "./support/fake-mail.ts";
-import { draftShape } from "./support/mime.ts";
+import { draftShape, mimeTree } from "./support/mime.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-mail-commands-"));
 const launcher = path.join(home, "bin", "ito");
@@ -62,6 +64,12 @@ const oldReceipts = Array.from({ length: 30 }, (_, index) => ({
 const jpeg = Buffer.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70]);
 
 const signature = "Sam\nProduct Engineer, Halcyon";
+
+// The quick model, which only rewrites a draft as asked: "Rewritten: " and what they asked.
+const rewrite: Complete = (prompt) => {
+  const change = /They asked: (?<change>.+)$/u.exec(prompt)?.groups?.change;
+  return Promise.resolve(change === undefined ? fail("Nothing to answer.") : ok({ body: `Rewritten: ${change}` }));
+};
 
 const absent = (): Promise<never> => Promise.resolve(fail("No calendar in this test.") as never);
 
@@ -195,11 +203,17 @@ describe("mail in the conversation, through ito mail commands", () => {
         }),
       createEngine: (given) => {
         context.set(given);
-        return createScriptEngine(systemClock, (_turn, _inputs, now) => ({
-          events: searchTurn(now),
-          steer: () => ({ outcome: "refused" }),
-          stoppedAt: (at) => at,
-        }));
+        return createScriptEngine(
+          systemClock,
+          (_turn, _inputs, now) => ({
+            events: searchTurn(now),
+            steer: () => ({ outcome: "refused" }),
+            stoppedAt: (at) => at,
+          }),
+          undefined,
+          undefined,
+          rewrite,
+        );
       },
     });
     server.set(started);
@@ -631,5 +645,36 @@ describe("mail in the conversation, through ito mail commands", () => {
     });
     expect(search).not.toHaveProperty("arguments");
     expect(thread).not.toHaveProperty("arguments");
+  });
+
+  it("keeps names and the thread's References when they ask for a change on the Desk", async () => {
+    const answer = "role-2@northwind.example";
+    mail.keep("INBOX", {
+      account: "icloud",
+      message_id: answer,
+      in_reply_to: offer.message_id,
+      from: "Clara Voss <clara.voss@northwind.example>",
+      to: ["sam@icloud.com"],
+      subject: "Re: AI Engineer at Northwind",
+      text: "Would Thursday at 10:00 work?",
+    });
+    await command(["draft", "--reply-to", answer, "--body", "Thursday works."]);
+    const card = drafts().find((waiting) => waiting.draft?.in_reply_to === answer);
+    const before = mail.drafts().length;
+
+    const answered = await inApp(`/v0/desk/cards/${card?.id ?? "none"}/answer`, { text: "Say 10:00 too" });
+
+    expect(answered.statusCode).toBe(202);
+    await vi.waitFor(() => {
+      expect(mail.drafts()).toHaveLength(before + 1);
+    });
+    const saved = mail.drafts().at(-1);
+    if (!saved) throw new Error("The redraft wasn't saved.");
+    expect(saved).toMatchObject({ replaces: card?.draft?.message_id });
+    expect(saved.body).toMatch(/^Rewritten: Say 10:00 too\n/u);
+    const { headers } = mimeTree(await toDraftMime(saved, "redraft@icloud.com", new Date()));
+    expect(headers.to).toBe("Clara Voss <clara.voss@northwind.example>");
+    expect(headers["in-reply-to"]).toBe(`<${answer}>`);
+    expect(headers.references).toBe(`<${offer.message_id}> <${answer}>`);
   });
 });
