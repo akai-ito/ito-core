@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { ImapFlow, type FetchMessageObject, type ImapFlowError, type ListResponse, type SearchObject } from "imapflow";
+import {
+  ImapFlow,
+  type CopyResponseObject,
+  type FetchMessageObject,
+  type ImapFlowError,
+  type ListResponse,
+  type SearchObject,
+} from "imapflow";
 import { createCell } from "#cell.ts";
 import { systemClock, type Cancel } from "#clock.ts";
 import {
@@ -71,6 +78,8 @@ export type MovedBatch = {
   readonly moved: number;
   readonly destination: string;
   readonly placed: readonly { readonly origin: string; readonly uids?: readonly number[] }[];
+  // Why it stopped partway, when it did. What moved before is still in placed, so it can be put back.
+  readonly failure?: string;
 };
 
 export type MoveProgress = (moved: number, total: number) => void;
@@ -148,10 +157,13 @@ type Found = { readonly place: Place; readonly mail: Mail };
 
 type Watermark = { readonly uidValidity: bigint; readonly next: number };
 
+// How many mails of a batch moved from one folder, and their UIDs in the destination while the server says.
+type Landed = { readonly count: number; readonly uids: readonly number[] | undefined };
+
 const pageSize = 20;
 const mostPerPage = 50;
 // UIDs per MOVE, and Message-IDs per search, so no command grows past what servers accept.
-const moveChunk = 250;
+const moveChunkSize = 250;
 const idChunk = 25;
 const addressSample = 50;
 const idleRestartMs = 4 * 60_000;
@@ -235,6 +247,37 @@ const parseDate = (text: string): Date | undefined => {
 const byDate = (left: Mail, right: Mail): number => left.date.localeCompare(right.date);
 
 const newestFirst = (uids: readonly number[]): readonly number[] => uids.toSorted((left, right) => right - left);
+
+type Dated = { readonly mail: Mail; readonly at: string };
+
+// A folder's mails newest first by UID, each dated no later than the one before. Sorted by these dates, a page
+// takes each folder's mails in UID order, so a folder's cursor never passes one that wasn't shown, even when mail
+// filed into it later carries an older date.
+const inUidOrder = (mails: readonly Mail[]): readonly Dated[] =>
+  mails
+    .toSorted((left, right) => right.uid - left.uid)
+    .reduce<readonly Dated[]>((dated, mail) => {
+      const before = dated.at(-1)?.at;
+      return [...dated, { mail, at: before !== undefined && before < mail.date ? before : mail.date }];
+    }, []);
+
+type Page = { readonly shown: readonly Mail[]; readonly taken: readonly Mail[] };
+
+// The newest of each folder's mails, up to the limit, and every mail passed on the way, such as a second copy of
+// one or one marked deleted, so each folder's cursor moves past them too.
+const takePage = (folders: readonly (readonly Mail[])[], limit: number): Page =>
+  folders
+    .flatMap((mails) => inUidOrder(mails))
+    .toSorted((left, right) => right.at.localeCompare(left.at))
+    .reduce<Page>(
+      (page, { mail }) => {
+        if (page.shown.length >= limit) return page;
+        const isShown =
+          !mail.flags.includes("\\Deleted") && page.shown.every(({ messageId }) => messageId !== mail.messageId);
+        return { shown: isShown ? [...page.shown, mail] : page.shown, taken: [...page.taken, mail] };
+      },
+      { shown: [], taken: [] },
+    );
 
 const chunked = <Value>(values: readonly Value[], size: number): readonly (readonly Value[])[] =>
   Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
@@ -858,13 +901,12 @@ export const createMailSource = (options: SourceOptions): MailSource => {
         });
         if (!read.ok) return read;
       }
-      const shown = uniqueByMessageId(found.get().flatMap(({ mails }) => mails))
-        .filter((mail) => !mail.flags.includes("\\Deleted"))
-        .toSorted(byDate)
-        .toReversed()
-        .slice(0, limit);
+      const page = takePage(
+        found.get().map(({ mails }) => mails),
+        limit,
+      );
       const next = found.get().map(({ folder, older }) => {
-        const from = shown.filter((mail) => mail.folder === folder).map(({ uid }) => uid);
+        const from = page.taken.filter((mail) => mail.folder === folder).map(({ uid }) => uid);
         const oldest = from.length === 0 ? cursor.value[folder] : Math.min(...from);
         return { folder, oldest, left: older.filter((uid) => oldest === undefined || uid < oldest).length };
       });
@@ -873,7 +915,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
         next.flatMap(({ folder, oldest }) => (oldest === undefined ? [] : [[folder, oldest]])),
       );
       return ok({
-        mails: shown,
+        mails: page.shown.toSorted(byDate).toReversed(),
         total: found.get().reduce((sum, { matches }) => sum + matches, 0),
         after,
         searched: scope.value,
@@ -1077,31 +1119,56 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     run("moving mail", async (opened) => {
       const target = await destinationOf(opened, destination);
       if (!target.ok) return target;
-      const total = groups.reduce((sum, { folder, uids }) => sum + (folder === target.value ? 0 : uids.length), 0);
-      const moved = createCell(0);
-      const placed = createCell<MovedBatch["placed"]>([]);
-      const moving = groups.filter((group) => group.folder !== target.value);
-      for (const { folder, uids } of moving) {
-        const landed = createCell<readonly number[] | undefined>([]);
-        for (const part of chunked(newestFirst(uids).toReversed(), moveChunk)) {
+      // One chunk moved, or why not: a dropped connection too, so what moved before it is still told.
+      const moveChunk = async (
+        folder: string,
+        part: readonly number[],
+      ): Promise<Result<CopyResponseObject, string>> => {
+        try {
           const done = await inFolder(opened.client, folder, () =>
             opened.client.messageMove(toUidSet(part), target.value, { uid: true }),
           );
-          if (done === false) return fail(`The mail server didn't move the mail out of ${folder}.`);
-          const map = done.uidMap;
-          landed.update((current) =>
-            current === undefined || map === undefined ? undefined : [...current, ...map.values()],
-          );
-          moved.update((count) => count + (map?.size ?? part.length));
-          onProgress?.(moved.get(), total);
+          return done === false ? fail(`The mail server didn't move the mail out of ${folder}.`) : ok(done);
+        } catch (error) {
+          return fail(`Mail couldn't finish moving mail: ${explain(error)}`);
         }
-        const uidsThere = landed.get();
-        placed.update((current) => [
-          ...current,
-          { origin: folder, ...(uidsThere !== undefined && { uids: uidsThere }) },
-        ]);
+      };
+      const parts = groups
+        .filter(({ folder }) => folder !== target.value)
+        .flatMap(({ folder, uids }) =>
+          chunked(newestFirst(uids).toReversed(), moveChunkSize).map((part) => ({ folder, part })),
+        );
+      const total = parts.reduce((sum, { part }) => sum + part.length, 0);
+      // For each folder mail came from, how many moved and, while the server says, their UIDs in the destination.
+      const landed = createCell<ReadonlyMap<string, Landed>>(new Map());
+      const movedSoFar = (): number =>
+        landed
+          .get()
+          .values()
+          .reduce((sum, { count }) => sum + count, 0);
+      const stopped = createCell<string | undefined>(undefined);
+      for (const { folder, part } of parts) {
+        const done = await moveChunk(folder, part);
+        if (!done.ok) {
+          stopped.set(done.failure);
+          break;
+        }
+        const map = done.value.uidMap;
+        landed.update((all) => {
+          const { count, uids } = all.get(folder) ?? { count: 0, uids: [] };
+          const there = uids === undefined || map === undefined ? undefined : [...uids, ...map.values()];
+          return new Map([...all, [folder, { count: count + (map?.size ?? part.length), uids: there }]]);
+        });
+        onProgress?.(movedSoFar(), total);
       }
-      return ok({ moved: moved.get(), destination: target.value, placed: placed.get() });
+      const failure = stopped.get();
+      if (failure !== undefined && movedSoFar() === 0) return fail(failure);
+      return ok({
+        moved: movedSoFar(),
+        destination: target.value,
+        placed: [...landed.get()].map(([origin, { uids }]) => ({ origin, ...(uids !== undefined && { uids }) })),
+        ...(failure !== undefined && { failure }),
+      });
     });
 
   const hasWritten: MailSource["hasWritten"] = (address) =>

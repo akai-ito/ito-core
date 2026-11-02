@@ -34,6 +34,8 @@ export type FakeMail = {
   readonly sentWhole: (account: string, body: SentBody) => void;
   readonly breakSentBodies: (broken: boolean) => void;
   readonly breakReading: () => void;
+  // The next batch move stops after this many mails, as when the connection drops partway.
+  readonly stopMovesAfter: (count: number) => void;
   readonly dropSent: (times: number) => void;
   readonly health: (account: string, health: Health) => void;
 };
@@ -78,6 +80,7 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const sentDrops = createCell(0);
   const bodies = createCell<ReadonlyMap<string, readonly SentBody[]>>(new Map());
   const isSentBroken = createCell(false);
+  const moveLimit = createCell<number | undefined>(undefined);
   const healthListeners = createCell<ReadonlyMap<string, (health: Health) => void>>(new Map());
 
   const boxOf = (account: string): Box => boxes.get().get(account) ?? { inbox: [], watchers: new Set() };
@@ -144,9 +147,12 @@ export const createFakeMail = (now: () => string): FakeMail => {
     },
     move: (groups, destination, onProgress) => {
       const to = pathOf(destination);
-      const moving = boxOf(account).inbox.filter((mail) =>
+      const picked = boxOf(account).inbox.filter((mail) =>
         groups.some(({ folder, uids }) => folder === mail.folder && mail.folder !== to && uids.includes(mail.uid)),
       );
+      const limit = moveLimit.get();
+      moveLimit.set(undefined);
+      const moving = picked.slice(0, limit);
       change(account, (box) => ({
         ...box,
         inbox: box.inbox.map((mail) => (moving.includes(mail) ? { ...mail, folder: to } : mail)),
@@ -158,6 +164,9 @@ export const createFakeMail = (now: () => string): FakeMail => {
           moved: moving.length,
           destination: to,
           placed: byFolder(moving).map(({ folder, uids }) => ({ origin: folder, uids })),
+          ...(moving.length < picked.length && {
+            failure: "Mail couldn't finish moving mail: Connection not available",
+          }),
         }),
       );
     },
@@ -267,6 +276,9 @@ export const createFakeMail = (now: () => string): FakeMail => {
     },
     breakReading: () => {
       isBroken.set(true);
+    },
+    stopMovesAfter: (count) => {
+      moveLimit.set(count);
     },
     dropSent: (times) => {
       sentDrops.set(times);
