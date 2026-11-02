@@ -44,9 +44,9 @@ import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
 import { packageVersion } from "#version.ts";
-import type { DoneEntry, ModelChoice } from "#protocol/types.ts";
+import type { ModelChoice } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
-import { toLocal } from "#desk/day.ts";
+import { toSpoken } from "#desk/day.ts";
 import { createDesk } from "#desk/desk.ts";
 import { createMoments } from "#desk/moments.ts";
 import { createWorkTools } from "#work/tools.ts";
@@ -80,16 +80,15 @@ import {
 } from "#problems/problems.ts";
 import { createModestChoice, createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
 import { createBlockStore } from "#day/blocks.ts";
-import { createCheckins, type DemoCheckin } from "#day/checkins.ts";
+import { createCheckins } from "#day/checkins.ts";
 import { createNights } from "#day/nights.ts";
-import { createDayPicture, type DayPicture } from "#day/picture.ts";
+import { createDayPicture } from "#day/picture.ts";
 import { createQuestions } from "#day/questions.ts";
 import { createStatus } from "#day/status.ts";
 import { registerStatus } from "#http/status.ts";
-import { toSpoken } from "#desk/day.ts";
-import { sampleDay } from "#day/samples.ts";
 import { registerDay } from "#http/day.ts";
 import { contextRun, inToolContext } from "#tools/context.ts";
+import { createDemoTools } from "#demo/tools.ts";
 
 export type ServerOptions = {
   readonly dataDirectory: string;
@@ -175,12 +174,6 @@ const motionSkill: OwnSkill = {
 
 const dayMs = 24 * 60 * 60 * 1000;
 
-const demoMail = (subject: string): NonNullable<DoneEntry["mail"]> => ({
-  account: "icloud",
-  message_id: `demo-${randomUUID()}@acme.com`,
-  from: "Acme",
-  subject,
-});
 const textRetentionMs = 30 * dayMs;
 const defaultHeartbeatMs = 15_000;
 
@@ -189,6 +182,7 @@ export const databaseFile = (dataDirectory: string): string => path.join(dataDir
 export const createServer = (options: ServerOptions): Server => {
   const clock = options.clock ?? systemClock;
   const identifiers = options.identifiers ?? randomIdentifiers;
+  const timeZone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
   mkdirSync(options.dataDirectory, { recursive: true });
   const database = openDatabase(databaseFile(options.dataDirectory));
   const store = createStore(database, clock, identifiers);
@@ -261,7 +255,7 @@ export const createServer = (options: ServerOptions): Server => {
     recordStep: (facts) => turns.recordStep("memory", facts),
     approve: (fields) => turns.approve(fields),
     info,
-    timeZone: options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timeZone,
     remote: {
       access: () => backup.access(),
       pushed: (outcome, remote) => {
@@ -277,11 +271,10 @@ export const createServer = (options: ServerOptions): Server => {
       : "<call>\nThe call has ended, so they're reading the chat. Write as usual, and don't say you've put " +
           "something in the chat: that's only for calls.\n</call>";
   };
-  const zone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
   const statusCell = createCell<() => readonly string[]>(() => []);
   // The time and what Kumo knows they're doing now, so replies fit the moment.
   const nowText = (): string =>
-    ["<now>", `It's ${toSpoken(clock.now(), zone)}.`, ...statusCell.get()(), "</now>"].join("\n");
+    ["<now>", `It's ${toSpoken(clock.now(), timeZone)}.`, ...statusCell.get()(), "</now>"].join("\n");
   const engine = options.createEngine({
     settings: store,
     log,
@@ -339,15 +332,11 @@ export const createServer = (options: ServerOptions): Server => {
     await listening.get();
     return engine.complete(prompt, schema, choice);
   };
-  const topics = createTopics({
-    store,
-    complete: quickComplete,
-    models: async () => {
-      await listening.get();
-      return engine.models();
-    },
-    info,
-  });
+  const listedModels = async (): ReturnType<Engine["models"]> => {
+    await listening.get();
+    return engine.models();
+  };
+  const topics = createTopics({ store, complete: quickComplete, models: listedModels, info });
   const touchedRuns = createCell<ReadonlySet<string>>(new Set());
   const runWork = async (prompt: string, choice?: ModelChoice): Promise<Result<string, string>> => {
     await listening.get();
@@ -363,7 +352,6 @@ export const createServer = (options: ServerOptions): Server => {
     if (!done.ok) info("Kumo's background work didn't finish", { error: done.failure });
     return done;
   };
-  const timeZone = zone;
   // One part of their How to help you page, such as how they like their mail sorted.
   const howToHelp = (section: string): string => {
     const page = memory.page("memory:helping-you");
@@ -392,10 +380,6 @@ export const createServer = (options: ServerOptions): Server => {
     log,
   });
   const presence = createPresence();
-  const listedModels = async (): ReturnType<Engine["models"]> => {
-    await listening.get();
-    return engine.models();
-  };
   const problems = createProblems({
     clock,
     standing: () => [
@@ -484,7 +468,6 @@ export const createServer = (options: ServerOptions): Server => {
     workspace: path.join(options.dataDirectory, "workspace"),
     contacts,
   });
-  const pictureCell = createCell<DayPicture | undefined>(undefined);
   const calendar = createCalendar({
     host,
     desk,
@@ -495,7 +478,7 @@ export const createServer = (options: ServerOptions): Server => {
     onHealth: (health) => {
       problems.report(calendarId, health, calendarProblem);
     },
-    enrich: (item) => pictureCell.get()?.enrich(item) ?? item,
+    enrich: (item) => picture.enrich(item),
   });
   const nights = createNights(store, timeZone);
   const questions = createQuestions(store, clock, timeZone);
@@ -515,7 +498,6 @@ export const createServer = (options: ServerOptions): Server => {
     morning: () => notBeforeOf(store),
     now: status.lines,
   });
-  pictureCell.set(picture);
   calendar.onEventEnded((uid) => {
     jobs.onEventEnded(uid);
   });
@@ -535,6 +517,9 @@ export const createServer = (options: ServerOptions): Server => {
     info,
   });
   const isBusy = (): boolean => calendar.isBusy();
+  const isGettingStarted = (): boolean => gettingStarted.state().state !== "done";
+  // Their own model, thinking modestly, for Kumo's lines and check-ins.
+  const modestChoice = createModestChoice(listedModels, () => readChoice(store.setting));
   const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
   const apns = createApns(() => readApnsCredentials(store), push.hosts, clock);
   const notifier = createNotifier({
@@ -555,9 +540,9 @@ export const createServer = (options: ServerOptions): Server => {
     timeZone,
     presence,
     complete: quickComplete,
-    choice: createModestChoice(listedModels, () => readChoice(store.setting)),
+    choice: modestChoice,
     isBusy,
-    isGettingStarted: () => gettingStarted.state().state !== "done",
+    isGettingStarted,
     identifiers,
     lead: () => leadOf(store),
     notify: notifier.moment,
@@ -571,13 +556,13 @@ export const createServer = (options: ServerOptions): Server => {
     timeZone,
     presence,
     isBusy,
-    isGettingStarted: () => gettingStarted.state().state !== "done",
+    isGettingStarted,
     nights,
     picture,
     questions,
     moments,
     complete: quickComplete,
-    choice: createModestChoice(listedModels, () => readChoice(store.setting)),
+    choice: modestChoice,
     work: runWork,
     motions,
     lead: () => leadOf(store),
@@ -594,7 +579,7 @@ export const createServer = (options: ServerOptions): Server => {
     timeZone,
     tell: moments.tell,
     work: runWork,
-    isGettingStarted: () => gettingStarted.state().state !== "done",
+    isGettingStarted,
     ...(options.random && { random: options.random }),
     info,
   });
@@ -653,50 +638,6 @@ export const createServer = (options: ServerOptions): Server => {
     newId: () => identifiers.attachment(),
     fetchImage: (url, signal) => fetcher(url, { signal }),
   });
-  // A made-up day for the demo: what Kumo did, where it stands on the ladder, and a card to glance at.
-  const showWork = (): void => {
-    const filed = { kind: "mail_filed", account: "icloud", id: "demo", back: "inbox" };
-    const cleared = [
-      ["Bank statement", "Routine, nothing due"],
-      ["CI passed on ito-core", "You saw it on the PR"],
-      ["Weekly running summary", "Nothing new"],
-      ["Water bill", "Direct debit, nothing to do"],
-      ["Daily digest from Acme", "You rarely open these"],
-      ["Leo: “ha, see you there”", "A reply, no action"],
-    ] as const;
-    const clearedToday = Array.from({ length: 38 }, (_, at) => cleared[at % cleared.length] ?? cleared[0]);
-    for (const [text, reason] of clearedToday) desk.addDone({ text, reason, mail: demoMail(text), quiet: true });
-    const handled = [
-      { text: "Drafted a thank-you to Tess Harlow at Halcyon", reason: "She sent the next steps.", work: "drafts" },
-      { text: "Drafted a reply to Clara Voss at Northwind", reason: "She asked for times next week.", work: "drafts" },
-      { text: "Northwind: Clara's note → Job search", reason: "A reply to yours; nothing to answer yet." },
-      { text: "Climbing with Leo → your calendar, 20:00", reason: "Leo confirmed by mail.", work: "calendar" },
-      { text: "Acme Pizza promos: unsubscribed, binned", reason: "You haven't opened one since March." },
-      {
-        text: "Quillfield Dental moved to Fri 13, 9:30",
-        reason: "Their mail confirmed the new time.",
-        work: "calendar",
-      },
-      { text: "Electricity bill → Admin, due 14 Nov", reason: "A bill with a date on it; a reminder's set." },
-    ] as const;
-    for (const entry of handled.toReversed()) {
-      desk.addDone({
-        text: entry.text,
-        reason: entry.reason,
-        quiet: false,
-        ...("work" in entry ? { work: entry.work } : { mail: demoMail(entry.text), undo: filed }),
-      });
-    }
-    const daysAgo = (days: number): string => toTimestamp(clock.now() - days * dayMs);
-    trust.hold("sorting", { step: "trusted", since: daysAgo(1), change: { kind: "climb", days: 15 } });
-    trust.hold("calendar", {
-      step: "spot_checks",
-      since: daysAgo(2),
-      change: { kind: "corrected", quote: "Quillfield Dental moved to Thu 12", at: daysAgo(2), stepped: true },
-    });
-    trust.hold("drafts", { step: "learning", since: daysAgo(9), change: { kind: "start" } });
-    trust.review(toLocal(clock.now(), timeZone).day, "Today");
-  };
   const coreTools: readonly Tool[] = [
     createAskTool(turns),
     imageTool,
@@ -712,161 +653,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...jobs.tools,
     ...mail.tools,
     ...gettingStarted.tools,
-    {
-      name: "show_getting_started",
-      title: "Show what getting started found",
-      audience: "hidden",
-      description: "Finish a sample catch-up with a belief and a booking, for the demo.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      call: () => {
-        if (gettingStarted.state().state === "done") return Promise.resolve({ text: "Getting started is done." });
-        const start = toTimestamp(clock.now() + 25 * dayMs);
-        const end = toTimestamp(clock.now() + 25 * dayMs + 2.5 * 60 * 60 * 1000);
-        store.setOnboarding({ state: "reading", progress: { mails_read: 40, mails_total: 40 } });
-        store.setOnboarding({
-          state: "ready",
-          proposal: {
-            beliefs: [
-              {
-                id: identifiers.belief(),
-                text: "You're training for a sub-20 5K, with parkrun on Saturdays.",
-                page: "memory:now",
-              },
-            ],
-            added: [
-              {
-                id: identifiers.calendarItem(),
-                uid: `demo-flights-${start}@ito.local`,
-                title: "Flights to Valencia",
-                start,
-                end,
-                all_day: false,
-                location: "Gatwick North",
-                calendar: { name: "Home", kumo: false },
-                status: "confirmed",
-              },
-            ],
-            motions: [],
-          },
-        });
-        return Promise.resolve({ text: "Showed what getting started found." });
-      },
-    },
-    {
-      name: "show_mail",
-      title: "Show a sample mail's work",
-      audience: "hidden",
-      description: "Read a sample mail: put a draft on the Desk and tell them about it, for the demo.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      call: () => {
-        desk.addCard({
-          kind: "draft",
-          title: "Note to Hotel Orto",
-          options: [{ label: "Drop it" }],
-          allows_text: true,
-          draft: {
-            account: "icloud",
-            from: "you@icloud.com",
-            to: ["reservations@hotelorto.it"],
-            subject: "Re: Booking confirmed: 20–23 November",
-            body:
-              "Hi! We land at 22:10 on the 20th, so we'll reach you around 23:00, after reception closes. Could " +
-              "you leave the keys for us, or tell us how late check-in works? Thanks",
-            message_id: `demo-${String(clock.now())}@ito.local`,
-            in_reply_to: "confirm-48213@hotelorto.it",
-          },
-        });
-        desk.setLastMail(toTimestamp(clock.now()));
-        moments.tell(
-          "Hotel Orto confirmed you for 20–23 Nov. One snag: you land 22:10 and check-in closes 22:00, so I " +
-            "drafted a note.",
-          false,
-        );
-        return Promise.resolve({ text: "Put a sample draft on the Desk." });
-      },
-    },
-    {
-      name: "show_invite",
-      title: "Show a sample invite",
-      audience: "hidden",
-      description: "Put a sample invite on the Desk, for the demo.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      call: () => {
-        const start = toTimestamp(clock.now() + 26 * 60 * 60 * 1000);
-        const end = toTimestamp(clock.now() + 27.5 * 60 * 60 * 1000);
-        desk.addCard({
-          kind: "invite",
-          title: "Halcyon technical, tomorrow",
-          options: [{ label: "Accept", acts: true }, { label: "Maybe" }, { label: "Decline" }],
-          allows_text: false,
-          invite: {
-            event: {
-              id: identifiers.calendarItem(),
-              uid: `demo-${start}@ito.local`,
-              title: "Halcyon technical",
-              start,
-              end,
-              all_day: false,
-              location: "Microsoft Teams",
-              calendar: { name: "Home", kumo: false },
-              status: "tentative",
-            },
-          },
-        });
-        return Promise.resolve({ text: "Put a sample invite on the Desk." });
-      },
-    },
-    {
-      name: "show_work",
-      title: "Show a sample day of Kumo's work",
-      audience: "hidden",
-      description: "Fill today's Done and the trust ladder with a sample day, and a card to glance at, for the demo.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      call: () => {
-        showWork();
-        return Promise.resolve({ text: "Filled today's work with a sample day." });
-      },
-    },
-    {
-      name: "show_day",
-      title: "Show a sample day",
-      audience: "hidden",
-      description:
-        "Put a sample day, Kumo's plan and its guesses, in Coming up, then write the day's line, for the demo.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      call: async () => {
-        desk.setComingUp(sampleDay(clock.now(), timeZone, identifiers));
-        await moments.dayNow();
-        return { text: "Showed a sample day." };
-      },
-    },
-    {
-      name: "show_checkin",
-      title: "Show a check-in",
-      audience: "hidden",
-      description: "Show one of Kumo's check-ins now, whatever the time, for the demo.",
-      inputSchema: {
-        type: "object",
-        properties: { kind: { enum: ["commit", "pre", "past", "question", "drift"] } },
-        required: ["kind"],
-        additionalProperties: false,
-      },
-      call: async (input) => {
-        const said = await checkins.show((input as { readonly kind: DemoCheckin }).kind);
-        return { text: said === "" ? "Nothing to say." : `Said: ${said}` };
-      },
-    },
-    {
-      name: "moment_now",
-      title: "Write Kumo's line now",
-      audience: "hidden",
-      description: "Write Kumo's first line of the day now, whatever the time, for the demo.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      call: async () => {
-        await moments.dayNow();
-        return { text: "Wrote Kumo's line." };
-      },
-    },
+    ...createDemoTools({ store, desk, trust, moments, checkins, gettingStarted, identifiers, clock, timeZone }),
   ];
   const noteRun = (tool: Tool): Tool => ({
     ...tool,
