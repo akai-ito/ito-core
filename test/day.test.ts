@@ -161,9 +161,9 @@ describe("what Kumo knows you're doing", () => {
     const clock = createVirtualClock(Date.parse("2026-11-11T20:00:00.000Z"));
     const store = storeAt("status");
     const nights = createNights(store, "UTC");
-    const status = createStatus(store, clock, "UTC", nights);
+    const status = createStatus({ settings: store, clock, timeZone: "UTC", nights, info: ignore });
     status.setFocus("phone", "work");
-    expect(status.lines()).toEqual(["Now: their Work Focus has been on since 20:00."]);
+    expect(status.lines()).toEqual(["Now: their Work Focus has been on since 20:00, last heard 1 minute ago."]);
     expect(status.likely()).toBe("their Work Focus is on this evening");
     clock.moveTo(Date.parse("2026-11-11T20:30:00.000Z"));
     const noted = await status.tool.call({ text: "Building tonight, the sync screen" });
@@ -176,13 +176,77 @@ describe("what Kumo knows you're doing", () => {
     clock.moveTo(Date.parse("2026-11-12T01:20:00.000Z"));
     status.setFocus("phone", "sleep");
     expect(status.isAsleep()).toBe(true);
-    expect(status.lines()).toEqual(["Now: their Sleep Focus has been on since 01:20."]);
+    expect(status.lines()).toEqual(["Now: their Sleep Focus has been on since 01:20, last heard 1 minute ago."]);
     expect(nights.get("2026-11-11")).toMatchObject({
       stoppedAt: "2026-11-12T01:20:00.000Z",
       lastActive: "2026-11-12T01:20:00.000Z",
     });
     clock.moveTo(Date.parse("2026-11-12T17:30:00.000Z"));
     expect(status.isAsleep()).toBe(false);
+  });
+
+  it("takes the same Focus said again as nothing new, and says how long ago it last heard", () => {
+    const clock = createVirtualClock(Date.parse("2026-11-11T23:10:00.000Z"));
+    const store = storeAt("status-again");
+    const nights = createNights(store, "UTC");
+    const status = createStatus({ settings: store, clock, timeZone: "UTC", nights, info: ignore });
+    status.setFocus("phone", "sleep");
+    clock.moveTo(Date.parse("2026-11-12T03:00:00.000Z"));
+    expect(status.lines()).toEqual(["Now: their Sleep Focus has been on since 23:10, last heard 4 hours ago."]);
+
+    // The app says its Focus again whenever it reconnects: it isn't a sign of them, and the Focus began earlier.
+    status.setFocus("phone", "sleep");
+    status.setFocus("tablet", undefined);
+    expect(status.lines()).toEqual(["Now: their Sleep Focus has been on since 23:10, last heard 1 minute ago."]);
+    expect(nights.lastActive()).toBe(Date.parse("2026-11-11T23:10:00.000Z"));
+    expect(nights.get("2026-11-11")?.lastActive).toBe("2026-11-11T23:10:00.000Z");
+  });
+
+  it("lets a Sleep Focus count only until the morning, and for 12 hours at most, and logs each change", () => {
+    const clock = createVirtualClock(Date.parse("2026-11-11T23:10:00.000Z"));
+    const store = storeAt("status-morning");
+    const logged = createCell<readonly unknown[]>([]);
+    const status = createStatus({
+      settings: store,
+      clock,
+      timeZone: "UTC",
+      nights: createNights(store, "UTC"),
+      info: (message, details) => {
+        logged.update((current) => [...current, { message, ...details }]);
+      },
+    });
+    status.setFocus("phone", "sleep");
+    clock.moveTo(Date.parse("2026-11-12T07:29:00.000Z"));
+    expect(status.isAsleep()).toBe(true);
+    expect(status.held("phone")).toEqual({
+      focus: "sleep",
+      since: "2026-11-11T23:10:00.000Z",
+      heard: "2026-11-11T23:10:00.000Z",
+      until: "2026-11-12T07:30:00.000Z",
+    });
+    clock.moveTo(Date.parse("2026-11-12T07:30:00.000Z"));
+    expect(status.isAsleep()).toBe(false);
+    expect(status.lines()).toEqual([]);
+    expect(status.held("phone")).toEqual({});
+
+    // Said again once it's stopped counting, it counts afresh.
+    status.setFocus("phone", "sleep");
+    clock.moveTo(Date.parse("2026-11-12T19:29:00.000Z"));
+    expect(status.isAsleep()).toBe(true);
+    clock.moveTo(Date.parse("2026-11-12T19:30:00.000Z"));
+    expect(status.isAsleep()).toBe(false);
+
+    status.setFocus("phone", "work");
+    status.setFocus("phone", "work");
+    clock.moveTo(Date.parse("2026-11-13T11:29:00.000Z"));
+    expect(status.held("phone").focus).toBe("work");
+    status.setFocus("phone", undefined);
+    expect(logged.get()).toEqual([
+      { message: "A Focus changed", device: "phone", focus: "sleep" },
+      { message: "A Focus changed", device: "phone", focus: "sleep" },
+      { message: "A Focus changed", device: "phone", focus: "work" },
+      { message: "A Focus changed", device: "phone", focus: "off", was: "work" },
+    ]);
   });
 });
 
@@ -490,6 +554,45 @@ describe("the day's question on the Desk", () => {
       expect(skipped.statusCode).toBe(202);
       expect(server.store.desk().moment).toBeUndefined();
       expect(server.store.listDone(undefined, 10).entries).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe("your phone's Focus over the API", () => {
+  it("holds what the phone said, and the same Focus said again keeps when it began", async () => {
+    const token = "ito_focus_test_not_a_real_token_0000000000000000000000";
+    const clock = createVirtualClock(Date.parse("2026-11-11T23:10:00.000Z"));
+    const server = createServer({
+      dataDirectory: path.join(home, "focus-server"),
+      name: "focus",
+      embedder: wordEmbedder,
+      timeZone: "UTC",
+      clock,
+      createEngine: ({ callTool }) =>
+        createScriptEngine(clock, demoScripts, callTool, undefined, demoAnswers, demoWork(callTool)),
+    });
+    server.store.setSetting(tokenSetting, hashToken(token));
+    const url = "/v0/devices/184f020c-92fa-4fa7-bdc9-c76b45930cec/status";
+    const headers = { authorization: `Bearer ${token}` };
+    try {
+      const put = () => server.app.inject({ method: "PUT", url, headers, payload: { focus: "sleep" } });
+      const first = await put();
+      clock.moveTo(Date.parse("2026-11-12T03:00:00.000Z"));
+      const again = await put();
+      expect([first.statusCode, again.statusCode]).toEqual([204, 204]);
+      const held = await server.app.inject({ method: "GET", url, headers });
+      expect(held.statusCode).toBe(200);
+      expect(held.json()).toEqual({
+        focus: "sleep",
+        since: "2026-11-11T23:10:00.000Z",
+        heard: "2026-11-12T03:00:00.000Z",
+        until: "2026-11-12T07:30:00.000Z",
+      });
+      await server.app.inject({ method: "PUT", url, headers, payload: {} });
+      const off = await server.app.inject({ method: "GET", url, headers });
+      expect(off.json()).toEqual({});
     } finally {
       await server.close();
     }

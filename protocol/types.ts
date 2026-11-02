@@ -731,14 +731,22 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /**
+     * Read what the server holds of your phone's Focus
+     * @description The Focus that counts for this device now, since when, when the device last said so, and
+     *     when it stops counting if the device never says it's off. Empty while none counts.
+     */
+    get: operations["getStatus"];
     /**
      * Say what your phone's Focus is
      * @description Send it when a Focus you've added Ito to turns on, with what that Focus is for, and with
-     *     no `focus` when it turns off. Kumo reads it as what you're doing now: its lines, plans
-     *     and check-ins fit it, a Sleep Focus ends tonight's check-ins, and nothing is ever sent
-     *     because of it. A Focus never said to be off stops counting after 16 hours. Any device
-     *     can say it, registered for notifications or not.
+     *     no `focus` when it turns off; send it again whenever you like, such as on reconnecting:
+     *     the same Focus said again while it counts changes nothing but when it was last heard.
+     *     Kumo reads it as what you're doing now: its lines, plans and check-ins fit it, a Sleep
+     *     Focus ends tonight's check-ins, and nothing is ever sent because of it. A Focus never said
+     *     to be off stops counting on its own: a Sleep Focus at your morning time, or 12 hours after
+     *     it came on, whichever is first; any other after 16 hours. Said again after that, it counts
+     *     afresh. Any device can say it, registered for notifications or not.
      */
     put: operations["setStatus"];
     post?: never;
@@ -2437,6 +2445,20 @@ export interface components {
        */
       focus?: "sleep" | "work" | "fitness" | "personal" | "other";
     };
+    /** @description What the server holds of a device's Focus; empty while none counts. */
+    HeldStatus: {
+      /**
+       * @description What the Focus is for.
+       * @enum {unknown}
+       */
+      focus?: "sleep" | "work" | "fitness" | "personal" | "other";
+      /** @description When it came on. */
+      since?: components["schemas"]["Timestamp"];
+      /** @description When the device last said so. */
+      heard?: components["schemas"]["Timestamp"];
+      /** @description When it stops counting if the device never says it's off. */
+      until?: components["schemas"]["Timestamp"];
+    };
     ErrorResult: {
       error: components["schemas"]["Error"];
     };
@@ -3321,6 +3343,7 @@ export type Device = components["schemas"]["Device"];
 export type DeviceResult = components["schemas"]["DeviceResult"];
 export type Presence = components["schemas"]["Presence"];
 export type DeviceStatus = components["schemas"]["DeviceStatus"];
+export type HeldStatus = components["schemas"]["HeldStatus"];
 export type ErrorResult = components["schemas"]["ErrorResult"];
 export type Problem = components["schemas"]["Problem"];
 export type EventId = components["schemas"]["EventId"];
@@ -4488,6 +4511,39 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  getStatus: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A random UUID the app makes once per install, and keeps. */
+        device: components["parameters"]["Device"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description What counts of this device's Focus. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "focus": "sleep",
+           *       "since": "2026-11-11T23:10:00.000Z",
+           *       "heard": "2026-11-12T03:00:00.000Z",
+           *       "until": "2026-11-12T07:30:00.000Z"
+           *     }
+           */
+          "application/json": components["schemas"]["HeldStatus"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
     };
   };
   setStatus: {

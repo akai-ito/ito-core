@@ -1021,16 +1021,42 @@ paths:
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v0/devices/{device}/status:
+    get:
+      tags: [Notifications]
+      operationId: getStatus
+      summary: Read what the server holds of your phone's Focus
+      description: |
+        The Focus that counts for this device now, since when, when the device last said so, and
+        when it stops counting if the device never says it's off. Empty while none counts.
+      parameters:
+        - $ref: "#/components/parameters/Device"
+      responses:
+        "200":
+          description: What counts of this device's Focus.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HeldStatus" }
+              example:
+                focus: sleep
+                since: "2026-11-11T23:10:00.000Z"
+                heard: "2026-11-12T03:00:00.000Z"
+                until: "2026-11-12T07:30:00.000Z"
+        "401": { $ref: "#/components/responses/TokenRejected" }
     put:
       tags: [Notifications]
       operationId: setStatus
       summary: Say what your phone's Focus is
       description: |
         Send it when a Focus you've added Ito to turns on, with what that Focus is for, and with
-        no `focus` when it turns off. Kumo reads it as what you're doing now: its lines, plans
-        and check-ins fit it, a Sleep Focus ends tonight's check-ins, and nothing is ever sent
-        because of it. A Focus never said to be off stops counting after 16 hours. Any device
-        can say it, registered for notifications or not.
+        no `focus` when it turns off; send it again whenever you like, such as on reconnecting:
+        the same Focus said again while it counts changes nothing but when it was last heard.
+        Kumo reads it as what you're doing now: its lines, plans and check-ins fit it, a Sleep
+        Focus ends tonight's check-ins, and nothing is ever sent because of it. A Focus never said
+        to be off stops counting on its own: a Sleep Focus at your morning time, or 12 hours after
+        it came on, whichever is first; any other after 16 hours. Said again after that, it counts
+        afresh. Any device can say it, registered for notifications or not.
       parameters:
         - $ref: "#/components/parameters/Device"
       requestBody:
@@ -2717,6 +2743,23 @@ components:
         focus:
           description: What the Focus is for, as you chose when adding Ito to it.
           enum: [sleep, work, fitness, personal, other]
+    HeldStatus:
+      description: What the server holds of a device's Focus; empty while none counts.
+      type: object
+      additionalProperties: false
+      properties:
+        focus:
+          description: What the Focus is for.
+          enum: [sleep, work, fitness, personal, other]
+        since:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When it came on.
+        heard:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When the device last said so.
+        until:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When it stops counting if the device never says it's off.
     ErrorResult:
       type: object
       required: [error]
