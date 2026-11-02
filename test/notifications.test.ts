@@ -162,6 +162,14 @@ describe("notifications", () => {
     clock.runNext(start + 60_000);
     await new Promise((resolve) => setTimeout(resolve, 50));
 
+    say("o_3", "Leo asked about Thursday.");
+    notifier.moment("o_3", false);
+    const answered = store.desk().moment;
+    if (answered)
+      store.setDesk({ ...store.desk(), moment: { ...answered, state: "working", answer: { option: "Yes" } } });
+    clock.runNext(start + 90_000);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     expect(sent.get().map(({ aps }) => aps["interruption-level"])).toEqual(["active"]);
     expect(openNotification(sent.get()[0]?.ito ?? { v: 1, k: "", n: "", c: "" }, device)).toEqual({
       kind: "moment",

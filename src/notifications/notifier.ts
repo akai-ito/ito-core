@@ -162,7 +162,8 @@ export const createNotifier = ({
     const cancel = clock.after(graceMs, () => {
       graces.update((current) => new Map([...current].filter(([other]) => other !== id)));
       const current = store.desk().moment;
-      if (current?.id !== id || current.read_at !== undefined) return;
+      // Read, or already answered, it needs no notification.
+      if (current?.id !== id || current.read_at !== undefined || current.state === "working") return;
       notify(
         { kind: "moment", text: toFirstLine(current.text), message: current.message },
         isUrgent ? "time-sensitive" : "active",
