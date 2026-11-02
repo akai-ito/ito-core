@@ -158,6 +158,21 @@ const withoutAnswer = <Given extends { readonly state?: unknown; readonly answer
     "state" | "answer"
   >;
 
+const alreadyActing = "Kumo is already acting on your answer.";
+
+type Shown = NonNullable<Card["answer"]>;
+
+// An answer as the Desk shows it, with only the parts given.
+const shownAnswer = ({ option, slots, text }: CardAnswer): Shown => ({
+  ...(option !== undefined && { option }),
+  ...(slots && { slots: [...slots] }),
+  ...(text !== undefined && { text }),
+});
+
+// The same answer again, such as the app retrying it, while Kumo acts on the first.
+const isSameAnswer = (shown: Shown | undefined, given: CardAnswer): boolean =>
+  JSON.stringify(shown) === JSON.stringify(shownAnswer(given));
+
 const checked = (card: Card, answer: CardAnswer): Result<CardAnswer, string> => {
   if (answer.option !== undefined && card.options.every(({ label }) => label !== answer.option)) {
     return fail(`${card.title} has no option ${answer.option}.`);
@@ -178,6 +193,7 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
   const undoers = createCell<readonly Undoer[]>([]);
   const doneListeners = createCell<readonly DoneListener[]>([]);
   const pending = createCell<Promise<void>>(Promise.resolve());
+  const undoing = createCell<ReadonlyMap<string, Promise<Result<DoneEntry, string>>>>(new Map());
 
   const at = (): string => toTimestamp(clock.now());
 
@@ -323,6 +339,18 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     changeMoment(moment.id, gone);
   };
 
+  const undoEntry = async (id: string): Promise<Result<DoneEntry, string>> => {
+    const found = store.findDone(id);
+    if (!found) return fail("not_found");
+    if (!found.entry.undo || found.payload === undefined) return fail("That can't be undone.");
+    const results = await Promise.all(undoers.get().map((undoer) => undoer(found.entry, found.payload)));
+    const [failure] = results.flatMap((result) => (result.ok ? [] : result.failure));
+    if (failure !== undefined) return fail(failure);
+    const undone: DoneEntry = { ...found.entry, text: `Undone: ${found.entry.text}`, undo: false };
+    store.replaceDone(undone);
+    return ok(undone);
+  };
+
   const handlerOf = (card: Card): CardHandler =>
     cardHandlers.get().get(card.id) ?? handlers.get().get(card.kind) ?? askKumo;
 
@@ -335,15 +363,10 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     answer: (id, given) => {
       const card = store.desk().waiting.find((waiting) => waiting.id === id);
       if (!card) return fail("not_found");
+      if (card.state === "working") return isSameAnswer(card.answer, given) ? ok(card) : fail(alreadyActing);
       const answer = checked(card, given);
       if (!answer.ok) return answer;
-      const { option, slots, text } = answer.value;
-      const shown = {
-        ...(option !== undefined && { option }),
-        ...(slots && { slots: [...slots] }),
-        ...(text !== undefined && { text }),
-      };
-      const working: Card = { ...card, state: "working", answer: shown };
+      const working: Card = { ...card, state: "working", answer: shownAnswer(answer.value) };
       changeCards((waiting) => waiting.map((waitingCard) => (waitingCard.id === id ? working : waitingCard)));
       background(async () => {
         const replacement = await handlerOf(card)(card, answer.value);
@@ -370,7 +393,9 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     answerMoment: (id, given) => {
       const moment = store.desk().moment;
       if (moment?.id !== id) return fail("not_found");
-      if (moment.state === "working") return fail("Kumo is already acting on your answer.");
+      if (moment.state === "working") {
+        return given.skip !== true && isSameAnswer(moment.answer, given) ? ok(moment) : fail(alreadyActing);
+      }
       if (given.skip === true) {
         if (moment.kind !== "question") return fail("Only the day's question can be skipped.");
         momentHandlers.get().get(id)?.skip?.(moment);
@@ -379,12 +404,7 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
       }
       const answer = checkedMoment(moment, given);
       if (!answer.ok) return answer;
-      const { option, text } = answer.value;
-      const working: Moment = {
-        ...moment,
-        state: "working",
-        answer: { ...(option !== undefined && { option }), ...(text !== undefined && { text }) },
-      };
+      const working: Moment = { ...moment, state: "working", answer: shownAnswer(answer.value) };
       changeMoment(id, () => working);
       background(() => actOnMoment(moment, answer.value));
       return ok(working);
@@ -410,16 +430,19 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     onUndo: (undoer) => {
       undoers.update((current) => [...current, undoer]);
     },
-    undo: async (id) => {
-      const found = store.findDone(id);
-      if (!found) return fail("not_found");
-      if (!found.entry.undo || found.payload === undefined) return fail("That can't be undone.");
-      const results = await Promise.all(undoers.get().map((undoer) => undoer(found.entry, found.payload)));
-      const [failure] = results.flatMap((result) => (result.ok ? [] : result.failure));
-      if (failure !== undefined) return fail(failure);
-      const undone: DoneEntry = { ...found.entry, text: `Undone: ${found.entry.text}`, undo: false };
-      store.replaceDone(undone);
-      return ok(undone);
+    // Undoing one entry again while it's being undone, such as a double tap, waits for the first.
+    undo: (id) => {
+      const running = undoing.get().get(id);
+      if (running) return running;
+      const job = (async (): Promise<Result<DoneEntry, string>> => {
+        try {
+          return await undoEntry(id);
+        } finally {
+          undoing.update((current) => new Map([...current].filter(([entry]) => entry !== id)));
+        }
+      })();
+      undoing.update((current) => new Map([...current, [id, job]]));
+      return job;
     },
     settled: () => pending.get(),
   };
