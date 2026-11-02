@@ -1451,6 +1451,33 @@ export const createMailbox = ({
     return kept;
   };
 
+  // A draft off the Desk, and out of Drafts unless they want it kept there. One already gone from Drafts, such as
+  // deleted in Mail, still leaves the Desk, so no draft can be stuck on it.
+  const dropDraft = async (input: unknown): Promise<ToolResult> => {
+    const id = textOf(input, "card").trim();
+    const card = draftCards().find((waiting) => waiting.id === id);
+    if (!card?.draft) return failed(`No draft ${id} is on the Desk.`);
+    const { draft } = card;
+    const connection = connectionOf(draft.account);
+    const removed =
+      fieldOf(input, "keep_in_drafts") === true
+        ? ok(undefined)
+        : connection
+          ? await connection.source.removeDraft(draft.message_id)
+          : fail(`${draft.account} mail isn't set up any more.`);
+    desk.removeCard(card.id);
+    forgetParts(card.id);
+    const reason = textOf(input, "reason").trim();
+    desk.addDone({
+      text: removed.ok
+        ? `Dropped the draft “${card.title}”`
+        : `Took “${card.title}” off the Desk; it's still in Drafts`,
+      reason: removed.ok ? reason : `${reason} (${removed.failure})`,
+      quiet: false,
+    });
+    return { text: removed.ok ? `Dropped ${card.title}.` : `Took ${card.title} off the Desk, but: ${removed.failure}` };
+  };
+
   // A draft saved into Drafts and put on the Desk: one answering a mail, written anew, or in place of an earlier one.
   const draftMail = (input: unknown): Promise<ToolResult> => {
     const replacing = textOf(input, "replaces").trim();
@@ -1741,6 +1768,26 @@ export const createMailbox = ({
         additionalProperties: false,
       },
       call: draftMail,
+    },
+    {
+      name: "drop_draft",
+      title: "Drop a draft",
+      audience: "work",
+      description:
+        "Take a draft off the Desk and out of their Drafts folder, when they ask or it's plainly settled without " +
+        "them sending it, such as answered another way. With keep_in_drafts only the card goes. It's recorded in " +
+        "their Done list.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          card: { type: "string", description: "The draft's Desk card id, such as k_…" },
+          keep_in_drafts: { type: "boolean", description: "Leave it in their Drafts folder; only the card goes." },
+          reason: { type: "string", description: "Why, in a line." },
+        },
+        required: ["card", "reason"],
+        additionalProperties: false,
+      },
+      call: dropDraft,
     },
     {
       name: "file_mail",

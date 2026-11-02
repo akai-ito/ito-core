@@ -61,6 +61,9 @@ These commands are for when they bring mail up, or when a conversation needs it.
   place in Drafts and on the Desk, and keeps whatever you don't give again. To fix only a recipient,
   give `--replaces` and the right `--to`. A new draft with the same `--reply-to` replaces the old
   one too.
+- To get rid of a draft, `drop --card <card id> --reason "…"` takes it off the Desk and out of
+  Drafts; `--keep-in-drafts` leaves it in Drafts. Do it when they ask, or when it's plainly settled
+  without them sending it, such as answered another way.
 - Times they're offering or accepting go on their calendar too, with `add_event`. A meeting that's
   only proposed goes on Kumo's calendar as a hold (`hold`), and the hold goes once it's settled.
 

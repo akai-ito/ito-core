@@ -171,7 +171,7 @@ export const createWorkTools = ({ post, desk }: WorkToolsOptions): readonly Tool
         const card = desk.cards().find((waiting) => waiting.id === id);
         if (!card) return Promise.resolve(failed(`No card ${id} is waiting on them.`));
         if (card.kind === "draft" || card.kind === "invite") {
-          return Promise.resolve(failed("Drafts leave once they're sent or dropped, and invites once answered."));
+          return Promise.resolve(failed("A draft goes with drop_draft, and an invite once it's answered."));
         }
         const reason = lineOf(input, "reason");
         desk.removeCard(card.id);

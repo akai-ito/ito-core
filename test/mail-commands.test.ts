@@ -320,6 +320,38 @@ describe("mail in the conversation, through ito mail commands", () => {
     expect(missing.text).toMatch(/^There's no draft card_gone on the Desk to replace\. Drafts there: /u);
   });
 
+  it("drops a draft from the Desk and Drafts, or from the Desk alone", async () => {
+    const write = async (subject: string): Promise<string> => {
+      await command([
+        "draft",
+        "--to",
+        "leo@example.com",
+        "--subject",
+        subject,
+        "--body",
+        "Still on?",
+        "--title",
+        subject,
+      ]);
+      return drafts().find((card) => card.draft?.subject === subject)?.id ?? "";
+    };
+    const stale = await write("Old plans");
+    const kept = await write("Maybe later");
+    const staleDraft = drafts().find((card) => card.id === stale)?.draft?.message_id;
+
+    const dropped = await command(["drop", "--card", stale, "--reason", "They answered by phone"]);
+    const cardOnly = await command(["drop", "--card", kept, "--keep-in-drafts", "--reason", "They asked"]);
+    const missing = await command(["drop", "--card", stale, "--reason", "Again"]);
+
+    expect(dropped.text).toBe("Dropped Old plans.");
+    expect(cardOnly.text).toBe("Dropped Maybe later.");
+    expect(drafts().map(({ id }) => id)).not.toEqual(expect.arrayContaining([stale]));
+    expect(drafts().map(({ id }) => id)).not.toEqual(expect.arrayContaining([kept]));
+    expect(mail.removedDrafts()).toContain(staleDraft);
+    expect(mail.removedDrafts()).not.toContain(drafts().find((card) => card.id === kept)?.draft?.message_id ?? "x");
+    expect(missing.text).toBe(`No draft ${stale} is on the Desk.`);
+  });
+
   it("drafts formatted mail with a picture from the chat, a file and their signature, kept when redrafted", async () => {
     const body = "Here's **the plan**:\n\n- Fly out Friday\n- Back Sunday\n\n![Leo at the beach](uploads/beach.jpg)";
     const drafted = await command([
