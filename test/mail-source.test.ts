@@ -808,6 +808,24 @@ describe("over IMAP", () => {
     expect(last.value.mails.map(({ messageId }) => messageId)).toEqual([ids.newsletter]);
   });
 
+  it("pages through every folder without skipping mail filed into one after a newer mail", async () => {
+    const source = connect();
+    // Archived now, the newsletter of 23 October sits after the 28 October mail already in the archive.
+    expect(await source.file(ids.newsletter, "archive")).toEqual({ ok: true, value: undefined });
+    const pages = async (more?: string): Promise<readonly string[]> => {
+      const page = await source.search({ since: "2026-10-01", limit: 2, ...(more !== undefined && { more }) });
+      if (!page.ok) throw new Error(page.failure);
+      const shown = page.value.mails.map(({ messageId }) => messageId);
+      return page.value.more === undefined ? shown : [...shown, ...(await pages(page.value.more))];
+    };
+
+    const everything = await pages();
+
+    expect(everything.toSorted(byText)).toEqual(
+      [ids.booking, ids.newsletter, ids.reply, ids.start, ids.question, "arrival-41@studio.example"].toSorted(byText),
+    );
+  });
+
   it("searches one folder by its role or name, and says when there's no such folder", async () => {
     const source = connect();
     const archived = await source.search({ from: "lena@studio.example", folder: "archive" });
@@ -879,6 +897,34 @@ describe("over IMAP", () => {
     expect(back.ok && back.value.moved).toBe(2);
     const booking = await source.read(ids.booking);
     expect(booking.ok ? booking.value.folder : booking.failure).toBe("INBOX");
+  });
+
+  it("says what moved before the server stopped a batch, so it can be put back", async () => {
+    const source = connect();
+    const picked = await source.select({ messageIds: [ids.booking, ids.newsletter, "arrival-41@studio.example"] });
+    if (!picked.ok) throw new Error(picked.failure);
+    // The second folder's move is refused, after the inbox's has gone through.
+    const move = running().getCommandHandler("UID MOVE");
+    const moves = createCell(0);
+    running().setCommandHandler("UID MOVE", (connection, parsed, data, callback) => {
+      if (moves.update((count) => count + 1) === 1) {
+        move(connection, parsed, data, callback);
+        return;
+      }
+      connection.sendStatus?.(parsed, data, "NO", "Move refused", false, "UID MOVE FAILED");
+      callback();
+    });
+
+    const moved = await source.move(picked.value.groups, "archive");
+
+    expect(moved.ok && moved.value).toMatchObject({
+      moved: 2,
+      destination: "Archive",
+      placed: [{ origin: "INBOX", uids: [2, 3] }],
+      failure: "The mail server didn't move the mail out of Receipts.",
+    });
+    const refused = await source.move([{ folder: "Receipts", uids: [1] }], "archive");
+    expect(refused).toEqual({ ok: false, failure: "The mail server didn't move the mail out of Receipts." });
   });
 
   it("picks out everything a search finds in a folder", async () => {

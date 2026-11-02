@@ -556,6 +556,18 @@ describe("effort that follows the stakes", () => {
   });
 });
 
+// A big batch's ask as the mailbox keeps it, for the card that asked.
+const batchAsk = (card: string): unknown => ({
+  card,
+  account: "icloud",
+  groups: [{ folder: "INBOX", uids: [1, 2], ids: ["held-1@news.example", "held-2@news.example"] }],
+  into: { folder: "Newsletters" },
+  is_new: false,
+  from: "Inbox",
+  count: 30,
+  reason: "",
+});
+
 const move = (inbox: Inbox, input: unknown): Promise<ToolResult> | undefined =>
   inbox.mailbox.tools.find(({ name }) => name === "mail_move")?.call(input);
 
@@ -601,6 +613,52 @@ describe("moving many mails at once", () => {
     expect(box.mail.moved()).toEqual([]);
     expect(box.done()).toEqual([]);
     expect(box.setting("mail_batch_asks")).toBe("[]");
+    await box.mailbox.close();
+  });
+
+  it("says how far a move got when the server stopped it, and Undo puts back what moved", async () => {
+    const box = openInbox({ decision: "promotion" }, {}, chosen);
+    box.mail.hold("icloud", 3);
+    box.mail.stopMovesAfter(2);
+
+    const moved = await move(box, { message_id: issues, into: "bin", reason: "Old news" });
+
+    expect(moved).toMatchObject({
+      text:
+        "Moved 2 of 3 mails from Inbox to the bin; the rest stayed where they were. " +
+        "Mail couldn't finish moving mail: Connection not available.",
+      step: { note: "Mail couldn't finish moving mail: Connection not available" },
+    });
+    expect(box.done()).toMatchObject([
+      {
+        text: "Moved 2 of 3 mails from Inbox to the bin; the rest stayed where they were",
+        reason: "Mail couldn't finish moving mail: Connection not available",
+        undo: true,
+      },
+    ]);
+    const [entry] = box.done();
+    if (entry) await box.undo(entry);
+    expect(issues.map((id) => box.mail.folderOf("icloud", id))).toEqual(["INBOX", "INBOX", "INBOX"]);
+    await box.mailbox.close();
+  });
+
+  it("forgets a big batch's ask once its card has gone without an answer", async () => {
+    const waiting: Card = {
+      id: "k_9",
+      at: "2026-11-10T21:00:00.000Z",
+      kind: "question",
+      title: "Move 30 mails from Inbox into Newsletters?",
+      options: [{ label: "Apply" }, { label: "Not now" }],
+      allows_text: false,
+    };
+    const box = openInbox(
+      { decision: "promotion" },
+      {},
+      [...chosen, ["mail_batch_asks", JSON.stringify([batchAsk("k_3"), batchAsk("k_9")])]],
+      [waiting],
+    );
+
+    expect(JSON.parse(box.setting("mail_batch_asks") ?? "[]")).toMatchObject([{ card: "k_9" }]);
     await box.mailbox.close();
   });
 

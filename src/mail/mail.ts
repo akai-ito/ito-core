@@ -1399,6 +1399,11 @@ export const createMailbox = ({
 
   const batchAsks = (): readonly BatchAsk[] => toBatchAsks(store.setting(batchAsksSetting));
 
+  // The asks still on the Desk. One whose card went without an answer, such as one Kumo cleared, goes with its list
+  // of every mail it would have moved.
+  const waitingAsks = (): readonly BatchAsk[] =>
+    batchAsks().filter((ask) => desk.cards().some((card) => card.id === ask.card));
+
   // Where a batch goes, from what Kumo gave: one of their folders by name, or the archive, the bin or the inbox.
   const intoOf = (text: string, isNew: boolean): Result<Into, string> => {
     const wanted = text.trim();
@@ -1419,7 +1424,12 @@ export const createMailbox = ({
         );
   };
 
-  const applyMove = async ({ account, source }: Connection, plan: Plan): Promise<Result<string, string>> => {
+  // Moves a batch and records it in Done with an undo. A move the server stopped partway says how far it got, and
+  // why in its note; Undo puts back what moved.
+  const applyMove = async (
+    { account, source }: Connection,
+    plan: Plan,
+  ): Promise<Result<{ readonly text: string; readonly note: string }, string>> => {
     if (plan.is_new && typeof plan.into === "object") folders.addName(plan.into.folder, plan.reason);
     const ids = plan.groups.flatMap((group) => group.ids);
     if (plan.into === "inbox") restored.update((current) => new Set([...current, ...ids]));
@@ -1427,12 +1437,18 @@ export const createMailbox = ({
       info("Moving mail", { account, moved: count, total });
     });
     if (!moved.ok) return moved;
-    const text = `Moved ${plural(moved.value.moved, "mail")} from ${plan.from} ${intoWords(plan.into)}`;
+    const { moved: count, failure } = moved.value;
+    const where = `from ${plan.from} ${intoWords(plan.into)}`;
+    const text =
+      failure === undefined
+        ? `Moved ${plural(count, "mail")} ${where}`
+        : `Moved ${String(count)} of ${plural(plan.count, "mail")} ${where}; the rest stayed where they were`;
+    const note = filled(failure, plan.reason);
     const idsFrom = (origin: string): readonly string[] =>
       plan.groups.filter(({ folder }) => folder === origin).flatMap((group) => group.ids);
     desk.addDone({
       text,
-      ...(plan.reason !== "" && { reason: plan.reason }),
+      ...(note !== "" && { reason: note }),
       quiet: false,
       undo: {
         kind: "mail_moved",
@@ -1444,7 +1460,7 @@ export const createMailbox = ({
         restore: moved.value.placed.flatMap(({ origin }) => (isInbox(origin) ? idsFrom(origin) : [])),
       } satisfies MovedUndo,
     });
-    return ok(text);
+    return ok({ text, note });
   };
 
   const answerMove = async (card: { readonly id: string }, given: CardAnswer): Promise<undefined> => {
@@ -1478,7 +1494,7 @@ export const createMailbox = ({
         ].join(" "),
       },
     });
-    store.setSetting(batchAsksSetting, JSON.stringify([...batchAsks(), { ...plan, card: card.id }]));
+    store.setSetting(batchAsksSetting, JSON.stringify([...waitingAsks(), { ...plan, card: card.id }]));
     desk.handleCard(card.id, answerMove);
     return card;
   };
@@ -1534,9 +1550,10 @@ export const createMailbox = ({
     }
     const done = await applyMove(connection, plan);
     if (!done.ok) return failed(done.failure);
+    const { text, note } = done.value;
     return {
-      text: `${done.value}.${unfound}`,
-      step: { title: done.value, ...(reason !== "" && { note: reason }), mails: shown },
+      text: `${text}.${note === reason ? "" : ` ${withStop(note)}`}${unfound}`,
+      step: { title: text, ...(note !== "" && { note }), mails: shown },
     };
   };
 
@@ -2106,9 +2123,9 @@ export const createMailbox = ({
     },
   ];
 
-  for (const ask of batchAsks()) {
-    if (desk.cards().some((card) => card.id === ask.card)) desk.handleCard(ask.card, answerMove);
-  }
+  const waiting = waitingAsks();
+  if (waiting.length < batchAsks().length) store.setSetting(batchAsksSetting, JSON.stringify(waiting));
+  for (const ask of waiting) desk.handleCard(ask.card, answerMove);
 
   const check = async (account: Account, values: Values): Promise<CheckResult> => {
     const config = configOf(account, values);
