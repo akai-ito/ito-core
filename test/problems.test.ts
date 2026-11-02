@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,9 +10,10 @@ import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import { apnsSettings } from "#notifications/apns.ts";
-import { createProblems, lastingMs, mailProblem, pushProblem } from "#problems/problems.ts";
+import { createProblems, lastingMs, mailProblem, pushDeliveryProblem, pushProblem } from "#problems/problems.ts";
 import type { Problem } from "#protocol/types.ts";
 import { createServer } from "#server.ts";
+import { startFakeApns } from "./support/fake-apns.ts";
 import { createFakeMail } from "./support/fake-mail.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
 
@@ -111,6 +113,48 @@ describe("problems", () => {
       expect(server.store.snapshot("no_cursor").event.problems).toBeUndefined();
     } finally {
       await server.close();
+    }
+  });
+
+  it("shows notifications Apple turns away until one gets through", async () => {
+    const apns = await startFakeApns();
+    const server = createServer({
+      dataDirectory: path.join(home, "push"),
+      name: "problems",
+      embedder: wordEmbedder,
+      timeZone: "UTC",
+      createEngine: ({ callTool }) =>
+        createScriptEngine(createVirtualClock(0), demoScripts, callTool, undefined, demoAnswers),
+      push: { hosts: { production: apns.origin, sandbox: apns.origin } },
+    });
+    const keys = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    server.store.setSetting(
+      apnsSettings.privateKey,
+      keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    );
+    server.store.setSetting(apnsSettings.keyId, "KEY1234567");
+    server.store.setSetting(apnsSettings.teamId, "TEAM123456");
+    server.store.setSetting(apnsSettings.bundleId, "com.example.ari");
+    server.store.registerDevice(toDeviceId("d_phone"), {
+      apnsToken: "0123456789abcdef".repeat(4),
+      environment: "production",
+      notificationKey: Buffer.alloc(32).toString("base64"),
+    });
+    try {
+      apns.answerWith(403);
+      server.store.postMessage("Hotel Orto confirmed you for 20–23 Nov.");
+      await apns.next(2000);
+      await expect
+        .poll(() => server.store.problems())
+        .toEqual([pushDeliveryProblem("APNs answered 403: BadDeviceToken", true)]);
+
+      apns.answerWith(200);
+      server.store.postMessage("Climbing with Leo moved to 20:00.");
+      await apns.next(2000);
+      await expect.poll(() => server.store.problems()).toEqual([]);
+    } finally {
+      await server.close();
+      await apns.close();
     }
   });
 });

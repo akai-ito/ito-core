@@ -34,6 +34,20 @@ export const pushProblem: Problem = {
   fix: "On the server, run ito push setup with your APNs key. The server's README, under Notifications, has the steps.",
 };
 
+export const pushDeliveryId = "push:delivery";
+
+// Apple turning notifications away, such as for a push key whose team ID doesn't match, or not being reachable.
+export const pushDeliveryProblem = (reason: string, isRefused: boolean): Problem => ({
+  id: pushDeliveryId,
+  area: "notifications",
+  title: "Notifications aren't getting through",
+  detail: `The last one didn't reach your phone, so nothing does while Ito is closed. ${reason}.`,
+  fix: isRefused
+    ? "On the server, run ito push setup again and check the key ID, team ID and bundle ID match your Apple " +
+      "developer account. If Apple says BadDeviceToken, open Ito on your phone so it registers again."
+    : "Ito keeps trying. If it goes on, check the server's internet connection.",
+});
+
 export const capabilityProblem = ({
   id,
   manifest,
