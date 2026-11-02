@@ -1,24 +1,13 @@
 import { createCell } from "#cell.ts";
-import { toTimestamp, type Clock } from "#clock.ts";
-import { startOfDay, toLocal } from "#desk/day.ts";
+import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
+import { startOfDay, toLocal, untilMinutes } from "#desk/day.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { CalendarItem, Card, Desk, DoneEntry, Moment, WorkKind } from "#protocol/types.ts";
+import type { CalendarItem, Card, Desk, DoneEntry } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
-import { fieldOf } from "#tools/input.ts";
 import type { Info } from "#turns/turns.ts";
 
 export type CardAnswer = { readonly option?: string; readonly slots?: readonly number[]; readonly text?: string };
-
-// An answer to Kumo's line: an option or words, or skipping the day's question.
-export type MomentAnswer = { readonly option?: string; readonly text?: string; readonly skip?: true };
-
-// How one of Kumo's lines is answered, ahead of acting on it in the background, such as a commitment for tonight.
-export type MomentHandler = {
-  // Acts on the answer: what followed, in a line for Done, or why it couldn't, and the line comes back.
-  readonly answer: (moment: Moment, answer: CardAnswer) => Promise<Result<string, string>>;
-  readonly skip?: (moment: Moment) => void;
-};
 
 export type NewCard = Omit<Card, "id" | "at" | "state" | "answer">;
 
@@ -27,8 +16,6 @@ export type NewDone = Omit<DoneEntry, "id" | "at" | "undo"> & { readonly undo?: 
 export type CardHandler = (card: Card, answer: CardAnswer) => Promise<NewCard | undefined>;
 
 export type Undoer = (entry: DoneEntry, payload: unknown) => Promise<Result<undefined, string>>;
-
-export type DoneListener = (entry: DoneEntry) => void;
 
 export type Work = (prompt: string) => Promise<Result<string, string>>;
 
@@ -42,26 +29,18 @@ export type DeskKeeper = {
   readonly handleCard: (id: string, handler: CardHandler) => void;
   // Puts a waiting card's changed version in its place, under the same id, marked changed.
   readonly replaceCard: (id: string, card: NewCard) => void;
-  readonly setMoment: (moment: Moment | undefined) => void;
-  readonly readMoment: (id: string) => boolean;
-  readonly answerMoment: (id: string, answer: MomentAnswer) => Result<Moment, string>;
-  // Answers one line its own way, until the line moves on.
-  readonly handleMoment: (id: string, handler: MomentHandler) => void;
   readonly setComingUp: (items: readonly CalendarItem[]) => void;
   // When Kumo last read a new mail, or undefined once no mail account is connected.
   readonly setLastMail: (at: string | undefined) => void;
-  // Counts what Kumo handled today again, such as after midnight.
-  readonly recount: () => void;
   // Today's Done entries, newest first.
   readonly today: () => readonly DoneEntry[];
   // One local day's Done entries, such as `2026-11-10`, newest first.
   readonly doneOn: (day: string) => readonly DoneEntry[];
   readonly addDone: (entry: NewDone) => DoneEntry;
-  // Hears each new Done entry, such as one of Kumo's calls for the trust ladder to count.
-  readonly onDone: (listener: DoneListener) => void;
   readonly onUndo: (undoer: Undoer) => void;
   readonly undo: (id: string) => Promise<Result<DoneEntry, string>>;
   readonly settled: () => Promise<void>;
+  readonly close: () => void;
 };
 
 export type DeskOptions = {
@@ -87,19 +66,6 @@ export const lastLine = (text: string): string =>
   ).slice(0, doneLineLimit);
 
 const cardOnly = new Set(["id", "at", "state", "answer"]);
-
-const isMailUndo = (payload: unknown): boolean => {
-  const kind = fieldOf(payload, "kind");
-  return typeof kind === "string" && kind.startsWith("mail_");
-};
-
-// The kind of Kumo's own work an entry is, when it doesn't say: mail it moved, cleared or unsubscribed from is
-// sorting. A line saying Kumo couldn't do something isn't a call.
-export const workOf = (given: NewDone): WorkKind | undefined => {
-  if (given.work !== undefined) return given.work;
-  if (/^Couldn't\b/u.test(given.text)) return undefined;
-  return given.mail !== undefined || isMailUndo(given.undo) ? "sorting" : undefined;
-};
 
 const halfDayMs = 12 * 60 * 60 * 1000;
 
@@ -130,33 +96,15 @@ const toAnswerText = (card: Card, answer: CardAnswer): string => {
 
 const quoteLimit = 60;
 
-// Kumo's line, short enough to quote in Done: its first sentence, cut at a word if it's long.
+// What Kumo did, short enough to quote in Done: its first sentence, cut at a word if it's long.
 export const quoteOf = (text: string): string => {
   const sentence = (/^.+?[.!?;](?=\s|$)/u.exec(text)?.[0] ?? text).replace(/[.;]$/u, "");
   return sentence.length <= quoteLimit ? sentence : `${sentence.slice(0, quoteLimit - 1).replace(/\s+\S*$/u, "")}…`;
 };
 
-const checkedMoment = (moment: Moment, answer: CardAnswer): Result<CardAnswer, string> => {
-  if (answer.option !== undefined && moment.options.every(({ label }) => label !== answer.option)) {
-    return fail(`Kumo's line has no option ${answer.option}.`);
-  }
-  if (answer.slots !== undefined) return fail("Kumo's line has no times to pick.");
-  return answer.text === undefined || moment.allows_text ? ok(answer) : fail("Kumo's line takes one of its options.");
-};
-
-// The same, without one field, such as a moment that's gone from the Desk.
+// The same, without one field, such as when Kumo last read mail once no account is connected.
 const without = <Given extends object, Field extends keyof Given>(given: Given, field: Field): Omit<Given, Field> =>
   Object.fromEntries(Object.entries(given).filter(([key]) => key !== field)) as Omit<Given, Field>;
-
-const gone = (): Moment | undefined => undefined;
-
-const withoutAnswer = <Given extends { readonly state?: unknown; readonly answer?: unknown }>(
-  given: Given,
-): Omit<Given, "state" | "answer"> =>
-  Object.fromEntries(Object.entries(given).filter(([field]) => field !== "state" && field !== "answer")) as Omit<
-    Given,
-    "state" | "answer"
-  >;
 
 const alreadyActing = "Kumo is already acting on your answer.";
 
@@ -188,12 +136,11 @@ const checked = (card: Card, answer: CardAnswer): Result<CardAnswer, string> => 
 
 export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: DeskOptions): DeskKeeper => {
   const handlers = createCell<ReadonlyMap<Card["kind"], CardHandler>>(new Map());
-  const momentHandlers = createCell<ReadonlyMap<string, MomentHandler>>(new Map());
   const cardHandlers = createCell<ReadonlyMap<string, CardHandler>>(new Map());
   const undoers = createCell<readonly Undoer[]>([]);
-  const doneListeners = createCell<readonly DoneListener[]>([]);
   const pending = createCell<Promise<void>>(Promise.resolve());
   const undoing = createCell<ReadonlyMap<string, Promise<Result<DoneEntry, string>>>>(new Map());
+  const midnight = createCell<Cancel | undefined>(undefined);
 
   const at = (): string => toTimestamp(clock.now());
 
@@ -228,15 +175,6 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     );
   };
 
-  const changeMoment = (id: string, change: (moment: Moment) => Moment | undefined): void => {
-    changeDesk((desk) => {
-      if (desk.moment?.id !== id) return desk;
-      const { moment: current, ...rest } = desk;
-      const changed = change(current);
-      return changed ? { ...rest, moment: changed } : rest;
-    });
-  };
-
   const addCard = (given: NewCard): Card => {
     const card: Card = { id: identifiers.card(), at: at(), ...given };
     changeCards((waiting) => [...waiting, card]);
@@ -264,17 +202,9 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
 
   const addDone = (given: NewDone): DoneEntry => {
     const { undo, ...rest } = given;
-    const work = workOf(given);
-    const entry: DoneEntry = {
-      id: identifiers.done(),
-      at: at(),
-      ...rest,
-      undo: undo !== undefined,
-      ...(work !== undefined && { work }),
-    };
+    const entry: DoneEntry = { id: identifiers.done(), at: at(), ...rest, undo: undo !== undefined };
     store.addDone(entry, undo);
     if (!entry.quiet) recount();
-    for (const listener of doneListeners.get()) listener(entry);
     return entry;
   };
 
@@ -302,43 +232,6 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     return undefined;
   };
 
-  const workOnMoment = async (moment: Moment, answer: CardAnswer): Promise<Result<string, string>> => {
-    const prompt = [
-      `At the top of their Desk, and in the conversation, you said: ${moment.text}`,
-      `They answered: ${answer.option ?? answer.text ?? ""}`,
-      "Act on it if anything follows, such as noting what they told you, moving something or scheduling a look.",
-      "End with one line for their Done list saying what you did, or that nothing more was needed.",
-    ].join("\n");
-    const done = await work(prompt);
-    return done.ok ? ok(lastLine(done.value)) : done;
-  };
-
-  const actOnMoment = async (moment: Moment, answer: CardAnswer): Promise<void> => {
-    const said = answer.option ?? answer.text ?? "";
-    const handler = momentHandlers.get().get(moment.id);
-    const done = await (handler ? handler.answer(moment, answer) : workOnMoment(moment, answer));
-    if (!done.ok) {
-      info("Kumo couldn't act on an answer to its line, so the line is back", {
-        moment: moment.id,
-        error: done.failure,
-      });
-      addDone({
-        text: `Couldn't act on your answer to “${quoteOf(moment.text)}”; it's back on your Desk`,
-        reason: done.failure,
-        quiet: false,
-      });
-      changeMoment(moment.id, withoutAnswer);
-      return;
-    }
-    const followed = done.value;
-    addDone({
-      text: `You answered “${quoteOf(moment.text)}”: ${said}`,
-      ...(followed !== "" && { reason: followed }),
-      quiet: false,
-    });
-    changeMoment(moment.id, gone);
-  };
-
   const undoEntry = async (id: string): Promise<Result<DoneEntry, string>> => {
     const found = store.findDone(id);
     if (!found) return fail("not_found");
@@ -350,6 +243,19 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     store.replaceDone(undone);
     return ok(undone);
   };
+
+  // A new day: what Kumo handled counts from nothing again.
+  const scheduleMidnight = (): void => {
+    const untilMidnight = untilMinutes(clock.now(), timeZone, 0);
+    midnight.set(
+      clock.after(untilMidnight, () => {
+        recount();
+        scheduleMidnight();
+      }),
+    );
+  };
+
+  scheduleMidnight();
 
   const handlerOf = (card: Card): CardHandler =>
     cardHandlers.get().get(card.id) ?? handlers.get().get(card.kind) ?? askKumo;
@@ -381,37 +287,6 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
       cardHandlers.update((current) => new Map([...current, [id, handler]]));
     },
     replaceCard,
-    setMoment: (moment) => {
-      momentHandlers.update((current) => new Map([...current].filter(([id]) => id === moment?.id)));
-      changeDesk((desk) => (moment ? { ...desk, moment } : without(desk, "moment")));
-    },
-    readMoment: (id) => {
-      if (store.desk().moment?.id !== id) return false;
-      changeMoment(id, (moment) => (moment.read_at === undefined ? { ...moment, read_at: at() } : moment));
-      return true;
-    },
-    answerMoment: (id, given) => {
-      const moment = store.desk().moment;
-      if (moment?.id !== id) return fail("not_found");
-      if (moment.state === "working") {
-        return given.skip !== true && isSameAnswer(moment.answer, given) ? ok(moment) : fail(alreadyActing);
-      }
-      if (given.skip === true) {
-        if (moment.kind !== "question") return fail("Only the day's question can be skipped.");
-        momentHandlers.get().get(id)?.skip?.(moment);
-        changeMoment(id, gone);
-        return ok(moment);
-      }
-      const answer = checkedMoment(moment, given);
-      if (!answer.ok) return answer;
-      const working: Moment = { ...moment, state: "working", answer: shownAnswer(answer.value) };
-      changeMoment(id, () => working);
-      background(() => actOnMoment(moment, answer.value));
-      return ok(working);
-    },
-    handleMoment: (id, handler) => {
-      momentHandlers.update((current) => new Map([...current, [id, handler]]));
-    },
     setComingUp: (items) => {
       changeDesk((desk) => ({ ...desk, coming_up: [...items] }));
     },
@@ -420,13 +295,9 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
         lastMail === undefined ? without(desk, "last_mail_at") : { ...desk, last_mail_at: lastMail },
       );
     },
-    recount,
     today,
     doneOn,
     addDone,
-    onDone: (listener) => {
-      doneListeners.update((current) => [...current, listener]);
-    },
     onUndo: (undoer) => {
       undoers.update((current) => [...current, undoer]);
     },
@@ -445,5 +316,8 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
       return job;
     },
     settled: () => pending.get(),
+    close: () => {
+      midnight.get()?.();
+    },
   };
 };

@@ -7,13 +7,10 @@ import { demoModels } from "#engine/scripted/models.ts";
 import { defaultVoice, voices } from "#voice/voices.ts";
 import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "./florence.ts";
 import { sub20Id, sub20Training } from "./sub20.ts";
-import { gatherMs, readHoldMs } from "#desk/moments.ts";
-import { quoteOf } from "#desk/desk.ts";
-import { momentGraceMs } from "#notifications/notifier.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.17";
-const serverVersion = "0.17.0";
+const protocol = "0.18";
+const serverVersion = "0.18.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
@@ -474,21 +471,6 @@ const speak = (transcript: Transcript, voice?: string): void => {
   transcript.response(200, undefined, { headers: { ...spokenWav, "Ito-Protocol": protocol } });
 };
 
-type Fields = Readonly<Record<string, unknown>>;
-
-// A rung Kumo climbed to after a clean stretch, for the trust ladder.
-const climbedTo = (days: number, step: string, since: string): Fields => ({
-  step,
-  since,
-  change: { kind: "climb", days },
-});
-
-// The trust ladder for sorting and the calendar.
-const sortingAndCalendar = (sorting: Fields, calendar: Fields): readonly Fields[] => [
-  { work: "sorting", title: "Sorting mail", ...sorting },
-  { work: "calendar", title: "Calendar", ...calendar },
-];
-
 const scenarios: readonly (() => Transcript)[] = [
   () => {
     const transcript = createTranscript({
@@ -531,7 +513,6 @@ const scenarios: readonly (() => Transcript)[] = [
         protocol,
         lead: { name: "Kumo" },
         agent: {},
-        morning: { not_before: "07:30" },
         setup: { notifications: false, memory_backup: false },
         capabilities: [],
       },
@@ -1284,21 +1265,20 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "A reply while you're away",
       summary:
         "You send two messages and leave. The first reply reaches your lock screen as a notification with " +
-        "its first line, Markdown stripped; the second turn fails, and that arrives too. Opening Ari catches up.",
-      guarantees: ["G15", "G18", "G38"],
+        "its first line, Markdown stripped; the second turn fails, and that arrives too, just as loud. Opening " +
+        "Ari catches up.",
+      guarantees: ["G15", "G18"],
     });
     yesterday(transcript);
     transcript.begin(todayAt, { cursor: "latest" });
     transcript.connect();
     transcript.registerDevice();
-    transcript.presence(true);
     transcript.wait(2000);
     const { turn } = sendAndStart(transcript, saturdayQuestion);
     transcript.wait(800);
     const bus = transcript.send("Also, does the 37 bus run before 7 on Saturdays?");
     transcript.queue(bus);
     transcript.wait(400);
-    transcript.presence(false);
     transcript.disconnect("app_closed");
     transcript.wait(300);
     transcript.step("thinking", thinking);
@@ -1321,7 +1301,6 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(20 * 60 * 1000);
     transcript.world("app_opened", { from: "notification", turn });
     transcript.connect();
-    transcript.presence(true);
     return transcript;
   },
 
@@ -1424,20 +1403,18 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 21,
       title: "An ask while you're away",
       summary:
-        "The agent asks while you're away, so the ask arrives as a time-sensitive notification carrying " +
-        "its options. Answering from the notification is an ordinary send naming the ask; the agent carries " +
-        "on, and its reply notifies you too.",
-      guarantees: ["G15", "G16", "G18", "G38"],
+        "The agent asks while you're away, so the ask arrives as a notification carrying its options. " +
+        "Answering from the notification is an ordinary send naming the ask; the agent carries on, and its " +
+        "reply notifies you too.",
+      guarantees: ["G15", "G16", "G18"],
     });
     yesterday(transcript);
     transcript.begin(todayAt, { cursor: "latest" });
     transcript.connect();
     transcript.registerDevice();
-    transcript.presence(true);
     transcript.wait(2000);
     sendAndStart(transcript, "Book a table at Juno for Friday at 8, for two.");
     transcript.wait(500);
-    transcript.presence(false);
     transcript.disconnect("app_closed");
     transcript.wait(300);
     const juno = askWhichJuno(transcript);
@@ -1463,7 +1440,6 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(10 * 60 * 1000);
     transcript.world("app_opened", { from: "notification" });
     transcript.connect();
-    transcript.presence(true);
     return transcript;
   },
 
@@ -1534,62 +1510,13 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
-      name: "24-the-reminder",
-      scenario: 24,
-      title: "The reminder",
-      summary:
-        "An ask made while you're away notifies you at once. Three hours later, still unanswered, it " +
-        "sends one reminder at normal level, and then nothing more. When you answer, nothing is pushed: " +
-        "you're looking.",
-      guarantees: ["G15", "G16", "G18"],
-    });
-    yesterday(transcript);
-    transcript.begin(todayAt, { cursor: "latest" });
-    transcript.connect();
-    transcript.registerDevice();
-    transcript.presence(true);
-    transcript.wait(2000);
-    sendAndStart(transcript, "Book Juno for Saturday at 7:30, for two.");
-    transcript.wait(400);
-    transcript.presence(false);
-    transcript.disconnect("app_closed");
-    transcript.wait(300);
-    askWhichJuno(transcript);
-    transcript.endTurn("completed");
-    transcript.remind();
-    transcript.wait(5 * 60 * 60 * 1000);
-    transcript.world("app_opened");
-    transcript.connect();
-    transcript.presence(true);
-    transcript.wait(4000);
-    const clapham = transcript.send("Clapham");
-    transcript.startTurn([clapham]);
-    transcript.wait(300);
-    transcript.step(
-      "tool",
-      booking("check", {
-        place: "Juno, Clapham",
-        day: "Saturday",
-        time: "19:30",
-        people: 2,
-      }),
-    );
-    transcript.wait(1400);
-    transcript.endStep();
-    writeWhole(transcript, "Juno in Clapham has a table for two at 7:30 on Saturday. Shall I book it?");
-    transcript.endTurn("completed");
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
       name: "26-turning-on-notifications",
       scenario: 26,
       title: "Turning on notifications",
       summary:
         "At the first longer task, Ari offers a nudge and you allow notifications. The app registers the " +
-        "device with its push token and notification key and says you're looking; when you leave, the " +
-        "finished reply notifies you.",
+        "device with its push token and notification key, and when you've left, the finished reply notifies " +
+        "you.",
       guarantees: ["G15", "G18"],
     });
     yesterday(transcript);
@@ -1602,7 +1529,6 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(4000);
     transcript.world("notifications_allowed");
     transcript.registerDevice();
-    transcript.presence(true);
     transcript.step("command", {
       title: "Reading 3 files",
       endedTitle: "Read 3 files",
@@ -1618,7 +1544,6 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.wait(900);
     transcript.endStep({ fields: { exit_code: 0 } });
-    transcript.presence(false);
     transcript.disconnect("app_closed");
     transcript.step("file_change", {
       title: "Editing 2 files",
@@ -1640,7 +1565,6 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.wait(3 * 60 * 1000);
     transcript.world("app_opened", { from: "notification" });
     transcript.connect();
-    transcript.presence(true);
     return transcript;
   },
 
@@ -1832,7 +1756,6 @@ const scenarios: readonly (() => Transcript)[] = [
         protocol,
         lead: { name: "Kumo" },
         agent: {},
-        morning: { not_before: "07:30" },
         setup: { notifications: false, memory_backup: false },
         capabilities: [],
       },
@@ -1883,7 +1806,6 @@ const scenarios: readonly (() => Transcript)[] = [
         protocol,
         lead: { name: "Kumo" },
         agent: {},
-        morning: { not_before: "07:30" },
         setup: { notifications: false, memory_backup: false },
         capabilities: [{ id: "reports", version: "0.2" }],
       },
@@ -2195,7 +2117,6 @@ const scenarios: readonly (() => Transcript)[] = [
         protocol,
         lead: { name: "Kumo" },
         agent: { model: "gpt-6-luna", effort: "medium" },
-        morning: { not_before: "07:30" },
         setup: { notifications: false, memory_backup: false },
         capabilities: [],
       },
@@ -3383,11 +3304,11 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 65,
       title: "The Desk",
       summary:
-        "Overnight Kumo filled the Desk: its first line of the day, what's coming up and five cards waiting on " +
-        "you, one of each kind. The snapshot carries it, and so does GET /v0/desk. You answer the question, accept " +
-        "the offer, which Kumo takes on in the background, and pick the clear times, which Kumo turns into a " +
-        "draft. Each counts in what Kumo handled today, and a little later Kumo's next line tells you how it went.",
-      guarantees: ["G33", "G34", "G41"],
+        "Overnight Kumo filled the Desk: what's coming up and five cards waiting on you, one of each kind. The " +
+        "snapshot carries it, and so does GET /v0/desk. You answer the question, accept the offer, which Kumo " +
+        "takes on in the background and messages you about at once, and pick the clear times, which Kumo turns " +
+        "into a draft. Each counts in what Kumo handled today.",
+      guarantees: ["G33", "G34", "G48"],
     });
     transcript.time("2026-11-11T06:00:00.000Z");
     const technical = transcript.calendarItem(halcyonTechnical);
@@ -3445,10 +3366,6 @@ const scenarios: readonly (() => Transcript)[] = [
       allows_text: false,
       offer: { text: "Italian keeps coming up. Want a 15-minute lesson on Tuesday and Thursday evenings?" },
     });
-    transcript.moment({
-      kind: "day",
-      text: "Tess sent the Teams link for Thursday's technical. A quick yes on the Revolut mail, then the morning's yours.",
-    });
     transcript.begin("2026-11-11T07:40:00.000Z");
     transcript.world("capability_on", {
       capability: "outlook",
@@ -3466,6 +3383,7 @@ const scenarios: readonly (() => Transcript)[] = [
     const lessons = "Italian is on: 15 minutes on Tuesday and Thursday evenings, from this week.";
     transcript.world("kumo_works", { calls: [], post: lessons });
     transcript.answerCard(offer.id, { option: "Yes" });
+    transcript.post(lessons);
     transcript.handled({ text: "You answered “Italian practice?”: Yes", reason: "Done." });
     transcript.settleCard(offer.id);
     transcript.wait(4000);
@@ -3505,10 +3423,6 @@ const scenarios: readonly (() => Transcript)[] = [
       reason: "Done.",
     });
     transcript.settleCard(times.id);
-    const next = "Italian's on from this week. Your note to Maya at Northwind is ready whenever you are.";
-    transcript.world("moment_written", { text: next, options: [], reply: false, important: false });
-    transcript.wait(gatherMs);
-    transcript.moment({ kind: "news", text: next });
     return transcript;
   },
 
@@ -3520,9 +3434,8 @@ const scenarios: readonly (() => Transcript)[] = [
       summary:
         "A booking confirmation lands in iCloud Mail. The attention pass judges it work, and a short-lived work " +
         "thread puts the stay on your calendar, notices check-in closes before you land, drafts a note in your " +
-        "voice into Drafts and tells you. A moment later that's Kumo's line at the top of the Desk, and in the " +
-        "conversation. Nothing is sent.",
-      guarantees: ["G35", "G36", "G41"],
+        "voice into Drafts and messages you about it in the conversation. Nothing is sent to the hotel.",
+      guarantees: ["G35", "G36", "G48"],
     });
     transcript.begin("2026-11-10T22:31:00.000Z");
     transcript.world("capability_on", {
@@ -3567,8 +3480,6 @@ const scenarios: readonly (() => Transcript)[] = [
       ],
       post: snag,
     });
-    const line = "Hotel Orto's check-in closes before you land, so I've drafted them a note about the keys.";
-    transcript.world("moment_written", { text: line, options: [], reply: false, important: false });
     transcript.world("mail_arrives", {
       account: "icloud",
       message_id: "confirm-48213@hotelorto.it",
@@ -3593,8 +3504,7 @@ const scenarios: readonly (() => Transcript)[] = [
         in_reply_to: "confirm-48213@hotelorto.it",
       },
     });
-    transcript.wait(gatherMs);
-    transcript.moment({ kind: "news", text: line });
+    transcript.post(snag);
     return transcript;
   },
 
@@ -3643,44 +3553,6 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.answerCard(invite.id, { option: "Accept" });
     transcript.comingUp([{ ...invited, status: "confirmed" }]);
     transcript.settleCard(invite.id);
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
-      name: "68-kumos-first-line",
-      scenario: 68,
-      title: "Kumo's first line of the day",
-      summary:
-        "Your morning starts no earlier than 07:30. At the first calm moment after it, with nothing on your " +
-        "calendar, Kumo writes its first line of the day, which also goes into the conversation. It matters and " +
-        "you haven't seen it, so half a minute later one notification goes out. You open Ito on the Desk, and the " +
-        "app says the line was read. Three hours on, it gives way to all quiet.",
-      guarantees: ["G33", "G38", "G41", "G42"],
-    });
-    const line =
-      "Nothing's waiting on you this morning. Halcyon's technical is tomorrow at 2, so tonight's good for prep.";
-    transcript.begin("2026-11-11T07:00:00.000Z");
-    transcript.registerDevice();
-    transcript.request("PUT", "/v0/morning", { body: { not_before: "07:30" } });
-    transcript.response(200, { not_before: "07:30" }, { headers: { "Ito-Protocol": protocol } });
-    transcript.wait(29 * 60 * 1000);
-    transcript.world("moment_written", { text: line, options: [], reply: false, important: true });
-    transcript.wait(60 * 1000);
-    transcript.moment({ kind: "day", text: line });
-    transcript.wait(momentGraceMs);
-    transcript.momentUnread();
-    transcript.wait(9 * 60 * 1000);
-    transcript.world("app_opened");
-    transcript.connect();
-    transcript.wait(1500);
-    transcript.readMoment();
-    transcript.disconnect("app_closed");
-    transcript.wait(readHoldMs);
-    transcript.quiet();
-    transcript.wait(60 * 60 * 1000);
-    transcript.world("app_opened");
-    transcript.connect();
     return transcript;
   },
 
@@ -3841,81 +3713,15 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
-      name: "72-a-line-read-on-the-desk",
-      scenario: 72,
-      title: "A line read on the Desk",
-      summary:
-        "With Ito open on the Desk, a mail from Maya at Northwind asks how Monday's intro call went. Kumo's work " +
-        "thread tells you, and Kumo writes its line, which matters. The app shows it on the Desk and says so " +
-        "within the half minute, so no notification goes out. You tap Ask me tonight: Kumo acts on it in the " +
-        "background, and the line gives way to all quiet, with one more thing handled. Kumo's work shows today.",
-      guarantees: ["G33", "G41", "G42"],
-    });
-    transcript.begin("2026-11-11T15:20:00.000Z");
-    transcript.world("capability_on", {
-      capability: "outlook",
-      values: { address: "sam@outlook.example", token: "replay-token" },
-    });
-    transcript.connect();
-    transcript.registerDevice();
-    transcript.wait(1000);
-    transcript.world("attention_decides", {
-      decision: "work",
-      stakes: "high",
-      folder: "",
-      reason: "Maya at Northwind asks how the intro call went",
-      confidence: 0.9,
-    });
-    transcript.world("kumo_works", { calls: [], post: "Maya at Northwind asked how Monday's intro call went." });
-    const line = "Maya at Northwind wants to hear how Monday's call went. Tell me, and I'll draft the reply.";
-    const later = "Ask me tonight";
-    transcript.world("moment_written", { text: line, options: [later], reply: true, important: true });
-    transcript.world("mail_arrives", {
-      account: "outlook",
-      message_id: "intro-0412@northwind.example",
-      from: "Maya Reed <maya.reed@northwind.example>",
-      to: ["sam@outlook.example"],
-      subject: "How was Monday?",
-      text: "Hi Sam, how did the intro call with the team go? Happy to set up the next round.",
-    });
-    transcript.mailRead();
-    transcript.wait(gatherMs);
-    transcript.moment({ kind: "news", text: line, options: [later], allowsText: true });
-    transcript.wait(1500);
-    transcript.readMoment();
-    transcript.wait(momentGraceMs + 10_000);
-    transcript.world("kumo_works", { calls: [] });
-    transcript.answerMoment({ option: later });
-    const entry = transcript.handled({
-      text: `You answered “Maya at Northwind wants to hear how Monday's call went”: ${later}`,
-      reason: "Done.",
-    });
-    transcript.quiet();
-    transcript.wait(2000);
-    transcript.getWork({ handled: [entry], cleared: [] });
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
       name: "73-that-was-wrong",
       scenario: 73,
       title: "That was wrong",
       summary:
-        "Kumo is on spot checks for sorting and trusted with your calendar. It bins a mail from Acme as a " +
-        "promotion and asks quietly whether that was right. You open Kumo's work and say it was wrong: the mail " +
-        "goes back to your inbox, the spot check has its answer, Kumo keeps what to do differently on How to " +
-        "help you, and sorting steps back to Learning, which Kumo's next line says. Then you ask to see every " +
-        "calendar change again.",
+        "Kumo bins a mail from Acme as a promotion. You open Kumo's work and say it was wrong: the mail goes back " +
+        "to your inbox, and Kumo keeps what to do differently on How to help you, which Done says.",
       guarantees: ["G43"],
     });
     transcript.begin("2026-11-11T10:00:00.000Z");
-    transcript.world("trust_holds", {
-      ladder: {
-        sorting: climbedTo(15, "spot_checks", "2026-11-02T08:00:00.000Z"),
-        calendar: climbedTo(21, "trusted", "2026-11-03T08:00:00.000Z"),
-      },
-    });
     transcript.world("capability_on", {
       capability: "outlook",
       values: { address: "sam@outlook.example", token: "replay-token" },
@@ -3949,72 +3755,20 @@ const scenarios: readonly (() => Transcript)[] = [
         subject: "Your Acme order is on its way",
       },
       undo: true,
-      work: "sorting",
     });
-    const check = transcript.addCard({
-      kind: "question",
-      title: "Was this right?",
-      options: [{ label: "Right", acts: true }, { label: "That was wrong" }],
-      allows_text: true,
-      quiet: true,
-      question: { text: `${text}. Acme selling something. Was this right?` },
-    });
-    const trustedCalendar = {
-      step: "trusted",
-      line: "Three weeks without a correction on your calendar. I only bring you the changes that need you.",
-      since: "2026-11-03T08:00:00.000Z",
-    };
     transcript.wait(90_000);
-    transcript.getWork({
-      handled: [binned],
-      cleared: [],
-      trust: sortingAndCalendar(
-        {
-          step: "spot_checks",
-          line: "Two weeks without a correction on sorting. I only check about one in five with you now.",
-          since: "2026-11-02T08:00:00.000Z",
-        },
-        trustedCalendar,
-      ),
-    });
+    transcript.getWork({ handled: [binned], cleared: [] });
     const correctedAt = "2026-11-11T10:02:00.000Z";
     transcript.time(correctedAt);
     const words = "That was my order, not an offer";
     transcript.world("kumo_works", { calls: [] });
-    const line =
-      "Sorry about the Acme order: it's back in your inbox, and I'll show you all the mail I sort for a while.";
-    transcript.world("moment_written", { text: line, options: [], reply: false, important: false });
     transcript.request("POST", `/v0/done/${String(binned.id)}/wrong`, { body: { text: words } });
     const corrected = { ...binned, text: `Undone: ${text}`, undo: false, corrected_at: correctedAt };
-    transcript.settleCard(check.id);
     const noted = transcript.addDone({ text: `You said “${text}” was wrong: ${words}`, reason: "Done." });
     transcript.wait(60);
     transcript.response(200, { entry: corrected });
-    // Kumo's line waits for a quiet spell after the correction is told.
-    transcript.time(new Date(Date.parse(correctedAt) + gatherMs).toISOString());
-    transcript.moment({ kind: "news", text: line });
-    const resetAt = "2026-11-11T10:03:00.000Z";
-    transcript.time(resetAt);
-    transcript.request("POST", "/v0/trust/calendar/reset");
-    const reset = {
-      step: "learning",
-      line: "You asked to see everything again, so I'm showing you every calendar change.",
-      since: resetAt,
-    };
-    transcript.response(200, { trust: { work: "calendar", title: "Calendar", ...reset } });
     transcript.wait(2000);
-    transcript.getWork({
-      handled: [noted, corrected],
-      cleared: [],
-      trust: sortingAndCalendar(
-        {
-          step: "learning",
-          line: `You said “${text}” was wrong today, so I'm back to showing you the mail I sort.`,
-          since: correctedAt,
-        },
-        reset,
-      ),
-    });
+    transcript.getWork({ handled: [noted, corrected], cleared: [] });
     return transcript;
   },
 
@@ -4024,12 +3778,11 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 74,
       title: "The day made visible",
       summary:
-        "A free Sunday. Before its first line of the day, Kumo plans the day on its own calendar: a run from the " +
-        "training block, groceries, prep for Thursday's interview and winding down, plus its guess at the evening. " +
-        "Each shows in Coming up as it lands, the guess marked as one, with why. Kumo's line names the day's shape, " +
-        "with the plan under it. You tap the guess: not right, you'll be building. It becomes yours on Kumo's " +
-        "calendar, no longer a guess.",
-      guarantees: ["G33", "G41", "G44"],
+        "A free Sunday. Kumo plans the day on its own calendar: a run from the training block, groceries, prep " +
+        "for Thursday's interview and winding down, plus its guess at the evening. Each shows in Coming up as it " +
+        "lands, the guess marked as one, with why. You tap the guess: not right, you'll be building. It becomes " +
+        "yours on Kumo's calendar, no longer a guess.",
+      guarantees: ["G33", "G44"],
     });
     transcript.begin("2026-11-15T07:20:00.000Z");
     transcript.world("capability_on", {
@@ -4081,13 +3834,9 @@ const scenarios: readonly (() => Transcript)[] = [
         why: "In bed by 00:30 so Monday works",
       },
     ];
-    transcript.world("kumo_works", { calls: blocks.map((input) => ({ tool: "plan_block", input })) });
-    const line = "A free Sunday, with a quiet plan under it.";
-    const detail = "Easy run · groceries and proper meals · 2h prep for Northwind · in bed by 00:30 so Monday works";
-    transcript.world("moment_written", { text: line, detail, options: [], reply: false, important: false });
-    transcript.time("2026-11-15T07:30:00.000Z");
-    const items = blocks.map(({ kind, title, start, end, activity, why }) =>
-      transcript.calendarItem({
+    const items = blocks.map(({ kind, title, start, end, activity, why }, index) => {
+      transcript.world("agent_calls", { tool: "plan_block", input: blocks[index] });
+      return transcript.calendarItem({
         uid: transcript.eventUid(),
         title,
         start,
@@ -4096,16 +3845,9 @@ const scenarios: readonly (() => Transcript)[] = [
         calendar: kumo,
         status: "confirmed",
         ...(kind === "guess" && { guess: { activity: activity as "chilling", why } }),
-      }),
-    );
-    for (const index of items.keys()) {
-      transcript.comingUp(
-        items.slice(0, index + 1).toSorted((left, right) => Date.parse(left.start) - Date.parse(right.start)),
-      );
-    }
-    transcript.moment({ kind: "day", text: line, detail });
-    transcript.wait(1500);
-    transcript.readMoment();
+      });
+    });
+    for (const index of items.keys()) transcript.comingUp(items.slice(0, index + 1));
     transcript.wait(40 * 60 * 1000);
     const evening = items[3];
     if (!evening) throw new Error("no evening guess");
@@ -4113,227 +3855,6 @@ const scenarios: readonly (() => Transcript)[] = [
       Object.entries({ ...evening, title: "Building" }).filter(([field]) => field !== "guess"),
     ) as typeof evening;
     transcript.answerGuess(evening, { activity: "building" }, building);
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
-      name: "75-tonight-s-line",
-      scenario: 75,
-      title: "Tonight's line",
-      summary:
-        "Kumo guesses you'll build tonight, so at 20:30 its line asks once: building tonight, stop at 1, next step? " +
-        "You answer in words, and that's tonight's commitment. At 00:45, with the app closed, its line says what's " +
-        "left and what tomorrow still fits, and sends one quiet notification. You open Ito after 1, so past the " +
-        "line Kumo is firmer: every half hour now comes out of tomorrow's run or prep. You stop.",
-      guarantees: ["G38", "G41", "G42", "G45"],
-    });
-    transcript.begin("2026-11-11T20:25:00.000Z");
-    transcript.world("capability_on", {
-      capability: "icloud",
-      values: { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop" },
-    });
-    transcript.connect();
-    transcript.registerDevice();
-    transcript.wait(1000);
-    const kumo = { name: "Kumo", kumo: true };
-    const placed = [
-      {
-        kind: "guess",
-        title: "Building",
-        start: "2026-11-11T21:00:00.000Z",
-        end: "2026-11-12T02:00:00.000Z",
-        activity: "building",
-        why: "Most weeknights this month you've built until about 2.",
-      },
-      {
-        kind: "plan",
-        title: "Easy run",
-        start: "2026-11-12T09:45:00.000Z",
-        end: "2026-11-12T10:15:00.000Z",
-        activity: "training",
-        why: "Thursday's session in the training block",
-      },
-      {
-        kind: "plan",
-        title: "Interview prep, 1h",
-        start: "2026-11-12T18:30:00.000Z",
-        end: "2026-11-12T19:30:00.000Z",
-        activity: "studying",
-        why: "The Northwind interview is next week",
-      },
-    ];
-    const items = placed.map(({ kind, title, start, end, activity, why }, index) => {
-      transcript.world("agent_calls", { tool: "plan_block", input: placed[index] });
-      const item = transcript.calendarItem({
-        uid: transcript.eventUid(),
-        title,
-        start,
-        end,
-        all_day: false,
-        calendar: kumo,
-        status: "confirmed",
-        ...(kind === "guess" && { guess: { activity: activity as "building", why } }),
-      });
-      return item;
-    });
-    for (const index of items.keys()) transcript.comingUp(items.slice(0, index + 1));
-    const ask = "Building tonight? Stop at 1, next step being…?";
-    transcript.world("kumo_writes", { text: ask, stop: "01:00" });
-    transcript.time("2026-11-11T20:30:00.000Z");
-    transcript.moment({
-      kind: "checkin",
-      text: ask,
-      options: ["Stop at 1", "Not tonight"],
-      allowsText: true,
-      replyLabel: "Next step",
-    });
-    transcript.wait(1500);
-    transcript.readMoment();
-    transcript.wait(20_000);
-    const step = "the empty state of the sync screen";
-    transcript.world("kumo_writes", { stop: "01:00", next_step: step });
-    const answer = `Yes, 1. Next: ${step}`;
-    transcript.answerMoment({ text: answer });
-    transcript.handled({
-      text: `You answered “${quoteOf(ask)}”: ${answer}`,
-      reason: "Tonight's line is 1; I'll check in at 12:45.",
-    });
-    transcript.quiet();
-    transcript.wait(5000);
-    transcript.disconnect("app_closed");
-    transcript.time("2026-11-12T00:00:00.000Z");
-    transcript.recount(0);
-    const before =
-      "15 minutes to your 1. Note the next step now? Tomorrow's run and prep still fit if you're asleep by 1:30.";
-    transcript.world("kumo_writes", { text: before, options: [] });
-    transcript.time("2026-11-12T00:45:00.000Z");
-    transcript.moment({
-      kind: "checkin",
-      text: before,
-      options: ["Snooze 15m"],
-      allowsText: true,
-      replyLabel: "Note it",
-    });
-    transcript.wait(momentGraceMs);
-    transcript.momentUnread();
-    transcript.time("2026-11-12T01:08:00.000Z");
-    transcript.world("app_opened");
-    transcript.connect();
-    transcript.wait(1500);
-    transcript.readMoment();
-    const past = "Every half hour now comes out of tomorrow's run or the interview prep. Your call. Which?";
-    transcript.world("kumo_writes", { text: past, options: ["The run", "The prep"] });
-    transcript.time("2026-11-12T01:15:00.000Z");
-    transcript.moment({ kind: "checkin", text: past, options: ["The run", "The prep", "I'm stopping"] });
-    transcript.wait(1500);
-    transcript.readMoment();
-    transcript.wait(30_000);
-    transcript.answerMoment({ option: "I'm stopping" });
-    transcript.handled({
-      text: `You answered “${quoteOf(past)}”: I'm stopping`,
-      reason: "Good night. Tomorrow's plan stands.",
-    });
-    transcript.quiet();
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
-      name: "76-today-s-question",
-      scenario: 76,
-      title: "Today's question",
-      summary:
-        "Kumo isn't sure whether Thursday climbing is something to guard, so its work proposes one small question. " +
-        "When you next look at Ito in the afternoon, a calm moment, it becomes Kumo's line, marked as the day's " +
-        "question. You skip it: it goes at once, nothing is recorded, and it's never asked again.",
-      guarantees: ["G41", "G46"],
-    });
-    transcript.begin("2026-11-11T15:00:00.000Z");
-    const question = "Is Thursday climbing with Leo something I should guard, or fine to move when work piles up?";
-    transcript.world("agent_calls", {
-      tool: "ask_today",
-      input: { text: question, options: ["Guard it", "Fine to move"], about: "Thursday climbing" },
-    });
-    transcript.connect();
-    transcript.registerDevice();
-    transcript.presence(true);
-    transcript.moment({ kind: "question", text: question, options: ["Guard it", "Fine to move"] });
-    transcript.wait(1500);
-    transcript.readMoment();
-    transcript.wait(4000);
-    transcript.skipMoment();
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
-      name: "77-asleep-is-asleep",
-      scenario: 77,
-      title: "Asleep is asleep",
-      summary:
-        "You commit to stopping at 1 and close Ito. At 00:20 your Sleep Focus comes on, and the app tells the box, " +
-        "though it's closed. Kumo takes it that you've stopped: no line at 00:45, and no notification. Opening " +
-        "Ito at 00:50 shows only the new day.",
-      guarantees: ["G45", "G47"],
-    });
-    transcript.begin("2026-11-11T20:25:00.000Z");
-    transcript.world("capability_on", {
-      capability: "icloud",
-      values: { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop" },
-    });
-    transcript.connect();
-    transcript.registerDevice();
-    transcript.wait(1000);
-    const building = {
-      kind: "guess",
-      title: "Building",
-      start: "2026-11-11T21:00:00.000Z",
-      end: "2026-11-12T02:00:00.000Z",
-      activity: "building",
-      why: "Most weeknights this month you've built until about 2.",
-    };
-    transcript.world("agent_calls", { tool: "plan_block", input: building });
-    transcript.comingUp([
-      transcript.calendarItem({
-        uid: transcript.eventUid(),
-        title: building.title,
-        start: building.start,
-        end: building.end,
-        all_day: false,
-        calendar: { name: "Kumo", kumo: true },
-        status: "confirmed",
-        guess: { activity: "building", why: building.why },
-      }),
-    ]);
-    const ask = "Building tonight? Stop at 1, next step being…?";
-    transcript.world("kumo_writes", { text: ask, stop: "01:00" });
-    transcript.time("2026-11-11T20:30:00.000Z");
-    transcript.moment({
-      kind: "checkin",
-      text: ask,
-      options: ["Stop at 1", "Not tonight"],
-      allowsText: true,
-      replyLabel: "Next step",
-    });
-    transcript.wait(1500);
-    transcript.readMoment();
-    transcript.wait(10_000);
-    transcript.answerMoment({ option: "Stop at 1" });
-    transcript.handled({
-      text: `You answered “${quoteOf(ask)}”: Stop at 1`,
-      reason: "Tonight's line is 1; I'll check in at 12:45.",
-    });
-    transcript.quiet();
-    transcript.wait(5000);
-    transcript.disconnect("app_closed");
-    transcript.time("2026-11-12T00:00:00.000Z");
-    transcript.recount(0);
-    transcript.time("2026-11-12T00:20:00.000Z");
-    transcript.focus("sleep");
-    transcript.time("2026-11-12T00:50:00.000Z");
-    transcript.world("app_opened");
-    transcript.connect();
     return transcript;
   },
 ];

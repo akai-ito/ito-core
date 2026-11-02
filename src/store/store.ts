@@ -127,7 +127,8 @@ export type Store = Settings & {
     spoken?: SpokenInput,
     done?: string,
   ) => Result<Accepted, AcceptFailure>;
-  readonly postMessage: (text: string, kind?: "post" | "moment") => Message;
+  // A message from Kumo outside any turn; an urgent one is sent time-sensitive.
+  readonly postMessage: (text: string, options?: { readonly isUrgent?: boolean }) => Message;
   readonly desk: () => Desk;
   readonly setDesk: (desk: Desk) => void;
   readonly onboarding: () => Onboarding;
@@ -206,8 +207,6 @@ export type Store = Settings & {
   readonly cancelAsk: (ask: AskId) => Result<Ask, "not_found">;
   readonly findAsk: (ask: AskId) => Ask | undefined;
   readonly waitingAsk: () => Ask | undefined;
-  readonly isReminded: (ask: AskId) => boolean;
-  readonly markReminded: (ask: AskId) => void;
   readonly registerDevice: (
     id: DeviceId,
     registration: Registration,
@@ -227,7 +226,7 @@ type MessageRow = {
   readonly id: string;
   readonly position: number;
   readonly role: "user" | "agent";
-  readonly kind: MessageKind | "post" | "moment" | null;
+  readonly kind: MessageKind | "post" | null;
   readonly turn: string | null;
   readonly text: string;
   readonly at: string;
@@ -238,11 +237,12 @@ type MessageRow = {
   readonly attachments: string | null;
   readonly spoken: string | null;
   readonly done: string | null;
+  readonly urgent: number;
 };
 
 type AttachmentRow = { readonly body: string; readonly sha256: string; readonly message: string | null };
 
-type AskRow = { readonly body: string; readonly reminded: number };
+type AskRow = { readonly body: string };
 
 type DeviceRow = {
   readonly id: string;
@@ -299,13 +299,14 @@ const toMessage = (row: MessageRow): Message =>
         id: row.id,
         role: "agent",
         kind: row.kind ?? "reply",
-        ...(row.kind !== "post" && row.kind !== "moment" && { turn: row.turn ?? "" }),
+        ...(row.kind !== "post" && { turn: row.turn ?? "" }),
         text: row.text,
         at: row.at,
         position: row.position,
         ...(row.ended_at && { ended_at: row.ended_at }),
         ...(row.outcome && { outcome: row.outcome }),
         ...(row.error && { error: JSON.parse(row.error) as ErrorBody }),
+        ...(row.urgent === 1 && { urgent: true }),
       };
 
 const toStoredTurn = (row: TurnRow): StoredTurn => ({
@@ -438,16 +439,16 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
   const asksFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Ask[] =>
     (
       database
-        .prepare("SELECT body, reminded FROM asks WHERE position >= ? AND position < ? ORDER BY position")
+        .prepare("SELECT body FROM asks WHERE position >= ? AND position < ? ORDER BY position")
         .all(from, until) as unknown as readonly AskRow[]
     ).map((row) => toAsk(row));
 
   const askRow = (id: string): (AskRow & { readonly outcome: string | null }) | undefined =>
-    database.prepare("SELECT body, reminded, outcome FROM asks WHERE id = ?").get(id) as
+    database.prepare("SELECT body, outcome FROM asks WHERE id = ?").get(id) as
       (AskRow & { readonly outcome: string | null }) | undefined;
 
   const waitingRow = (): AskRow | undefined =>
-    database.prepare("SELECT body, reminded FROM asks WHERE outcome IS NULL ORDER BY position DESC LIMIT 1").get() as
+    database.prepare("SELECT body FROM asks WHERE outcome IS NULL ORDER BY position DESC LIMIT 1").get() as
       AskRow | undefined;
 
   const endAsk = (ask: Ask, outcome: "answered" | "cancelled", answer?: MessageId): Ask => {
@@ -587,17 +588,18 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         return ok({ message, isNew: true });
       }),
 
-    postMessage: (text, kind = "post") =>
+    postMessage: (text, { isUrgent = false } = {}) =>
       transaction(() => {
         const at = now();
         const message: Message = {
           id: identifiers.message(),
           role: "agent",
-          kind,
+          kind: "post",
           text,
           at,
           position: nextSeq(),
           outcome: "completed",
+          ...(isUrgent && { urgent: true }),
         };
         append({ id: identifiers.event(), type: "message.posted", at, message });
         return message;
@@ -1029,12 +1031,6 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     waitingAsk: () => {
       const row = waitingRow();
       return row ? toAsk(row) : undefined;
-    },
-
-    isReminded: (ask) => askRow(ask)?.reminded === 1,
-
-    markReminded: (ask) => {
-      database.prepare("UPDATE asks SET reminded = 1 WHERE id = ?").run(ask);
     },
 
     registerDevice: (id, registration) => {

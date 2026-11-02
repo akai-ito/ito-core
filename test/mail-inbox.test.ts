@@ -242,7 +242,6 @@ describe("an inbox of only what needs you", () => {
         {
           kind: "question",
           title: "Unsubscribe from Pizza Place?",
-          quiet: true,
           options: [{ label: "Unsubscribe" }, { label: "Stay subscribed" }],
           question: {
             text: "Their promotions go to the bin. You've written to pizza.example before, so I'm asking first.",
@@ -531,7 +530,6 @@ describe("their mail folders", () => {
         },
       ]);
     });
-    expect(box.cards()[0]?.quiet).toBeUndefined();
     expect(box.mail.moved()).toEqual([]);
     expect(box.asked()[1]).toContain("Rides · Your Tuesday ride");
 

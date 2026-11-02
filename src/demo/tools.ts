@@ -1,25 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { toTimestamp, type Clock } from "#clock.ts";
-import type { Checkins, DemoCheckin } from "#day/checkins.ts";
 import { sampleDay } from "#day/samples.ts";
-import { dayMs, toLocal } from "#desk/day.ts";
+import { dayMs } from "#desk/day.ts";
 import type { DeskKeeper } from "#desk/desk.ts";
-import type { Moments } from "#desk/moments.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type { GettingStarted } from "#onboarding/onboarding.ts";
-import type { DoneEntry } from "#protocol/types.ts";
+import type { DoneEntry, Message } from "#protocol/types.ts";
 import type { Store } from "#store/store.ts";
 import type { Tool } from "#tools/mcp.ts";
-import type { Trust } from "#work/trust.ts";
 
-// The hidden tools the demo's scripts call: sample cards, a sample day of Kumo's work, and lines and check-ins
-// whatever the time.
+// The hidden tools the demo's scripts call: sample cards, a sample mail, a sample day and a sample day of Kumo's work.
 export type DemoToolsOptions = {
   readonly store: Pick<Store, "setOnboarding">;
   readonly desk: DeskKeeper;
-  readonly trust: Pick<Trust, "hold" | "review">;
-  readonly moments: Pick<Moments, "tell" | "dayNow">;
-  readonly checkins: Pick<Checkins, "show">;
+  readonly post: (text: string, isUrgent: boolean) => Message;
   readonly gettingStarted: Pick<GettingStarted, "state">;
   readonly identifiers: Identifiers;
   readonly clock: Clock;
@@ -36,15 +30,13 @@ const demoMail = (subject: string): NonNullable<DoneEntry["mail"]> => ({
 export const createDemoTools = ({
   store,
   desk,
-  trust,
-  moments,
-  checkins,
+  post,
   gettingStarted,
   identifiers,
   clock,
   timeZone,
 }: DemoToolsOptions): readonly Tool[] => {
-  // A made-up day for the demo: what Kumo did, where it stands on the ladder, and a card to glance at.
+  // A made-up day for the demo: what Kumo did.
   const showWork = (): void => {
     const filed = { kind: "mail_filed", account: "icloud", id: "demo", back: "inbox" };
     const cleared = [
@@ -58,35 +50,26 @@ export const createDemoTools = ({
     const clearedToday = Array.from({ length: 38 }, (_, at) => cleared[at % cleared.length] ?? cleared[0]);
     for (const [text, reason] of clearedToday) desk.addDone({ text, reason, mail: demoMail(text), quiet: true });
     const handled = [
-      { text: "Drafted a thank-you to Tess Harlow at Halcyon", reason: "She sent the next steps.", work: "drafts" },
-      { text: "Drafted a reply to Clara Voss at Northwind", reason: "She asked for times next week.", work: "drafts" },
-      { text: "Northwind: Clara's note → Job search", reason: "A reply to yours; nothing to answer yet." },
-      { text: "Climbing with Leo → your calendar, 20:00", reason: "Leo confirmed by mail.", work: "calendar" },
-      { text: "Acme Pizza promos: unsubscribed, binned", reason: "You haven't opened one since March." },
+      { text: "Drafted a thank-you to Tess Harlow at Halcyon", reason: "She sent the next steps." },
+      { text: "Drafted a reply to Clara Voss at Northwind", reason: "She asked for times next week." },
+      { text: "Northwind: Clara's note → Job search", reason: "A reply to yours; nothing to answer yet.", mail: true },
+      { text: "Climbing with Leo → your calendar, 20:00", reason: "Leo confirmed by mail." },
+      { text: "Acme Pizza promos: unsubscribed, binned", reason: "You haven't opened one since March.", mail: true },
+      { text: "Quillfield Dental moved to Fri 13, 9:30", reason: "Their mail confirmed the new time." },
       {
-        text: "Quillfield Dental moved to Fri 13, 9:30",
-        reason: "Their mail confirmed the new time.",
-        work: "calendar",
+        text: "Electricity bill → Admin, due 14 Nov",
+        reason: "A bill with a date on it; a reminder's set.",
+        mail: true,
       },
-      { text: "Electricity bill → Admin, due 14 Nov", reason: "A bill with a date on it; a reminder's set." },
     ] as const;
     for (const entry of handled.toReversed()) {
       desk.addDone({
         text: entry.text,
         reason: entry.reason,
         quiet: false,
-        ...("work" in entry ? { work: entry.work } : { mail: demoMail(entry.text), undo: filed }),
+        ...("mail" in entry && { mail: demoMail(entry.text), undo: filed }),
       });
     }
-    const daysAgo = (days: number): string => toTimestamp(clock.now() - days * dayMs);
-    trust.hold("sorting", { step: "trusted", since: daysAgo(1), change: { kind: "climb", days: 15 } });
-    trust.hold("calendar", {
-      step: "spot_checks",
-      since: daysAgo(2),
-      change: { kind: "corrected", quote: "Quillfield Dental moved to Thu 12", at: daysAgo(2), stepped: true },
-    });
-    trust.hold("drafts", { step: "learning", since: daysAgo(9), change: { kind: "start" } });
-    trust.review(toLocal(clock.now(), timeZone).day, "Today");
   };
   return [
     {
@@ -154,7 +137,7 @@ export const createDemoTools = ({
           },
         });
         desk.setLastMail(toTimestamp(clock.now()));
-        moments.tell(
+        post(
           "Hotel Orto confirmed you for 20–23 Nov. One snag: you land 22:10 and check-in closes 22:00, so I " +
             "drafted a note.",
           false,
@@ -197,7 +180,7 @@ export const createDemoTools = ({
       name: "show_work",
       title: "Show a sample day of Kumo's work",
       audience: "hidden",
-      description: "Fill today's Done and the trust ladder with a sample day, and a card to glance at, for the demo.",
+      description: "Fill today's Done with a sample day, for the demo.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       call: () => {
         showWork();
@@ -208,40 +191,11 @@ export const createDemoTools = ({
       name: "show_day",
       title: "Show a sample day",
       audience: "hidden",
-      description:
-        "Put a sample day, Kumo's plan and its guesses, in Coming up, then write the day's line, for the demo.",
+      description: "Put a sample day, Kumo's plan and its guesses, in Coming up, for the demo.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      call: async () => {
+      call: () => {
         desk.setComingUp(sampleDay(clock.now(), timeZone, identifiers));
-        await moments.dayNow();
-        return { text: "Showed a sample day." };
-      },
-    },
-    {
-      name: "show_checkin",
-      title: "Show a check-in",
-      audience: "hidden",
-      description: "Show one of Kumo's check-ins now, whatever the time, for the demo.",
-      inputSchema: {
-        type: "object",
-        properties: { kind: { enum: ["commit", "pre", "past", "question", "drift"] } },
-        required: ["kind"],
-        additionalProperties: false,
-      },
-      call: async (input) => {
-        const said = await checkins.show((input as { readonly kind: DemoCheckin }).kind);
-        return { text: said === "" ? "Nothing to say." : `Said: ${said}` };
-      },
-    },
-    {
-      name: "moment_now",
-      title: "Write Kumo's line now",
-      audience: "hidden",
-      description: "Write Kumo's first line of the day now, whatever the time, for the demo.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      call: async () => {
-        await moments.dayNow();
-        return { text: "Wrote Kumo's line." };
+        return Promise.resolve({ text: "Showed a sample day." });
       },
     },
   ];

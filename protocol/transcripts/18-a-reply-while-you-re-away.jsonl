@@ -1,4 +1,4 @@
-{"transcript":"18-a-reply-while-you-re-away","start":"2026-10-12T08:41:00.000Z","scenario":18,"title":"A reply while you're away","summary":"You send two messages and leave. The first reply reaches your lock screen as a notification with its first line, Markdown stripped; the second turn fails, and that arrives too. Opening Ari catches up.","guarantees":["G15","G18","G38"],"app":{"cursor":"e_0009_53115"}}
+{"transcript":"18-a-reply-while-you-re-away","start":"2026-10-12T08:41:00.000Z","scenario":18,"title":"A reply while you're away","summary":"You send two messages and leave. The first reply reaches your lock screen as a notification with its first line, Markdown stripped; the second turn fails, and that arrives too, just as loud. Opening Ari catches up.","guarantees":["G15","G18"],"app":{"cursor":"e_0009_53115"}}
 {"given":{"id":"e_0001_71529","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"dfbbdf74-22ad-485a-8020-e54a243e67c9","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z","position":1}}}
 {"given":{"id":"e_0002_78506","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_09876","inputs":["dfbbdf74-22ad-485a-8020-e54a243e67c9"]}}
 {"given":{"id":"e_0003_25570","type":"step.started","at":"2026-10-11T21:14:00.301Z","step":{"id":"s_0001_18669","turn":"t_0001_09876","kind":"thinking","title":"Thinking it through","at":"2026-10-11T21:14:00.301Z","position":3}}}
@@ -12,8 +12,6 @@
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
 {"at":0,"app":{"method":"PUT","path":"/v0/devices/545b5899-36cc-430d-9929-31d5e4f3bb14","body":{"apns_token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","environment":"production","notification_key":"MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="}}}
 {"at":0,"server":{"status":201,"body":{"device":{"id":"545b5899-36cc-430d-9929-31d5e4f3bb14","environment":"production","key_id":"861009ec","registered_at":"2026-10-12T08:41:00.000Z"}}}}
-{"at":0,"app":{"method":"PUT","path":"/v0/devices/545b5899-36cc-430d-9929-31d5e4f3bb14/presence","body":{"looking":true}}}
-{"at":0,"server":{"status":204}}
 {"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"d147cf4e-fc32-4395-aab9-f7b64c29be07","text":"Plan my Saturday: long run in the morning, then something calm."}}}
 {"at":2000,"event":{"id":"e_0010_75304","type":"message.accepted","at":"2026-10-12T08:41:02.000Z","message":{"id":"d147cf4e-fc32-4395-aab9-f7b64c29be07","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.000Z","position":10}}}
 {"at":2000,"server":{"status":201,"body":{"message":{"id":"d147cf4e-fc32-4395-aab9-f7b64c29be07","role":"user","text":"Plan my Saturday: long run in the morning, then something calm.","at":"2026-10-12T08:41:02.000Z","position":10}}}}
@@ -22,11 +20,9 @@
 {"at":2800,"event":{"id":"e_0012_11699","type":"message.accepted","at":"2026-10-12T08:41:02.800Z","message":{"id":"0052f675-d6e7-42ef-8a4f-6c744e9b9f17","role":"user","text":"Also, does the 37 bus run before 7 on Saturdays?","at":"2026-10-12T08:41:02.800Z","position":12}}}
 {"at":2800,"server":{"status":201,"body":{"message":{"id":"0052f675-d6e7-42ef-8a4f-6c744e9b9f17","role":"user","text":"Also, does the 37 bus run before 7 on Saturdays?","at":"2026-10-12T08:41:02.800Z","position":12}}}}
 {"at":2800,"event":{"id":"e_0013_53042","type":"message.queued","at":"2026-10-12T08:41:02.800Z","message":"0052f675-d6e7-42ef-8a4f-6c744e9b9f17","turn":"t_0002_04934"}}
-{"at":3200,"app":{"method":"PUT","path":"/v0/devices/545b5899-36cc-430d-9929-31d5e4f3bb14/presence","body":{"looking":false}}}
-{"at":3200,"server":{"status":204}}
 {"at":3200,"world":"app_closed"}
 {"at":7020,"push":{"device":"545b5899-36cc-430d-9929-31d5e4f3bb14","level":"active","notification":{"kind":"reply","text":"Here's a shape for Saturday:","turn":"t_0002_04934","message":"m_0002_88780"}}}
-{"at":67320,"push":{"device":"545b5899-36cc-430d-9929-31d5e4f3bb14","level":"passive","notification":{"kind":"failed","text":"Couldn't finish: The model service isn't responding right now.","turn":"t_0003_72432"}}}
+{"at":67320,"push":{"device":"545b5899-36cc-430d-9929-31d5e4f3bb14","level":"active","notification":{"kind":"failed","text":"Couldn't finish: The model service isn't responding right now.","turn":"t_0003_72432"}}}
 {"at":1267320,"world":"app_opened","from":"notification","turn":"t_0002_04934"}
 {"at":1267320,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0013_53042"}}}
 {"at":1267320,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
@@ -56,5 +52,3 @@
 {"at":1267320,"event":{"id":"e_0037_23048","type":"message.started","at":"2026-10-12T08:42:07.320Z","message":{"id":"m_0003_13830","role":"agent","kind":"reply","turn":"t_0003_72432","text":"","at":"2026-10-12T08:42:07.320Z","position":37}}}
 {"at":1267320,"event":{"id":"e_0038_62120","type":"message.ended","at":"2026-10-12T08:42:07.320Z","message":"m_0003_13830","outcome":"failed","length":0,"error":{"code":"model_unavailable","message":"The model service isn't responding right now.","detail":"The model service answered 503 Service Unavailable."}}}
 {"at":1267320,"event":{"id":"e_0039_55524","type":"turn.ended","at":"2026-10-12T08:42:07.320Z","turn":"t_0003_72432","outcome":"failed","error":{"code":"model_unavailable","message":"The model service isn't responding right now.","detail":"The model service answered 503 Service Unavailable."}}}
-{"at":1267320,"app":{"method":"PUT","path":"/v0/devices/545b5899-36cc-430d-9929-31d5e4f3bb14/presence","body":{"looking":true}}}
-{"at":1267320,"server":{"status":204}}

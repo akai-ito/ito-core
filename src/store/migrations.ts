@@ -162,4 +162,23 @@ export const migrations: readonly string[] = [
     body TEXT NOT NULL
   );
   CREATE INDEX kumo_blocks_by_start ON kumo_blocks (start);`,
+  // 0.18: Kumo speaks in messages, which may be urgent. Its line for the moment, the check-ins, the Focus it heard,
+  // the trust ladder and the morning time are gone, and so are their records.
+  `ALTER TABLE messages ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0;
+  UPDATE messages SET kind = 'post' WHERE kind = 'moment';
+  UPDATE events SET body = json_set(body, '$.message.kind', 'post')
+    WHERE type = 'message.posted' AND json_extract(body, '$.message.kind') = 'moment';
+  UPDATE events SET body = json_remove(body, '$.desk.moment') WHERE type = 'desk.changed';
+  UPDATE desk SET body = json_set(
+    json_remove(body, '$.moment'),
+    '$.waiting',
+    (SELECT json_group_array(json(json_remove(value, '$.quiet', '$.review'))) FROM json_each(desk.body, '$.waiting'))
+  );
+  UPDATE done SET body = json_remove(body, '$.work');
+  ALTER TABLE asks DROP COLUMN reminded;
+  DELETE FROM settings WHERE key IN (
+    'moment_day', 'morning_not_before', 'day_drift', 'day_nights', 'day_last_active', 'day_questions',
+    'day_planned', 'day_plan_note', 'status_focus', 'status_said', 'trust_ladder', 'trust_climb_calls',
+    'trust_climb_days', 'trust_review_day', 'trust_checks', 'trust_checked'
+  );`,
 ];

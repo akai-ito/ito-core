@@ -1,18 +1,18 @@
 import { createCell } from "#cell.ts";
-import type { Cancel, Clock } from "#clock.ts";
-import { toAskId, toTurnId, type AskId } from "#conversation/ids.ts";
+import type { Clock } from "#clock.ts";
+import { toTurnId } from "#conversation/ids.ts";
 import { isRefusal, type Apns } from "#notifications/apns.ts";
 import { sealNotification, type Sealed } from "#notifications/crypto.ts";
-import type { Presence } from "#notifications/presence.ts";
-import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
+import { toFailedText, toFirstLine } from "#notifications/text.ts";
 import type { Ask, Notification } from "#protocol/types.ts";
-import { localHourOf, toLevel } from "#notifications/manners.ts";
 import type { Health } from "#problems/problems.ts";
 import type { LogEntry, Store, StoredDevice } from "#store/store.ts";
 import type { Log } from "#turns/turns.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 
-export type PushLevel = "passive" | "active" | "time-sensitive";
+// Every message notifies, at once and whatever the hour: their phone's Focus decides what makes a sound. Only an
+// urgent message from Kumo is time-sensitive, to break through it.
+export type PushLevel = "active" | "time-sensitive";
 
 export type Envelope = {
   readonly aps: {
@@ -28,27 +28,15 @@ export type NotifierOptions = {
   readonly store: Store;
   readonly apns: Apns;
   readonly clock: Clock;
-  readonly presence: Presence;
   readonly agentName: () => string;
   readonly log: Log;
-  readonly reminderMs: number;
-  readonly timeZone?: string;
-  readonly isBusy?: () => boolean;
-  readonly graceMs?: number;
   // How the last notification went: turned away or not reached, or through.
   readonly onHealth?: (health: Health) => void;
 };
 
 export type Notifier = {
-  // Kumo's line for the moment matters: one notification goes out if it's still unread after a short grace.
-  readonly moment: (id: string, isUrgent: boolean) => void;
   readonly close: () => void;
 };
-
-export const defaultReminderMs = 3 * 60 * 60 * 1000;
-
-// Long enough for an app showing the Desk to say it showed the line.
-export const momentGraceMs = 30 * 1000;
 
 const expiryMs = 24 * 60 * 60 * 1000;
 
@@ -65,14 +53,8 @@ const fallbackText = (kind: Notification["kind"], agentName: string): string => 
     case "ask": {
       return `${agentName} asked you something`;
     }
-    case "reminder": {
-      return `${agentName} is still waiting on you`;
-    }
     case "post": {
       return `${agentName} has news`;
-    }
-    case "moment": {
-      return `${agentName} has something for you`;
     }
   }
 };
@@ -102,19 +84,11 @@ export const createNotifier = ({
   store,
   apns,
   clock,
-  presence,
   agentName,
   log,
-  reminderMs,
-  timeZone = "UTC",
-  isBusy = () => false,
-  graceMs = momentGraceMs,
   onHealth = ignore,
 }: NotifierOptions): Notifier => {
   const askingTurns = createCell<ReadonlySet<string>>(new Set());
-  const lastSounded = createCell<number | undefined>(undefined);
-  const reminders = createCell<ReadonlyMap<string, Cancel>>(new Map());
-  const graces = createCell<ReadonlyMap<string, Cancel>>(new Map());
   const deliveries = createCell<Promise<void>>(Promise.resolve());
 
   const deliver = async (notification: Notification, level: PushLevel): Promise<void> => {
@@ -143,105 +117,40 @@ export const createNotifier = ({
     }
   };
 
-  const notify = (notification: Notification, wanted: PushLevel): void => {
-    if (presence.isWatched() || store.devices().length === 0) return;
-    const now = clock.now();
-    const level = toLevel({
-      wanted,
-      now,
-      lastSounded: lastSounded.get(),
-      localHour: localHourOf(now, timeZone),
-      isBusy: isBusy(),
-    });
-    if (level !== "passive") lastSounded.set(now);
+  const notify = (notification: Notification, level: PushLevel = "active"): void => {
+    if (store.devices().length === 0) return;
     deliveries.set(deliverAfter(deliveries.get(), notification, level));
-  };
-
-  const moment = (id: string, isUrgent: boolean): void => {
-    graces.get().get(id)?.();
-    const cancel = clock.after(graceMs, () => {
-      graces.update((current) => new Map([...current].filter(([other]) => other !== id)));
-      const current = store.desk().moment;
-      // Read, or already answered, it needs no notification.
-      if (current?.id !== id || current.read_at !== undefined || current.state === "working") return;
-      notify(
-        { kind: "moment", text: toFirstLine(current.text), message: current.message },
-        isUrgent ? "time-sensitive" : "active",
-      );
-    });
-    graces.update((current) => new Map([...current, [id, cancel]]));
-  };
-
-  const dropReminder = (ask: string): void => {
-    reminders.get().get(ask)?.();
-    reminders.update((current) => new Map([...current].filter(([id]) => id !== ask)));
-  };
-
-  const remind = (ask: AskId): void => {
-    dropReminder(ask);
-    const current = store.findAsk(ask);
-    if (!current || current.outcome || store.isReminded(ask)) return;
-    store.markReminded(ask);
-    notify({ kind: "reminder", text: toReminderText(current.question), ask: toAskPart(current) }, "active");
-  };
-
-  const scheduleReminder = (ask: Ask): void => {
-    const delayMs = Math.max(0, Date.parse(ask.at) + reminderMs - clock.now());
-    const cancel = clock.after(delayMs, () => {
-      remind(toAskId(ask.id));
-    });
-    reminders.update((current) => new Map([...current, [ask.id, cancel]]));
   };
 
   const onTurnEnded = (event: Extract<LogEntry["event"], { readonly type: "turn.ended" }>): void => {
     const hasAsked = askingTurns.get().has(event.turn);
     askingTurns.update((current) => new Set([...current].filter((turn) => turn !== event.turn)));
     if (event.outcome === "failed" && event.error) {
-      notify({ kind: "failed", text: toFailedText(event.error.message), turn: event.turn }, "active");
+      notify({ kind: "failed", text: toFailedText(event.error.message), turn: event.turn });
       return;
     }
     const reply = !hasAsked && event.outcome === "completed" ? store.lastReply(toTurnId(event.turn)) : undefined;
     if (reply)
-      notify(
-        { kind: "reply", text: toFirstLine(withoutBlocks(reply.text)), turn: event.turn, message: reply.id },
-        "active",
-      );
+      notify({ kind: "reply", text: toFirstLine(withoutBlocks(reply.text)), turn: event.turn, message: reply.id });
   };
 
   const onEvent = ({ event }: LogEntry): void => {
     if (event.type === "message.posted") {
-      // Kumo's line for the moment notifies only when it matters and stays unread, through moment().
-      if (event.message.kind === "moment") return;
       notify(
         { kind: "post", text: toFirstLine(withoutBlocks(event.message.text)), message: event.message.id },
-        "active",
+        event.message.urgent === true ? "time-sensitive" : "active",
       );
       return;
     }
     if (event.type === "ask.started") {
       askingTurns.update((current) => new Set([...current, event.ask.turn]));
-      notify({ kind: "ask", text: event.ask.question, ask: toAskPart(event.ask) }, "time-sensitive");
-      scheduleReminder(event.ask);
-      return;
-    }
-    if (event.type === "ask.ended") {
-      dropReminder(event.ask.id);
+      notify({ kind: "ask", text: event.ask.question, ask: toAskPart(event.ask) });
       return;
     }
     if (event.type === "turn.ended") onTurnEnded(event);
   };
 
   const unsubscribe = store.subscribe(onEvent);
-  const waiting = store.waitingAsk();
-  if (waiting && !store.isReminded(toAskId(waiting.id))) scheduleReminder(waiting);
 
-  return {
-    moment,
-    close: () => {
-      unsubscribe();
-      for (const cancel of [...reminders.get().values(), ...graces.get().values()]) cancel();
-      reminders.set(new Map());
-      graces.set(new Map());
-    },
-  };
+  return { close: unsubscribe };
 };

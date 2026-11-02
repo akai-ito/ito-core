@@ -7,12 +7,15 @@ import { createCell } from "#cell.ts";
 import { systemClock } from "#clock.ts";
 import { toDeviceId, toTurnId } from "#conversation/ids.ts";
 import { randomIdentifiers } from "#identifiers.ts";
-import { createApns, type ApnsCredentials } from "#notifications/apns.ts";
+import { apnsSettings, createApns, type ApnsCredentials } from "#notifications/apns.ts";
 import { openNotification, sealNotification } from "#notifications/crypto.ts";
 import { createNotifier, type Envelope } from "#notifications/notifier.ts";
-import { createPresence } from "#notifications/presence.ts";
 import { toFirstLine } from "#notifications/text.ts";
+import { createScriptEngine } from "#engine/scripted/script-engine.ts";
+import { hashToken, tokenSetting } from "#http/auth.ts";
+import { wordEmbedder } from "#memory/embedder.ts";
 import { ok } from "#result.ts";
+import { createServer } from "#server.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, toKeyId } from "#store/store.ts";
 import { startFakeApns, type FakeApns } from "./support/fake-apns.ts";
@@ -37,7 +40,7 @@ const device = {
   registeredAt: "2026-10-15T12:00:00.000Z",
 };
 
-const ignore = (): void => undefined;
+const token = "ito_notifications_test_not_a_real_token_0000000000000000";
 
 const currentApns = (): FakeApns => {
   const current = apnsServer.get();
@@ -122,63 +125,61 @@ describe("notifications", () => {
     apns.close();
   });
 
-  it("notify once for Kumo's line while it's unread, never for one read on the Desk, and not as a post", async () => {
-    const start = Date.parse("2026-11-10T12:00:00.000Z");
-    const clock = createVirtualClock(start);
-    const store = createStore(openDatabase(path.join(home, "moments.db")), clock, randomIdentifiers);
-    store.registerDevice(device.id, device);
-    const sent = createCell<readonly Envelope[]>([]);
-    const notifier = createNotifier({
-      store,
-      apns: {
-        send: (_device, envelope) => {
-          sent.update((current) => [...current, envelope as Envelope]);
-          return Promise.resolve(ok("sent"));
-        },
-        close: ignore,
-      },
+  it("send every message Kumo posts at once, whatever the hour, and an urgent one time-sensitive", async () => {
+    const fake = currentApns();
+    const clock = createVirtualClock(Date.parse("2026-11-12T02:40:00.000Z"));
+    const server = createServer({
+      dataDirectory: mkdtempSync(path.join(home, "posts-")),
+      name: "posts",
+      embedder: wordEmbedder,
+      timeZone: "Europe/London",
       clock,
-      presence: createPresence(),
-      agentName: () => "Kumo",
-      log: ignore,
-      reminderMs: 60_000,
-      timeZone: "UTC",
-      graceMs: 30_000,
+      push: { hosts: { production: fake.origin, sandbox: fake.origin } },
+      createEngine: () =>
+        createScriptEngine(clock, () => {
+          throw new Error("This test starts no turns.");
+        }),
     });
-    const say = (id: string, text: string): string => {
-      const message = store.postMessage(text, "moment");
-      const moment = { id, kind: "news" as const, at: message.at, text, message: message.id };
-      store.setDesk({ coming_up: [], waiting: [], handled: 0, moment: { ...moment, options: [], allows_text: false } });
-      return message.id;
-    };
-    const unread = say("o_1", "Maya asked how Monday went.");
-    notifier.moment("o_1", false);
-    clock.runNext(start + 30_000);
-    await expect.poll(() => sent.get().length).toBe(1);
-    const read = say("o_2", "Sam moved climbing to 8.");
-    notifier.moment("o_2", true);
-    const shown = store.desk().moment;
-    if (shown) store.setDesk({ ...store.desk(), moment: { ...shown, read_at: "2026-11-10T12:00:31.000Z" } });
-    clock.runNext(start + 60_000);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    say("o_3", "Leo asked about Thursday.");
-    notifier.moment("o_3", false);
-    const answered = store.desk().moment;
-    if (answered)
-      store.setDesk({ ...store.desk(), moment: { ...answered, state: "working", answer: { option: "Yes" } } });
-    clock.runNext(start + 90_000);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(sent.get().map(({ aps }) => aps["interruption-level"])).toEqual(["active"]);
-    expect(openNotification(sent.get()[0]?.ito ?? { v: 1, k: "", n: "", c: "" }, device)).toEqual({
-      kind: "moment",
-      text: "Maya asked how Monday went.",
-      message: unread,
+    server.store.setSetting(tokenSetting, hashToken(token));
+    server.store.setSetting(apnsSettings.privateKey, credentials.privateKey);
+    server.store.setSetting(apnsSettings.keyId, credentials.keyId);
+    server.store.setSetting(apnsSettings.teamId, credentials.teamId);
+    server.store.setSetting(apnsSettings.bundleId, credentials.bundleId);
+    const registered = await server.app.inject({
+      method: "PUT",
+      url: `/v0/devices/${device.id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { apns_token: device.apnsToken, environment: "production", notification_key: notificationKey },
     });
-    expect(read).not.toBe(unread);
-    notifier.close();
-    store.close();
+    expect(registered.statusCode).toBe(201);
+    const before = fake.pushed().length;
+
+    const quiet = await server.callTool("post", { text: "Hotel Orto's check-in closes before you land." });
+    const urgent = await server.callTool("post", { text: "Your 9:00 train is cancelled.", urgent: true });
+
+    await expect.poll(() => fake.pushed().length - before).toBe(2);
+    const opened = fake
+      .pushed()
+      .slice(before)
+      .map(({ payload }) => {
+        const { aps, ito } = payload as Envelope;
+        return { level: aps["interruption-level"], notification: openNotification(ito, device) };
+      });
+    const posts = server.store
+      .snapshot("no_cursor")
+      .event.messages.filter(({ kind }) => kind === "post")
+      .map(({ id, text, urgent: isUrgent }) => ({ id, text, isUrgent }));
+    expect(quiet.text).toBe(`Sent as ${posts[0]?.id ?? ""}.`);
+    expect(urgent.isError).toBeUndefined();
+    expect(posts).toEqual([
+      { id: expect.any(String) as unknown, text: "Hotel Orto's check-in closes before you land.", isUrgent: undefined },
+      { id: expect.any(String) as unknown, text: "Your 9:00 train is cancelled.", isUrgent: true },
+    ]);
+    expect(opened).toEqual([
+      { level: "active", notification: { kind: "post", text: posts[0]?.text, message: posts[0]?.id } },
+      { level: "time-sensitive", notification: { kind: "post", text: posts[1]?.text, message: posts[1]?.id } },
+    ]);
+    await server.close();
   });
 
   it("forget a device APNs says is gone", async () => {
@@ -198,12 +199,10 @@ describe("notifications", () => {
         },
       },
       clock: systemClock,
-      presence: createPresence(),
       agentName: () => "Ari",
       log: (message) => {
         logged.set([...logged.get(), message]);
       },
-      reminderMs: 60_000,
     });
     store.startAsk(toTurnId("t_1"), {
       kind: "question",

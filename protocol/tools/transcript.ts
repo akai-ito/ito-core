@@ -3,9 +3,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { isImage, readDimensions } from "#attachments/media.ts";
 import { createCell } from "#cell.ts";
-import { toFailedText, toFirstLine, toReminderText } from "#notifications/text.ts";
+import { toFailedText, toFirstLine } from "#notifications/text.ts";
 import { mergePatch } from "#motion/changes.ts";
-import { toLevel } from "#notifications/manners.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import type {
   Ask,
@@ -23,7 +22,6 @@ import type {
   LiveTurn,
   Message,
   MessageKind,
-  Moment,
   Motion,
   MotionChange,
   Notification,
@@ -70,19 +68,9 @@ type SendOptions = {
 
 type NewCard = Omit<Card, "id" | "at">;
 
-type NewMoment = {
-  readonly kind: Moment["kind"];
-  readonly text: string;
-  readonly detail?: string;
-  readonly options?: readonly string[];
-  readonly allowsText?: boolean;
-  readonly replyLabel?: string;
-};
-
 type WorkToday = {
   readonly handled: readonly Fields[];
   readonly cleared: readonly Fields[];
-  readonly trust?: readonly Fields[];
 };
 
 type NewCalendarItem = Omit<CalendarItem, "id">;
@@ -98,7 +86,7 @@ type AskFields = {
   readonly attachments?: readonly string[];
 };
 
-type Device = { readonly id: string; readonly isLooking: boolean };
+type Device = { readonly id: string };
 
 type WriteOptions = { readonly pieces?: number; readonly everyMs?: number };
 
@@ -152,8 +140,6 @@ export type Transcript = {
   readonly ask: (fields: AskFields) => string;
   readonly cancelAsk: (ask: string) => void;
   readonly registerDevice: () => string;
-  readonly presence: (isLooking: boolean) => void;
-  readonly remind: () => void;
   readonly upload: (file: string, options?: UploadOptions) => string;
   readonly uploadTooLarge: (name: string, size: number) => void;
   readonly forgetUnsentUploads: () => void;
@@ -161,27 +147,14 @@ export type Transcript = {
   readonly showPairingCode: (code: string) => void;
   readonly pair: (code: string, deviceName: string, token: string) => void;
   readonly listMessages: (before: string, limit: number) => void;
-  readonly post: (text: string) => string;
+  // A message Kumo posts outside a turn; an urgent one is time-sensitive.
+  readonly post: (text: string, options?: { readonly isUrgent?: boolean }) => string;
   readonly desk: () => Desk;
   readonly getDesk: () => void;
   readonly calendarItem: (item: NewCalendarItem) => CalendarItem;
   readonly comingUp: (items: readonly CalendarItem[]) => void;
-  // Kumo's line for the moment: a `moment` message and the Desk's `moment`.
-  readonly moment: (moment: NewMoment) => Moment;
-  // The grace after a line that matters is over: one notification, if it's still unread and you're away.
-  readonly momentUnread: (isUrgent?: boolean) => void;
-  readonly readMoment: () => void;
-  readonly answerMoment: (answer: Fields) => void;
-  // The line gives way to all quiet: Kumo acted on your answer, or it was read three hours ago.
-  readonly quiet: () => void;
-  // Skips the day's question on the Desk.
-  readonly skipMoment: () => void;
   // Answers one of Kumo's guesses in Coming up; the item comes back as `after`.
   readonly answerGuess: (item: CalendarItem, answer: Fields, after: CalendarItem) => void;
-  // What Kumo handled today, counted again, such as from nothing at midnight.
-  readonly recount: (handled: number) => void;
-  // A Focus with Ito in it turns on, or off without a kind; the app says so even while it's closed.
-  readonly focus: (kind?: string) => void;
   // Kumo did one more thing without you today: its Done entry.
   readonly handled: (entry: { readonly text: string; readonly reason?: string }) => Fields;
   readonly mailRead: () => void;
@@ -271,7 +244,6 @@ const tokenDigits = 5;
 const defaultPieceLength = 28;
 const defaultPieceIntervalMs = 120;
 const messagesPerSnapshot = 50;
-const reminderAfterMs = 3 * 60 * 60 * 1000;
 const mediaTypes: Readonly<Record<string, string>> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -479,15 +451,12 @@ export const createTranscript = (header: Header): Transcript => {
   const runningSteps = createCell<ReadonlyMap<string, RunningStep>>(new Map());
   const retries = createCell<ReadonlyMap<string, string>>(new Map());
   const waiting = createCell<string | undefined>(undefined);
-  const askedAt = createCell<number | undefined>(undefined);
-  const isReminded = createCell(false);
   const device = createCell<Device | undefined>(undefined);
   const attachments = createCell<ReadonlyMap<string, Attachment>>(new Map());
   const pairingCodes = createCell<ReadonlySet<string>>(new Set());
   const deskState = createCell<Desk>({ coming_up: [], waiting: [], handled: 0 });
   const onboardingState = createCell<Onboarding>({ state: "done" });
   const problemsState = createCell<readonly Problem[]>([]);
-  const lastSounded = createCell<number | undefined>(undefined);
 
   const timestamp = (): string => new Date(now.get()).toISOString();
 
@@ -655,17 +624,10 @@ export const createTranscript = (header: Header): Transcript => {
     return running;
   };
 
-  const push = (wanted: "passive" | "active" | "time-sensitive", notification: Notification): void => {
+  // Every message reaches a registered device at once; only an urgent post is time-sensitive.
+  const push = (level: "active" | "time-sensitive", notification: Notification): void => {
     const current = device.get();
-    if (!current || start.get() === undefined || (current.isLooking && isConnected.get())) return;
-    const level = toLevel({
-      wanted,
-      now: now.get(),
-      lastSounded: lastSounded.get(),
-      localHour: new Date(now.get()).getUTCHours(),
-      isBusy: false,
-    });
-    if (level !== "passive") lastSounded.set(now.get());
+    if (!current || start.get() === undefined) return;
     addStep({ push: { device: current.id, level, notification } });
   };
 
@@ -1241,9 +1203,7 @@ export const createTranscript = (header: Header): Transcript => {
     };
     emit("ask.started", { ask: asked });
     waiting.set(asked.id);
-    askedAt.set(now.get());
-    isReminded.set(false);
-    push("time-sensitive", {
+    push("active", {
       kind: "ask",
       text: asked.question,
       ask: {
@@ -1272,10 +1232,8 @@ export const createTranscript = (header: Header): Transcript => {
     };
     emit("ask.started", { ask: asked });
     waiting.set(asked.id);
-    askedAt.set(now.get());
-    isReminded.set(false);
     approvals.update((current) => new Set([...current, asked.id]));
-    push("time-sensitive", {
+    push("active", {
       kind: "ask",
       text: asked.question,
       ask: {
@@ -1306,16 +1264,8 @@ export const createTranscript = (header: Header): Transcript => {
     });
     const keyId = createHash("sha256").update(key).digest("hex").slice(0, 8);
     response(201, { device: { id, environment: "production", key_id: keyId, registered_at: timestamp() } });
-    device.set({ id, isLooking: false });
+    device.set({ id });
     return id;
-  };
-
-  const presence = (isLooking: boolean): void => {
-    const current = device.get();
-    if (!current) throw new Error("presence before a device is registered");
-    request("PUT", `/v0/devices/${current.id}/presence`, { body: { looking: isLooking } });
-    response(204, undefined);
-    device.set({ ...current, isLooking });
   };
 
   const upload = (file: string, options: UploadOptions = {}): string => {
@@ -1389,24 +1339,6 @@ export const createTranscript = (header: Header): Transcript => {
     });
   };
 
-  const remind = (): void => {
-    const id = waiting.get();
-    const at = askedAt.get();
-    if (!id || at === undefined || isReminded.get()) throw new Error("no ask is waiting for a reminder");
-    now.set(Math.max(now.get(), at + reminderAfterMs));
-    isReminded.set(true);
-    const asked = askById(id);
-    push("active", {
-      kind: "reminder",
-      text: toReminderText(asked.question),
-      ask: {
-        id,
-        options: asked.options.map((option) => option.label),
-        allows_text: asked.allows_text,
-      },
-    });
-  };
-
   const stop = (turnId: string): void => {
     request("POST", `/v0/turns/${turnId}/stop`);
     if (turn.get()?.id === turnId) {
@@ -1452,7 +1384,7 @@ export const createTranscript = (header: Header): Transcript => {
     });
   };
 
-  const post = (text: string): string => {
+  const post = (text: string, { isUrgent = false }: { readonly isUrgent?: boolean } = {}): string => {
     const id = newId("m");
     emit("message.posted", {
       message: {
@@ -1463,9 +1395,10 @@ export const createTranscript = (header: Header): Transcript => {
         at: timestamp(),
         position: nextPosition(),
         outcome: "completed",
+        ...(isUrgent && { urgent: true }),
       },
     });
-    push("active", { kind: "post", text: toFirstLine(withoutBlocks(text)), message: id });
+    push(isUrgent ? "time-sensitive" : "active", { kind: "post", text: toFirstLine(withoutBlocks(text)), message: id });
     return id;
   };
 
@@ -1485,98 +1418,6 @@ export const createTranscript = (header: Header): Transcript => {
 
   const comingUp = (items: readonly CalendarItem[]): void => {
     changeDesk((desk) => ({ ...desk, coming_up: [...items] }));
-  };
-
-  const currentMoment = (): Moment => {
-    const current = deskState.get().moment;
-    if (!current) throw new Error("no line for the moment");
-    return current;
-  };
-
-  const withMoment = (moment: Moment | undefined): void => {
-    changeDesk((desk) =>
-      moment
-        ? { ...desk, moment }
-        : (Object.fromEntries(Object.entries(desk).filter(([field]) => field !== "moment")) as Desk),
-    );
-  };
-
-  const moment = ({ kind, text, detail, options = [], allowsText = false, replyLabel }: NewMoment): Moment => {
-    const message = newId("m");
-    const at = timestamp();
-    const said = detail === undefined ? text : `${text}\n\n${detail}`;
-    emit("message.posted", {
-      message: {
-        id: message,
-        role: "agent",
-        kind: "moment",
-        text: said,
-        at,
-        position: nextPosition(),
-        outcome: "completed",
-      },
-    });
-    const written: Moment = {
-      id: newId("o"),
-      kind,
-      at,
-      text,
-      ...(detail !== undefined && { detail }),
-      message,
-      options: options.map((label) => ({ label })),
-      allows_text: allowsText,
-      ...(replyLabel !== undefined && { reply_label: replyLabel }),
-    };
-    withMoment(written);
-    return written;
-  };
-
-  const momentUnread = (isUrgent = false): void => {
-    const current = currentMoment();
-    if (current.read_at !== undefined) return;
-    push(isUrgent ? "time-sensitive" : "active", {
-      kind: "moment",
-      text: toFirstLine(current.text),
-      message: current.message,
-    });
-  };
-
-  const readMoment = (): void => {
-    const current = currentMoment();
-    request("POST", `/v0/desk/moment/${current.id}/read`);
-    if (current.read_at === undefined) withMoment({ ...current, read_at: timestamp() });
-    response(204, undefined);
-  };
-
-  const answerMoment = (answer: Fields): void => {
-    const current = currentMoment();
-    request("POST", `/v0/desk/moment/${current.id}/answer`, { body: answer });
-    const working: Moment = { ...current, state: "working", answer };
-    withMoment(working);
-    response(202, { moment: working });
-  };
-
-  const quiet = (): void => {
-    withMoment(undefined);
-  };
-
-  const focus = (kind?: string): void => {
-    request("PUT", `/v0/devices/${toUuid(`${header.name}:device`)}/status`, {
-      body: kind === undefined ? {} : { focus: kind },
-    });
-    response(204, undefined);
-  };
-
-  // A new day: what Kumo handled counts from nothing again.
-  const recount = (handled: number): void => {
-    changeDesk((desk) => ({ ...desk, handled }));
-  };
-
-  const skipMoment = (): void => {
-    const current = currentMoment();
-    request("POST", `/v0/desk/moment/${current.id}/answer`, { body: { skip: true } });
-    withMoment(undefined);
-    response(202, { moment: current });
   };
 
   // Answers one of Kumo's guesses in Coming up: the item comes back as it is now, no longer a guess.
@@ -1605,7 +1446,6 @@ export const createTranscript = (header: Header): Transcript => {
       day: timestamp().slice(0, 10),
       handled: work.handled,
       cleared: work.cleared,
-      trust: work.trust ?? [],
     });
   };
 
@@ -1691,8 +1531,6 @@ export const createTranscript = (header: Header): Transcript => {
 
   const restart = (): void => {
     disconnect("server_restarted");
-    const registered = device.get();
-    if (registered) device.set({ ...registered, isLooking: false });
     ids.update((current) => ({ ...current, boot: current.boot + 1 }));
     wait(2400);
     if (!turn.get()) return;
@@ -1790,8 +1628,6 @@ export const createTranscript = (header: Header): Transcript => {
     ask,
     cancelAsk,
     registerDevice,
-    presence,
-    remind,
     upload,
     uploadTooLarge,
     forgetUnsentUploads,
@@ -1804,15 +1640,7 @@ export const createTranscript = (header: Header): Transcript => {
     getDesk,
     calendarItem,
     comingUp,
-    moment,
-    momentUnread,
-    readMoment,
-    answerMoment,
-    quiet,
-    skipMoment,
     answerGuess,
-    recount,
-    focus,
     handled,
     mailRead,
     getWork,

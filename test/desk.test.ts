@@ -8,15 +8,12 @@ import { toMessageId } from "#conversation/ids.ts";
 import { demoAnswers, demoScripts, demoWork } from "#engine/scripted/demo.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
-import { toLevel } from "#notifications/manners.ts";
-import { toChanges } from "#desk/moments.ts";
 import { createDesk, quoteOf } from "#desk/desk.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore } from "#store/store.ts";
 import { createCell } from "#cell.ts";
-import type { CalendarItem } from "#protocol/types.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { createServer } from "#server.ts";
 
@@ -72,16 +69,6 @@ const openDesk = (canWork = true) => {
   return { server, say, answer, post };
 };
 
-const item = (uid: string, start: string, kumo = false): CalendarItem => ({
-  id: `v_${uid}`,
-  uid,
-  title: uid,
-  start,
-  end: start,
-  all_day: false,
-  calendar: { name: kumo ? "Kumo" : "Home", kumo },
-});
-
 describe("the Desk", () => {
   it("takes Kumo's cards, answers them through the box, and counts what Kumo handled", async () => {
     const { server, say, answer } = openDesk();
@@ -116,79 +103,57 @@ describe("the Desk", () => {
     }
   });
 
-  it("writes Kumo's line for the moment, which is read on the Desk and answered like a card", async () => {
-    const { server, say, post } = openDesk();
+  it("takes in “That was wrong” once, and only adds the words said again", async () => {
+    const { server, post } = openDesk();
     await server.app.listen({ host: "127.0.0.1", port: 0 });
     try {
-      await say("Write your moment");
-      const moment = server.store.desk().moment;
-      const message = server.store.snapshot("no_cursor").event.messages.find(({ id }) => id === moment?.message);
-      const read = await post(`/v0/desk/moment/${moment?.id ?? "none"}/read`, {});
-      const wrong = await post(`/v0/desk/moment/${moment?.id ?? "none"}/answer`, { option: "Maybe" });
-      const answered = await post(`/v0/desk/moment/${moment?.id ?? "none"}/answer`, { option: "Ask me tonight" });
-      const gone = await post("/v0/desk/moment/o_none/read", {});
+      await server.callTool("done", { text: "Moved climbing with Leo to 20:00", reason: "Leo asked by mail." });
+      const [entry] = server.store.listDone(undefined, 1).entries;
+      const wrong = await post(`/v0/done/${entry?.id ?? "none"}/wrong`, { text: "Leo meant next week" });
+      const again = await post(`/v0/done/${entry?.id ?? "none"}/wrong`, { text: "and it's at the wall" });
+      const bare = await post(`/v0/done/${entry?.id ?? "none"}/wrong`, {});
+      const missing = await post("/v0/done/d_none/wrong", {});
 
-      expect(moment).toMatchObject({
-        kind: "day",
-        text: "Hotel Orto needs a word before Friday; the rest of today can bend around your 2 o'clock.",
-        options: [{ label: "Ask me tonight" }],
-        allows_text: true,
-      });
-      expect(message).toMatchObject({ role: "agent", kind: "moment", text: moment?.text });
-      expect(read.statusCode).toBe(204);
-      expect(wrong.statusCode).toBe(400);
-      expect(answered.statusCode).toBe(202);
-      expect(answered.json()).toMatchObject({ moment: { state: "working", answer: { option: "Ask me tonight" } } });
-      expect(gone.statusCode).toBe(404);
+      expect(wrong.json()).toMatchObject({ entry: { id: entry?.id, corrected_at: expect.any(String) as unknown } });
+      expect(again.json()).toEqual(wrong.json());
+      expect(bare.json()).toEqual(wrong.json());
+      expect(missing.statusCode).toBe(404);
       await vi.waitFor(
         () => {
-          expect(server.store.desk().moment).toBeUndefined();
+          expect(
+            server.store
+              .listDone(undefined, 10)
+              .entries.filter(({ text }) => text.startsWith("You said"))
+              .map(({ text, reason }) => [text, reason]),
+          ).toEqual(
+            expect.arrayContaining([
+              [
+                "You said “Moved climbing with Leo to 20:00” was wrong: Leo meant next week",
+                "Noted on How to help you for next time.",
+              ],
+              [
+                "You said “Moved climbing with Leo to 20:00” was wrong: and it's at the wall",
+                "Noted on How to help you for next time.",
+              ],
+            ]),
+          );
         },
         { timeout: 5000, interval: 50 },
       );
-      expect(server.store.listDone(undefined, 1).entries[0]).toMatchObject({
-        text: "You answered “Hotel Orto needs a word before Friday”: Ask me tonight",
-        reason: "Noted; nothing more was needed.",
-      });
-      const work = await server.app.inject({
-        method: "GET",
-        url: "/v0/work",
-        headers: { authorization: `Bearer ${token}` },
-      });
-      expect(work.json()).toMatchObject({
-        handled: expect.arrayContaining([
-          expect.objectContaining({ text: "You answered “Hotel Orto needs a word before Friday”: Ask me tonight" }),
-        ]) as unknown,
-        cleared: [],
-      });
+      expect(
+        server.store.listDone(undefined, 10).entries.filter(({ text }) => text.startsWith("You said")),
+      ).toHaveLength(2);
     } finally {
       await server.close();
     }
   });
 
-  it("quotes Kumo's line in Done by its first sentence, cut at a word when it's long", () => {
+  it("quotes what Kumo did in Done by its first sentence, cut at a word when it's long", () => {
     expect(quoteOf("Maya wants to hear how Monday went. Tell me, and I'll draft it.")).toBe(
       "Maya wants to hear how Monday went",
     );
     expect(quoteOf("How did the call go?")).toBe("How did the call go?");
     expect(quoteOf(`${"word ".repeat(20)}end.`)).toBe(`${"word ".repeat(11).trim()}…`);
-  });
-
-  it("notices a change to what's left of today on your own calendars", () => {
-    const now = Date.parse("2026-11-11T12:00:00.000Z");
-    const before = [item("Climbing", "2026-11-11T19:00:00.000Z"), item("Prep", "2026-11-11T17:00:00.000Z", true)];
-    const after = [
-      item("Climbing", "2026-11-11T20:00:00.000Z"),
-      item("Prep", "2026-11-11T18:00:00.000Z", true),
-      item("Dentist", "2026-11-12T09:00:00.000Z"),
-      item("Lunch", "2026-11-11T09:00:00.000Z"),
-    ];
-
-    expect(toChanges(before, after, now, "UTC")).toEqual(["Moved: Climbing, now Wed 20:00"]);
-    expect(toChanges(after, before, now, "UTC")).toEqual(["Moved: Climbing, now Wed 19:00"]);
-    expect(toChanges([], [item("Call", "2026-11-11T15:00:00.000Z")], now, "UTC")).toEqual([
-      "New today: Wed 15:00 Call",
-    ]);
   });
 
   it("puts a card back, with why in Done, when Kumo couldn't act on the answer", async () => {
@@ -222,7 +187,7 @@ describe("the Desk", () => {
     }
   });
 
-  it("acts on a card or a line once, when the same answer comes twice", async () => {
+  it("acts on a card once, when the same answer comes twice", async () => {
     const store = createStore(openDatabase(path.join(home, "twice.db")), systemClock, randomIdentifiers);
     const acted = createCell(0);
     const releases = createCell<readonly (() => void)[]>([]);
@@ -252,19 +217,6 @@ describe("the Desk", () => {
       desk.answer(card.id, { option: "Yes" }),
       desk.answer(card.id, { option: "Not now" }),
     ];
-    store.setDesk({
-      ...store.desk(),
-      moment: {
-        id: "o_1",
-        kind: "news",
-        at: card.at,
-        text: "Leo wrote.",
-        message: "m_1",
-        options: [{ label: "Reply" }],
-        allows_text: false,
-      },
-    });
-    const lines = [desk.answerMoment("o_1", { option: "Reply" }), desk.answerMoment("o_1", { option: "Reply" })];
     await vi.waitFor(() => {
       expect(releases.get().length).toBeGreaterThan(0);
     });
@@ -272,8 +224,9 @@ describe("the Desk", () => {
     for (const release of releases.get()) release();
     await desk.settled();
 
-    expect([...answers, ...lines].map(({ ok: isOk }) => isOk)).toEqual([true, true, false, true, true]);
-    expect(acted.get()).toBe(2);
+    expect(answers.map(({ ok: isOk }) => isOk)).toEqual([true, true, false]);
+    expect(acted.get()).toBe(1);
+    desk.close();
     store.close();
   });
 
@@ -301,17 +254,7 @@ describe("the Desk", () => {
     expect(second).toEqual(first);
     expect(moved.get()).toBe(1);
     expect(await desk.undo(entry.id)).toEqual({ ok: false, failure: "That can't be undone." });
+    desk.close();
     store.close();
-  });
-
-  it("keeps notifications quiet by the shared manners", () => {
-    const now = Date.parse("2026-11-11T12:00:00.000Z");
-    const moment = { now, lastSounded: undefined, localHour: 12, isBusy: false } as const;
-
-    expect(toLevel({ ...moment, wanted: "active" })).toBe("active");
-    expect(toLevel({ ...moment, wanted: "active", lastSounded: now - 20 * 60 * 1000 })).toBe("passive");
-    expect(toLevel({ ...moment, wanted: "active", localHour: 23 })).toBe("passive");
-    expect(toLevel({ ...moment, wanted: "active", isBusy: true })).toBe("passive");
-    expect(toLevel({ ...moment, wanted: "time-sensitive", localHour: 3, isBusy: true })).toBe("time-sensitive");
   });
 });

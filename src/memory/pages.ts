@@ -124,3 +124,24 @@ export const toJournalEntry = (text: string, isYours: boolean, time: string): st
 
 export const appendEntry = (markdown: string, entry: string): string =>
   markdown.trim() === "" ? entry : `${markdown.trimEnd()}\n\n${entry}`;
+
+const levelOf = (line: string): number | undefined => /^(?<hashes>#{1,6})\s/u.exec(line)?.groups?.hashes?.length;
+
+// The section of a page's Markdown under a heading, such as "Sorting mail" on How to help you, without the heading.
+export const sectionOf = (markdown: string, heading: string): string => {
+  const lines = markdown.split("\n");
+  const wanted = heading.trim().toLowerCase();
+  const start = lines.findIndex(
+    (line) =>
+      levelOf(line) !== undefined &&
+      line
+        .replace(/^#+\s*/u, "")
+        .trim()
+        .toLowerCase() === wanted,
+  );
+  if (start === -1) return "";
+  const level = levelOf(lines[start] ?? "") ?? 1;
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => (levelOf(line) ?? Infinity) <= level);
+  return (end === -1 ? rest : rest.slice(0, end)).join("\n").trim();
+};

@@ -5,7 +5,7 @@ import type { Values } from "#capabilities/manifest.ts";
 import type { CardAnswer, CardHandler, DeskKeeper, NewCard, NewDone, Undoer } from "#desk/desk.ts";
 import type { Mail, MailSource } from "#mail/imap.ts";
 import { createMailbox, type Mailbox } from "#mail/mail.ts";
-import type { CalendarItem, Card, DoneEntry } from "#protocol/types.ts";
+import type { CalendarItem, Card, DoneEntry, Message } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Tool } from "#tools/mcp.ts";
 import { createWorkTools } from "#work/tools.ts";
@@ -53,6 +53,16 @@ const booking = {
 };
 
 const ignore = (): void => undefined;
+
+// A message Kumo posted, as the store would keep it.
+const message = (text: string): Message => ({
+  id: "m_1",
+  role: "agent",
+  kind: "post",
+  text,
+  at: "2026-11-01T09:00:00.000Z",
+  position: 1,
+});
 
 const sent = (date: string, inReplyTo: string, text: string, fields: Partial<Mail> = {}): Mail => ({
   account: "icloud",
@@ -125,7 +135,7 @@ const openBox = (
       return added;
     },
   } as unknown as DeskKeeper;
-  const workTools = createWorkTools({ post: () => "Told them.", desk });
+  const workTools = createWorkTools({ post: (text) => message(text), desk });
   const mailbox = createMailbox({
     host: {
       find: (id) => {

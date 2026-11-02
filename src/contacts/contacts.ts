@@ -21,9 +21,8 @@ import {
   type Related,
   type VCard,
 } from "#contacts/vcard.ts";
-import { dayMs, toLocal, toMinutes } from "#desk/day.ts";
+import { dayMs, toLocal } from "#desk/day.ts";
 import type { CardAnswer, DeskKeeper } from "#desk/desk.ts";
-import { notBeforeOf } from "#http/settings.ts";
 import type { Health } from "#problems/problems.ts";
 import type { Card } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -240,9 +239,9 @@ const datesPrompt = (lines: readonly string[]): string =>
     ...lines,
     "",
     "Judge from their People pages, and anything you remember with recall, how much each person matters to them.",
-    "For someone they care about, post one line now, warm and short, such as “Leo's birthday is Thursday. Want",
-    "ideas?”; it goes into your next line for them. Say nothing about people they aren't close to. Don't record",
-    "these with done.",
+    "For someone they care about, message them with post, warm and short, such as “Leo's birthday is Thursday.",
+    "Want ideas?”, if now is a good moment in their day, or schedule a look for a better one. Say nothing about",
+    "people they aren't close to. Don't record these with done.",
   ].join("\n");
 
 const usedText = (latest: number, timeZone: string): string =>
@@ -497,14 +496,8 @@ export const createContacts = ({
     return book ? ok(book) : fail("There's no address book of theirs Kumo can write to.");
   };
 
-  const recordChange = (text: string, reason: string, undo: ContactsUndo, isOwnCall: boolean): void => {
-    desk.addDone({
-      text,
-      reason,
-      quiet: false,
-      ...(isOwnCall && { work: "contacts" as const }),
-      undo,
-    });
+  const recordChange = (text: string, reason: string, undo: ContactsUndo): void => {
+    desk.addDone({ text, reason, quiet: false, undo });
   };
 
   // Reads the card as it is now, changes it and writes it back as read, once more if it changed meanwhile.
@@ -643,29 +636,24 @@ export const createContacts = ({
           ? `Added the other cards' details to ${name}'s card in Contacts`
           : `Merged ${String(gone.length + 1)} of ${String(group.length)} cards for ${name} in Contacts`;
     if (after !== undefined || gone.length > 0) {
-      recordChange(
-        text,
-        reason,
-        {
-          kind: "contacts_restore",
-          name,
-          restores: [
-            ...(after === undefined
-              ? []
-              : [
-                  {
-                    url: kept.url,
-                    book: kept.book,
-                    before: before.vcard,
-                    ...(after.etag !== undefined && { after: after.etag }),
-                  },
-                ]),
-            ...gone.map((card) => ({ url: card.url, book: card.book, before: card.vcard })),
-          ],
-          unmerge: goneUids,
-        },
-        false,
-      );
+      recordChange(text, reason, {
+        kind: "contacts_restore",
+        name,
+        restores: [
+          ...(after === undefined
+            ? []
+            : [
+                {
+                  url: kept.url,
+                  book: kept.book,
+                  before: before.vcard,
+                  ...(after.etag !== undefined && { after: after.etag }),
+                },
+              ]),
+          ...gone.map((card) => ({ url: card.url, book: card.book, before: card.vcard })),
+        ],
+        unmerge: goneUids,
+      });
     }
     await refresh();
     return unremoved === undefined ? ok(text) : fail(unremoved);
@@ -677,16 +665,11 @@ export const createContacts = ({
     const removed = await source.remove(person.url, current.value.etag);
     if (!removed.ok) return removed;
     const text = `Deleted ${person.facts.name} from Contacts`;
-    recordChange(
-      text,
-      reason,
-      {
-        kind: "contacts_restore",
-        name: person.facts.name,
-        restores: [{ url: person.url, book: person.book, before: current.value.vcard }],
-      },
-      false,
-    );
+    recordChange(text, reason, {
+      kind: "contacts_restore",
+      name: person.facts.name,
+      restores: [{ url: person.url, book: person.book, before: current.value.vcard }],
+    });
     await refresh();
     return ok(text);
   };
@@ -922,22 +905,17 @@ export const createContacts = ({
           const made = await source.create(book.value, `${uid}.vcf`, writeVCard(card));
           if (!made.ok) return failed(made.failure);
           const details = changeWords(change.value);
-          recordChange(
-            `Added ${name} to Contacts${details.length === 0 ? "" : `: ${details.join("; ")}`}`,
-            reason,
-            {
-              kind: "contacts_restore",
-              name,
-              restores: [
-                {
-                  url: made.value.url,
-                  book: book.value,
-                  ...(made.value.etag !== undefined && { after: made.value.etag }),
-                },
-              ],
-            },
-            true,
-          );
+          recordChange(`Added ${name} to Contacts${details.length === 0 ? "" : `: ${details.join("; ")}`}`, reason, {
+            kind: "contacts_restore",
+            name,
+            restores: [
+              {
+                url: made.value.url,
+                book: book.value,
+                ...(made.value.etag !== undefined && { after: made.value.etag }),
+              },
+            ],
+          });
           await refresh();
           return {
             text: `Added ${name} to their Contacts as uid ${uid}. If they have a People page, link it with contact ${uid}.`,
@@ -987,23 +965,18 @@ export const createContacts = ({
           const { after } = changed.value;
           if (!after) return { text: `${person.facts.name}'s card already says that, so nothing changed.` };
           const text = `Updated ${person.facts.name} in Contacts: ${details.join("; ")}`;
-          recordChange(
-            text,
-            reason,
-            {
-              kind: "contacts_restore",
-              name: person.facts.name,
-              restores: [
-                {
-                  url: person.url,
-                  book: person.book,
-                  before: changed.value.before.vcard,
-                  ...(after.etag !== undefined && { after: after.etag }),
-                },
-              ],
-            },
-            true,
-          );
+          recordChange(text, reason, {
+            kind: "contacts_restore",
+            name: person.facts.name,
+            restores: [
+              {
+                url: person.url,
+                book: person.book,
+                before: changed.value.before.vcard,
+                ...(after.etag !== undefined && { after: after.etag }),
+              },
+            ],
+          });
           await refresh();
           return {
             text: `${text}.`,
@@ -1145,7 +1118,7 @@ export const createContacts = ({
   const checkDates = async (): Promise<void> => {
     const now = clock.now();
     const local = toLocal(now, timeZone);
-    if (local.minutes < toMinutes(notBeforeOf(store)) || store.setting(datesCheckedSetting) === local.day) return;
+    if (store.setting(datesCheckedSetting) === local.day) return;
     await fresh();
     if (sourceOf() === undefined || pulledAt.get() === 0) return;
     const told = new Set(datesTold());
