@@ -1,22 +1,8 @@
-import { dayMs, minuteMs, toLocal } from "#desk/day.ts";
+import { minuteMs } from "#desk/day.ts";
+
+export { atLocal, nextDay } from "#desk/day.ts";
 
 export const hourMs = 60 * minuteMs;
-
-const dayIndex = (day: string): number => Date.parse(`${day}T00:00:00.000Z`) / dayMs;
-
-// The instant the local clock shows `minutes` after midnight on `day`, such as `2026-11-05`.
-export const atLocal = (day: string, minutes: number, timeZone: string): number => {
-  const wanted = dayIndex(day) * 24 * 60 + minutes;
-  const corrected = (guess: number): number => {
-    const local = toLocal(guess, timeZone);
-    return guess + (wanted - (dayIndex(local.day) * 24 * 60 + local.minutes)) * minuteMs;
-  };
-  // Twice, so a guess that lands across a change of offset settles.
-  return corrected(corrected(wanted * minuteMs));
-};
-
-// The day after `day`.
-export const nextDay = (day: string): string => new Date((dayIndex(day) + 1) * dayMs).toISOString().slice(0, 10);
 
 // `07:45`, local.
 export const clockOf = (at: number, timeZone: string): string =>
