@@ -69,7 +69,7 @@ const openRig = async (fake: FakeGitHub): Promise<Rig> => {
     recordStep: () => true,
     approve: () => Promise.resolve(true),
     info: () => true,
-    timeZone: "UTC",
+    timeZone: () => "UTC",
     pushDelayMs: 20,
     remote: {
       access: async () => {

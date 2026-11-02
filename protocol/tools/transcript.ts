@@ -7,6 +7,7 @@ import { toFailedText, toFirstLine } from "#notifications/text.ts";
 import { mergePatch } from "#motion/changes.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import type {
+  Ambient,
   Ask,
   AskKind,
   Attachment,
@@ -15,6 +16,7 @@ import type {
   Call,
   Card,
   Desk,
+  DeskLine,
   Onboarding,
   Problem,
   Topic,
@@ -72,6 +74,7 @@ type NewCard = Omit<Card, "id" | "at">;
 type WorkToday = {
   readonly handled: readonly Fields[];
   readonly cleared: readonly Fields[];
+  readonly tracks?: readonly Fields[];
 };
 
 type NewCalendarItem = Omit<CalendarItem, "id">;
@@ -159,12 +162,19 @@ export type Transcript = {
   // Kumo's plans as they are now, such as after one came due or moved.
   readonly plans: (wakeUps: readonly WakeUp[]) => void;
   readonly listWakeUps: () => void;
+  // A learning track's id, as the server makes it.
+  readonly track: () => string;
   // Answers one of Kumo's guesses in Coming up; the item comes back as `after`.
   readonly answerGuess: (item: CalendarItem, answer: Fields, after: CalendarItem) => void;
   // Kumo did one more thing without you today: its Done entry.
   readonly handled: (entry: { readonly text: string; readonly reason?: string }) => Fields;
   readonly mailRead: () => void;
   readonly getWork: (work: WorkToday) => void;
+  readonly whereabouts: (body: Fields) => void;
+  // Kumo's line and mood at the top of the Desk, or none.
+  readonly deskLine: (line: DeskLine | undefined) => void;
+  // The weather around you on the Desk, or none.
+  readonly ambient: (ambient: Ambient | undefined) => void;
   // One more thing Kumo did, counted in what it handled unless it's quiet.
   readonly addDone: (entry: Fields) => Fields;
   readonly addCard: (card: NewCard) => Card;
@@ -205,7 +215,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p" | "k" | "d" | "w" | "v" | "n";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p" | "k" | "d" | "w" | "l" | "v" | "n";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -404,7 +414,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacfpkdwvn]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfpkdwlvn]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -425,6 +435,7 @@ const toCounters = (log: readonly Event[]): Counters => {
     k: highest("k"),
     d: highest("d"),
     w: highest("w"),
+    l: highest("l"),
     v: highest("v"),
     n: highest("n"),
   };
@@ -437,7 +448,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({
     boot: 1,
-    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0, k: 0, d: 0, w: 0, v: 0, n: 0 },
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0 },
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
@@ -1469,7 +1480,30 @@ export const createTranscript = (header: Header): Transcript => {
       day: timestamp().slice(0, 10),
       handled: work.handled,
       cleared: work.cleared,
+      tracks: work.tracks ?? [],
     });
+  };
+
+  // The phone says its time zone, and roughly where it is.
+  const whereabouts = (body: Fields): void => {
+    const current = device.get();
+    if (!current) throw new Error("whereabouts before a device is registered");
+    request("PUT", `/v0/devices/${current.id}/whereabouts`, { body });
+    response(204, undefined);
+  };
+
+  const deskLine = (line: DeskLine | undefined): void => {
+    changeDesk((desk) =>
+      line ? { ...desk, line } : (Object.fromEntries(Object.entries(desk).filter(([key]) => key !== "line")) as Desk),
+    );
+  };
+
+  const ambient = (given: Ambient | undefined): void => {
+    changeDesk((desk) =>
+      given
+        ? { ...desk, ambient: given }
+        : (Object.fromEntries(Object.entries(desk).filter(([key]) => key !== "ambient")) as Desk),
+    );
   };
 
   const addDone = (entry: Fields): Fields => {
@@ -1666,10 +1700,14 @@ export const createTranscript = (header: Header): Transcript => {
     wakeUp,
     plans,
     listWakeUps,
+    track: () => newId("l"),
     answerGuess,
     handled,
     mailRead,
     getWork,
+    whereabouts,
+    deskLine,
+    ambient,
     addDone,
     addCard,
     answerCard,

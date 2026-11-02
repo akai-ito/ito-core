@@ -53,6 +53,9 @@ import { createWakeUps, type WakeUps } from "#wakeups/wakeups.ts";
 import { registerWakeUps } from "#http/wakeups.ts";
 import { createWakeUpStore } from "#store/wakeups.ts";
 import { createCalendarChanges } from "#calendar/changes.ts";
+import { createPlaces } from "#places/places.ts";
+import { createTracks } from "#work/tracks.ts";
+import { createDeskLine } from "#desk/line.ts";
 import { createGettingStarted } from "#onboarding/onboarding.ts";
 import { createCalendar, type Calendar } from "#calendar/calendar.ts";
 import { createCalendarSource, type CalendarSource } from "#calendar/caldav.ts";
@@ -177,10 +180,23 @@ export const databaseFile = (dataDirectory: string): string => path.join(dataDir
 export const createServer = (options: ServerOptions): Server => {
   const clock = options.clock ?? systemClock;
   const identifiers = options.identifiers ?? randomIdentifiers;
-  const timeZone = options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone;
   mkdirSync(options.dataDirectory, { recursive: true });
   const database = openDatabase(databaseFile(options.dataDirectory));
   const store = createStore(database, clock, identifiers);
+  const places = createPlaces({
+    settings: store,
+    clock,
+    fallback: options.timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone,
+    fetch: options.fetch ?? fetch,
+    setAmbient: (ambient) => {
+      desk.setAmbient(ambient);
+    },
+    info: (message, details) => {
+      info(message, details);
+    },
+  });
+  // The time zone Kumo lives by: the latest their phone said.
+  const timeZone = (): string => places.timeZone();
   const listening = createCell<Promise<void>>(Promise.resolve());
   const logError = createCell<Log>((message, error) => {
     console.error(message, error);
@@ -266,8 +282,14 @@ export const createServer = (options: ServerOptions): Server => {
       : "<call>\nThe call has ended, so they're reading the chat. Write as usual, and don't say you've put " +
           "something in the chat: that's only for calls.\n</call>";
   };
-  // The time, so replies fit the moment.
-  const nowText = (): string => ["<now>", `It's ${toSpoken(clock.now(), timeZone)}.`, "</now>"].join("\n");
+  // The time where they are, and the weather there, so replies fit the moment.
+  const nowText = (): string =>
+    [
+      "<now>",
+      `It's ${toSpoken(clock.now(), timeZone())} where they are (${timeZone()}).`,
+      ...[places.weatherText() ?? []].flat(),
+      "</now>",
+    ].join("\n");
   const engine = options.createEngine({
     settings: store,
     log,
@@ -281,6 +303,8 @@ export const createServer = (options: ServerOptions): Server => {
         memory.inMindText(),
         motions.inMindText(),
         wakeUps.inMindText(),
+        tracks.inMindText(),
+        deskLine.inMindText(),
         picture.inMindText(),
         gettingStarted.inMindText(),
         callContext(),
@@ -360,7 +384,7 @@ export const createServer = (options: ServerOptions): Server => {
     store: createWakeUpStore(database),
     isMotion: (id) => store.findMotion(id) !== undefined,
     clock,
-    timeZone: () => timeZone,
+    timeZone,
     identifiers,
     work: (prompt, run) => runWork(prompt, undefined, run),
     postedIn: (run) => {
@@ -498,7 +522,7 @@ export const createServer = (options: ServerOptions): Server => {
     calendar,
     settings: store,
     clock,
-    timeZone: () => timeZone,
+    timeZone,
     work: runWork,
     wakeUps,
     describe: wakeUps.describe,
@@ -536,7 +560,23 @@ export const createServer = (options: ServerOptions): Server => {
       );
     },
   });
-  const corrections = createCorrections({ store, desk, clock, work: runWork, info });
+  const tracks = createTracks({ database, clock, identifiers, info });
+  const corrections = createCorrections({ store, desk, clock, work: runWork, tracks, info });
+  const deskLine = createDeskLine({ store, desk, clock });
+  // Their phone moved to another time zone: repeating wake-ups follow at once, and Kumo looks at the rest.
+  places.onMoved((from, to) => {
+    wakeUps.refit();
+    void runWork(
+      [
+        `Their phone moved from ${from} to ${to}; it's ${toSpoken(clock.now(), to)} there.`,
+        "Your repeating wake-ups already come back at their local times there. Look at your other wake-ups and your",
+        "blocks on Kumo's calendar, and move what should follow their day, such as a morning look. Message them only if",
+        "something needs them, such as a call that now falls in their night.",
+        ...[wakeUps.inMindText() || []].flat(),
+        "End with one line saying what you moved.",
+      ].join("\n"),
+    );
+  });
   const post = (text: string, isUrgent: boolean): Message => {
     const run = contextRun();
     if (run !== undefined) postedRuns.update((runs) => new Set([...runs, run]));
@@ -562,7 +602,8 @@ export const createServer = (options: ServerOptions): Server => {
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     desk,
     corrections,
-    timeZone,
+    tracks,
+    places,
     calendar,
     gettingStarted,
     onLeadRenamed: () => {
@@ -601,7 +642,9 @@ export const createServer = (options: ServerOptions): Server => {
     imageTool,
     ...memory.tools,
     ...motions.tools,
-    ...createWorkTools({ post, desk }),
+    ...createWorkTools({ post, desk, isTrack: (id) => tracks.find(id) !== undefined }),
+    ...tracks.tools,
+    deskLine.tool,
     ...calendar.tools,
     ...picture.tools,
     ...contacts.tools,
@@ -658,6 +701,7 @@ export const createServer = (options: ServerOptions): Server => {
     desk.close();
     wakeUps.close();
     calendarChanges.close();
+    places.close();
     gettingStarted.close();
     calendar.close();
     contacts.close();

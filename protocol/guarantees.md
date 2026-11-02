@@ -39,20 +39,24 @@ where the protocol has to make it possible, marked *App*.
 | G29 | **Topics mark where the subject changed.** When you change the subject, Ito puts a label of a few plain words on the message that changed it, just after the turn, typed or spoken, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
 | G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Ari can't start or change a trip without a cover, a photo for every place and every stop at its place, or any thing with a title over 28 characters. Forgetting a thing asks you first. | 62, 63, 64 |
-| G33 | **The Desk is home.** Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail come whole in the snapshot and in every change, so an app never pieces it together. | 65, 74, 78, 79 |
+| G33 | **The Desk is home.** Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail come whole in the snapshot and in every change, so an app never pieces it together. | 65, 74, 78, 79, 84 |
 | G34 | **Waiting on you stays until it's done.** A card waits whatever the date, shows when the box is acting on your answer, and leaves only when that's done. | 65, 67 |
 | G35 | **Every mail is read, and only work becomes work.** A quick model judges each new mail by its consequences, not its tone; only mail with work to do starts a short-lived work thread, and the conversation stays clean. | 66 |
 | G36 | **Kumo never sends what you'd write.** Replies to people are drafts in your Drafts folder and cards on the Desk; you send them from Mail. | 66 |
 | G37 | **The calendar goes through the box.** Events, holds and invite answers are written to iCloud by the box, so they land while your phone sleeps; an invite is held on Kumo's calendar until you answer. | 67 |
 | G39 | **Getting started reads before it asks.** Kumo reads your recent mail and calendar first, every app sees how far it has got, and its few questions come as ordinary messages in the conversation. What it believes about you waits for your word, and getting started ends when you say so. | 69, 70 |
 | G40 | **Problems show until they're fixed.** Something wrong on the server that needs you (notifications it can't send, a mail or calendar account that keeps failing, a capability that needs setting up, Kumo's model not answering its work in the background) is listed with how to fix it, live on every app, and clears on its own once fixed. A blip that sorts itself out never shows. | 71, 81 |
-| G43 | **"That was wrong" is taken in.** On anything Kumo did, it undoes what it can and keeps what to do differently as a preference on How to help you, and Done says so. Saying it again only adds your words. | 73 |
+| G43 | **"That was wrong" is taken in.** On anything Kumo did, it undoes what it can and keeps what to do differently as a preference on How to help you, and Done says so. Saying it again only adds your words. | 73, 82 |
 | G44 | **Kumo's picture of your day is on its own calendar.** Its plan for your day and its guesses at the rest are written to Kumo's calendar, never yours, and show in Coming up as they land. A guess is marked as one, with why; once you've answered it, it's yours rather than a guess, and Kumo's next guesses learn from it. | 74 |
 | G48 | **Kumo speaks in messages.** What its work in the background has to tell you, such as a mail that changes your plans, comes as Kumo's own message in the conversation: one per thing, as it happens, never batched, rewritten or stood in for by a template. A card on the Desk makes no sound of its own. | 65, 66 |
 | G49 | **Kumo's plans are concrete, quiet and yours.** A wake-up has a concrete time Kumo worked out, what it's for and why, how it repeats, who made it and where it came from. Setting one only adds it to Kumo's plans on the Desk, with no message and no notification. The app lists them, moves them and cancels them, and the Desk follows. | 78, 79 |
 | G50 | **Kumo looks before it speaks.** When a wake-up comes due, Kumo looks first, then messages you if that's useful, moves it if things changed, or drops it if it's moot, and Done says which. A repeating one comes back by itself at its time where you are. | 78, 80 |
 | G51 | **Kumo wakes on what happens.** A change on your own calendars, such as an event moving or being cancelled or an invite arriving, wakes Kumo to look and decide, as a new mail does. It hears of each change once, even across a restart, never of its own changes, and keeps its wake-ups current with them. | 80 |
 | G52 | **Nothing robotic stands in.** When Kumo's model can't act, nothing is sent in its place: what was due waits, the problem shows once it lasts, and Kumo catches up when its model answers. | 81 |
+| G53 | **Kumo learns one area at a time, in the open.** Kumo opens a track for any area it's getting to know you in or learning to do well. Each has a stage (Learning, Spot checks, Trusted) and the evidence it stands on. Kumo moves it by judgement and reads it as context; a correction always steps it back, and "That was wrong" on a call in a track is one. Kumo's work shows every track. | 82 |
+| G54 | **Kumo goes where you go.** The phone says its time zone and, roughly, where it is; the box keeps only the latest, rounded to about 10 km. Kumo lives by that time zone: a repeating wake-up comes back at its time there, and moving zones wakes Kumo to move what should follow you. | 83 |
+| G55 | **The weather around you, never invented.** With a rough place, the Desk carries the temperature, the conditions and today's sunset there, read on the box and refreshed about every half hour. Without a place, or without a recent reading, there's no weather at all. | 83 |
+| G56 | **A line and a face, by judgement.** Kumo may put a short line at the top of the Desk with its mood, and changes them when the moment changes. Neither ever notifies. | 84 |
 
 ## Scenario by scenario
 
@@ -512,6 +516,26 @@ where the protocol has to make it possible, marked *App*.
 - A wake-up Kumo's model couldn't act on waits 15 minutes; nothing is sent in its place. (G52)
 - After ten minutes the trouble is a problem, `kumo:work`, and it clears once Kumo's work goes
   through again. (G40, G52)
+
+### 82 · [Learning an area](transcripts/82-learning-an-area.jsonl)
+
+- Kumo opens a track and moves it by judgement, with why as evidence; `GET /v0/work` has every
+  track with its stage, counts and evidence. (G53)
+- A call Kumo records in a track says so in Done (`track`). "That was wrong" on it steps the track
+  back, whatever its stage, with the correction and the call as evidence. (G53, G43)
+
+### 83 · [Travelling](transcripts/83-travelling.jsonl)
+
+- `PUT /v0/devices/{device}/whereabouts` takes the phone's time zone and rough place; the box
+  rounds the place and keeps only the latest, which `GET /v0/server` shows with when. (G54)
+- A new time zone moves each repeating wake-up to its time there at once, and wakes Kumo to look at
+  the rest. (G54)
+- The Desk's `ambient` is the weather where the phone is, and follows it. (G55)
+
+### 84 · [Kumo's line and mood](transcripts/84-kumos-line-and-mood.jsonl)
+
+- Kumo sets its line and mood together, and changes them when the moment does; the Desk carries
+  them as `line`, and nothing notifies. (G56, G33)
 
 ## Not in this version
 

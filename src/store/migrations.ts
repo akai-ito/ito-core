@@ -238,4 +238,10 @@ export const migrations: readonly string[] = [
   WHERE id IN (SELECT 'w_' || substr(id, 3) FROM jobs WHERE json_extract(body, '$.motion') IS NOT NULL);
   DROP TABLE jobs;
   UPDATE desk SET body = json_set(body, '$.plans', json('[]'));`,
+  // Kumo's learning tracks: any area it's getting to know them in, with its stage and what it stands on.
+  `CREATE TABLE tracks (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL
+  );`,
 ];

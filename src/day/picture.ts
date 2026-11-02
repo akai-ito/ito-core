@@ -38,7 +38,7 @@ export type DayPictureOptions = {
   readonly calendar: Pick<Calendar, "addEvent" | "changeEvent" | "isConnected" | "listItems" | "onRefreshed">;
   readonly motions: Pick<Motions, "list">;
   readonly clock: Clock;
-  readonly timeZone: string;
+  readonly timeZone: () => string;
   readonly info: Info;
   readonly lead: () => string;
 };
@@ -138,7 +138,8 @@ export const createDayPicture = ({
       .slice(-12)
       .map((block) => {
         const start = Date.parse(block.start);
-        return `- ${weekdayOf(start, timeZone)} ${clockOf(start, timeZone)}–${clockOf(Date.parse(block.end), timeZone)}: you guessed otherwise; it was ${block.title}`;
+        const zone = timeZone();
+        return `- ${weekdayOf(start, zone)} ${clockOf(start, zone)}–${clockOf(Date.parse(block.end), zone)}: you guessed otherwise; it was ${block.title}`;
       });
     const right = answered.length - fixed.length;
     return [...(right > 0 ? [`They said ${String(right)} of your guesses were right.`] : []), ...fixed];

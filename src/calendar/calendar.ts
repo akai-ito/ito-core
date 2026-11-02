@@ -51,7 +51,7 @@ export type CalendarOptions = {
   readonly host: Pick<Host, "find" | "subscribe">;
   readonly desk: DeskKeeper;
   readonly clock: Clock;
-  readonly timeZone: string;
+  readonly timeZone: () => string;
   readonly info: Info;
   readonly createSource: (values: Values) => CalendarSource;
   readonly onHealth?: (health: Health) => void;
@@ -225,7 +225,7 @@ export const createCalendar = ({
       );
     desk.addCard({
       kind: "invite",
-      title: `${invite.title}, ${toWhen(invite.start, timeZone)}`,
+      title: `${invite.title}, ${toWhen(invite.start, timeZone())}`,
       options: [{ label: "Accept", acts: true }, { label: "Maybe" }, { label: "Decline" }],
       allows_text: false,
       invite: { event: toCalendarItem(invite), ...(clash && { clash: toCalendarItem(clash) }) },

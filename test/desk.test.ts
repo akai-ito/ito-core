@@ -195,7 +195,7 @@ describe("the Desk", () => {
       store,
       identifiers: randomIdentifiers,
       clock: systemClock,
-      timeZone: "UTC",
+      timeZone: () => "UTC",
       work: async () => {
         acted.update((count) => count + 1);
         await new Promise<void>((resolve) => {
@@ -236,7 +236,7 @@ describe("the Desk", () => {
       store,
       identifiers: randomIdentifiers,
       clock: systemClock,
-      timeZone: "UTC",
+      timeZone: () => "UTC",
       work: () => Promise.resolve(ok("")),
       info: ignore,
     });

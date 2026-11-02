@@ -61,7 +61,7 @@ const openMotions = async (
     recordStep: () => true,
     approve: () => Promise.resolve(true),
     info: () => true,
-    timeZone: "UTC",
+    timeZone: () => "UTC",
   });
   memories.update((current) => [...current, memory]);
   mkdirSync(path.join(directory, "attachments"), { recursive: true });

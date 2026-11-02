@@ -17,7 +17,7 @@ export type DemoToolsOptions = {
   readonly gettingStarted: Pick<GettingStarted, "state">;
   readonly identifiers: Identifiers;
   readonly clock: Clock;
-  readonly timeZone: string;
+  readonly timeZone: () => string;
 };
 
 const demoMail = (subject: string): NonNullable<DoneEntry["mail"]> => ({
@@ -194,7 +194,7 @@ export const createDemoTools = ({
       description: "Put a sample day, Kumo's plan and its guesses, in Coming up, for the demo.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       call: () => {
-        desk.setComingUp(sampleDay(clock.now(), timeZone, identifiers));
+        desk.setComingUp(sampleDay(clock.now(), timeZone(), identifiers));
         return Promise.resolve({ text: "Showed a sample day." });
       },
     },

@@ -2132,10 +2132,18 @@
       ]
     },
     "Desk": {
-      "description": "Home: Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail.",
+      "description": "Home: Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail.",
       "type": "object",
       "required": ["plans", "coming_up", "waiting", "handled"],
       "properties": {
+        "line": {
+          "$ref": "#/$defs/DeskLine",
+          "description": "Absent until Kumo sets one, or after it clears it."
+        },
+        "ambient": {
+          "$ref": "#/$defs/Ambient",
+          "description": "Absent while the box doesn't know roughly where you are, or couldn't read the weather lately."
+        },
         "plans": {
           "description": "Kumo's plans: every wake-up, soonest first. Kumo setting one is quiet; it only shows here.",
           "type": "array",
@@ -2165,6 +2173,59 @@
         "last_mail_at": {
           "$ref": "#/$defs/Timestamp",
           "description": "When Kumo last read a new mail, for \"Reading · last mail 2 min ago\". Absent while no mail account is connected, and until the first mail."
+        }
+      }
+    },
+    "DeskLine": {
+      "description": "Something interesting at the top of the Desk, by Kumo's judgement: its mood, how something's going, a thought, the day around you. It changes when the moment does, and it never notifies.",
+      "type": "object",
+      "required": ["text", "mood", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "description": "A short line, such as \"Quiet morning. Your Northwind prep is two-thirds done.\"",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "mood": {
+          "description": "How Kumo feels, for its face: known moods are `bright`, `calm`, `cosy`, `focused`, `drowsy`, `proud` and `concerned`. Show one you don't recognise as `calm`.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When Kumo set it."
+        }
+      }
+    },
+    "Ambient": {
+      "description": "The weather where you roughly are, read on the box from Open-Meteo every half hour or so.",
+      "type": "object",
+      "required": ["temperature", "condition", "is_day", "sunset"],
+      "additionalProperties": false,
+      "properties": {
+        "temperature": {
+          "description": "Now, in degrees Celsius, rounded.",
+          "type": "integer"
+        },
+        "condition": {
+          "description": "`clear`, `partly_cloudy`, `cloudy`, `fog`, `drizzle`, `rain`, `snow` or `thunder`. Show one you don't recognise as `cloudy`.",
+          "enum": ["clear", "partly_cloudy", "cloudy", "fog", "drizzle", "rain", "snow", "thunder"]
+        },
+        "is_day": {
+          "description": "Whether it's daylight there now.",
+          "type": "boolean"
+        },
+        "sunset": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Today's sunset there."
+        },
+        "place": {
+          "description": "Where, when the phone named it, such as \"Rome\".",
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -2246,6 +2307,92 @@
         "corrected_at": {
           "$ref": "#/$defs/Timestamp",
           "description": "When you said it was wrong, with `POST /v0/done/{entry}/wrong`. Show it as noted rather than offering That was wrong again."
+        },
+        "track": {
+          "$ref": "#/$defs/TrackId",
+          "description": "The track this call belongs to, when it's in an area Kumo is learning. \"That was wrong\" on it steps the track back."
+        }
+      }
+    },
+    "TrackId": {
+      "description": "Opaque. The server makes it when Kumo opens a track.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "TrackStage": {
+      "description": "How far Kumo has come in an area: `learning`, it shows you its calls and asks when unsure; `spot_checks`, it checks with you now and then; `trusted`, it brings only what needs you. Draw it as three bars filled to the stage; show one you don't recognise as Learning.",
+      "enum": ["learning", "spot_checks", "trusted"]
+    },
+    "Track": {
+      "description": "An area Kumo is getting to know you in, or learning to do well, such as sorting your mail, writing as you, your food habits or planning your weekends. Kumo opens one when it starts learning something and moves it by judgement; a correction always steps it back.",
+      "type": "object",
+      "required": ["id", "name", "stage", "since", "confirmed", "corrected", "evidence"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/TrackId"
+        },
+        "name": {
+          "description": "Such as \"Writing as you\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "$ref": "#/$defs/TrackStage"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it reached this stage."
+        },
+        "note": {
+          "description": "Kumo's line on where it stands, such as \"Three weeks of drafts you sent as I wrote them.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "confirmed": {
+          "description": "How many times you've confirmed Kumo got it right.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "corrected": {
+          "description": "How many times you've corrected it, such as with \"That was wrong\".",
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence": {
+          "description": "What it stands on, newest first, the latest ten.",
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/TrackEvidence"
+          }
+        }
+      }
+    },
+    "TrackEvidence": {
+      "description": "One thing a track stands on: a time you `confirmed` Kumo got it right, `corrected` it, or Kumo `moved` it to another stage, with why.",
+      "type": "object",
+      "required": ["at", "kind", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "kind": {
+          "enum": ["confirmed", "corrected", "moved"]
+        },
+        "text": {
+          "description": "In a line, such as \"You sent the Tess draft as I wrote it\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "$ref": "#/$defs/TrackStage",
+          "description": "The stage it moved to, or stepped back to after a correction."
+        },
+        "done": {
+          "$ref": "#/$defs/DoneId",
+          "description": "The call it was about, in Done."
         }
       }
     },

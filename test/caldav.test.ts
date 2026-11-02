@@ -331,7 +331,7 @@ describe("Kumo's calendar tools", () => {
         handle: ignore,
       } as unknown as DeskKeeper,
       clock: createVirtualClock(Date.parse("2026-11-10T09:00:00.000Z")),
-      timeZone: "UTC",
+      timeZone: () => "UTC",
       info: ignore,
       createSource: () => sourceFor(),
     });

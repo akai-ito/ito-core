@@ -6,4 +6,4 @@
 {"at":8500,"app":{"method":"PUT","path":"/v0/agent","body":{"model":"gpt-6-luna","effort":"medium"}}}
 {"at":8700,"server":{"status":200,"headers":{"Ito-Protocol":"0.18"},"body":{"model":"gpt-6-luna","effort":"medium"}}}
 {"at":9100,"app":{"method":"GET","path":"/v0/server"}}
-{"at":9140,"server":{"status":200,"headers":{"Ito-Protocol":"0.18"},"body":{"name":"studio","version":"0.18.0","protocol":"0.18","lead":{"name":"Kumo"},"agent":{"model":"gpt-6-luna","effort":"medium"},"setup":{"notifications":false,"memory_backup":false},"capabilities":[]}}}
+{"at":9140,"server":{"status":200,"headers":{"Ito-Protocol":"0.18"},"body":{"name":"studio","version":"0.18.0","protocol":"0.18","lead":{"name":"Kumo"},"time_zone":"UTC","agent":{"model":"gpt-6-luna","effort":"medium"},"setup":{"notifications":false,"memory_backup":false},"capabilities":[]}}}

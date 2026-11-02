@@ -471,6 +471,12 @@ const speak = (transcript: Transcript, voice?: string): void => {
   transcript.response(200, undefined, { headers: { ...spokenWav, "Ito-Protocol": protocol } });
 };
 
+// Open-Meteo's forecast for a rough place, as the box asks for it.
+const weather = (place: { readonly latitude: number; readonly longitude: number }): string =>
+  "https://api.open-meteo.com/v1/forecast" +
+  `?latitude=${place.latitude.toFixed(1)}&longitude=${place.longitude.toFixed(1)}` +
+  "&current=temperature_2m,weather_code,is_day&daily=sunset&timezone=auto&forecast_days=1";
+
 const scenarios: readonly (() => Transcript)[] = [
   () => {
     const transcript = createTranscript({
@@ -512,6 +518,7 @@ const scenarios: readonly (() => Transcript)[] = [
         version: serverVersion,
         protocol,
         lead: { name: "Kumo" },
+        time_zone: "UTC",
         agent: {},
         setup: { notifications: false, memory_backup: false },
         capabilities: [],
@@ -1755,6 +1762,7 @@ const scenarios: readonly (() => Transcript)[] = [
         version: serverVersion,
         protocol,
         lead: { name: "Kumo" },
+        time_zone: "UTC",
         agent: {},
         setup: { notifications: false, memory_backup: false },
         capabilities: [],
@@ -1805,6 +1813,7 @@ const scenarios: readonly (() => Transcript)[] = [
         version: serverVersion,
         protocol,
         lead: { name: "Kumo" },
+        time_zone: "UTC",
         agent: {},
         setup: { notifications: false, memory_backup: false },
         capabilities: [{ id: "reports", version: "0.2" }],
@@ -2116,6 +2125,7 @@ const scenarios: readonly (() => Transcript)[] = [
         version: serverVersion,
         protocol,
         lead: { name: "Kumo" },
+        time_zone: "UTC",
         agent: { model: "gpt-6-luna", effort: "medium" },
         setup: { notifications: false, memory_backup: false },
         capabilities: [],
@@ -4091,6 +4101,217 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.problems([]);
     transcript.addDone({ text: `Woke up for “${what}” and messaged you`, reason: "Done." });
     transcript.plans([]);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "82-learning-an-area",
+      scenario: 82,
+      title: "Learning an area",
+      summary:
+        "Kumo opens a learning track for writing as you, and after weeks of drafts you sent as it wrote them, moves " +
+        "it to spot checks. Its next draft to Clara is recorded on the track. You say it was wrong: too formal. The " +
+        "track steps back to learning, with your correction as evidence, and Kumo's work shows it.",
+      guarantees: ["G43", "G53"],
+    });
+    transcript.begin("2026-11-12T10:00:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const name = "Writing as you";
+    const note = "How you write to recruiters and friends.";
+    transcript.world("agent_calls", { tool: "open_track", input: { name, note } });
+    const track = {
+      id: transcript.track(),
+      name,
+      stage: "learning",
+      since: "2026-11-12T10:00:01.000Z",
+      note,
+      confirmed: 0,
+      corrected: 0,
+      evidence: [] as readonly Readonly<Record<string, unknown>>[],
+    };
+    transcript.wait(1000);
+    transcript.getWork({ handled: [], cleared: [], tracks: [track] });
+    transcript.wait(60_000);
+    const why = "Three weeks of drafts you sent as I wrote them";
+    transcript.world("agent_calls", { tool: "move_track", input: { track: track.id, stage: "spot_checks", why } });
+    const movedAt = "2026-11-12T10:01:02.000Z";
+    const moved = {
+      ...track,
+      stage: "spot_checks",
+      since: movedAt,
+      evidence: [{ at: movedAt, kind: "moved", text: why, stage: "spot_checks" }],
+    };
+    transcript.wait(60_000);
+    const text = "Drafted a reply to Clara Voss at Northwind";
+    transcript.world("agent_calls", {
+      tool: "done",
+      input: { text, reason: "She asked for times next week.", track: track.id },
+    });
+    const drafted = transcript.addDone({ text, reason: "She asked for times next week.", track: track.id });
+    transcript.wait(30 * 60 * 1000);
+    transcript.getWork({ handled: [drafted], cleared: [], tracks: [moved] });
+    const correctedAt = "2026-11-12T10:33:02.000Z";
+    transcript.time(correctedAt);
+    const words = "Too formal for Clara";
+    transcript.world("kumo_works", { calls: [] });
+    transcript.request("POST", `/v0/done/${String(drafted.id)}/wrong`, { body: { text: words } });
+    const noted = transcript.addDone({ text: `You said “${text}” was wrong: ${words}`, reason: "Done." });
+    transcript.wait(60);
+    const corrected = { ...drafted, corrected_at: correctedAt };
+    transcript.response(200, { entry: corrected });
+    transcript.wait(2000);
+    transcript.getWork({
+      handled: [noted, corrected],
+      cleared: [],
+      tracks: [
+        {
+          ...moved,
+          stage: "learning",
+          since: correctedAt,
+          corrected: 1,
+          evidence: [
+            {
+              at: correctedAt,
+              kind: "corrected",
+              text: `You said “${text}” was wrong: ${words}`,
+              stage: "learning",
+              done: drafted.id,
+            },
+            ...moved.evidence,
+          ],
+        },
+      ],
+    });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "83-travelling",
+      scenario: 83,
+      title: "Travelling",
+      summary:
+        "Your phone tells the box its time zone and, roughly, where it is: London. The Desk shows the weather there " +
+        "and today's sunset. You fly to New York. The box keeps only the latest place, rounded; your weekday " +
+        "morning look moves to 09:00 New York time at once, Kumo looks at the rest of its plans, and the Desk's " +
+        "weather is New York's.",
+      guarantees: ["G54", "G55"],
+    });
+    const london = { latitude: 51.5, longitude: -0.1 };
+    const newYork = { latitude: 40.7, longitude: -74 };
+    transcript.begin("2026-11-14T08:00:00.000Z");
+    transcript.world("web_has", {
+      url: weather(london),
+      json: {
+        utc_offset_seconds: 0,
+        current: { temperature_2m: 9.4, weather_code: 61, is_day: 1 },
+        daily: { sunset: ["2026-11-14T16:12"] },
+      },
+    });
+    transcript.world("web_has", {
+      url: weather(newYork),
+      json: {
+        utc_offset_seconds: -18_000,
+        current: { temperature_2m: 12.6, weather_code: 1, is_day: 1 },
+        daily: { sunset: ["2026-11-14T16:42"] },
+      },
+    });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(1000);
+    const look = {
+      what: "Shape the day with you if it's unplanned",
+      why: "You asked for a look at each weekday morning.",
+      repeat: { days: ["mon", "tue", "wed", "thu", "fri"], time: "09:00" },
+      title: "“Look at my day with me each weekday morning”",
+    } as const;
+    transcript.world("agent_calls", {
+      tool: "set_wake_up",
+      input: {
+        what: look.what,
+        why: look.why,
+        repeat: look.repeat,
+        asked: true,
+        source: { kind: "chat", title: look.title },
+      },
+    });
+    const morning = transcript.wakeUp({
+      at: "2026-11-16T09:00:00.000Z",
+      what: look.what,
+      why: look.why,
+      repeat: { days: [...look.repeat.days], time: look.repeat.time },
+      by: "you",
+      source: { kind: "chat", title: look.title },
+    });
+    transcript.wait(1000);
+    transcript.whereabouts({
+      time_zone: "Europe/London",
+      area: { latitude: 51.5072, longitude: -0.1276, name: "London" },
+    });
+    transcript.ambient({
+      temperature: 9,
+      condition: "rain",
+      is_day: true,
+      sunset: "2026-11-14T16:12:00.000Z",
+      place: "London",
+    });
+    transcript.time("2026-11-14T15:00:00.000Z");
+    transcript.world("kumo_works", { calls: [] });
+    transcript.whereabouts({
+      time_zone: "America/New_York",
+      area: { latitude: 40.7128, longitude: -74.006, name: "New York" },
+    });
+    transcript.plans([{ ...morning, at: "2026-11-16T14:00:00.000Z" }]);
+    transcript.ambient({
+      temperature: 13,
+      condition: "partly_cloudy",
+      is_day: true,
+      sunset: "2026-11-14T21:42:00.000Z",
+      place: "New York",
+    });
+    transcript.wait(5000);
+    transcript.request("GET", "/v0/server");
+    transcript.response(200, {
+      name: "studio",
+      version: serverVersion,
+      protocol,
+      lead: { name: "Kumo" },
+      time_zone: "America/New_York",
+      whereabouts: {
+        time_zone: "America/New_York",
+        area: { ...newYork, name: "New York" },
+        as_of: "2026-11-14T15:00:00.000Z",
+      },
+      agent: {},
+      setup: { notifications: true, memory_backup: false },
+      capabilities: [],
+    });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "84-kumos-line-and-mood",
+      scenario: 84,
+      title: "Kumo's line and mood",
+      summary:
+        "With the Northwind prep under way, Kumo puts a short line at the top of the Desk with a focused face. " +
+        "When the deck is done it changes both: proud. Neither notifies.",
+      guarantees: ["G33", "G56"],
+    });
+    transcript.begin("2026-11-12T09:30:00.000Z");
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(1000);
+    const working = { text: "Quiet morning. The Northwind deck is two-thirds done.", mood: "focused" };
+    transcript.world("agent_calls", { tool: "set_desk_line", input: working });
+    transcript.deskLine({ ...working, at: "2026-11-12T09:30:01.000Z" });
+    transcript.wait(3 * 60 * 60 * 1000);
+    const done = { text: "The Northwind deck is done, a day early.", mood: "proud" };
+    transcript.world("agent_calls", { tool: "set_desk_line", input: done });
+    transcript.deskLine({ ...done, at: "2026-11-12T12:30:01.000Z" });
     return transcript;
   },
 ];

@@ -4,11 +4,13 @@ import type { CardAnswer, DeskKeeper } from "#desk/desk.ts";
 import type { RouteSchema } from "#http/validation.ts";
 import type { Store } from "#store/store.ts";
 import type { Corrections } from "#work/corrections.ts";
+import type { Tracks } from "#work/tracks.ts";
 
 export type DeskOptions = {
   readonly store: Pick<Store, "desk" | "listDone" | "findDone">;
   readonly desk: DeskKeeper;
   readonly corrections: Pick<Corrections, "correct">;
+  readonly tracks: Pick<Tracks, "list">;
   readonly today: () => string;
   readonly schemaFor: (operationId: string) => RouteSchema;
 };
@@ -19,7 +21,7 @@ const toErrorResult = (code: CommandFailureCode, detail: string, message?: strin
 
 export const registerDesk = (
   app: FastifyInstance,
-  { store, desk, corrections, today, schemaFor }: DeskOptions,
+  { store, desk, corrections, tracks, today, schemaFor }: DeskOptions,
 ): void => {
   app.get("/v0/desk", { schema: schemaFor("getDesk") }, () => store.desk());
 
@@ -44,6 +46,7 @@ export const registerDesk = (
       day,
       handled: entries.filter(({ quiet }) => !quiet),
       cleared: entries.filter(({ quiet }) => quiet),
+      tracks: tracks.list(),
     };
   });
 

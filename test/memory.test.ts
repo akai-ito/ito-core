@@ -43,7 +43,7 @@ const openMemory = async (approve: MemoryOptions["approve"] = () => Promise.reso
     },
     approve,
     info: () => true,
-    timeZone: "UTC",
+    timeZone: () => "UTC",
   });
   memories.update((current) => [...current, memory]);
   await memory.ready;
