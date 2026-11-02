@@ -2,7 +2,7 @@ import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import type { Activity } from "#day/blocks.ts";
 import { minuteMs, toLocal, toMinutes, toSpoken } from "#desk/day.ts";
-import type { CardAnswer, MomentHandler, Work } from "#desk/desk.ts";
+import { lastLine, type CardAnswer, type MomentHandler, type Work } from "#desk/desk.ts";
 import type { Line, Moments } from "#desk/moments.ts";
 import type { Night, Nights, Stage } from "#day/nights.ts";
 import type { DayPicture } from "#day/picture.ts";
@@ -102,12 +102,6 @@ const stopSchema: JsonSchema = {
   required: ["stop", "next_step"],
   additionalProperties: false,
 };
-
-const lastLine = (text: string): string =>
-  text
-    .split("\n")
-    .map((line) => line.trim())
-    .findLast((line) => line !== "") ?? "";
 
 const said = (answer: CardAnswer): string => answer.option ?? answer.text ?? "";
 

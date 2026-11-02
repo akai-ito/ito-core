@@ -1,6 +1,7 @@
 import type { DeviceConnect } from "#capabilities/manifest.ts";
 import type { Fetch } from "#capabilities/connect.ts";
 import { fail, ok, type Result } from "#result.ts";
+import { fieldOf } from "#tools/input.ts";
 import { packageVersion } from "#version.ts";
 
 // The GitHub that memory backs up to: the site, for signing in, installing and git, and its API.
@@ -44,9 +45,6 @@ export type GitHub = {
 type Answer = { readonly status: number; readonly body: unknown };
 
 const answerMs = 30_000;
-
-const fieldOf = (value: unknown, name: string): unknown =>
-  typeof value === "object" && value !== null ? (value as Readonly<Record<string, unknown>>)[name] : undefined;
 
 const toRepository = (body: unknown): GitHubRepository | undefined => {
   const id = fieldOf(body, "id");
