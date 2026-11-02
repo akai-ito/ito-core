@@ -1200,12 +1200,9 @@ export const createMailSource = (options: SourceOptions): MailSource => {
         if (latest.length === 0) return ok([]);
         const bodies = createCell<readonly SentBody[]>([]);
         const messages = opened.client.fetch(toUidSet(latest), { uid: true, source: true }, { uid: true });
-        for await (const message of messages) {
-          if (message.source === undefined) {
-            continue;
-          }
-
-          const body = await parseSentBody(message.source);
+        for await (const { source } of messages) {
+          if (source === undefined) continue;
+          const body = await parseSentBody(source);
           bodies.update((current) => [body, ...current]);
         }
         return ok(bodies.get());
