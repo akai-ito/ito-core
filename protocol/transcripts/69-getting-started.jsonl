@@ -3,7 +3,7 @@
 {"at":0,"world":"kumo_works","calls":[],"post":"While I read: what would make the next month a good one for you?"}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"id":"e_0001_38770","type":"snapshot","at":"2026-11-09T19:02:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[],"handled":0},"onboarding":{"state":"reading"}}}
+{"at":0,"event":{"id":"e_0001_38770","type":"snapshot","at":"2026-11-09T19:02:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0},"onboarding":{"state":"reading"}}}
 {"at":0,"event":{"id":"e_0002_48805","type":"message.posted","at":"2026-11-09T19:02:00.000Z","message":{"id":"m_0001_47841","role":"agent","kind":"post","text":"While I read: what would make the next month a good one for you?","at":"2026-11-09T19:02:00.000Z","position":2,"outcome":"completed"}}}
 {"at":20000,"world":"kumo_works","calls":[{"tool":"add_event","input":{"title":"Flights to Valencia","start":"2026-12-04T07:15:00.000Z","end":"2026-12-04T09:40:00.000Z","location":"Gatwick North","notes":"Booked through iCloud Mail: Your easyJet booking EZY8817"}},{"tool":"believe","input":{"text":"You're training for a sub-20 5K, with parkrun on Saturdays.","page":"memory:now"}}]}
 {"at":20000,"world":"inbox_holds","account":"icloud","count":40}

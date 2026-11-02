@@ -90,8 +90,9 @@ describe("Ito's tools over MCP", () => {
           { name: "delete_event" },
           { name: "plan_block" },
           { name: "correct_guess" },
-          { name: "schedule" },
-          { name: "cancel" },
+          { name: "set_wake_up" },
+          { name: "move_wake_up" },
+          { name: "drop_wake_up" },
         ],
       },
     });

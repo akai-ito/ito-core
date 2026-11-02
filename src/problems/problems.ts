@@ -122,6 +122,17 @@ export const memoryBackupProblem =
     fix: isAuth ? fix : keepsTrying,
   });
 
+export const workId = "kumo:work";
+
+// Kumo's model didn't answer its work in the background. What it was doing waits, and it catches up once it can.
+export const workProblem = (reason: string): Problem => ({
+  id: workId,
+  area: "kumo",
+  title: "Kumo can't work in the background",
+  detail: `Its model didn't answer, so what it was doing waits until it does: ${reason}`,
+  fix: "Kumo catches up on its own. If it goes on, check Settings › Model, or sign in again with ito login on the server.",
+});
+
 export const contactsId = "contacts:icloud";
 
 export const contactsProblem = (reason: string, isAuth: boolean): Problem => ({

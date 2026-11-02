@@ -3857,6 +3857,242 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.answerGuess(evening, { activity: "building" }, building);
     return transcript;
   },
+
+  () => {
+    const transcript = createTranscript({
+      name: "78-a-wake-up",
+      scenario: 78,
+      title: "A wake-up",
+      summary:
+        "Kumo sets itself a wake-up for when Thursday's technical ends, so it can ask how it went. Setting it is " +
+        "quiet: it only joins Kumo's plans on the Desk. At 15:30 it comes due, Kumo looks and messages you, and " +
+        "Done says so. The plan has gone from the Desk.",
+      guarantees: ["G33", "G49", "G50"],
+    });
+    transcript.begin("2026-11-12T09:00:00.000Z");
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(1000);
+    const what = "Ask how the Halcyon technical went";
+    const why = "It ends at 15:30, and you wanted to talk it through while it's fresh.";
+    const title = "Halcyon technical, Thu 14:00";
+    transcript.world("agent_calls", {
+      tool: "set_wake_up",
+      input: {
+        what,
+        why,
+        at: "2026-11-12T15:30:00Z",
+        asked: false,
+        source: { kind: "calendar", title, event_uid: halcyonTechnical.uid },
+      },
+    });
+    transcript.wakeUp({
+      at: halcyonTechnical.end,
+      what,
+      why,
+      by: "kumo",
+      source: { kind: "calendar", title, event: { uid: halcyonTechnical.uid } },
+    });
+    transcript.wait(2000);
+    transcript.listWakeUps();
+    const asked = "How did the technical go? Tell me while it's fresh, and I'll note what to work on.";
+    transcript.world("kumo_works", { calls: [], post: asked });
+    transcript.time(halcyonTechnical.end);
+    transcript.post(asked);
+    transcript.addDone({ text: `Woke up for “${what}” and messaged you`, reason: "Done." });
+    transcript.plans([]);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "79-kumos-plans-are-yours",
+      scenario: 79,
+      title: "Kumo's plans are yours",
+      summary:
+        "You asked Kumo to look at each weekday morning with you, and it set itself a follow-up on Clara's reply. " +
+        "Both are in Kumo's plans. You move tomorrow's morning look to 10:00 and cancel the follow-up; the Desk " +
+        "follows each change.",
+      guarantees: ["G33", "G49"],
+    });
+    transcript.begin("2026-11-10T19:00:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const morning = {
+      what: "Shape the day with you if it's unplanned",
+      why: "You asked for a look at each weekday morning; your days shift a lot.",
+      repeat: { days: ["mon", "tue", "wed", "thu", "fri"], time: "08:30" },
+      title: "“Look at my day with me each weekday morning”",
+    } as const;
+    transcript.world("agent_calls", {
+      tool: "set_wake_up",
+      input: {
+        what: morning.what,
+        why: morning.why,
+        repeat: morning.repeat,
+        asked: true,
+        source: { kind: "chat", title: morning.title },
+      },
+    });
+    const daily = transcript.wakeUp({
+      at: "2026-11-11T08:30:00.000Z",
+      what: morning.what,
+      why: morning.why,
+      repeat: { days: [...morning.repeat.days], time: morning.repeat.time },
+      by: "you",
+      source: { kind: "chat", title: morning.title },
+    });
+    transcript.wait(1000);
+    const chase = {
+      what: "See whether Clara replied about the call",
+      why: "You offered Thursday or Friday; if she's quiet by Wednesday evening, a short nudge keeps it moving.",
+      title: "Clara Voss: AI Engineer, FI",
+    };
+    transcript.world("agent_calls", {
+      tool: "set_wake_up",
+      input: {
+        what: chase.what,
+        why: chase.why,
+        at: "2026-11-11T18:00:00Z",
+        asked: false,
+        source: { kind: "mail", title: chase.title, account: "outlook", message_id: "role-1@northwind.example" },
+      },
+    });
+    const followUp = transcript.wakeUp({
+      at: "2026-11-11T18:00:00.000Z",
+      what: chase.what,
+      why: chase.why,
+      by: "kumo",
+      source: {
+        kind: "mail",
+        title: chase.title,
+        mail: { message_id: "role-1@northwind.example", account: "outlook" },
+      },
+    });
+    transcript.wait(30_000);
+    transcript.listWakeUps();
+    transcript.wait(5000);
+    transcript.request("PATCH", `/v0/wakeups/${daily.id}`, { body: { at: "2026-11-11T10:00:00.000Z" } });
+    const later = { ...daily, at: "2026-11-11T10:00:00.000Z" };
+    transcript.plans([later, followUp]);
+    transcript.response(200, { wake_up: later });
+    transcript.wait(4000);
+    transcript.request("DELETE", `/v0/wakeups/${followUp.id}`);
+    transcript.plans([later]);
+    transcript.response(204, undefined);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "80-your-day-changes",
+      scenario: 80,
+      title: "Your day changes",
+      summary:
+        "Kumo has a wake-up for after Thursday's technical. Tess moves the technical to 16:00 on your calendar. " +
+        "Kumo wakes on the change, moves its wake-up to the new end and tells you in a message.",
+      guarantees: ["G50", "G51"],
+    });
+    transcript.begin("2026-11-12T09:00:00.000Z");
+    const event = {
+      uid: halcyonTechnical.uid,
+      title: halcyonTechnical.title,
+      start: halcyonTechnical.start,
+      end: halcyonTechnical.end,
+      location: halcyonTechnical.location,
+    };
+    transcript.world("calendar_has", { events: [event] });
+    transcript.world("capability_on", {
+      capability: "icloud",
+      values: { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop" },
+    });
+    // Read once more, so the calendar Kumo first saw is all read before the app connects.
+    transcript.world("calendar_has", { events: [event] });
+    const technical = transcript.calendarItem(halcyonTechnical);
+    transcript.comingUp([technical]);
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(1000);
+    const what = "Ask how the Halcyon technical went";
+    const why = "It ends at 15:30, and you wanted to talk it through while it's fresh.";
+    const title = "Halcyon technical, Thu 14:00";
+    transcript.world("agent_calls", {
+      tool: "set_wake_up",
+      input: {
+        what,
+        why,
+        at: "2026-11-12T15:30:00Z",
+        asked: false,
+        source: { kind: "calendar", title, event_uid: event.uid },
+      },
+    });
+    const wakeUp = transcript.wakeUp({
+      at: halcyonTechnical.end,
+      what,
+      why,
+      by: "kumo",
+      source: { kind: "calendar", title, event: { uid: event.uid } },
+    });
+    transcript.wait(2 * 60 * 60 * 1000);
+    const moved = { ...event, start: "2026-11-12T16:00:00.000Z", end: "2026-11-12T17:30:00.000Z" };
+    const told = "Tess moved your technical to 4, so I'll ask how it went after half five.";
+    transcript.world("kumo_works", {
+      calls: [{ tool: "move_wake_up", input: { id: wakeUp.id, at: "2026-11-12T17:30:00Z" } }],
+      post: told,
+    });
+    transcript.world("calendar_has", { events: [moved] });
+    transcript.comingUp([{ ...technical, start: moved.start, end: moved.end }]);
+    transcript.plans([{ ...wakeUp, at: moved.end }]);
+    transcript.post(told);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "81-when-kumo-cant-work",
+      scenario: 81,
+      title: "When Kumo can't work",
+      summary:
+        "A wake-up comes due while Kumo's model isn't answering. Nothing robotic is sent in its place: the " +
+        "wake-up waits a quarter of an hour, and once the trouble has lasted ten minutes it shows as a problem. " +
+        "When the model answers again, Kumo looks, messages you, and the problem clears.",
+      guarantees: ["G40", "G52"],
+    });
+    transcript.begin("2026-11-12T15:20:00.000Z");
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(1000);
+    const what = "Ask how the Halcyon technical went";
+    const why = "It ends at 15:30, and you wanted to talk it through while it's fresh.";
+    const source = { kind: "chat" as const, title: "“Ask me how it went after”" };
+    transcript.world("agent_calls", {
+      tool: "set_wake_up",
+      input: { what, why, at: "2026-11-12T15:30:00Z", asked: true, source },
+    });
+    const wakeUp = transcript.wakeUp({ at: halcyonTechnical.end, what, why, by: "you", source });
+    const reason = "The model service answered 503 Service Unavailable.";
+    transcript.world("kumo_cant_work", { reason });
+    transcript.time(halcyonTechnical.end);
+    transcript.plans([{ ...wakeUp, at: "2026-11-12T15:45:00.000Z" }]);
+    transcript.time("2026-11-12T15:40:00.000Z");
+    transcript.problems([
+      {
+        id: "kumo:work",
+        area: "kumo",
+        title: "Kumo can't work in the background",
+        detail: `Its model didn't answer, so what it was doing waits until it does: ${reason}`,
+        fix: "Kumo catches up on its own. If it goes on, check Settings › Model, or sign in again with ito login on the server.",
+      },
+    ]);
+    const asked = "How did the technical go?";
+    transcript.world("kumo_works", { calls: [], post: asked });
+    transcript.time("2026-11-12T15:45:00.000Z");
+    transcript.post(asked);
+    transcript.problems([]);
+    transcript.addDone({ text: `Woke up for “${what}” and messaged you`, reason: "Done." });
+    transcript.plans([]);
+    return transcript;
+  },
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

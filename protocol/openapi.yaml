@@ -65,7 +65,7 @@ tags:
   - name: Onboarding
     description: Getting started, with what Kumo found and the beliefs it checks with you.
   - name: Desk
-    description: Home, with Coming up, Waiting on you, Kumo's work, its scheduled looks and the calendar.
+    description: Home, with Kumo's plans, Coming up, Waiting on you, Kumo's work and the calendar.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
   - name: Turns
@@ -446,23 +446,65 @@ paths:
               schema: { $ref: "#/components/schemas/DonePage" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
-  /v0/jobs:
+  /v0/wakeups:
     get:
       tags: [Desk]
-      operationId: listJobs
-      summary: List Kumo's scheduled looks
+      operationId: listWakeUps
+      summary: List Kumo's plans
       description: |
-        The follow-ups, check-ins and standing jobs Kumo scheduled, soonest first, with those that
-        wait on an event last. To stop one, tell Kumo.
+        Every wake-up, soonest first: what Kumo will look at for you, and when. The Desk's `plans`
+        carries the same list.
       responses:
         "200":
-          description: The jobs.
+          description: The wake-ups.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/JobList" }
+              schema: { $ref: "#/components/schemas/WakeUpList" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/wakeups/{wake_up}:
+    patch:
+      tags: [Desk]
+      operationId: changeWakeUp
+      summary: Move or change one of Kumo's plans
+      description: |
+        Moves a wake-up to another time, changes how it repeats (`null` makes it a one-off), or
+        rewords what it's for. The answer is the wake-up as it is now, and `desk.changed` follows.
+        A time that has passed is refused.
+      parameters:
+        - $ref: "#/components/parameters/WakeUp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WakeUpChange" }
+            example: { at: "2026-11-12T17:00:00.000Z" }
+      responses:
+        "200":
+          description: Changed.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WakeUpResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Desk]
+      operationId: cancelWakeUp
+      summary: Cancel one of Kumo's plans
+      description: Cancels a wake-up, and `desk.changed` follows. Kumo sees it's gone and doesn't set it again unasked.
+      parameters:
+        - $ref: "#/components/parameters/WakeUp"
+      responses:
+        "204":
+          description: Cancelled.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/done/{entry}/undo:
     post:
       tags: [Desk]
@@ -526,9 +568,9 @@ paths:
       operationId: getDesk
       summary: Read the Desk
       description: |
-        Home: Coming up, Waiting on you, how much Kumo handled today and when it last read your
-        mail. The snapshot carries it too, and `desk.changed` carries the whole Desk whenever it
-        changes.
+        Home: Kumo's plans, Coming up, Waiting on you, how much Kumo handled today and when it last
+        read your mail. The snapshot carries it too, and `desk.changed` carries the whole Desk
+        whenever it changes.
       responses:
         "200":
           description: The Desk.
@@ -1561,6 +1603,11 @@ components:
       schema:
         type: string
         format: uuid
+    WakeUp:
+      name: wake_up
+      in: path
+      required: true
+      schema: { $ref: "events.schema.json#/$defs/WakeUpId" }
     Call:
       name: call
       in: path
@@ -2147,11 +2194,38 @@ components:
       required: [entry]
       properties:
         entry: { $ref: "events.schema.json#/$defs/DoneEntry" }
-    JobList:
+    WakeUpList:
       type: object
-      required: [jobs]
+      required: [wake_ups]
       properties:
-        jobs: { type: array, items: { $ref: "events.schema.json#/$defs/Job" } }
+        wake_ups: { type: array, items: { $ref: "events.schema.json#/$defs/WakeUp" } }
+    WakeUpResult:
+      type: object
+      required: [wake_up]
+      properties:
+        wake_up: { $ref: "events.schema.json#/$defs/WakeUp" }
+    WakeUpChange:
+      description: What to change; leave out what stays.
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When it's next due; for a repeating one, only this time.
+        repeat:
+          description: How it comes back, or `null` for a one-off.
+          oneOf:
+            - $ref: "events.schema.json#/$defs/Repeat"
+            - type: "null"
+        what:
+          type: string
+          minLength: 1
+          maxLength: 200
+        why:
+          type: string
+          minLength: 1
+          maxLength: 2000
     CardAnswer:
       $ref: "events.schema.json#/$defs/CardAnswer"
     CardResult:

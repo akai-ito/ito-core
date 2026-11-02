@@ -2,7 +2,7 @@ import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { startOfDay, toLocal, untilMinutes } from "#desk/day.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { CalendarItem, Card, Desk, DoneEntry } from "#protocol/types.ts";
+import type { CalendarItem, Card, Desk, DoneEntry, WakeUp } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
 import type { Info } from "#turns/turns.ts";
@@ -30,6 +30,8 @@ export type DeskKeeper = {
   // Puts a waiting card's changed version in its place, under the same id, marked changed.
   readonly replaceCard: (id: string, card: NewCard) => void;
   readonly setComingUp: (items: readonly CalendarItem[]) => void;
+  // Kumo's plans: every wake-up, soonest first.
+  readonly setPlans: (plans: readonly WakeUp[]) => void;
   // When Kumo last read a new mail, or undefined once no mail account is connected.
   readonly setLastMail: (at: string | undefined) => void;
   // Today's Done entries, newest first.
@@ -289,6 +291,9 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     replaceCard,
     setComingUp: (items) => {
       changeDesk((desk) => ({ ...desk, coming_up: [...items] }));
+    },
+    setPlans: (plans) => {
+      changeDesk((desk) => ({ ...desk, plans: [...plans] }));
     },
     setLastMail: (lastMail) => {
       changeDesk((desk) =>

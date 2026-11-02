@@ -96,9 +96,38 @@ const toInviteIcs = (
   ].join("\r\n");
 };
 
+type CalendarEventFields = {
+  readonly uid: string;
+  readonly title: string;
+  readonly start: string;
+  readonly end: string;
+  readonly location?: string;
+  readonly status?: "CONFIRMED" | "CANCELLED";
+};
+
+const toEventIcs = (event: CalendarEventFields): string =>
+  [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Ito//Replay//EN",
+    "BEGIN:VEVENT",
+    `UID:${event.uid}`,
+    `DTSTAMP:${icsTime(event.start)}`,
+    `DTSTART:${icsTime(event.start)}`,
+    `DTEND:${icsTime(event.end)}`,
+    `SUMMARY:${event.title}`,
+    ...(event.location === undefined ? [] : [`LOCATION:${event.location}`]),
+    `STATUS:${event.status ?? "CONFIRMED"}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+    "",
+  ].join("\r\n");
+
 type WorkPlan = {
   readonly calls: readonly { readonly tool: string; readonly input: unknown }[];
   readonly post?: string;
+  // The model doesn't answer, with this reason.
+  readonly fails?: string;
 };
 
 const draftIdsOf = (transcript: Transcript): readonly string[] => {
@@ -234,6 +263,7 @@ export const replay = async (name: string): Promise<void> => {
     const [plan] = plans.get();
     if (!plan) return failed("The transcript has Kumo do nothing in the background here.");
     plans.update((current) => current.slice(1));
+    if (plan.fails !== undefined) return failed(plan.fails);
     const server = live.get()?.server;
     for (const { tool, input } of plan.calls) {
       const called = await server?.callTool(tool, ids.translate(withLiveVersion(input)), run);
@@ -579,6 +609,20 @@ export const replay = async (name: string): Promise<void> => {
         const { calls, post } = step as unknown as WorkPlan;
         plans.update((current) => [...current, { calls, ...(post !== undefined && { post }) }]);
         await advance(time);
+        return;
+      }
+      case "kumo_cant_work": {
+        const { reason } = step as unknown as { readonly reason: string };
+        plans.update((current) => [...current, { calls: [], fails: reason }]);
+        await advance(time);
+        return;
+      }
+      case "calendar_has": {
+        const { events: given } = step as unknown as { readonly events: readonly CalendarEventFields[] };
+        await advance(time);
+        for (const event of given) caldav.seed("Home", `${event.uid}.ics`, toEventIcs(event));
+        await live.get()?.server.calendar.refresh();
+        await settle();
         return;
       }
       case "topic_decided": {

@@ -31,6 +31,7 @@ import type {
   Step,
   StepKind,
   VoiceState,
+  WakeUp,
 } from "#protocol/types.ts";
 import type { Event, Line } from "./spec.ts";
 import { fixtureDirectory } from "./transcript-files.ts";
@@ -153,6 +154,11 @@ export type Transcript = {
   readonly getDesk: () => void;
   readonly calendarItem: (item: NewCalendarItem) => CalendarItem;
   readonly comingUp: (items: readonly CalendarItem[]) => void;
+  // A wake-up Kumo set: it joins Kumo's plans on the Desk, soonest first.
+  readonly wakeUp: (fields: Omit<WakeUp, "id" | "set_at">) => WakeUp;
+  // Kumo's plans as they are now, such as after one came due or moved.
+  readonly plans: (wakeUps: readonly WakeUp[]) => void;
+  readonly listWakeUps: () => void;
   // Answers one of Kumo's guesses in Coming up; the item comes back as `after`.
   readonly answerGuess: (item: CalendarItem, answer: Fields, after: CalendarItem) => void;
   // Kumo did one more thing without you today: its Done entry.
@@ -199,7 +205,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p" | "k" | "d" | "j" | "o" | "v" | "n";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p" | "k" | "d" | "w" | "v" | "n";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -398,7 +404,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacfpkdjovn]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfpkdwvn]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -418,8 +424,7 @@ const toCounters = (log: readonly Event[]): Counters => {
     p: highest("p"),
     k: highest("k"),
     d: highest("d"),
-    j: highest("j"),
-    o: highest("o"),
+    w: highest("w"),
     v: highest("v"),
     n: highest("n"),
   };
@@ -432,7 +437,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({
     boot: 1,
-    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0, k: 0, d: 0, j: 0, o: 0, v: 0, n: 0 },
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0, k: 0, d: 0, w: 0, v: 0, n: 0 },
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
@@ -454,7 +459,7 @@ export const createTranscript = (header: Header): Transcript => {
   const device = createCell<Device | undefined>(undefined);
   const attachments = createCell<ReadonlyMap<string, Attachment>>(new Map());
   const pairingCodes = createCell<ReadonlySet<string>>(new Set());
-  const deskState = createCell<Desk>({ coming_up: [], waiting: [], handled: 0 });
+  const deskState = createCell<Desk>({ plans: [], coming_up: [], waiting: [], handled: 0 });
   const onboardingState = createCell<Onboarding>({ state: "done" });
   const problemsState = createCell<readonly Problem[]>([]);
 
@@ -1420,6 +1425,24 @@ export const createTranscript = (header: Header): Transcript => {
     changeDesk((desk) => ({ ...desk, coming_up: [...items] }));
   };
 
+  const plans = (wakeUps: readonly WakeUp[]): void => {
+    changeDesk((desk) => ({
+      ...desk,
+      plans: wakeUps.toSorted((left, right) => left.at.localeCompare(right.at) || left.id.localeCompare(right.id)),
+    }));
+  };
+
+  const wakeUp = (fields: Omit<WakeUp, "id" | "set_at">): WakeUp => {
+    const made: WakeUp = { id: newId("w"), ...fields, set_at: timestamp() };
+    plans([...deskState.get().plans, made]);
+    return made;
+  };
+
+  const listWakeUps = (): void => {
+    request("GET", "/v0/wakeups");
+    response(200, { wake_ups: deskState.get().plans });
+  };
+
   // Answers one of Kumo's guesses in Coming up: the item comes back as it is now, no longer a guess.
   const answerGuess = (item: CalendarItem, answer: Fields, after: CalendarItem): void => {
     request("POST", `/v0/desk/guesses/${item.id}/answer`, { body: answer });
@@ -1640,6 +1663,9 @@ export const createTranscript = (header: Header): Transcript => {
     getDesk,
     calendarItem,
     comingUp,
+    wakeUp,
+    plans,
+    listWakeUps,
     answerGuess,
     handled,
     mailRead,

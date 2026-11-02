@@ -50,6 +50,9 @@ describe("a database from before 0.16", () => {
   });
 });
 
+// The statement that marks a database as migrated up to and including one migration.
+const versionAfter = (index: number): string => `PRAGMA user_version = ${String(index + 1)}`;
+
 describe("a 0.17 database", () => {
   const home = mkdtempSync(path.join(os.tmpdir(), "ito-migration-0.17-"));
   const older = path.join(home, "ito.db");
@@ -59,10 +62,12 @@ describe("a 0.17 database", () => {
   });
 
   it("loses Kumo's line, the check-ins, the Focus and the trust ladder, and keeps its lines as posts", () => {
-    const fresh = openDatabase(older);
-    fresh.exec(`PRAGMA user_version = ${String(migrations.length - 1)}`);
-    fresh.exec("ALTER TABLE messages DROP COLUMN urgent");
-    fresh.exec("ALTER TABLE asks ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0");
+    const version = migrations.findIndex((sql) => sql.includes("ADD COLUMN urgent"));
+    const fresh = new DatabaseSync(older);
+    for (const [index, sql] of migrations.slice(0, version).entries()) {
+      fresh.exec(sql);
+      fresh.exec(versionAfter(index));
+    }
     const moment = { id: "o_1", kind: "day", at: "2026-11-01T08:00:00.000Z", text: "A free Sunday." };
     const card = { id: "k_1", kind: "question", title: "Was this right?", quiet: true, review: { day: "2026-11-01" } };
     fresh
@@ -84,6 +89,14 @@ describe("a 0.17 database", () => {
       fresh.prepare("INSERT INTO settings (key, value) VALUES (?, '1')").run(key);
     }
     fresh.prepare("INSERT INTO settings (key, value) VALUES ('lead_name', 'Momo')").run();
+    fresh.prepare("INSERT INTO jobs (id, every_days, body) VALUES ('j_1', 7, ?)").run(
+      JSON.stringify({
+        id: "j_1",
+        why: "Look for startups",
+        at: "2026-11-06T09:30:00.000Z",
+        standing: { ask: "startups" },
+      }),
+    );
     fresh.close();
 
     const migrated = openDatabase(older);
@@ -96,9 +109,11 @@ describe("a 0.17 database", () => {
     const done = read("SELECT body FROM done") as { readonly body: string };
     const settings = migrated.prepare("SELECT key FROM settings ORDER BY key").all();
     const askColumns = migrated.prepare("SELECT name FROM pragma_table_info('asks')").all();
+    const wakeUp = read("SELECT id, at, body FROM wake_ups") as { readonly id: string; readonly body: string };
     migrated.close();
 
     expect(JSON.parse(desk.body)).toEqual({
+      plans: [],
       coming_up: [],
       waiting: [{ id: "k_1", kind: "question", title: "Was this right?" }],
       handled: 3,
@@ -111,5 +126,15 @@ describe("a 0.17 database", () => {
     expect(JSON.parse(done.body)).toEqual({ id: "d_1", text: "Binned a mail" });
     expect(settings).toEqual([{ key: "lead_name" }]);
     expect(askColumns).not.toContainEqual({ name: "reminded" });
+    expect(wakeUp.id).toBe("w_1");
+    expect(JSON.parse(wakeUp.body)).toMatchObject({
+      id: "w_1",
+      at: "2026-11-06T09:30:00.000Z",
+      what: "Look for startups",
+      why: "A standing job: keep looking for startups.",
+      repeat: { days: ["fri"], time: "09:30" },
+      by: "kumo",
+      source: { kind: "chat", title: "Look for startups" },
+    });
   });
 });

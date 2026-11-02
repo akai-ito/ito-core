@@ -240,7 +240,7 @@ const datesPrompt = (lines: readonly string[]): string =>
     "",
     "Judge from their People pages, and anything you remember with recall, how much each person matters to them.",
     "For someone they care about, message them with post, warm and short, such as “Leo's birthday is Thursday.",
-    "Want ideas?”, if now is a good moment in their day, or schedule a look for a better one. Say nothing about",
+    "Want ideas?”, if now is a good moment in their day, or set a wake-up for a better one. Say nothing about",
     "people they aren't close to. Don't record these with done.",
   ].join("\n");
 

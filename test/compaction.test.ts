@@ -83,7 +83,7 @@ describe("text compaction", () => {
   });
 });
 
-const desk = (handled: number) => ({ coming_up: [], waiting: [], handled });
+const desk = (handled: number) => ({ plans: [], coming_up: [], waiting: [], handled });
 
 describe("Desk history", () => {
   const deskDirectory = mkdtempSync(path.join(os.tmpdir(), "ito-desk-history-"));

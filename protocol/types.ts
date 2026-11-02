@@ -279,7 +279,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/v0/jobs": {
+  "/v0/wakeups": {
     parameters: {
       query?: never;
       header?: never;
@@ -287,17 +287,43 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * List Kumo's scheduled looks
-     * @description The follow-ups, check-ins and standing jobs Kumo scheduled, soonest first, with those that
-     *     wait on an event last. To stop one, tell Kumo.
+     * List Kumo's plans
+     * @description Every wake-up, soonest first: what Kumo will look at for you, and when. The Desk's `plans`
+     *     carries the same list.
      */
-    get: operations["listJobs"];
+    get: operations["listWakeUps"];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  "/v0/wakeups/{wake_up}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Cancel one of Kumo's plans
+     * @description Cancels a wake-up, and `desk.changed` follows. Kumo sees it's gone and doesn't set it again unasked.
+     */
+    delete: operations["cancelWakeUp"];
+    options?: never;
+    head?: never;
+    /**
+     * Move or change one of Kumo's plans
+     * @description Moves a wake-up to another time, changes how it repeats (`null` makes it a one-off), or
+     *     rewords what it's for. The answer is the wake-up as it is now, and `desk.changed` follows.
+     *     A time that has passed is refused.
+     */
+    patch: operations["changeWakeUp"];
     trace?: never;
   };
   "/v0/done/{entry}/undo": {
@@ -354,9 +380,9 @@ export interface paths {
     };
     /**
      * Read the Desk
-     * @description Home: Coming up, Waiting on you, how much Kumo handled today and when it last read your
-     *     mail. The snapshot carries it too, and `desk.changed` carries the whole Desk whenever it
-     *     changes.
+     * @description Home: Kumo's plans, Coming up, Waiting on you, how much Kumo handled today and when it last
+     *     read your mail. The snapshot carries it too, and `desk.changed` carries the whole Desk
+     *     whenever it changes.
      */
     get: operations["getDesk"];
     put?: never;
@@ -2024,8 +2050,20 @@ export interface components {
     DoneResult: {
       entry: components["schemas"]["DoneEntry"];
     };
-    JobList: {
-      jobs: components["schemas"]["Job"][];
+    WakeUpList: {
+      wake_ups: components["schemas"]["WakeUp"][];
+    };
+    WakeUpResult: {
+      wake_up: components["schemas"]["WakeUp"];
+    };
+    /** @description What to change; leave out what stays. */
+    WakeUpChange: {
+      /** @description When it's next due; for a repeating one, only this time. */
+      at?: components["schemas"]["Timestamp"];
+      /** @description How it comes back, or `null` for a one-off. */
+      repeat?: components["schemas"]["Repeat"] | null;
+      what?: string;
+      why?: string;
     };
     /** @description Your answer to a card: one of `option`, `slots` or `text`. */
     CardAnswer: {
@@ -2251,7 +2289,7 @@ export interface components {
     Problem: {
       /** @description Stable while it lasts, such as `push` or `mail:outlook`. */
       id: string;
-      /** @description What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities` or `memory`. Show an area you don't know plainly. */
+      /** @description What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities`, `memory`, or `kumo` when its own work in the background can't go on. Show an area you don't know plainly. */
       area: string;
       /** @description One plain line, such as "Notifications can't be sent". */
       title: string;
@@ -2490,25 +2528,56 @@ export interface components {
       /** @description When you said it was wrong, with `POST /v0/done/{entry}/wrong`. Show it as noted rather than offering That was wrong again. */
       corrected_at?: components["schemas"]["Timestamp"];
     };
-    /** @description Opaque. The server makes it when Kumo schedules a look. */
-    JobId: string;
-    /** @description A look Kumo scheduled for itself: a follow-up, a check-in after an event, or a standing job it keeps doing. It's judged when it comes due, and moves itself if the moment is bad. */
-    Job: {
-      id: components["schemas"]["JobId"];
-      /** @description Such as "Ask how the Halcyon interview went". */
-      why: string;
-      /** @description When it's next due. */
-      at?: components["schemas"]["Timestamp"];
-      /** @description Due after this event ends. */
-      after_event?: {
+    /** @description Opaque. The server makes it when a wake-up is set. */
+    WakeUpId: string;
+    /**
+     * @description A day of the week, in your time zone.
+     * @enum {unknown}
+     */
+    Weekday: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+    /** @description A wake-up that comes back: on these days, at this time in your time zone, wherever you are, such as weekdays at 09:00. */
+    Repeat: {
+      days: components["schemas"]["Weekday"][];
+      /** @description Such as `09:00`. */
+      time: string;
+    };
+    /** @description Where it came from: your `chat` with Kumo, a `mail` Kumo read, a `calendar` event, or another `wake_up`. Show a kind you don't recognise by its title. */
+    WakeUpSource: {
+      /** @enum {unknown} */
+      kind: "chat" | "mail" | "calendar" | "wake_up";
+      /** @description A line naming it, such as "Tess Harlow: Thursday's technical" or "Halcyon technical, Thu 14:00". */
+      title: string;
+      /** @description `mail` only: the mail, to open in Mail with `message://` and its Message-ID. */
+      mail?: {
+        account?: string;
+        message_id: string;
+      };
+      /** @description `calendar` only: the event, to open by its uid. */
+      event?: {
         uid: string;
-        title: string;
       };
-      /** @description A standing job, with what it keeps looking for, such as "startups I'd join". */
-      standing?: {
-        ask: string;
-      };
+    };
+    /** @description A time Kumo will wake up and look at something for you: a follow-up, a look after an event, a standing job, or something you asked for. When it comes due, Kumo looks first, then messages you if that's useful, moves it if things changed, or drops it if it's moot, and Done says which. Kumo keeps it current as your life moves, such as a meeting moving or a trip; you can move, change or cancel it too. */
+    WakeUp: {
+      id: components["schemas"]["WakeUpId"];
+      /** @description When it's next due, a concrete time Kumo worked out, such as the end of the event it's for. */
+      at: components["schemas"]["Timestamp"];
+      /** @description What it's for, in a line, such as "Ask how the Halcyon technical went". */
+      what: string;
+      /** @description Why, in Kumo's words: what it will have in mind when it wakes, such as "It ends at 15:30, and you wanted to talk it through while it's fresh." */
+      why: string;
+      /** @description Absent for a one-off. */
+      repeat?: components["schemas"]["Repeat"];
+      /**
+       * @description Who made it: `you` asked for it, or `kumo` set it itself. Show one you don't recognise as Kumo's.
+       * @enum {unknown}
+       */
+      by: "you" | "kumo";
+      source: components["schemas"]["WakeUpSource"];
+      /** @description The thing in motion it's about. */
       motion?: components["schemas"]["MotionId"];
+      /** @description When it was set. */
+      set_at: components["schemas"]["Timestamp"];
     };
     /** @description Opaque. The server makes it for each card. */
     CardId: string;
@@ -2594,8 +2663,10 @@ export interface components {
         capability?: string;
       };
     } & (unknown & unknown & unknown & unknown & unknown);
-    /** @description Home: what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail. */
+    /** @description Home: Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail. */
     Desk: {
+      /** @description Kumo's plans: every wake-up, soonest first. Kumo setting one is quiet; it only shows here. */
+      plans: components["schemas"]["WakeUp"][];
       /** @description Events in the next 36 hours or so, plus anything big this week, in time order. */
       coming_up: components["schemas"]["CalendarItem"][];
       /** @description Cards waiting on you, oldest first. */
@@ -2975,6 +3046,7 @@ export interface components {
     Ask: components["schemas"]["AskId"];
     /** @description A random UUID the app makes once per install, and keeps. */
     Device: string;
+    WakeUp: components["schemas"]["WakeUpId"];
     /** @description The id the app chose when it started the call. */
     Call: components["schemas"]["CallId"];
     /** @description The capability's id, such as `reports`. */
@@ -3046,7 +3118,9 @@ export type Discovery = components["schemas"]["Discovery"];
 export type BeliefAnswer = components["schemas"]["BeliefAnswer"];
 export type DonePage = components["schemas"]["DonePage"];
 export type DoneResult = components["schemas"]["DoneResult"];
-export type JobList = components["schemas"]["JobList"];
+export type WakeUpList = components["schemas"]["WakeUpList"];
+export type WakeUpResult = components["schemas"]["WakeUpResult"];
+export type WakeUpChange = components["schemas"]["WakeUpChange"];
 export type CardAnswer = components["schemas"]["CardAnswer"];
 export type CardResult = components["schemas"]["CardResult"];
 export type GuessAnswer = components["schemas"]["GuessAnswer"];
@@ -3108,8 +3182,11 @@ export type TopicId = components["schemas"]["TopicId"];
 export type Topic = components["schemas"]["Topic"];
 export type UploadId = components["schemas"]["UploadId"];
 export type DoneEntry = components["schemas"]["DoneEntry"];
-export type JobId = components["schemas"]["JobId"];
-export type Job = components["schemas"]["Job"];
+export type WakeUpId = components["schemas"]["WakeUpId"];
+export type Weekday = components["schemas"]["Weekday"];
+export type Repeat = components["schemas"]["Repeat"];
+export type WakeUpSource = components["schemas"]["WakeUpSource"];
+export type WakeUp = components["schemas"]["WakeUp"];
 export type CardId = components["schemas"]["CardId"];
 export type Slot = components["schemas"]["Slot"];
 export type Card = components["schemas"]["Card"];
@@ -3152,6 +3229,7 @@ export type ParameterUpload = components["parameters"]["Upload"];
 export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
 export type ParameterDevice = components["parameters"]["Device"];
+export type ParameterWakeUp = components["parameters"]["WakeUp"];
 export type ParameterCall = components["parameters"]["Call"];
 export type ParameterCapability = components["parameters"]["Capability"];
 export type HeaderItoProtocol = components["headers"]["ItoProtocol"];
@@ -3552,7 +3630,7 @@ export interface operations {
       404: components["responses"]["NotFound"];
     };
   };
-  listJobs: {
+  listWakeUps: {
     parameters: {
       query?: never;
       header?: never;
@@ -3561,17 +3639,75 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description The jobs. */
+      /** @description The wake-ups. */
       200: {
         headers: {
           "Ito-Protocol": components["headers"]["ItoProtocol"];
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["JobList"];
+          "application/json": components["schemas"]["WakeUpList"];
         };
       };
       401: components["responses"]["TokenRejected"];
+    };
+  };
+  cancelWakeUp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        wake_up: components["parameters"]["WakeUp"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cancelled. */
+      204: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  changeWakeUp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        wake_up: components["parameters"]["WakeUp"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "at": "2026-11-12T17:00:00.000Z"
+         *     }
+         */
+        "application/json": components["schemas"]["WakeUpChange"];
+      };
+    };
+    responses: {
+      /** @description Changed. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WakeUpResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
     };
   };
   undoDone: {
