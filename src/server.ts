@@ -499,7 +499,7 @@ export const createServer = (options: ServerOptions): Server => {
   });
   const nights = createNights(store, timeZone);
   const questions = createQuestions(store, clock, timeZone);
-  const status = createStatus(store, clock, timeZone, nights);
+  const status = createStatus({ settings: store, clock, timeZone, nights, info });
   statusCell.set(status.lines);
   const picture = createDayPicture({
     blocks: createBlockStore(database),
