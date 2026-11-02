@@ -46,12 +46,19 @@ export const toTurnError = (code: TurnFailureCode, detail: string): ErrorBody =>
   detail,
 });
 
-export const toWatchdogError = (silenceMs: number, isWriting: boolean): ErrorBody => {
+// "60 seconds", or "10 minutes" once it's a few minutes.
+const silenceOf = (silenceMs: number): string => {
   const seconds = Math.round(silenceMs / 1000);
+  return seconds < 120 ? `${String(seconds)} seconds` : `${String(Math.round(seconds / 60))} minutes`;
+};
+
+export const toWatchdogError = (silenceMs: number, isWriting: boolean, isCompacting = false): ErrorBody => {
+  const silence = silenceOf(silenceMs);
+  const doing = isCompacting ? "compacting the conversation" : isWriting ? "writing" : "working";
   return {
     code: "model_timeout",
-    message: `The model didn't respond for ${seconds} seconds.`,
-    detail: `No progress from the engine for ${seconds} seconds while it was ${isWriting ? "writing" : "working"}.`,
+    message: `The model didn't respond for ${silence}.`,
+    detail: `No progress from the engine for ${silence} while it was ${doing}.`,
   };
 };
 
