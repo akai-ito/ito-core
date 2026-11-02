@@ -119,12 +119,14 @@ type FiledUndo = {
 
 type BlockedUndo = { readonly kind: "mail_blocked"; readonly sender: string };
 
-// A quiet card asking whether to unsubscribe from a sender they've written to, and the mail it's about.
+// A quiet card asking whether to unsubscribe from a sender they've written to, the mail it's about, and when it
+// was asked.
 type UnsubscribeAsk = {
   readonly card: string;
   readonly account: string;
   readonly message_id: string;
   readonly sender: string;
+  readonly at: string;
 };
 
 type SentMark = { readonly read_at: string; readonly seen: readonly string[] };
@@ -136,6 +138,9 @@ export const watermarkSetting = "mail_watermark";
 export const unsubscribedSetting = "mail_unsubscribed";
 
 export const keptListsSetting = "mail_kept_lists";
+
+// Senders whose lists couldn't be left, such as one with only a web page, so they're not tried on every promotion.
+export const unleftListsSetting = "mail_unsubscribe_failed";
 
 export const asksSetting = "mail_unsubscribe_asks";
 
@@ -153,6 +158,8 @@ const draftSlackMs = 10 * 60 * 1000;
 const sentSample = 30;
 const evidenceDays = 30;
 const evidenceLimit = 300;
+// An unsubscribe question cleared from the Desk without an answer is asked again after this long.
+const askAgainMs = 30 * dayMs;
 // How sure the attention pass must be to bin or file a mail itself; below it, Kumo looks.
 const sureEnough = 0.7;
 
@@ -304,12 +311,16 @@ const parsedList = (text: string | undefined): readonly unknown[] => {
   return Array.isArray(value) ? (value as readonly unknown[]) : [];
 };
 
-const toAsks = (text: string | undefined): readonly UnsubscribeAsk[] =>
+// An ask kept before asks were dated counts from when it's first read again.
+const toAsks = (text: string | undefined, now: string): readonly UnsubscribeAsk[] =>
   parsedList(text).flatMap((item) => {
     const [card, account, messageId, sender] = ["card", "account", "message_id", "sender"].map((field) =>
       textOf(item, field),
     );
-    return card && account && messageId && sender ? { card, account, message_id: messageId, sender } : [];
+    const at = textOf(item, "at");
+    return card && account && messageId && sender
+      ? { card, account, message_id: messageId, sender, at: Number.isNaN(Date.parse(at)) ? now : at }
+      : [];
   });
 
 // Who they've written to is judged by the sender's site, so a shop's offers count as known if they ever wrote to
@@ -671,7 +682,12 @@ export const createMailbox = ({
     store.setSetting(key, JSON.stringify([...senders]));
   };
 
-  const asks = (): readonly UnsubscribeAsk[] => toAsks(store.setting(asksSetting));
+  const asks = (): readonly UnsubscribeAsk[] => toAsks(store.setting(asksSetting), toTimestamp(clock.now()));
+
+  // An ask settles its sender while its card is on the Desk, and for 30 days after it was asked once the card has
+  // gone without an answer, such as cleared; then the next promotion asks again.
+  const isAsking = (ask: UnsubscribeAsk): boolean =>
+    desk.cards().some((card) => card.id === ask.card) || clock.now() - Date.parse(ask.at) < askAgainMs;
 
   // A mail moved to the archive or the bin, in Done with an undo.
   const recordMovedOut = (account: string, mail: Mail, to: "archive" | "bin", reason: string): void => {
@@ -733,7 +749,10 @@ export const createMailbox = ({
       ? await connection.source.read(ask.message_id)
       : fail(`${ask.account} mail isn't set up any more.`);
     const done = connection && read.ok ? await unsubscribeNow(connection, read.value, "You asked") : read;
-    if (!done.ok) desk.addDone({ text: `Couldn't unsubscribe from ${ask.sender}`, reason: done.failure, quiet: false });
+    if (!done.ok) {
+      remember(unleftListsSetting, ask.sender);
+      desk.addDone({ text: `Couldn't unsubscribe from ${ask.sender}`, reason: done.failure, quiet: false });
+    }
     return undefined;
   };
 
@@ -748,10 +767,14 @@ export const createMailbox = ({
         text: `Their promotions go to the bin. You've written to ${siteOf(sender)} before, so I'm asking first.`,
       },
     });
-    store.setSetting(
-      asksSetting,
-      JSON.stringify([...asks(), { card: card.id, account, message_id: mail.messageId, sender }]),
-    );
+    const asked: UnsubscribeAsk = {
+      card: card.id,
+      account,
+      message_id: mail.messageId,
+      sender,
+      at: toTimestamp(clock.now()),
+    };
+    store.setSetting(asksSetting, JSON.stringify([...asks().filter((ask) => ask.sender !== sender), asked]));
     desk.handleCard(card.id, answerAsk);
   };
 
@@ -761,8 +784,8 @@ export const createMailbox = ({
     const isSettled =
       mail.unsubscribe === undefined ||
       sender === "" ||
-      [...listSetting(unsubscribedSetting), ...listSetting(keptListsSetting)].includes(sender) ||
-      asks().some((ask) => ask.sender === sender);
+      [unsubscribedSetting, keptListsSetting, unleftListsSetting].some((key) => listSetting(key).includes(sender)) ||
+      asks().some((ask) => ask.sender === sender && isAsking(ask));
     if (isSettled) return;
     const written = await connection.source.hasWritten(siteOf(sender));
     if (!written.ok) {
@@ -774,7 +797,16 @@ export const createMailbox = ({
       return;
     }
     const done = await unsubscribeNow(connection, mail, "Promotions from a sender you've never written to");
-    if (!done.ok) info("A list couldn't be unsubscribed from", { error: done.failure });
+    if (done.ok) return;
+    // Said once, and remembered, so their next promotion doesn't try again.
+    info("A list couldn't be unsubscribed from", { error: done.failure });
+    remember(unleftListsSetting, sender);
+    desk.addDone({
+      text: `Couldn't unsubscribe from ${senderOf(mail)}`,
+      reason: done.failure,
+      mail: mailReference(connection.account, mail),
+      quiet: false,
+    });
   };
 
   const keep = async (connection: Connection, mail: Mail, judged: Judgement): Promise<void> => {
@@ -1099,7 +1131,10 @@ export const createMailbox = ({
     });
   };
 
-  for (const ask of asks()) {
+  // Asks that no longer settle their sender are forgotten, and the rest dated.
+  const keptAsks = asks().filter((ask) => isAsking(ask));
+  if (store.setting(asksSetting) !== undefined) store.setSetting(asksSetting, JSON.stringify(keptAsks));
+  for (const ask of keptAsks) {
     if (desk.cards().some((card) => card.id === ask.card)) desk.handleCard(ask.card, answerAsk);
   }
 
