@@ -1026,8 +1026,9 @@ export const createMailbox = ({
     });
   };
 
-  const onMail = (connection: Connection, mail: Mail): void => {
-    void arrivals.update(async (previous) => {
+  // Mail is handled one at a time, in the order it came; each settles once Kumo is done with it.
+  const onMail = (connection: Connection, mail: Mail): Promise<void> =>
+    arrivals.update(async (previous) => {
       await previous;
       try {
         await arrive(connection, mail);
@@ -1035,7 +1036,6 @@ export const createMailbox = ({
         info("A new mail couldn't be handled", { error: String(error) });
       }
     });
-  };
 
   const reconcile = (): void => {
     if (isClosed.get()) return;
@@ -1069,7 +1069,7 @@ export const createMailbox = ({
       const watching = createCell<Connection | undefined>(undefined);
       const stop = source.watch((mail) => {
         const connection = watching.get();
-        if (connection) onMail(connection, mail);
+        return connection ? onMail(connection, mail) : Promise.resolve();
       });
       const connection: Connection = { ...config, source, stop };
       watching.set(connection);
