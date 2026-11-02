@@ -9,13 +9,17 @@ import { elementsOf, escapeText, parseHtml, plainText, writeHtml } from "#mail/h
 import { fail, ok, type Result } from "#result.ts";
 
 // A draft as it goes into Drafts: Kumo's light Markdown as HTML and as clean plain text, the pictures it shows
-// inline, files attached, and their own signature at the end.
+// inline, files attached, their own signature at the end, and below it, in a reply, the mail it answers, quoted.
 
 export type Part = { readonly filename: string; readonly contentType: string; readonly content: Buffer };
 
 export type InlinePart = Part & { readonly cid: string };
 
 export type Signature = { readonly text: string; readonly html?: string; readonly images: readonly InlinePart[] };
+
+// The mail a reply answers, as it's quoted below the reply: a line saying who wrote it and when, such as "On 3 Nov
+// 2026, Clara Voss wrote:", and its text.
+export type Quote = { readonly attribution: string; readonly text: string };
 
 export type Letter = {
   readonly text: string;
@@ -33,6 +37,7 @@ export type LetterInput = {
   readonly markdown: string;
   readonly attach: readonly string[];
   readonly signature?: Signature;
+  readonly quote?: Quote;
   readonly find: FindPart;
 };
 
@@ -169,6 +174,25 @@ const signatureHtml = (signature: Signature): string =>
     .map((line) => escapeText(line))
     .join("<br>")}</div>`;
 
+const quotedLines = ({ text }: Quote): readonly string[] =>
+  text
+    .replaceAll("\r\n", "\n")
+    .trim()
+    .split("\n")
+    .map((line) => line.trimEnd());
+
+// The quote as mail apps write it in plain text: the attribution, then each line marked with "> ".
+const quotedText = (quote: Quote): string =>
+  [quote.attribution, ...quotedLines(quote).map((line) => (line === "" ? ">" : `> ${line}`))].join("\n");
+
+// And in HTML: the attribution, then the text in a blockquote, which every mail app draws as a quote.
+const quotedHtml = (quote: Quote): string =>
+  `<div>${escapeText(quote.attribution)}</div>\n` +
+  '<blockquote type="cite" style="margin: 0 0 0 0.8ex; border-left: 1px solid #ccc; padding-left: 1ex">' +
+  `${quotedLines(quote)
+    .map((line) => escapeText(line))
+    .join("<br>\n")}</blockquote>`;
+
 const wrapped = (body: string): string =>
   `<!DOCTYPE html>\n<html><head><meta charset="utf-8"></head><body>\n${body}\n</body></html>\n`;
 
@@ -182,6 +206,7 @@ export const composeLetter = async ({
   markdown,
   attach,
   signature,
+  quote,
   find,
 }: LetterInput): Promise<Result<Letter, string>> => {
   const html = micromark(markdown);
@@ -209,9 +234,10 @@ export const composeLetter = async ({
     return cid === undefined ? undefined : `cid:${cid}`;
   }).replaceAll("<img ", '<img style="max-width: 100%" ');
   const text = withSignature(plainText(nodes), signature);
+  const signed = signature === undefined ? body : `${body}\n<br>\n${signatureHtml(signature)}`;
   return ok({
-    text,
-    html: wrapped(signature === undefined ? body : `${body}\n<br>\n${signatureHtml(signature)}`),
+    text: quote === undefined ? text : `${text}\n\n${quotedText(quote)}`,
+    html: wrapped(quote === undefined ? signed : `${signed}\n<br>\n${quotedHtml(quote)}`),
     inline: [...inline, ...(signature?.images ?? [])],
     attachments,
   });

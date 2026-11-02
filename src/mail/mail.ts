@@ -31,6 +31,7 @@ import {
   withSignature,
   type InlinePart,
   type Letter,
+  type Quote,
   type Signature,
 } from "#mail/compose.ts";
 import { createMailFolders, sameName, type FileInto } from "#mail/folders.ts";
@@ -101,6 +102,8 @@ export type MailOptions = {
   readonly workspace?: string;
   // Their contacts: who a sender is, and the address to write to someone named.
   readonly contacts?: Pick<Contacts, "known" | "recipient">;
+  // Where they are, for the date a reply's quote says the mail was written; the box's own by default.
+  readonly timeZone?: string;
 };
 
 type Config = { readonly account: Account; readonly user: string; readonly auth: Auth; readonly key: string };
@@ -167,12 +170,28 @@ const askAgainMs = 30 * dayMs;
 const sureEnough = 0.7;
 
 // What a draft carried besides its words, so redrafting it keeps them: files attached, whether it's signed, the names
-// its people are written with, by address, and the References of the thread it answers.
+// its people are written with, by address, the References of the thread it answers, and the mail it quotes.
 type DraftParts = {
   readonly attach: readonly string[];
   readonly signature: boolean;
   readonly names?: Readonly<Record<string, string>>;
   readonly references?: readonly string[];
+  readonly quote?: Quote;
+};
+
+const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// The mail a reply answers, quoted the usual way: "On 3 Nov 2026, Clara Voss wrote:", then all it says, the history it
+// quotes too, so the thread reads on in any mail app.
+const quoteOf = (mail: Mail, timeZone: string): Quote => {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone, day: "numeric", month: "numeric", year: "numeric" })
+    .formatToParts(new Date(mail.date))
+    .map(({ type, value }) => [type, value] as const);
+  const { day = "", month = "", year = "" } = Object.fromEntries(parts);
+  return {
+    attribution: `On ${String(Number(day))} ${months[Number(month) - 1] ?? ""} ${year}, ${mail.from.name ?? mail.from.address} wrote:`,
+    text: mail.fullText ?? mail.text,
+  };
 };
 
 type StoredImage = {
@@ -642,6 +661,7 @@ export const createMailbox = ({
   sentPollMs = 5 * 60 * 1000,
   workspace,
   contacts,
+  timeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone,
 }: MailOptions): Mailbox => {
   const connections = createCell<ReadonlyMap<Account, Connection>>(new Map());
   const arrivals = createCell<Promise<void>>(Promise.resolve());
@@ -1208,6 +1228,7 @@ export const createMailbox = ({
       attach: parts.attach,
       find: findPart,
       ...(signature && { signature }),
+      ...(parts.quote && { quote: parts.quote }),
     });
     if (!letter.ok) return letter;
     const saved = await connection.source.draft({
@@ -1698,6 +1719,7 @@ export const createMailbox = ({
       const from = sender.value;
       const recipients = { to: to.map((address) => nameOf(address)), cc: cc.map((address) => nameOf(address)) };
       const references = answering ? [...answering.references, answering.messageId] : [];
+      const quote = answering && quoteOf(answering, timeZone);
       const givenAttach = fieldOf(input, "attach");
       const givenSignature = fieldOf(input, "signature");
       const parts: DraftParts = {
@@ -1705,6 +1727,7 @@ export const createMailbox = ({
         signature: typeof givenSignature === "boolean" ? givenSignature : earlierParts.signature,
         names: namesOf([from, ...recipients.to, ...recipients.cc]),
         ...(references.length > 0 && { references }),
+        ...(quote && { quote }),
       };
       const learned = parts.signature ? await signatureOf(connection) : ok(undefined);
       if (!learned.ok) {
@@ -1718,6 +1741,7 @@ export const createMailbox = ({
         attach: parts.attach,
         find: findPart,
         ...(signature && { signature }),
+        ...(quote && { quote }),
       });
       if (!letter.ok) return failed(letter.failure);
       const saved = await source.draft({
@@ -1778,7 +1802,10 @@ export const createMailbox = ({
         step: {
           title: `${kept ? "Redrafted" : "Drafted"} ${answering ? "a reply" : "a mail"} to ${whom}`,
           note: `To ${to.join(", ")}${copied}`,
-          mails: [{ from: "You", subject, date: toTimestamp(clock.now()), text: letter.value.text }],
+          // Their words and signature, without the quote below them.
+          mails: [
+            { from: "You", subject, date: toTimestamp(clock.now()), text: withSignature(plainOf(body), signature) },
+          ],
         },
       };
     });

@@ -14,6 +14,10 @@ export type ArrivingMail = {
   readonly cc?: readonly string[];
   readonly subject: string;
   readonly text: string;
+  // The whole text, with the history it quotes, when that's more than text.
+  readonly full_text?: string;
+  // When it was sent; now by default.
+  readonly date?: string;
   readonly unsubscribe?: string;
 };
 
@@ -112,8 +116,9 @@ export const createFakeMail = (now: () => string): FakeMail => {
     to: mail.to.map((address) => toAddress(address)),
     cc: (mail.cc ?? []).map((address) => toAddress(address)),
     subject: mail.subject,
-    date: now(),
+    date: mail.date ?? now(),
     text: mail.text,
+    ...(mail.full_text !== undefined && { fullText: mail.full_text }),
     ...(mail.unsubscribe !== undefined && { unsubscribe: { post: mail.unsubscribe, url: mail.unsubscribe } }),
     flags: [],
   });

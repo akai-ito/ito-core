@@ -60,6 +60,8 @@ These commands are for when they bring mail up, or when a conversation needs it.
   plain-text copy.
 - Their signature is added at the end, exactly as they send it from that account, so end with the
   sign-off they'd write and no signature. Leave it off with `--no-signature` only when they ask.
+- A reply quotes the mail it answers below the signature, the way mail apps do ("On 3 Nov 2026,
+  Clara Voss wrote:"), so write only the new words, and don't quote it yourself.
 - To send a photo, put it where it belongs in the body: `![Leo at the beach](uploads/IMG_2041.jpg)`.
   Photos they attach in the chat are in your workspace's `uploads` folder; a picture you found on
   the web goes in by its own https address. Wrap a path with spaces in angle brackets:

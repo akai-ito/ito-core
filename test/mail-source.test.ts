@@ -232,7 +232,7 @@ describe("reading a mail", () => {
     });
   });
 
-  it("keeps a reply's references and leaves out the quoted history", async () => {
+  it("keeps a reply's references and leaves out the quoted history, keeping it whole for a quote", async () => {
     const mail = await parsed("reply-with-references");
     expect(mail).toMatchObject({
       messageId: ids.reply,
@@ -244,6 +244,10 @@ describe("reading a mail", () => {
     expect(mail.text).toBe(
       "Thursday works for us. Theo can bring the projector, and I'll book the\nroom at Café Lumière for 10:00.\n\nLena",
     );
+    expect(mail.fullText).toMatch(/^Thursday works for us\..*\n> How about Thursday morning instead of Friday\?\n/su);
+    expect(mail.fullText).toMatch(/\n>> Here's the draft schedule for the workshop\.$/u);
+    const booking = await parsed("booking-confirmation");
+    expect(booking.fullText).toBeUndefined();
   });
 
   it("gives a mail without a Message-ID an id that still finds it", async () => {
