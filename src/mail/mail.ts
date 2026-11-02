@@ -1947,6 +1947,8 @@ export const createMailbox = ({
             };
           }
           const to = textOf(input, "to") as Filing;
+          // Marked before it moves, so its arrival back in the inbox is never read as new mail.
+          if (to === "inbox") restored.update((current) => new Set([...current, id]));
           const filed = await source.file(id, to);
           if (!filed.ok) return failed(filed.failure);
           if ((to === "archive" || to === "bin") && read.ok) {
@@ -1958,7 +1960,6 @@ export const createMailbox = ({
               undo: { kind: "mail_filed", account, id, back: "inbox" } satisfies FiledUndo,
             });
           }
-          if (to === "inbox") restored.update((current) => new Set([...current, id]));
           const about = read.ok ? `“${subjectOf(read.value)}” from ${senderOf(read.value)}` : "a mail";
           const { verb, tally } = filings[to];
           return { text: `Filed it: ${to}.`, step: said(verb(about), tally) };

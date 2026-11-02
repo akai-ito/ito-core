@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
 import type { Values } from "#capabilities/manifest.ts";
 import type { DeskKeeper, NewCard, NewDone, Undoer } from "#desk/desk.ts";
-import type { Mail } from "#mail/imap.ts";
+import type { Mail, MailSource } from "#mail/imap.ts";
 import { createMailbox, type Mailbox } from "#mail/mail.ts";
 import type { CalendarItem, Card, DoneEntry } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -31,6 +31,13 @@ const icloud = { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop
 const outlook = { address: "divy@outlook.example", token: "a-token" };
 
 const onlyIcloud: Readonly<Record<string, Values>> = { icloud };
+
+type BoxOptions = {
+  readonly comingUp?: readonly CalendarItem[];
+  readonly accounts?: Readonly<Record<string, Values>>;
+  // The mail server as the mailbox sees it, such as one that tells of a mail before a move has finished.
+  readonly server?: (source: MailSource, mail: FakeMail) => MailSource;
+};
 
 const booking = {
   account: "icloud",
@@ -76,8 +83,7 @@ const openBox = (
   decision: string,
   works: readonly Result<string, string>[] = [],
   act: Act = nothing,
-  comingUp: readonly CalendarItem[] = [],
-  accounts = onlyIcloud,
+  { comingUp = [], accounts = onlyIcloud, server = (source) => source }: BoxOptions = {},
 ): Box => {
   const clock = createVirtualClock(Date.parse("2026-11-10T22:00:00.000Z"));
   const mail = createFakeMail(() => new Date(clock.now()).toISOString());
@@ -140,7 +146,7 @@ const openBox = (
     },
     info: ignore,
     comingUp: () => comingUp,
-    createSource: mail.create,
+    createSource: (options) => server(mail.create(options), mail),
     sentPollMs: 60_000,
   });
   return {
@@ -317,7 +323,7 @@ describe("the mailbox", () => {
       title: "Dinner",
       calendar: { name: "Home", kumo: false },
     };
-    const box = openBox("quiet", [], clearNorthwind, [block, theirs]);
+    const box = openBox("quiet", [], clearNorthwind, { comingUp: [block, theirs] });
     const card = box.addCard({
       kind: "times",
       title: "Confirm the Northwind interviews",
@@ -429,7 +435,7 @@ describe("the mailbox", () => {
   });
 
   it("replaces a draft in its own account, whichever account they have first", async () => {
-    const box = openBox("work", [], nothing, [], { icloud, outlook });
+    const box = openBox("work", [], nothing, { accounts: { icloud, outlook } });
     const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");
     box.mail.keep("INBOX", { ...booking, account: "outlook", to: ["divy@outlook.example"] });
     await draftTool?.call({ account: "outlook", reply_to: booking.message_id, body: "Could you leave the keys?" });
@@ -443,6 +449,29 @@ describe("the mailbox", () => {
       { id: card?.id, draft: { account: "outlook", body: "Could you leave the keys at the desk?" } },
     ]);
     expect(box.mail.drafts().map(({ from }) => from.address)).toEqual(["divy@outlook.example", "divy@outlook.example"]);
+    await box.mailbox.close();
+  });
+
+  it("never reads a mail as new when Kumo moves it back to the inbox", async () => {
+    // The server tells of the mail back in the inbox before the move has finished, as IMAP may.
+    const box = openBox("notice", [], nothing, {
+      server: (source, mail) => ({
+        ...source,
+        file: (messageId, filing) => {
+          if (filing === "inbox") mail.arrive(booking);
+          return source.file(messageId, filing);
+        },
+      }),
+    });
+    box.mail.keep("Archive", booking);
+
+    const moved = await box.mailbox.tools
+      .find(({ name }) => name === "file_mail")
+      ?.call({ message_id: booking.message_id, to: "inbox" });
+    await delay(50);
+
+    expect(moved?.text).toBe("Filed it: inbox.");
+    expect(box.done()).toEqual([]);
     await box.mailbox.close();
   });
 });
