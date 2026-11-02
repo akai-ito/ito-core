@@ -216,7 +216,9 @@ export type Store = Settings & {
   readonly lastReply: (turn: TurnId) => OpenMessage | undefined;
   readonly devices: () => readonly StoredDevice[];
   readonly importEvents: (events: readonly LoggedEvent[]) => void;
-  readonly compactText: (before: string) => void;
+  // Forgets what's only needed to replay events from before an instant: streamed text, and the Desk, problems and
+  // getting started as they were, which their projections already hold as they are.
+  readonly compact: (before: string) => void;
   readonly backupTo: (filePath: string) => void;
   readonly close: () => void;
 };
@@ -275,6 +277,8 @@ type StepRow = { readonly body: string };
 
 const snapshotSize = 50;
 const compactedSetting = "compacted_through_seq";
+
+const compactedTypes = "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed')";
 
 const parseIds = (json: string): readonly string[] => JSON.parse(json) as readonly string[];
 
@@ -1157,13 +1161,13 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       });
     },
 
-    compactText: (before) => {
+    compact: (before) => {
       const { through } = database
-        .prepare("SELECT MAX(seq) AS through FROM events WHERE type = 'message.delta' AND at < ?")
+        .prepare(`SELECT MAX(seq) AS through FROM events WHERE type IN ${compactedTypes} AND at < ?`)
         .get(before) as { readonly through: number | null };
       if (through === null) return;
       transaction(() => {
-        database.prepare("DELETE FROM events WHERE type = 'message.delta' AND seq <= ?").run(through);
+        database.prepare(`DELETE FROM events WHERE type IN ${compactedTypes} AND seq <= ?`).run(through);
         const compacted = Math.max(through, compactedThrough());
         writeSetting(compactedSetting, String(compacted));
       });
