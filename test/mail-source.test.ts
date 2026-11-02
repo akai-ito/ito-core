@@ -647,17 +647,18 @@ describe("over IMAP", () => {
 
   it("files a mail into a folder of theirs, making it first, and still finds it there", async () => {
     const source = connect();
-    expect(await source.fileInto(ids.booking, "Bookings & travel")).toEqual({ ok: true, value: undefined });
+    expect(await source.fileInto(ids.booking, "Bookings & travel")).toEqual({ ok: true, value: { origin: "INBOX" } });
     const filed = await source.read(ids.booking);
     expect(filed.ok ? filed.value.folder : filed.failure).toBe("Bookings & travel");
     const found = await source.search({ from: "noreply@stays.example" });
     expect(found.ok ? found.value.mails.map(({ messageId }) => messageId) : found.failure).toEqual([ids.booking]);
-    expect(await source.fileInto(ids.newsletter, "receipts")).toEqual({ ok: true, value: undefined });
+    expect(await source.fileInto(ids.newsletter, "receipts")).toEqual({ ok: true, value: { origin: "INBOX" } });
     const moved = await source.read(ids.newsletter);
     expect(moved.ok ? moved.value.folder : moved.failure).toBe("Receipts");
     expect(await source.file(ids.booking, "inbox")).toEqual({ ok: true, value: undefined });
     const back = await source.read(ids.booking);
     expect(back.ok ? back.value.folder : back.failure).toBe("INBOX");
+    expect(await source.fileInto(ids.start, "Receipts")).toEqual({ ok: true, value: { origin: "Archive" } });
     expect(await source.fileInto("missing@example.com", "Receipts")).toEqual(gone);
   });
 
@@ -709,7 +710,12 @@ describe("over IMAP", () => {
       await source.fileInto("arrival-41@studio.example", "Trips/Bookings"),
     ];
 
-    expect([...atOnce, ...renamed]).toEqual(Array.from({ length: 4 }, () => ({ ok: true, value: undefined })));
+    expect([...atOnce, ...renamed]).toEqual([
+      { ok: true, value: { origin: "INBOX" } },
+      { ok: true, value: { origin: "INBOX" } },
+      { ok: true, value: { origin: "INBOX" } },
+      { ok: true, value: { origin: "Receipts" } },
+    ]);
     const folders = await Promise.all(
       [ids.booking, ids.newsletter, ids.reply, "arrival-41@studio.example"].map(async (id) => {
         const read = await source.read(id);

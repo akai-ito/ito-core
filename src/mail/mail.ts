@@ -107,7 +107,15 @@ type Config = { readonly account: Account; readonly user: string; readonly auth:
 
 type Connection = Config & { readonly source: MailSource; readonly stop: () => void };
 
-type FiledUndo = { readonly kind: "mail_filed"; readonly account: string; readonly id: string; readonly back: Filing };
+// Undo for a mail Kumo filed: it goes back to the folder it came from, such as the archive, or with no folder, as
+// undos kept before folders were, to the inbox.
+type FiledUndo = {
+  readonly kind: "mail_filed";
+  readonly account: string;
+  readonly id: string;
+  readonly back: Filing;
+  readonly folder?: string;
+};
 
 type BlockedUndo = { readonly kind: "mail_blocked"; readonly sender: string };
 
@@ -289,9 +297,6 @@ const toSentMark = (text: string | undefined): SentMark | undefined => {
 
 const isFiledUndo = (payload: unknown): payload is FiledUndo => fieldOf(payload, "kind") === "mail_filed";
 
-// Undo for a mail Kumo filed, which brings it back to the inbox.
-const backToInbox = (account: string, id: string): FiledUndo => ({ kind: "mail_filed", account, id, back: "inbox" });
-
 const isBlockedUndo = (payload: unknown): payload is BlockedUndo => fieldOf(payload, "kind") === "mail_blocked";
 
 const parsedList = (text: string | undefined): readonly unknown[] => {
@@ -391,6 +396,14 @@ const listed = (names: readonly string[], most = names.length): string => {
 const isInbox = (folder: string): boolean => folder.toUpperCase() === "INBOX";
 
 const folderName = (folder: string): string => (isInbox(folder) ? "Inbox" : folder);
+
+const backTo = (account: string, id: string, origin: string): FiledUndo => ({
+  kind: "mail_filed",
+  account,
+  id,
+  back: "inbox",
+  ...(!isInbox(origin) && { folder: origin }),
+});
 
 const placesOf = (searched: readonly string[], isEverywhere: boolean): string =>
   isEverywhere ? "all their mail" : listed(searched.map(folderName), 2);
@@ -609,7 +622,7 @@ export const createMailbox = ({
       ...(reason !== "" && { reason }),
       mail: reference,
       quiet: false,
-      undo: backToInbox(account, reference.message_id),
+      undo: backTo(account, reference.message_id, filed.value.origin),
     });
     return ok(undefined);
   };
@@ -667,7 +680,7 @@ export const createMailbox = ({
       ...(reason !== "" && { reason }),
       mail: mailReference(account, mail),
       quiet: false,
-      undo: backToInbox(account, mail.messageId),
+      undo: backTo(account, mail.messageId, mail.folder),
     });
   };
 
@@ -810,7 +823,7 @@ export const createMailbox = ({
       reason: "A blocked sender",
       mail: mailReference(account, mail),
       quiet: true,
-      undo: backToInbox(account, mail.messageId),
+      undo: backTo(account, mail.messageId, mail.folder),
     });
     return true;
   };
@@ -1145,6 +1158,10 @@ export const createMailbox = ({
     if (!isFiledUndo(payload)) return ok(undefined);
     const connection = connectionOf(payload.account);
     if (!connection) return fail(`${payload.account} mail isn't set up any more.`);
+    if (payload.folder !== undefined) {
+      const back = await connection.source.fileInto(payload.id, payload.folder);
+      return back.ok ? ok(undefined) : back;
+    }
     if (payload.back === "inbox") markRestored([payload.id]);
     return connection.source.file(payload.id, payload.back);
   });
@@ -1801,7 +1818,7 @@ export const createMailbox = ({
         properties: {
           account: accountField,
           message_id: { type: "string" },
-          to: { enum: ["folder", "archive", "bin", "inbox", "flag", "unflag"] },
+          to: { type: "string", enum: ["folder", "archive", "bin", "inbox", "flag", "unflag"] },
           folder: { type: "string", description: "With to folder: which of their folders, such as Bookings & travel." },
           new_folder: { type: "boolean", description: "Make the folder first, only when they've asked for a new one." },
           reason: { type: "string", description: "Why, in a line, for their Done list." },

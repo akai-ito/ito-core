@@ -97,8 +97,9 @@ export type MailSource = {
   readonly draft: (draft: Draft) => Promise<Result<{ readonly messageId: string }, string>>;
   readonly removeDraft: (messageId: string) => Promise<Result<undefined, string>>;
   readonly file: (messageId: string, filing: Filing) => Promise<Result<undefined, string>>;
-  // Moves a mail into the folder of that name, making the folder first when the account hasn't one.
-  readonly fileInto: (messageId: string, folder: string) => Promise<Result<undefined, string>>;
+  // Moves a mail into the folder of that name, making the folder first when the account hasn't one, and gives the
+  // folder it was in, so an undo can put it back there.
+  readonly fileInto: (messageId: string, folder: string) => Promise<Result<{ readonly origin: string }, string>>;
   // Every folder in the account, with how many mails each holds.
   readonly folders: () => Promise<Result<readonly FolderCount[], string>>;
   // Picks out mails to move together: by Message-ID, or everything a search finds, however many.
@@ -1013,7 +1014,9 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       if (!place.ok) return place;
       if (place.value === undefined) return fail(gone);
       const target = await ensureFolder(opened, folder);
-      return target.ok ? moveOne(opened, place.value, target.value, folder) : target;
+      if (!target.ok) return target;
+      const moved = await moveOne(opened, place.value, target.value, folder);
+      return moved.ok ? ok({ origin: place.value.folder }) : moved;
     });
 
   const folders: MailSource["folders"] = () =>
