@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createContactsSource, isConflict, type AddressBook, type ContactsSource } from "#contacts/carddav.ts";
-import { applyChange, factsOf, newVCard, parseVCard, writeVCard, type VCard } from "#contacts/vcard.ts";
+import { applyChange, factsOf, mergeCards, newVCard, parseVCard, writeVCard, type VCard } from "#contacts/vcard.ts";
 import { createCell } from "#cell.ts";
 import type { Result } from "#result.ts";
 import { claraCard, leoCard, photo } from "./support/contact-cards.ts";
@@ -100,6 +100,33 @@ describe("vCards", () => {
       { value: "+44 7700 900123", label: "mobile", preferred: true },
       { value: "+44 7700 900999", label: "work" },
     ]);
+  });
+
+  it("merges another card's lines the kept one lacks, but never its identity, a second photo or a repeat", () => {
+    const other = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      "N:Voss;Clara;;;",
+      "FN:Clara Voss",
+      "X-ABShowAs:COMPANY",
+      "PHOTO;ENCODING=b;TYPE=JPEG:b3RoZXI=",
+      "item1.X-ABDATE:2019-06-20",
+      "item1.X-ABLabel:_$!<Anniversary>!$_",
+      "item2.X-ABDATE:2020-02-02",
+      "item2.X-ABLabel:first day at Northwind",
+      "UID:CLARA-OLD",
+      "END:VCARD",
+      "",
+    ].join("\r\n");
+
+    const lines = writeVCard(mergeCards(card(claraCard), [card(other)], now)).replaceAll("\r\n ", "");
+
+    expect(lines).toContain(`${photo}\r\n`);
+    expect(lines).not.toContain("b3RoZXI=");
+    expect(lines).not.toContain("X-ABShowAs");
+    expect(lines).not.toContain("CLARA-OLD");
+    expect(lines.match(/2019-06-20/gu)).toHaveLength(1);
+    expect(lines).toContain("item6.X-ABDATE:2020-02-02\r\nitem6.X-ABLABEL:first day at Northwind\r\n");
   });
 
   it("writes a birthday and a new card the way iCloud keeps them", () => {
