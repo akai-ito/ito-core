@@ -1,3 +1,4 @@
+import { getEventListeners } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,7 +7,7 @@ import { createAttachments } from "#attachments/attachments.ts";
 import { createCell } from "#cell.ts";
 import { createCapabilityApprovals } from "#capabilities/approvals.ts";
 import { splitCommand } from "#capabilities/commands.ts";
-import type { Fetch } from "#capabilities/connect.ts";
+import { awaitToken, type Fetch } from "#capabilities/connect.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, onSetting, valuesSetting, type Host } from "#capabilities/host.ts";
 import type { Approval } from "#capabilities/manifest.ts";
@@ -305,6 +306,39 @@ describe("the agent's doors to a capability", () => {
     });
     expect(polls.get()).toEqual([5000, 10_000, 20_000]);
     expect(host.find("echo")?.values).toEqual({ token: "t-1" });
+  });
+
+  it("leaves nothing listening on a long wait for the code to be approved", async () => {
+    const clock = createVirtualClock(0);
+    const polls = createCell(0);
+    const provider: Fetch = () => {
+      const count = polls.update((current) => current + 1);
+      return Promise.resolve(Response.json(count < 15 ? { error: "authorization_pending" } : { access_token: "t-1" }));
+    };
+    const controller = new AbortController();
+    const connect = {
+      kind: "oauth_device",
+      title: "Connect",
+      deviceUrl: "https://echo.example/device",
+      tokenUrl: "https://echo.example/token",
+      clientId: "echo-app",
+    } as const;
+    const device = {
+      code: "ABCD",
+      url: "https://echo.example/go",
+      expiresAt: 900_000,
+      deviceCode: "d-1",
+      intervalMs: 5000,
+    };
+
+    const waiting = awaitToken(connect, device, provider, clock, controller.signal);
+    await vi.waitFor(() => {
+      clock.runNext(Number.MAX_SAFE_INTEGER);
+      expect(polls.get()).toBe(15);
+    });
+
+    expect(await waiting).toEqual({ ok: true, value: "t-1" });
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
   });
 
   it("starts over with a new code, and saves nothing when you decline", async () => {

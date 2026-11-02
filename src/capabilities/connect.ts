@@ -1,4 +1,5 @@
-import type { Clock } from "#clock.ts";
+import { createCell } from "#cell.ts";
+import type { Cancel, Clock } from "#clock.ts";
 import type { DeviceConnect } from "#capabilities/manifest.ts";
 import { fail, ok, type Result } from "#result.ts";
 
@@ -155,16 +156,24 @@ export const toPoll = (answer: Answer, intervalMs: number): Poll => {
   }
 };
 
+// Waits, or stops waiting once aborted, and leaves nothing listening either way.
 const sleep = (clock: Clock, delayMs: number, signal: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
-    const cancel = clock.after(delayMs, resolve);
-    signal.addEventListener(
-      "abort",
-      () => {
-        cancel();
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const timer = createCell<Cancel | undefined>(undefined);
+    const onAbort = (): void => {
+      timer.get()?.();
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    timer.set(
+      clock.after(delayMs, () => {
+        signal.removeEventListener("abort", onAbort);
         resolve();
-      },
-      { once: true },
+      }),
     );
   });
 
