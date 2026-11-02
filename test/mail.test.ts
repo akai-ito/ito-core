@@ -2,7 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
 import type { Values } from "#capabilities/manifest.ts";
-import type { DeskKeeper, NewCard, NewDone, Undoer } from "#desk/desk.ts";
+import type { CardAnswer, CardHandler, DeskKeeper, NewCard, NewDone, Undoer } from "#desk/desk.ts";
 import type { Mail, MailSource } from "#mail/imap.ts";
 import { createMailbox, type Mailbox } from "#mail/mail.ts";
 import type { CalendarItem, Card, DoneEntry } from "#protocol/types.ts";
@@ -22,6 +22,8 @@ type Box = {
   readonly addDraftCard: (card: NewCard, at: string) => Card;
   readonly addCard: (card: NewCard) => Card;
   readonly runSentCheck: () => Promise<void>;
+  // Answers a card as the Desk would, through the handler for its kind, and gives what takes its place.
+  readonly answer: (card: Card, answer: CardAnswer) => Promise<NewCard | undefined>;
 };
 
 type Act = (prompt: string, tools: readonly Tool[]) => Promise<void>;
@@ -91,6 +93,7 @@ const openBox = (
   const done = createCell<readonly (DoneEntry & { readonly payload?: unknown })[]>([]);
   const cards = createCell<readonly Card[]>([]);
   const undoers = createCell<readonly Undoer[]>([]);
+  const kinds = createCell<ReadonlyMap<string, CardHandler>>(new Map());
   const prompts = createCell<readonly string[]>([]);
   const results = createCell(works);
   const addCard = (card: NewCard, at = new Date(clock.now()).toISOString()): Card => {
@@ -107,7 +110,9 @@ const openBox = (
     replaceCard: (id: string, card: NewCard) => {
       cards.update((current) => current.map((waiting) => (waiting.id === id ? { ...waiting, ...card } : waiting)));
     },
-    handle: ignore,
+    handle: (kind: string, handler: CardHandler) => {
+      kinds.update((current) => new Map([...current, [kind, handler]]));
+    },
     onUndo: (undoer: Undoer) => {
       undoers.update((current) => [...current, undoer]);
     },
@@ -165,6 +170,11 @@ const openBox = (
     runSentCheck: async () => {
       clock.runNext(clock.now() + 60_000);
       await delay(50);
+    },
+    answer: async (card, answer) => {
+      const handler = kinds.get().get(card.kind);
+      if (!handler) throw new Error(`Nothing handles a ${card.kind} card.`);
+      return handler(card, answer);
     },
   };
 };
@@ -472,6 +482,57 @@ describe("the mailbox", () => {
 
     expect(moved?.text).toBe("Filed it: inbox.");
     expect(box.done()).toEqual([]);
+    await box.mailbox.close();
+  });
+
+  it("says so in Done when a redraft they asked for or Drop it fails, and keeps the draft as it was", async () => {
+    const box = openBox("work");
+    const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");
+    box.mail.keep("INBOX", booking);
+    await draftTool?.call({ reply_to: booking.message_id, body: "Could you leave the keys?" });
+    const [card] = box.cards();
+    if (!card) throw new Error("No draft was made.");
+    box.mail.refuseDraftRemoval();
+
+    // The model gives back no rewrite.
+    const redrafted = await box.answer(card, { text: "Make it warmer" });
+    await box.answer(card, { option: "Drop it" });
+
+    expect(redrafted).toMatchObject({ title: card.title, draft: { body: "Could you leave the keys?" } });
+    expect(box.done()).toMatchObject([
+      {
+        text: "Couldn't redraft “Draft to Hotel Orto”; it's back on your Desk as it was",
+        reason: "The rewrite came back empty.",
+      },
+      {
+        text: "Couldn't take “Draft to Hotel Orto” out of your Drafts",
+        reason: "Mail couldn't finish removing the draft: Connection not available",
+      },
+    ]);
+    await box.mailbox.close();
+  });
+
+  it("drafts nothing when their signature can't be read, rather than leave it off unsaid", async () => {
+    const box = openBox("work");
+    const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");
+    box.mail.keep("INBOX", booking);
+    box.mail.breakSentBodies(true);
+
+    const signed = await draftTool?.call({ reply_to: booking.message_id, body: "Could you leave the keys?" });
+    const unsigned = await draftTool?.call({
+      reply_to: booking.message_id,
+      body: "Could you leave the keys?",
+      signature: false,
+    });
+
+    expect(signed).toEqual({
+      text:
+        "Their signature couldn't be read from their sent mail: Mail couldn't finish reading sent mail: Connection " +
+        "not available. Try again, or give --no-signature if they'd rather it went unsigned.",
+      isError: true,
+    });
+    expect(unsigned?.isError).toBeUndefined();
+    expect(box.mail.drafts()).toHaveLength(1);
     await box.mailbox.close();
   });
 });

@@ -257,6 +257,25 @@ describe("an inbox of only what needs you", () => {
     await box.mailbox.close();
   });
 
+  it("says so in Done when unsubscribing they asked for fails", async () => {
+    const box = openInbox({ decision: "promotion" });
+    box.mail.send("icloud", toHelpDesk);
+    box.mail.arrive(promo);
+    await settled(() => {
+      expect(box.cards()).toHaveLength(1);
+    });
+    box.mail.refuseUnsubscribes();
+
+    await box.answer("Unsubscribe from Pizza Place?", { option: "Unsubscribe" });
+
+    expect(box.done().at(-1)).toMatchObject({
+      text: "Couldn't unsubscribe from deals@mail.pizza.example",
+      reason: "This list only unsubscribes on its web page: https://mail.pizza.example/leave",
+      quiet: false,
+    });
+    await box.mailbox.close();
+  });
+
   it("stays subscribed when they say so, and doesn't ask about that sender again", async () => {
     const box = openInbox({ decision: "promotion" });
     box.mail.send("icloud", toHelpDesk);

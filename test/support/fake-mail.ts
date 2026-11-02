@@ -36,6 +36,9 @@ export type FakeMail = {
   readonly breakReading: () => void;
   // The next batch move stops after this many mails, as when the connection drops partway.
   readonly stopMovesAfter: (count: number) => void;
+  // Unsubscribing and removing drafts fail from now on, as when a list has only a web page or the server drops.
+  readonly refuseUnsubscribes: () => void;
+  readonly refuseDraftRemoval: () => void;
   readonly dropSent: (times: number) => void;
   readonly health: (account: string, health: Health) => void;
 };
@@ -81,6 +84,8 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const bodies = createCell<ReadonlyMap<string, readonly SentBody[]>>(new Map());
   const isSentBroken = createCell(false);
   const moveLimit = createCell<number | undefined>(undefined);
+  const isUnsubscribeRefused = createCell(false);
+  const isRemovalRefused = createCell(false);
   const healthListeners = createCell<ReadonlyMap<string, (health: Health) => void>>(new Map());
 
   const boxOf = (account: string): Box => boxes.get().get(account) ?? { inbox: [], watchers: new Set() };
@@ -203,6 +208,9 @@ export const createFakeMail = (now: () => string): FakeMail => {
       return Promise.resolve(ok({ messageId: next }));
     },
     removeDraft: (messageId) => {
+      if (isRemovalRefused.get()) {
+        return Promise.resolve(fail("Mail couldn't finish removing the draft: Connection not available"));
+      }
       removed.update((all) => [...all, messageId]);
       return Promise.resolve(ok(undefined));
     },
@@ -213,6 +221,9 @@ export const createFakeMail = (now: () => string): FakeMail => {
         ok((sentMail.get().get(account) ?? []).some((mail) => mail.to.some((to) => has(to.address, address)))),
       ),
     unsubscribe: (mail) => {
+      if (isUnsubscribeRefused.get()) {
+        return Promise.resolve(fail("This list only unsubscribes on its web page: https://mail.pizza.example/leave"));
+      }
       unsubscribes.update((all) => [...all, mail.messageId]);
       return Promise.resolve(ok("posted" as const));
     },
@@ -279,6 +290,12 @@ export const createFakeMail = (now: () => string): FakeMail => {
     },
     stopMovesAfter: (count) => {
       moveLimit.set(count);
+    },
+    refuseUnsubscribes: () => {
+      isUnsubscribeRefused.set(true);
+    },
+    refuseDraftRemoval: () => {
+      isRemovalRefused.set(true);
     },
     dropSent: (times) => {
       sentDrops.set(times);

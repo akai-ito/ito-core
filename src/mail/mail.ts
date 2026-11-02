@@ -887,12 +887,13 @@ export const createMailbox = ({
     });
   };
 
-  const unsubscribeNow = async ({ account, source }: Connection, mail: Mail, reason: string): Promise<void> => {
+  const unsubscribeNow = async (
+    { account, source }: Connection,
+    mail: Mail,
+    reason: string,
+  ): Promise<Result<undefined, string>> => {
     const done = await source.unsubscribe(mail);
-    if (!done.ok) {
-      info("A list couldn't be unsubscribed from", { error: done.failure });
-      return;
-    }
+    if (!done.ok) return done;
     remember(unsubscribedSetting, mail.from.address.toLowerCase());
     desk.addDone({
       text: `Unsubscribed from ${senderOf(mail)}`,
@@ -900,6 +901,7 @@ export const createMailbox = ({
       mail: mailReference(account, mail),
       quiet: false,
     });
+    return ok(undefined);
   };
 
   const answerAsk = async (card: { readonly id: string }, given: CardAnswer): Promise<undefined> => {
@@ -911,9 +913,11 @@ export const createMailbox = ({
       return undefined;
     }
     const connection = connectionOf(ask.account);
-    const read = connection ? await connection.source.read(ask.message_id) : fail("Its mail isn't set up any more.");
-    if (connection && read.ok) await unsubscribeNow(connection, read.value, "You asked");
-    else info("A list couldn't be unsubscribed from", { error: read.ok ? "no mail" : read.failure });
+    const read = connection
+      ? await connection.source.read(ask.message_id)
+      : fail(`${ask.account} mail isn't set up any more.`);
+    const done = connection && read.ok ? await unsubscribeNow(connection, read.value, "You asked") : read;
+    if (!done.ok) desk.addDone({ text: `Couldn't unsubscribe from ${ask.sender}`, reason: done.failure, quiet: false });
     return undefined;
   };
 
@@ -949,8 +953,12 @@ export const createMailbox = ({
       info("Sent mail couldn't be checked, so Kumo stays subscribed", { error: written.failure });
       return;
     }
-    if (written.value) askToUnsubscribe(connection.account, mail, sender);
-    else await unsubscribeNow(connection, mail, "Promotions from a sender you've never written to");
+    if (written.value) {
+      askToUnsubscribe(connection.account, mail, sender);
+      return;
+    }
+    const done = await unsubscribeNow(connection, mail, "Promotions from a sender you've never written to");
+    if (!done.ok) info("A list couldn't be unsubscribed from", { error: done.failure });
   };
 
   const keep = async (connection: Connection, mail: Mail, judged: Judgement): Promise<void> => {
@@ -1202,27 +1210,32 @@ export const createMailbox = ({
     store.setSetting(draftPartsSetting, JSON.stringify(Object.fromEntries(kept)));
   };
 
-  // Their signature for an account, learned from what they sent lately and kept for a day. Without one, none.
-  const signatureOf = async ({ account, user, source }: Connection): Promise<Signature | undefined> => {
+  // Their signature for an account, learned from what they sent lately and kept for a day; undefined when their
+  // mail has none. When it can't be learned, the one learned before stands, and with none before, it fails.
+  const signatureOf = async ({ account, user, source }: Connection): Promise<Result<Signature | undefined, string>> => {
     const key = `${signatureSetting}:${account}:${user}`;
     const saved = toStored(store.setting(key));
     // Learned again once a day, so a new signature is picked up within the day.
-    if (saved && clock.now() - Date.parse(saved.learned_at) < dayMs) return fromStoredSignature(saved);
+    if (saved && clock.now() - Date.parse(saved.learned_at) < dayMs) return ok(fromStoredSignature(saved));
     const bodies = await source.sentBodies(signatureSample);
     if (!bodies.ok) {
-      info("Sent mail couldn't be read for the signature, so Kumo uses the one it knew", { error: bodies.failure });
-      return saved && fromStoredSignature(saved);
+      info("Sent mail couldn't be read for the signature", { error: bodies.failure, known: saved !== undefined });
+      return saved
+        ? ok(fromStoredSignature(saved))
+        : fail(`Their signature couldn't be read from their sent mail: ${bodies.failure}`);
     }
     const learned = learnSignature(bodies.value);
     const stored = toStoredSignature(toTimestamp(clock.now()), learned);
     store.setSetting(key, JSON.stringify(stored));
-    return learned;
+    return ok(learned);
   };
 
-  const rewrite = async (card: Card, change: string): Promise<NewCard | undefined> => {
+  // The draft rewritten as they asked on the Desk, saved in place of the one in Drafts, or why it couldn't be.
+  const rewrite = async (card: Card, change: string): Promise<Result<NewCard, string>> => {
     const { draft } = card;
-    const connection = draft ? connectionOf(draft.account) : undefined;
-    if (!draft || !connection) return toNewCard(card);
+    if (!draft) return fail("There's no draft on the card.");
+    const connection = connectionOf(draft.account);
+    if (!connection) return fail(`${draft.account} mail isn't set up any more.`);
     const answered = await complete(
       [
         "Rewrite this draft reply as asked, in the person's own voice. Keep what's right; change only what's asked.",
@@ -1235,23 +1248,20 @@ export const createMailbox = ({
       ].join("\n"),
       rewriteSchema,
     );
-    const body = answered.ok ? textOf(answered.value, "body").trim() : "";
-    if (body === "") {
-      info("A draft couldn't be rewritten", { error: answered.ok ? "an empty draft" : answered.failure });
-      return toNewCard(card);
-    }
+    if (!answered.ok) return answered;
+    const body = textOf(answered.value, "body").trim();
+    if (body === "") return fail("The rewrite came back empty.");
     const parts = partsOf(card.id) ?? { attach: [], signature: draft.signature !== undefined };
-    const signature = parts.signature ? await signatureOf(connection) : undefined;
+    const signed = parts.signature ? await signatureOf(connection) : ok(undefined);
+    if (!signed.ok) return signed;
+    const signature = signed.value;
     const letter = await composeLetter({
       markdown: body,
       attach: parts.attach,
       find: findPart,
       ...(signature && { signature }),
     });
-    if (!letter.ok) {
-      info("A rewritten draft couldn't be put together", { error: letter.failure });
-      return toNewCard(card);
-    }
+    if (!letter.ok) return letter;
     const saved = await connection.source.draft({
       from: toAddress(draft.from),
       to: draft.to.map((address) => toAddress(address)),
@@ -1264,14 +1274,11 @@ export const createMailbox = ({
       ...(draft.in_reply_to !== undefined && { inReplyTo: draft.in_reply_to }),
       replaces: draft.message_id,
     });
-    if (!saved.ok) {
-      info("A rewritten draft couldn't be saved", { error: saved.failure });
-      return toNewCard(card);
-    }
+    if (!saved.ok) return saved;
     const { kind, title, options, allows_text: allowsText } = card;
     const { account, from, to, cc, subject, in_reply_to: inReplyTo } = draft;
     const attachments = attachmentsOf(letter.value, signature);
-    return {
+    return ok({
       kind,
       title,
       options,
@@ -1288,20 +1295,38 @@ export const createMailbox = ({
         ...(signature && { signature: signature.text }),
         ...(attachments.length > 0 && { attachments: [...attachments] }),
       },
-    };
+    });
   };
 
   for (const ask of asks()) {
     if (desk.cards().some((card) => card.id === ask.card)) desk.handleCard(ask.card, answerAsk);
   }
 
+  // A change they ask for rewrites the draft; Drop it takes it out of Drafts. Either one that fails says so in Done.
   desk.handle("draft", async (card, answer) => {
-    if (answer.text !== undefined) return rewrite(card, answer.text);
+    if (answer.text !== undefined) {
+      const rewritten = await rewrite(card, answer.text);
+      if (rewritten.ok) return rewritten.value;
+      desk.addDone({
+        text: `Couldn't redraft “${card.title}”; it's back on your Desk as it was`,
+        reason: rewritten.failure,
+        quiet: false,
+      });
+      return toNewCard(card);
+    }
     const { draft } = card;
-    const connection = draft ? connectionOf(draft.account) : undefined;
-    if (draft && connection && answer.option === "Drop it") {
-      const removed = await connection.source.removeDraft(draft.message_id);
-      if (!removed.ok) info("A draft couldn't be removed", { error: removed.failure });
+    if (draft && answer.option === "Drop it") {
+      const connection = connectionOf(draft.account);
+      const removed = connection
+        ? await connection.source.removeDraft(draft.message_id)
+        : fail(`${draft.account} mail isn't set up any more.`);
+      if (!removed.ok) {
+        desk.addDone({
+          text: `Couldn't take “${card.title}” out of your Drafts`,
+          reason: removed.failure,
+          quiet: false,
+        });
+      }
       forgetParts(card.id);
     }
     return;
@@ -1824,7 +1849,13 @@ export const createMailbox = ({
             attach: Array.isArray(givenAttach) ? listOf(givenAttach) : earlierParts.attach,
             signature: typeof givenSignature === "boolean" ? givenSignature : earlierParts.signature,
           };
-          const signature = parts.signature ? await signatureOf(connection) : undefined;
+          const learned = parts.signature ? await signatureOf(connection) : ok(undefined);
+          if (!learned.ok) {
+            return failed(
+              `${withStop(learned.failure)} Try again, or give --no-signature if they'd rather it went unsigned.`,
+            );
+          }
+          const signature = learned.value;
           const letter = await composeLetter({
             markdown: body,
             attach: parts.attach,
