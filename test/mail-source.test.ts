@@ -5,7 +5,7 @@ import path from "node:path";
 import { simpleParser } from "mailparser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCell } from "#cell.ts";
-import { backoffMs, createMailSource, toUidSet, type MailSource } from "#mail/imap.ts";
+import { backoffMs, createMailSource, toUidSet, type MailSource, type SavedWatermark } from "#mail/imap.ts";
 import {
   groupThreads,
   parseMail,
@@ -127,6 +127,12 @@ const arrival = (count: number): string =>
   );
 
 const byText = (left: string, right: string): number => left.localeCompare(right);
+
+// Handling a mail that never ends, as when the server stops while Kumo is still at it.
+const stillHandling = (): Promise<void> =>
+  new Promise(() => {
+    // Never settles.
+  });
 
 const refuseToMail = (): Promise<never> => Promise.reject(new Error("Nothing should be mailed."));
 
@@ -846,6 +852,7 @@ describe("over IMAP", () => {
     const idling = (): boolean => [...running().connections].some((connection) => connection.directNotifications);
     const stop = source.watch((mail) => {
       arrived.update((current) => [...current, mail.messageId]);
+      return Promise.resolve();
     });
     await vi.waitFor(() => {
       expect(idling()).toBe(true);
@@ -867,5 +874,53 @@ describe("over IMAP", () => {
     running().appendMessage("INBOX", [], new Date(), arrival(3));
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(arrived.get()).toHaveLength(2);
+  });
+
+  it("keeps the watermark before mail still being handled, so a restart reads it again", async () => {
+    const marks = createCell<readonly SavedWatermark[]>([]);
+    const watcher = (watermark?: SavedWatermark): MailSource => {
+      const source = createMailSource({
+        account: "icloud",
+        user: "sam@example.com",
+        auth: { password: "app-password" },
+        imap: { host: "127.0.0.1", port: running().address().port, secure: false },
+        ...(watermark && { watermark }),
+        onWatermark: (mark) => {
+          marks.update((current) => [...current, mark]);
+        },
+      });
+      opened.set(source);
+      return source;
+    };
+    const arrived = createCell<readonly string[]>([]);
+    const idling = (): boolean => [...running().connections].some((connection) => connection.directNotifications);
+    const first = watcher();
+    // The first new mail is handled at once; Kumo is still busy with the second when the server stops.
+    const stop = first.watch((mail) => {
+      arrived.update((current) => [...current, mail.messageId]);
+      return mail.messageId === "arrival-1@studio.example" ? Promise.resolve() : stillHandling();
+    });
+    await vi.waitFor(() => {
+      expect(idling()).toBe(true);
+    });
+    running().appendMessage("INBOX", [], new Date(), arrival(1));
+    running().appendMessage("INBOX", [], new Date(), arrival(2));
+    await vi.waitFor(() => {
+      expect(arrived.get()).toEqual(["arrival-1@studio.example", "arrival-2@studio.example"]);
+      expect(marks.get().at(-1)?.next).toBe(5);
+    });
+    stop();
+    await first.close();
+
+    const again = createCell<readonly string[]>([]);
+    const restarted = watcher(marks.get().at(-1));
+    const stopAgain = restarted.watch((mail) => {
+      again.update((current) => [...current, mail.messageId]);
+      return Promise.resolve();
+    });
+    await vi.waitFor(() => {
+      expect(again.get()).toEqual(["arrival-2@studio.example"]);
+    });
+    stopAgain();
   });
 });

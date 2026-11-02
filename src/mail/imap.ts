@@ -78,7 +78,9 @@ export type MoveProgress = (moved: number, total: number) => void;
 export type MailSource = {
   readonly account: string;
   readonly check: () => Promise<Result<{ readonly addresses: readonly string[]; readonly folders: number }, string>>;
-  readonly watch: (onMail: (mail: Mail) => void) => () => void;
+  // Hands on each new mail in the inbox. Until what onMail gives back settles, the saved watermark stays before
+  // that mail, so one a restart cuts off is read again rather than skipped.
+  readonly watch: (onMail: (mail: Mail) => Promise<void>) => () => void;
   readonly recent: (since: string) => Promise<Result<readonly Mail[], string>>;
   readonly read: (messageId: string) => Promise<Result<Mail, string>>;
   readonly search: (query: MailQuery) => Promise<Result<MailPage, string>>;
@@ -617,9 +619,30 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     const watermark = createCell<Watermark | undefined>(
       saved === undefined ? undefined : { uidValidity: BigInt(saved.uidValidity), next: saved.next },
     );
+    // The UIDs of mails handed on and not yet handled.
+    const handling = createCell<ReadonlySet<number>>(new Set());
+    const save = (): void => {
+      const mark = watermark.get();
+      if (mark === undefined) return;
+      const next = Math.min(mark.next, ...handling.get());
+      options.onWatermark?.({ uidValidity: mark.uidValidity.toString(), next });
+    };
     const setMark = (next: Watermark): void => {
+      if (next.uidValidity !== watermark.get()?.uidValidity) handling.set(new Set());
       watermark.set(next);
-      options.onWatermark?.({ uidValidity: next.uidValidity.toString(), next: next.next });
+      save();
+    };
+    const handled = (uid: number): void => {
+      handling.update((current) => new Set([...current].filter((pending) => pending !== uid)));
+      save();
+    };
+    const handOn = async (mail: Mail): Promise<void> => {
+      try {
+        await onMail(mail);
+      } catch (error) {
+        log("A new mail's listener failed", { reason: describe(error) });
+      }
+      handled(mail.uid);
     };
     const queue = createCell<Promise<void>>(Promise.resolve());
 
@@ -637,15 +660,12 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       if (mark === undefined || isStopped.get()) return;
       const mails = await fetchMails(client, inboxPath, `${String(mark.next)}:*`);
       const arrived = mails.filter((mail) => mail.uid >= mark.next).toSorted((left, right) => left.uid - right.uid);
+      handling.update((current) => new Set([...current, ...arrived.map(({ uid }) => uid)]));
       const last = arrived.at(-1);
       if (last !== undefined) setMark({ ...mark, next: last.uid + 1 });
       for (const mail of arrived) {
         if (isStopped.get()) return;
-        try {
-          onMail(mail);
-        } catch (error) {
-          log("A new mail's listener failed", { reason: describe(error) });
-        }
+        void handOn(mail);
       }
     };
 
