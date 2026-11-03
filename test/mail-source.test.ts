@@ -153,6 +153,21 @@ const selfCopy = wire(
   ].join("\n"),
 );
 
+// A mail they sent, from an address of theirs, such as an alias.
+const sentFrom = (from: string, to: string, count: number): string =>
+  wire(
+    [
+      `From: ${from}`,
+      `To: ${to}`,
+      `Subject: Note ${String(count)}`,
+      `Date: Fri, 31 Oct 2026 1${String(count)}:00:00 +0000`,
+      `Message-ID: <sent-${String(count)}@sam.example>`,
+      "",
+      "A note.",
+      "",
+    ].join("\n"),
+  );
+
 const byText = (left: string, right: string): number => left.localeCompare(right);
 
 // Handling a mail that never ends, as when the server stops while Kumo is still at it.
@@ -580,8 +595,37 @@ describe("over IMAP", () => {
     }
   });
 
-  it("logs in, counts the folders and learns the addresses used to send", async () => {
-    expect(await connect().check()).toEqual({ ok: true, value: { addresses: ["sam@example.com"], folders: 7 } });
+  it("logs in, counts the folders and learns the addresses they send from, with their names", async () => {
+    running().appendMessage(
+      "Sent Messages",
+      ["\\Seen"],
+      new Date("2026-10-31T11:00:00Z"),
+      sentFrom("Sam R <Hello@Sam.example>", "Tess Harlow <tess.harlow@halcyon.example>", 1),
+    );
+
+    expect(await connect().check()).toEqual({
+      ok: true,
+      value: {
+        senders: [
+          { address: "sam@example.com", name: "Sam Rivera" },
+          { address: "hello@sam.example", name: "Sam R" },
+        ],
+        folders: 7,
+      },
+    });
+  });
+
+  it("knows the address they last wrote to someone from, and only to that very address", async () => {
+    const toTess = sentFrom("Sam R <hello@sam.example>", "Tess Harlow <tess.harlow@halcyon.example>", 1);
+    const toOldTess = sentFrom("Sam Rivera <sam@example.com>", "Old Tess <old.tess.harlow@halcyon.example>", 2);
+    running().appendMessage("Sent Messages", ["\\Seen"], new Date("2026-10-31T11:00:00Z"), toTess);
+    running().appendMessage("Sent Messages", ["\\Seen"], new Date("2026-10-31T12:00:00Z"), toOldTess);
+    const source = connect();
+
+    expect(await source.lastFrom("Tess.Harlow@halcyon.example")).toEqual({ ok: true, value: "hello@sam.example" });
+    expect(await source.lastFrom("lena@studio.example")).toEqual({ ok: true, value: "sam@example.com" });
+    expect(await source.lastFrom("nobody@halcyon.example")).toEqual({ ok: true, value: undefined });
+    expect(await source.senders()).toMatchObject({ ok: true, value: [{ address: "sam@example.com" }, {}] });
   });
 
   it("says a refused sign-in is one, and a good one that it's fine, for the server's problems", async () => {

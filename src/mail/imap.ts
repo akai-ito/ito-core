@@ -10,13 +10,16 @@ import {
 import { createCell } from "#cell.ts";
 import { systemClock, type Cancel } from "#clock.ts";
 import {
+  addressKey,
   fromSyntheticMessageId,
   parseMail,
   parseSentBody,
+  rankSenders,
   threadIds,
   threadOf,
   toDraftMime,
   uniqueByMessageId,
+  type Address,
   type Draft,
   type Mail,
   type SentBody,
@@ -86,7 +89,7 @@ export type MoveProgress = (moved: number, total: number) => void;
 
 export type MailSource = {
   readonly account: string;
-  readonly check: () => Promise<Result<{ readonly addresses: readonly string[]; readonly folders: number }, string>>;
+  readonly check: () => Promise<Result<{ readonly senders: readonly Address[]; readonly folders: number }, string>>;
   // Hands on each new mail in the inbox. Until what onMail gives back settles, the saved watermark stays before
   // that mail, so one a restart cuts off is read again rather than skipped.
   readonly watch: (onMail: (mail: Mail) => Promise<void>) => () => void;
@@ -112,6 +115,11 @@ export type MailSource = {
   ) => Promise<Result<MovedBatch, string>>;
   // Whether they've ever written to an address, or to anyone at a domain.
   readonly hasWritten: (address: string) => Promise<Result<boolean, string>>;
+  // The addresses they send from, the most used first, each with the name they send under, from their last mails in
+  // Sent: their aliases too, once they've sent from them.
+  readonly senders: () => Promise<Result<readonly Address[], string>>;
+  // The address they last wrote to someone from, from Sent, or undefined when they never have.
+  readonly lastFrom: (address: string) => Promise<Result<string | undefined, string>>;
   readonly unsubscribe: (mail: Mail) => Promise<Result<"posted" | "mailed", string>>;
   readonly sent: (since: string) => Promise<Result<readonly Mail[], string>>;
   // The last few mails in Sent, whole, newest first, for learning their signature.
@@ -166,7 +174,10 @@ const mostPerPage = 50;
 // UIDs per MOVE, and Message-IDs per search, so no command grows past what servers accept.
 const moveChunkSize = 250;
 const idChunk = 25;
-const addressSample = 50;
+const addressSample = 200;
+// How many of their latest mails to someone are looked at for one really to them, as IMAP's TO search matches part
+// of an address.
+const lastFromSample = 10;
 const idleRestartMs = 4 * 60_000;
 const firstRetryMs = 1000;
 const lastRetryMs = 5 * 60_000;
@@ -633,29 +644,31 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     }
   };
 
-  const sentAddresses = async (opened: Session): Promise<readonly string[]> => {
+  const sendersIn = async (opened: Session): Promise<readonly Address[]> => {
     const { sent } = opened.folders;
     if (sent === undefined) return [];
-    return inFolder(opened.client, sent, async () => {
+    const written = await inFolder(opened.client, sent, async () => {
       const exists = opened.client.mailbox === false ? 0 : opened.client.mailbox.exists;
       if (exists === 0) return [];
       const range = `${String(Math.max(1, exists - addressSample + 1))}:*`;
       const messages = await opened.client.fetchAll(range, { envelope: true });
-      return messages.flatMap(({ envelope }) => (envelope?.from ?? []).map(({ address = "" }) => address));
+      return messages.flatMap(({ envelope }) =>
+        (envelope?.from ?? []).map(({ address = "", name }) => ({
+          address: address.toLowerCase(),
+          ...(name !== undefined && { name }),
+        })),
+      );
     });
+    return rankSenders(written);
   };
 
   const check: MailSource["check"] = async () => {
     const previous = await sessions.get();
     if (previous?.ok === true) previous.value.client.close();
     sessions.set(openSession());
-    return run("checking the account", async (opened) => {
-      const seen = await sentAddresses(opened);
-      const addresses = [...(user.includes("@") ? [user] : []), ...seen]
-        .map((address) => address.toLowerCase())
-        .filter((address, index, all) => address.includes("@") && all.indexOf(address) === index);
-      return ok({ addresses, folders: opened.folders.count });
-    });
+    return run("checking the account", async (opened) =>
+      ok({ senders: await sendersIn(opened), folders: opened.folders.count }),
+    );
   };
 
   const watch: MailSource["watch"] = (onMail) => {
@@ -1183,6 +1196,28 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       return uids.ok ? ok(uids.value.length > 0) : uids;
     });
 
+  const senders: MailSource["senders"] = () =>
+    runReading("reading sent mail", async (opened) => ok(await sendersIn(opened)));
+
+  const lastFrom: MailSource["lastFrom"] = (address) =>
+    runReading("reading sent mail", async (opened) => {
+      const { sent } = opened.folders;
+      if (sent === undefined) return ok(undefined);
+      const wanted = addressKey(address);
+      return inFolder(opened.client, sent, async (): Promise<Result<string | undefined, string>> => {
+        const uids = await searchUids(opened.client, { or: [{ to: wanted }, { cc: wanted }] });
+        if (!uids.ok) return uids;
+        const latest = newestFirst(uids.value).slice(0, lastFromSample);
+        if (latest.length === 0) return ok(undefined);
+        const messages = await opened.client.fetchAll(toUidSet(latest), { uid: true, envelope: true }, { uid: true });
+        const isTo = ({ envelope }: FetchMessageObject): boolean =>
+          [...(envelope?.to ?? []), ...(envelope?.cc ?? [])].some((to) => addressKey(to.address ?? "") === wanted);
+        const [newest] = messages.filter((message) => isTo(message)).toSorted((left, right) => right.uid - left.uid);
+        const from = newest?.envelope?.from?.[0]?.address;
+        return ok(from === undefined ? undefined : from.toLowerCase());
+      });
+    });
+
   const sent: MailSource["sent"] = (since) =>
     runReading("reading sent mail", async (opened) => {
       const query = sinceQuery(since);
@@ -1236,6 +1271,8 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     select,
     move,
     hasWritten,
+    senders,
+    lastFrom,
     unsubscribe,
     sent,
     sentBodies,

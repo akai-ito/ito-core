@@ -16,7 +16,7 @@ import { hashToken, tokenSetting } from "#http/auth.ts";
 import { commandsPath } from "#http/tools.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { foldersSetting } from "#mail/folders.ts";
-import { toDraftMime } from "#mail/message.ts";
+import { toDraftMime, type Draft, type Mail } from "#mail/message.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import type { Card, Step } from "#protocol/types.ts";
 import { fail, ok } from "#result.ts";
@@ -60,6 +60,29 @@ const oldReceipts = Array.from({ length: 30 }, (_, index) => ({
   subject: `Receipt ${String(index + 1)}`,
   text: "Paid, thank you.",
 }));
+
+// What they sent lately: mostly from their iCloud address, and to Tess from an alias on their own domain.
+const sentLately: readonly Mail[] = [
+  ["sam@icloud.com", "clara.voss@northwind.example"],
+  ["sam@icloud.com", "mira@icloud.com"],
+  ["sam@halcyon.example", "tess.harlow@halcyon.example"],
+].map(([from = "", to = ""], index) => ({
+  account: "icloud",
+  folder: "Sent Messages",
+  uid: index + 1,
+  messageId: `sent-${String(index + 1)}@icloud.com`,
+  references: [],
+  from: { address: from, name: "Sam Rivera" },
+  to: [{ address: to }],
+  cc: [],
+  subject: "Catching up",
+  date: `2026-10-2${String(index + 1)}T09:00:00.000Z`,
+  text: "Good to hear from you.",
+  flags: [],
+}));
+
+const fromOf = async (draft: Draft | undefined): Promise<string | undefined> =>
+  draft && mimeTree(await toDraftMime(draft, "from@icloud.com", new Date())).headers.from;
 
 const jpeg = Buffer.from([255, 216, 255, 224, 0, 16, 74, 70, 73, 70]);
 
@@ -180,6 +203,7 @@ describe("mail in the conversation, through ito mail commands", () => {
     // What they sent lately, which ends with their signature.
     mail.sentWhole("icloud", { text: `Sounds good.\n\nCheers,\nSam\n\n${signature}`, images: [] });
     mail.sentWhole("icloud", { text: `Thursday works.\n\n${signature}`, images: [] });
+    for (const sent of sentLately) mail.send("icloud", sent);
     // In the inbox before the server watches it, so neither mail arrives as new.
     mail.arrive(offer);
     mail.arrive(promo);
@@ -676,5 +700,32 @@ describe("mail in the conversation, through ito mail commands", () => {
     expect(headers.to).toBe("Clara Voss <clara.voss@northwind.example>");
     expect(headers["in-reply-to"]).toBe(`<${answer}>`);
     expect(headers.references).toBe(`<${offer.message_id}> <${answer}>`);
+  });
+
+  it("writes from the address a mail went to, and to someone from the address last used with them", async () => {
+    mail.keep("INBOX", {
+      account: "icloud",
+      message_id: "deck-1@halcyon.example",
+      from: "Tess Harlow <tess.harlow@halcyon.example>",
+      to: ["Sam Rivera <sam@halcyon.example>"],
+      subject: "The Halcyon deck",
+      text: "Could you look over the deck?",
+    });
+
+    await command(["draft", "--reply-to", "deck-1@halcyon.example", "--body", "Looking now."]);
+    const reply = mail.drafts().at(-1);
+    await command(["draft", "--to", "tess.harlow@halcyon.example", "--subject", "Budget", "--body", "And the budget?"]);
+    const toTess = mail.drafts().at(-1);
+    await command(["draft", "--to", "quinn@acme.com", "--subject", "Hello", "--body", "Good to meet you."]);
+    const toSomeoneNew = mail.drafts().at(-1);
+
+    expect(await Promise.all([reply, toTess, toSomeoneNew].map(fromOf))).toEqual([
+      "Sam Rivera <sam@halcyon.example>",
+      "Sam Rivera <sam@halcyon.example>",
+      "Sam Rivera <sam@icloud.com>",
+    ]);
+    expect(drafts().find((card) => card.draft?.in_reply_to === "deck-1@halcyon.example")?.draft?.from).toBe(
+      "sam@halcyon.example",
+    );
   });
 });

@@ -551,6 +551,32 @@ describe("the mailbox", () => {
     await box.mailbox.close();
   });
 
+  it("keeps the addresses the account check learned, and drafts nothing while none can be read", async () => {
+    const box = openBox("work");
+    const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");
+    const fromAlias = { address: "divy@halcyon.example", name: "Divy Bramhecha" };
+    box.mail.send("icloud", sent("2026-11-01T09:00:00.000Z", "", "Hello", { from: fromAlias }));
+    const toTess = { to: ["tess.harlow@halcyon.example"], subject: "Hello", body: "Free on Friday?", signature: false };
+    box.mail.breakSenders(true);
+
+    const unread = await draftTool?.call(toTess);
+    box.mail.breakSenders(false);
+    const checked = await box.mailbox.check("icloud", icloud);
+    box.mail.breakSenders(true);
+    const drafted = await draftTool?.call(toTess);
+
+    expect(unread).toEqual({
+      text:
+        "Their addresses couldn't be read from their sent mail: Mail couldn't finish reading sent mail: Connection " +
+        "not available",
+      isError: true,
+    });
+    expect(checked).toEqual({ summary: "Connected: 4 mail folders." });
+    expect(drafted?.isError).toBeUndefined();
+    expect(box.mail.drafts().map(({ from }) => from)).toEqual([fromAlias]);
+    await box.mailbox.close();
+  });
+
   it("drafts nothing when their signature can't be read, rather than leave it off unsaid", async () => {
     const box = openBox("work");
     const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");
