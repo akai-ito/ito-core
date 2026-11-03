@@ -181,4 +181,61 @@ export const migrations: readonly string[] = [
     'day_planned', 'day_plan_note', 'status_focus', 'status_said', 'trust_ladder', 'trust_climb_calls',
     'trust_climb_days', 'trust_review_day', 'trust_checks', 'trust_checked'
   );`,
+  // Kumo's scheduled looks become wake-ups: a concrete time, what it's for and why, and who set it from where. One
+  // that waited on an event comes due at once, so Kumo looks and moves it; a standing job repeats on the weekday and
+  // the time it was next due, every day when it was daily.
+  `CREATE TABLE wake_ups (
+    id TEXT PRIMARY KEY,
+    at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX wake_ups_by_time ON wake_ups (at);
+  INSERT INTO wake_ups (id, at, body)
+  SELECT
+    'w_' || substr(id, 3),
+    at,
+    json_object(
+      'id', 'w_' || substr(id, 3),
+      'at', at,
+      'what', json_extract(body, '$.why'),
+      'why', CASE
+        WHEN json_extract(body, '$.standing.ask') IS NOT NULL
+          THEN 'A standing job: keep looking for ' || json_extract(body, '$.standing.ask') || '.'
+        WHEN json_extract(body, '$.after_event.title') IS NOT NULL
+          THEN 'For after ' || json_extract(body, '$.after_event.title') || ': move it to when that ends.'
+        ELSE json_extract(body, '$.why')
+      END,
+      'by', 'kumo',
+      'source', CASE
+        WHEN json_extract(body, '$.after_event.uid') IS NOT NULL THEN json_object(
+          'kind', 'calendar',
+          'title', json_extract(body, '$.after_event.title'),
+          'event', json_object('uid', json_extract(body, '$.after_event.uid'))
+        )
+        ELSE json_object('kind', 'chat', 'title', json_extract(body, '$.why'))
+      END,
+      'set_at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    )
+  FROM (
+    SELECT id, body, every_days,
+      coalesce(json_extract(body, '$.at'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) AS at
+    FROM jobs
+  );
+  UPDATE wake_ups SET body = json_set(body, '$.repeat', json_object(
+    'days', CASE
+      WHEN (SELECT every_days FROM jobs WHERE 'w_' || substr(jobs.id, 3) = wake_ups.id) = 1
+        THEN json_array('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
+      ELSE json_array(CASE strftime('%w', at)
+        WHEN '0' THEN 'sun' WHEN '1' THEN 'mon' WHEN '2' THEN 'tue' WHEN '3' THEN 'wed'
+        WHEN '4' THEN 'thu' WHEN '5' THEN 'fri' ELSE 'sat' END)
+    END,
+    'time', strftime('%H:%M', at)
+  ))
+  WHERE id IN (SELECT 'w_' || substr(id, 3) FROM jobs WHERE every_days IS NOT NULL);
+  UPDATE wake_ups SET body = json_set(body, '$.motion', (
+    SELECT json_extract(jobs.body, '$.motion') FROM jobs WHERE 'w_' || substr(jobs.id, 3) = wake_ups.id
+  ))
+  WHERE id IN (SELECT 'w_' || substr(id, 3) FROM jobs WHERE json_extract(body, '$.motion') IS NOT NULL);
+  DROP TABLE jobs;
+  UPDATE desk SET body = json_set(body, '$.plans', json('[]'));`,
 ];

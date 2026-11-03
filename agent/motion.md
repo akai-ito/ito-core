@@ -212,7 +212,7 @@ A dated event with people and prep: an appointment, a birthday, a dinner, a wedd
 - `start` and `end` are local to its time zone. A birthday is `all_day`.
 - **Prep** is what to do before, oldest first, as to-dos they tick on their phone.
 - Set `check_in` when you should ask how it went, such as after an interview or a first date, and
-  schedule that look with `schedule` for after it ends.
+  set a wake-up for when it ends with `set_wake_up`.
 - Finish it once it's past and nothing after it is left.
 
 ## Cases

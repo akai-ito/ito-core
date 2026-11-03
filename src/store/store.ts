@@ -493,7 +493,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
   const currentDesk = (): Desk => {
     const row = database.prepare("SELECT body FROM desk WHERE id = 1").get() as { readonly body: string } | undefined;
-    return row ? (JSON.parse(row.body) as Desk) : { coming_up: [], waiting: [], handled: 0 };
+    return row ? (JSON.parse(row.body) as Desk) : { plans: [], coming_up: [], waiting: [], handled: 0 };
   };
 
   return {

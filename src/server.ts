@@ -49,9 +49,10 @@ import { toSpoken } from "#desk/day.ts";
 import { createDesk } from "#desk/desk.ts";
 import { createWorkTools } from "#work/tools.ts";
 import { createCorrections } from "#work/corrections.ts";
-import { createJobs, type Jobs } from "#jobs/jobs.ts";
-import { registerJobs } from "#http/jobs.ts";
-import { createJobStore } from "#store/jobs.ts";
+import { createWakeUps, type WakeUps } from "#wakeups/wakeups.ts";
+import { registerWakeUps } from "#http/wakeups.ts";
+import { createWakeUpStore } from "#store/wakeups.ts";
+import { createCalendarChanges } from "#calendar/changes.ts";
 import { createGettingStarted } from "#onboarding/onboarding.ts";
 import { createCalendar, type Calendar } from "#calendar/calendar.ts";
 import { createCalendarSource, type CalendarSource } from "#calendar/caldav.ts";
@@ -76,6 +77,8 @@ import {
   pushDeliveryId,
   pushDeliveryProblem,
   pushProblem,
+  workId,
+  workProblem,
   type Problems,
 } from "#problems/problems.ts";
 import { createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
@@ -129,7 +132,7 @@ export type Server = {
   readonly memory: Memory;
   readonly backup: Backup;
   readonly motions: Motions;
-  readonly jobs: Jobs;
+  readonly wakeUps: WakeUps;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
   readonly calendar: Calendar;
@@ -277,7 +280,7 @@ export const createServer = (options: ServerOptions): Server => {
         nowText(),
         memory.inMindText(),
         motions.inMindText(),
-        jobs.inMindText(),
+        wakeUps.inMindText(),
         picture.inMindText(),
         gettingStarted.inMindText(),
         callContext(),
@@ -328,10 +331,12 @@ export const createServer = (options: ServerOptions): Server => {
   };
   const topics = createTopics({ store, complete: quickComplete, models: listedModels, info });
   const touchedRuns = createCell<ReadonlySet<string>>(new Set());
-  const runWork = async (prompt: string, choice?: ModelChoice): Promise<Result<string, string>> => {
+  // One piece of Kumo's work in the background, under a run of its own unless it's given one. When the model can't
+  // act, nothing stands in for it: the problem shows until a later piece of work goes through.
+  const runWork = async (prompt: string, choice?: ModelChoice, given?: string): Promise<Result<string, string>> => {
     await listening.get();
     const attempt = async (retries: number): Promise<Result<string, string>> => {
-      const run = randomUUID();
+      const run = given ?? randomUUID();
       const done = await engine.work(`${workRules}\n\n${prompt}`, run, choice);
       const isTouched = touchedRuns.get().has(run);
       touchedRuns.update((runs) => new Set([...runs].filter((other) => other !== run)));
@@ -340,20 +345,31 @@ export const createServer = (options: ServerOptions): Server => {
     };
     const done = await attempt(2);
     if (!done.ok) info("Kumo's background work didn't finish", { error: done.failure });
+    problems.report(workId, done.ok ? { ok: true } : { ok: false, reason: done.failure, isAuth: false }, workProblem);
     return done;
   };
+  // The runs Kumo messaged them in, so a wake-up can say it did.
+  const postedRuns = createCell<ReadonlySet<string>>(new Set());
   // One part of their How to help you page, such as how they like their mail sorted.
   const howToHelp = (section: string): string => {
     const page = memory.page("memory:helping-you");
     return page.ok ? sectionOf(page.value.markdown, section) : "";
   };
   const desk = createDesk({ store, identifiers, clock, timeZone, work: runWork, info });
-  const jobs = createJobs({
-    store: createJobStore(database),
+  const wakeUps = createWakeUps({
+    store: createWakeUpStore(database),
     isMotion: (id) => store.findMotion(id) !== undefined,
     clock,
+    timeZone: () => timeZone,
     identifiers,
-    work: runWork,
+    work: (prompt, run) => runWork(prompt, undefined, run),
+    postedIn: (run) => {
+      const isPosted = postedRuns.get().has(run);
+      postedRuns.update((runs) => new Set([...runs].filter((other) => other !== run)));
+      return isPosted;
+    },
+    event: (uid) => calendar.listItems().find((item) => item.uid === uid && !item.calendar.kumo),
+    desk,
     info,
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
@@ -478,8 +494,15 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     lead: () => leadOf(store),
   });
-  calendar.onEventEnded((uid) => {
-    jobs.onEventEnded(uid);
+  const calendarChanges = createCalendarChanges({
+    calendar,
+    settings: store,
+    clock,
+    timeZone: () => timeZone,
+    work: runWork,
+    wakeUps,
+    describe: wakeUps.describe,
+    info,
   });
   const gettingStarted = createGettingStarted({
     store,
@@ -514,7 +537,11 @@ export const createServer = (options: ServerOptions): Server => {
     },
   });
   const corrections = createCorrections({ store, desk, clock, work: runWork, info });
-  const post = (text: string, isUrgent: boolean): Message => store.postMessage(text, { isUrgent });
+  const post = (text: string, isUrgent: boolean): Message => {
+    const run = contextRun();
+    if (run !== undefined) postedRuns.update((runs) => new Set([...runs, run]));
+    return store.postMessage(text, { isUrgent });
+  };
 
   const app = createApp({
     store,
@@ -578,7 +605,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...calendar.tools,
     ...picture.tools,
     ...contacts.tools,
-    ...jobs.tools,
+    ...wakeUps.tools,
     ...mail.tools,
     ...gettingStarted.tools,
     ...createDemoTools({ store, desk, post, gettingStarted, identifiers, clock, timeZone }),
@@ -602,7 +629,7 @@ export const createServer = (options: ServerOptions): Server => {
   store.subscribe(({ event }) => {
     if (event.type === "turn.ended") memory.indexConversation();
   });
-  registerJobs(app, { jobs, schemas });
+  registerWakeUps(app, { wakeUps, schemas });
   registerDay(app, { picture, schemas });
   registerTools(app, {
     token: toolsToken,
@@ -629,7 +656,8 @@ export const createServer = (options: ServerOptions): Server => {
     motions.close();
     topics.close();
     desk.close();
-    jobs.close();
+    wakeUps.close();
+    calendarChanges.close();
     gettingStarted.close();
     calendar.close();
     contacts.close();
@@ -656,7 +684,7 @@ export const createServer = (options: ServerOptions): Server => {
     memory,
     backup,
     motions,
-    jobs,
+    wakeUps,
     voice,
     calls,
     calendar,

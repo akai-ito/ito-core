@@ -25,11 +25,26 @@ export type Calendar = {
   readonly isConnected: () => boolean;
   // Every event from yesterday to a week ahead, as last read, before Kumo's picture is added.
   readonly listItems: () => readonly CalendarItem[];
+  // Every event on their own calendars, as last read, with where it stands, for noticing changes.
+  readonly agenda: () => readonly AgendaEntry[];
   // After each good read of the calendar.
   readonly onRefreshed: (listener: () => void) => void;
-  readonly onEventEnded: (listener: (uid: string) => void) => void;
   readonly onAdded: (listener: (item: CalendarItem) => void) => void;
+  // Kumo, or an answer on the Desk, changed an event, by uid: it's no news to Kumo.
+  readonly onWritten: (listener: (uid: string) => void) => void;
   readonly close: () => void;
+};
+
+export type AgendaEntry = {
+  readonly id: string;
+  readonly uid: string;
+  readonly title: string;
+  readonly start: string;
+  readonly end: string;
+  readonly allDay: boolean;
+  readonly location?: string;
+  // An invite they haven't answered, one they declined, or one that was cancelled.
+  readonly state: "confirmed" | "tentative" | "invited" | "declined" | "cancelled";
 };
 
 export type CalendarOptions = {
@@ -82,6 +97,13 @@ export const toCalendarItem = (event: CalendarEvent): CalendarItem => ({
 const isInvite = (event: CalendarEvent): boolean =>
   event.myStatus === "needs-action" && event.organizer !== undefined && !event.calendar.isKumo;
 
+const stateOf = (event: CalendarEvent): AgendaEntry["state"] => {
+  if (event.status === "cancelled") return "cancelled";
+  if (event.myStatus === "declined") return "declined";
+  if (isInvite(event)) return "invited";
+  return toStatus(event) === "tentative" ? "tentative" : "confirmed";
+};
+
 const overlaps = (left: CalendarEvent, right: CalendarEvent): boolean =>
   toMs(left.start) < toMs(right.end) && toMs(right.start) < toMs(left.end);
 
@@ -129,10 +151,13 @@ export const createCalendar = ({
   const timer = createCell<Cancel | undefined>(undefined);
   const isClosed = createCell(false);
   const refreshing = createCell<Promise<void>>(Promise.resolve());
-  const endedListeners = createCell<readonly ((uid: string) => void)[]>([]);
   const addedListeners = createCell<readonly ((item: CalendarItem) => void)[]>([]);
   const refreshedListeners = createCell<readonly (() => void)[]>([]);
-  const seenEnded = createCell<ReadonlySet<string>>(new Set());
+  const writtenListeners = createCell<readonly ((uid: string) => void)[]>([]);
+
+  const written = (uid: string): void => {
+    for (const listener of writtenListeners.get()) listener(uid);
+  };
 
   const source = (): CalendarSource | undefined => {
     const found = host.find(icloudSource);
@@ -207,15 +232,6 @@ export const createCalendar = ({
     });
   };
 
-  const noticeEnded = (now: number): void => {
-    const ended = events
-      .get()
-      .filter((event) => !event.allDay && toMs(event.end) <= now && toMs(event.end) > now - pollMs * 2);
-    const fresh = ended.filter((event) => !seenEnded.get().has(event.uid));
-    seenEnded.set(new Set([...seenEnded.get(), ...fresh.map(({ uid }) => uid)]));
-    for (const event of fresh) for (const listener of endedListeners.get()) listener(event.uid);
-  };
-
   const pull = async (): Promise<void> => {
     const calendar = source();
     if (!calendar) {
@@ -238,7 +254,6 @@ export const createCalendar = ({
       offerInvite(invite);
     }
     desk.setComingUp(comingUp(now));
-    noticeEnded(now);
   };
 
   const refresh = (): Promise<void> =>
@@ -266,6 +281,7 @@ export const createCalendar = ({
     const answer = toAnswer(option);
     const invite = events.get().find((event) => event.uid === card.invite?.event.uid && !event.calendar.isKumo);
     if (!calendar || !answer || !invite) return undefined;
+    written(invite.uid);
     const responded = await calendar.respond(invite, answer);
     if (!responded.ok) info("An invite couldn't be answered", { error: responded.failure });
     const hold = events.get().find((event) => event.uid === holdPrefix + invite.uid);
@@ -288,6 +304,7 @@ export const createCalendar = ({
     if (!target.ok) return target;
     const created = await calendar.create(target.value, event);
     if (!created.ok) return created;
+    written(created.value.uid);
     await refresh();
     const item = enrich(toCalendarItem(created.value));
     for (const listener of addedListeners.get()) listener(item);
@@ -302,6 +319,7 @@ export const createCalendar = ({
     if (!calendar) return fail("iCloud isn't set up, so there's no calendar to change.");
     const event = findEvent(uid);
     if (!event) return fail("There's no such event in the next week.");
+    written(uid);
     const changed = await calendar.update(event, changes);
     if (!changed.ok) return changed;
     await refresh();
@@ -312,6 +330,7 @@ export const createCalendar = ({
     const calendar = source();
     const event = findEvent(uid);
     if (!calendar || !event) return fail("There's no such event in the next week.");
+    written(uid);
     const removed = await calendar.remove(event);
     if (!removed.ok) return removed;
     await refresh();
@@ -412,6 +431,7 @@ export const createCalendar = ({
             textOf(input, field) === "" ? [] : [[field, textOf(input, field)]],
           ),
         ) as Partial<NewCalendarEvent>;
+        written(event.uid);
         const changed = await calendar.update(event, changes);
         if (!changed.ok) return failed(changed.failure);
         await refresh();
@@ -432,6 +452,7 @@ export const createCalendar = ({
         const calendar = source();
         const event = findEvent(textOf(input, "uid"));
         if (!calendar || !event) return failed("There's no such event in the next week.");
+        written(event.uid);
         const removed = await calendar.remove(event);
         if (!removed.ok) return failed(removed.failure);
         await refresh();
@@ -454,14 +475,28 @@ export const createCalendar = ({
     removeEvent,
     isConnected: () => source() !== undefined,
     listItems: () => events.get().map((event) => toCalendarItem(event)),
+    agenda: () =>
+      events
+        .get()
+        .filter((event) => !event.calendar.isKumo)
+        .map((event) => ({
+          id: toCalendarItem(event).id,
+          uid: event.uid,
+          title: event.title,
+          start: toInstant(event.start),
+          end: toInstant(event.end),
+          allDay: event.allDay,
+          ...(event.location !== undefined && event.location !== "" && { location: event.location }),
+          state: stateOf(event),
+        })),
     onRefreshed: (listener) => {
       refreshedListeners.update((current) => [...current, listener]);
     },
-    onEventEnded: (listener) => {
-      endedListeners.update((current) => [...current, listener]);
-    },
     onAdded: (listener) => {
       addedListeners.update((current) => [...current, listener]);
+    },
+    onWritten: (listener) => {
+      writtenListeners.update((current) => [...current, listener]);
     },
     close: () => {
       isClosed.set(true);

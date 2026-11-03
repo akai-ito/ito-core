@@ -2,16 +2,16 @@
 {"at":0,"world":"capability_on","capability":"outlook","values":{"address":"sam@outlook.example","token":"replay-token"}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-11-11T10:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[],"handled":0}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-11T10:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
 {"at":1000,"world":"attention_decides","decision":"promotion","stakes":"low","folder":"","reason":"Acme selling something","confidence":0.86}
 {"at":1000,"world":"mail_arrives","account":"outlook","message_id":"order-5531@acme.com","from":"Acme <hello@acme.com>","to":["sam@outlook.example"],"subject":"Your Acme order is on its way","text":"Good news! Your desk lamp ships today. Fancy 20% off your next order?"}
-{"at":1000,"event":{"id":"e_0001_26422","type":"desk.changed","at":"2026-11-11T10:00:01.000Z","desk":{"coming_up":[],"waiting":[],"handled":0,"last_mail_at":"2026-11-11T10:00:01.000Z"}}}
-{"at":1000,"event":{"id":"e_0002_80121","type":"desk.changed","at":"2026-11-11T10:00:01.000Z","desk":{"coming_up":[],"waiting":[],"handled":1,"last_mail_at":"2026-11-11T10:00:01.000Z"}}}
+{"at":1000,"event":{"id":"e_0001_26422","type":"desk.changed","at":"2026-11-11T10:00:01.000Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0,"last_mail_at":"2026-11-11T10:00:01.000Z"}}}
+{"at":1000,"event":{"id":"e_0002_80121","type":"desk.changed","at":"2026-11-11T10:00:01.000Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":1,"last_mail_at":"2026-11-11T10:00:01.000Z"}}}
 {"at":91000,"app":{"method":"GET","path":"/v0/work"}}
 {"at":91000,"server":{"status":200,"body":{"day":"2026-11-11","handled":[{"id":"d_0001_97851","at":"2026-11-11T10:00:01.000Z","quiet":false,"undo":true,"text":"Binned \"Your Acme order is on its way\" from Acme","reason":"Acme selling something","mail":{"account":"outlook","message_id":"order-5531@acme.com","from":"Acme","subject":"Your Acme order is on its way"}}],"cleared":[]}}}
 {"at":120000,"world":"kumo_works","calls":[]}
 {"at":120000,"app":{"method":"POST","path":"/v0/done/d_0001_97851/wrong","body":{"text":"That was my order, not an offer"}}}
-{"at":120000,"event":{"id":"e_0003_77476","type":"desk.changed","at":"2026-11-11T10:02:00.000Z","desk":{"coming_up":[],"waiting":[],"handled":2,"last_mail_at":"2026-11-11T10:00:01.000Z"}}}
+{"at":120000,"event":{"id":"e_0003_77476","type":"desk.changed","at":"2026-11-11T10:02:00.000Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":2,"last_mail_at":"2026-11-11T10:00:01.000Z"}}}
 {"at":120060,"server":{"status":200,"body":{"entry":{"id":"d_0001_97851","at":"2026-11-11T10:00:01.000Z","quiet":false,"undo":false,"text":"Undone: Binned \"Your Acme order is on its way\" from Acme","reason":"Acme selling something","mail":{"account":"outlook","message_id":"order-5531@acme.com","from":"Acme","subject":"Your Acme order is on its way"},"corrected_at":"2026-11-11T10:02:00.000Z"}}}}
 {"at":122060,"app":{"method":"GET","path":"/v0/work"}}
 {"at":122060,"server":{"status":200,"body":{"day":"2026-11-11","handled":[{"id":"d_0002_22668","at":"2026-11-11T10:02:00.000Z","quiet":false,"undo":false,"text":"You said “Binned \"Your Acme order is on its way\" from Acme” was wrong: That was my order, not an offer","reason":"Done."},{"id":"d_0001_97851","at":"2026-11-11T10:00:01.000Z","quiet":false,"undo":false,"text":"Undone: Binned \"Your Acme order is on its way\" from Acme","reason":"Acme selling something","mail":{"account":"outlook","message_id":"order-5531@acme.com","from":"Acme","subject":"Your Acme order is on its way"},"corrected_at":"2026-11-11T10:02:00.000Z"}],"cleared":[]}}}

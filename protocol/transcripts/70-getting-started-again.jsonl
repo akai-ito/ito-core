@@ -2,7 +2,7 @@
 {"at":0,"world":"capability_on","capability":"icloud","values":{"apple_id":"divy@icloud.com","app_password":"abcd-efgh-ijkl-mnop"}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-11-12T19:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"coming_up":[],"waiting":[],"handled":0}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-12T19:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
 {"at":5000,"world":"kumo_works","calls":[],"post":"Good to see this again. What's changed since we last did it?"}
 {"at":5000,"world":"kumo_works","calls":[{"tool":"believe","input":{"text":"You're training for a sub-20 5K, with parkrun on Saturdays.","page":"memory:now"}}]}
 {"at":5000,"app":{"method":"POST","path":"/v0/onboarding/replay"}}

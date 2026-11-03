@@ -461,7 +461,7 @@ describe("their iCloud Contacts, kept by Kumo", () => {
       "- Leo Marsh: birthday, Thursday 5 November, in 4 days. People page memory:people/leo, circle friends: Your oldest friend.",
     );
     expect(prompt).toContain("“Leo's birthday is Thursday.");
-    expect(prompt).toContain("if now is a good moment in their day, or schedule a look for a better one");
+    expect(prompt).toContain("if now is a good moment in their day, or set a wake-up for a better one");
     expect(prompt).not.toContain("Clara");
 
     box.clock.moveTo(now + 3 * 60 * 60 * 1000);

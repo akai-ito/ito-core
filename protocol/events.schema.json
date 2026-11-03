@@ -1711,8 +1711,8 @@
       "minLength": 1,
       "maxLength": 64
     },
-    "JobId": {
-      "description": "Opaque. The server makes it when Kumo schedules a look.",
+    "WakeUpId": {
+      "description": "Opaque. The server makes it when a wake-up is set.",
       "type": "string",
       "minLength": 1,
       "maxLength": 64
@@ -2132,10 +2132,17 @@
       ]
     },
     "Desk": {
-      "description": "Home: what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail.",
+      "description": "Home: Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail.",
       "type": "object",
-      "required": ["coming_up", "waiting", "handled"],
+      "required": ["plans", "coming_up", "waiting", "handled"],
       "properties": {
+        "plans": {
+          "description": "Kumo's plans: every wake-up, soonest first. Kumo setting one is quiet; it only shows here.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WakeUp"
+          }
+        },
         "coming_up": {
           "description": "Events in the next 36 hours or so, plus anything big this week, in time order.",
           "type": "array",
@@ -2242,51 +2249,115 @@
         }
       }
     },
-    "Job": {
-      "description": "A look Kumo scheduled for itself: a follow-up, a check-in after an event, or a standing job it keeps doing. It's judged when it comes due, and moves itself if the moment is bad.",
+    "Weekday": {
+      "description": "A day of the week, in your time zone.",
+      "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    },
+    "WakeUp": {
+      "description": "A time Kumo will wake up and look at something for you: a follow-up, a look after an event, a standing job, or something you asked for. When it comes due, Kumo looks first, then messages you if that's useful, moves it if things changed, or drops it if it's moot, and Done says which. Kumo keeps it current as your life moves, such as a meeting moving or a trip; you can move, change or cancel it too.",
       "type": "object",
-      "required": ["id", "why"],
+      "required": ["id", "at", "what", "why", "by", "source", "set_at"],
       "properties": {
         "id": {
-          "$ref": "#/$defs/JobId"
-        },
-        "why": {
-          "description": "Such as \"Ask how the Halcyon interview went\".",
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/WakeUpId"
         },
         "at": {
           "$ref": "#/$defs/Timestamp",
-          "description": "When it's next due."
+          "description": "When it's next due, a concrete time Kumo worked out, such as the end of the event it's for."
         },
-        "after_event": {
-          "description": "Due after this event ends.",
-          "type": "object",
-          "required": ["uid", "title"],
-          "additionalProperties": false,
-          "properties": {
-            "uid": {
-              "type": "string"
-            },
-            "title": {
-              "type": "string"
-            }
+        "what": {
+          "description": "What it's for, in a line, such as \"Ask how the Halcyon technical went\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "why": {
+          "description": "Why, in Kumo's words: what it will have in mind when it wakes, such as \"It ends at 15:30, and you wanted to talk it through while it's fresh.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "repeat": {
+          "$ref": "#/$defs/Repeat",
+          "description": "Absent for a one-off."
+        },
+        "by": {
+          "description": "Who made it: `you` asked for it, or `kumo` set it itself. Show one you don't recognise as Kumo's.",
+          "enum": ["you", "kumo"]
+        },
+        "source": {
+          "$ref": "#/$defs/WakeUpSource"
+        },
+        "motion": {
+          "$ref": "#/$defs/MotionId",
+          "description": "The thing in motion it's about."
+        },
+        "set_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it was set."
+        }
+      }
+    },
+    "Repeat": {
+      "description": "A wake-up that comes back: on these days, at this time in your time zone, wherever you are, such as weekdays at 09:00.",
+      "type": "object",
+      "required": ["days", "time"],
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Weekday"
           }
         },
-        "standing": {
-          "description": "A standing job, with what it keeps looking for, such as \"startups I'd join\".",
+        "time": {
+          "description": "Such as `09:00`.",
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        }
+      }
+    },
+    "WakeUpSource": {
+      "description": "Where it came from: your `chat` with Kumo, a `mail` Kumo read, a `calendar` event, or another `wake_up`. Show a kind you don't recognise by its title.",
+      "type": "object",
+      "required": ["kind", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["chat", "mail", "calendar", "wake_up"]
+        },
+        "title": {
+          "description": "A line naming it, such as \"Tess Harlow: Thursday's technical\" or \"Halcyon technical, Thu 14:00\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "mail": {
+          "description": "`mail` only: the mail, to open in Mail with `message://` and its Message-ID.",
           "type": "object",
-          "required": ["ask"],
+          "required": ["message_id"],
           "additionalProperties": false,
           "properties": {
-            "ask": {
+            "account": {
+              "type": "string"
+            },
+            "message_id": {
               "type": "string",
               "minLength": 1
             }
           }
         },
-        "motion": {
-          "$ref": "#/$defs/MotionId"
+        "event": {
+          "description": "`calendar` only: the event, to open by its uid.",
+          "type": "object",
+          "required": ["uid"],
+          "additionalProperties": false,
+          "properties": {
+            "uid": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },
@@ -2386,7 +2457,7 @@
           "minLength": 1
         },
         "area": {
-          "description": "What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities` or `memory`. Show an area you don't know plainly.",
+          "description": "What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities`, `memory`, or `kumo` when its own work in the background can't go on. Show an area you don't know plainly.",
           "type": "string",
           "minLength": 1
         },
