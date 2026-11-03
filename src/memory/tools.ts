@@ -8,7 +8,12 @@ import type { Result } from "#result.ts";
 import { textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 
-type Saved = { readonly title: string; readonly change: string; readonly version: string };
+export type Saved = {
+  readonly title: string;
+  readonly change: string;
+  readonly version: string;
+  readonly photos: number;
+};
 
 export type PageOperations = {
   readonly whenReady: <Value>(work: () => Promise<Value>) => Promise<Value>;
@@ -23,7 +28,9 @@ export type PageOperations = {
   readonly writeNew: (input: unknown) => Promise<Result<Saved, string>>;
   readonly forget: (location: Location, title: string, reason: string) => Promise<Result<string, string>>;
   readonly restore: (location: Location, version: string, note: string) => Promise<Result<Saved, string>>;
-  readonly journal: (input: unknown) => Promise<Result<{ readonly address: string; readonly title: string }, string>>;
+  readonly journal: (
+    input: unknown,
+  ) => Promise<Result<{ readonly address: string; readonly title: string; readonly photos: number }, string>>;
   readonly recordStep: (facts: StepFacts) => boolean;
   readonly approve: (fields: AskFields) => Promise<boolean>;
 };
@@ -48,6 +55,15 @@ const circleGuide =
 const contactGuide =
   "People pages only: the uid of their card in Contacts, from ito contacts, which holds the facts about them " +
   "(emails, phones, addresses, birthday, work), so the page keeps the story.";
+
+// How to put a chat photo on a page: where it belongs, by its file in the workspace.
+const photoGuide =
+  "To keep a photo they shared with it, put it where it belongs: ![what it shows](uploads/photo.jpg). Memory " +
+  "keeps a copy.";
+
+// What a write kept besides the words.
+const withPhotos = (count: number): string =>
+  count === 0 ? "" : count === 1 ? ", with its photo" : `, with its ${String(count)} photos`;
 
 const toPageReference = ({
   address,
@@ -153,7 +169,7 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         old_text: { type: "string", description: "The passage to replace, exactly as it is on the page." },
         start_line: { type: "integer", description: "The first line to replace." },
         end_line: { type: "integer", description: "The last line to replace." },
-        new_text: { type: "string", description: "What goes in its place, as Markdown." },
+        new_text: { type: "string", description: `What goes in its place, as Markdown. ${photoGuide}` },
         gist: { type: "string", description: `${gistGuide} Keep it current with every change.` },
         note: {
           type: "string",
@@ -180,7 +196,9 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
           pages: toPageReference({ address: textOf(input, "address").trim(), title: edited.value.title }),
           change: edited.value.change,
         });
-        return { text: `Saved ${edited.value.title}, now at version ${edited.value.version}.` };
+        return {
+          text: `Saved ${edited.value.title}${withPhotos(edited.value.photos)}, now at version ${edited.value.version}.`,
+        };
       }),
   },
   {
@@ -207,7 +225,10 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
           items: { type: "string" },
           description: "Addresses of related pages, such as memory:places/dishoom-shoreditch.",
         },
-        body: { type: "string", description: "The whole page as Markdown, without front matter." },
+        body: {
+          type: "string",
+          description: `The whole page as Markdown, without front matter. ${photoGuide}`,
+        },
       },
       required: ["address", "gist", "note", "body"],
       additionalProperties: false,
@@ -224,7 +245,9 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
           pages: toPageReference({ address: textOf(input, "address").trim(), title: written.value.title }),
           change: written.value.change,
         });
-        return { text: `Saved ${written.value.title}, at version ${written.value.version}.` };
+        return {
+          text: `Saved ${written.value.title}${withPhotos(written.value.photos)}, at version ${written.value.version}.`,
+        };
       }),
   },
   {
@@ -342,7 +365,7 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
     inputSchema: {
       type: "object",
       properties: {
-        text: { type: "string", description: "What to add, as Markdown." },
+        text: { type: "string", description: `What to add, as Markdown. ${photoGuide}` },
         yours: { type: "boolean", description: "True when these are the person's own words." },
         gist: {
           type: "string",
@@ -362,7 +385,7 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         const written = await memory.journal(input);
         if (!written.ok) return failed(written.failure);
         memory.recordStep({ action: "journaled", pages: toPageReference(written.value) });
-        return { text: "Added to today's journal." };
+        return { text: `Added to today's journal${withPhotos(written.value.photos)}.` };
       }),
   },
 ];

@@ -269,6 +269,7 @@ export const createServer = (options: ServerOptions): Server => {
     approve: (fields) => turns.approve(fields),
     info,
     timeZone,
+    workspace: path.join(options.dataDirectory, "workspace"),
     remote: {
       access: () => backup.access(),
       pushed: (outcome, remote) => {

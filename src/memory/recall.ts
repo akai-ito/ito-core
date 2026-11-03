@@ -1,3 +1,4 @@
+import { withoutSources } from "#memory/photos.ts";
 import type { Chunk, StoredChunk } from "#store/memory.ts";
 
 export type Passage = { readonly address: string; readonly title: string; readonly text: string; readonly at: string };
@@ -7,7 +8,7 @@ export const pastConversations = { address: "conversation:past", title: "Past co
 const longestChunk = 1200;
 
 export const toPageChunks = (address: string, title: string, markdown: string, at: string): readonly Chunk[] =>
-  markdown
+  withoutSources(markdown)
     .split(/\n\s*\n/u)
     .map((paragraph) => paragraph.trim())
     .filter((paragraph) => paragraph !== "" && !/^#+\s/u.test(paragraph))

@@ -892,9 +892,33 @@ export interface paths {
     /**
      * One page, or one journal day
      * @description The page's Markdown, without its front matter: the present first, then any *Earlier*
-     *     section, as Ari wrote it. Render it as Markdown.
+     *     section, as Ari wrote it. Render it as Markdown. A photo shared in the chat may stay with
+     *     the story, as a Markdown image where it belongs; `photos` lists those memory keeps, to
+     *     fetch with `getMemoryMedia`.
      */
     get: operations["getPage"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/memory/media/{media}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A photo a page keeps
+     * @description The bytes of a photo in memory, named in a page's `photos`. Ari keeps each one scaled down
+     *     (at most 2,000 pixels on the long edge, as JPEG), named by what's in it, so its bytes never
+     *     change: keep them once fetched.
+     */
+    get: operations["getMemoryMedia"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1389,7 +1413,25 @@ export interface components {
       changed_at: components["schemas"]["Timestamp"];
       /** @description The page as Ari wrote it, without front matter. */
       markdown: string;
+      /**
+       * @description The photos the page shows from memory, in the order the Markdown first shows them.
+       *     Absent when it shows none. A Markdown image whose source isn't here isn't in memory:
+       *     show its words instead.
+       */
+      photos?: components["schemas"]["MemoryPhoto"][];
     };
+    /** @description A photo a page keeps with its story. */
+    MemoryPhoto: {
+      /** @description The image's source as the page's Markdown has it, such as `../media/3f9a1c2b4d5e6f70.jpg`. */
+      source: string;
+      name: components["schemas"]["MediaName"];
+      /** @description Its width in pixels, when its header gives it. */
+      width?: number;
+      /** @description Its height in pixels, when its header gives it. */
+      height?: number;
+    };
+    /** @description A photo's name in memory, to fetch with `getMemoryMedia`. */
+    MediaName: string;
     MemoryPages: {
       pages: components["schemas"]["MemoryPage"][];
     };
@@ -3231,6 +3273,8 @@ export type Circle = components["schemas"]["Circle"];
 export type MemoryPageSummary = components["schemas"]["MemoryPageSummary"];
 export type MemoryLink = components["schemas"]["MemoryLink"];
 export type MemoryPage = components["schemas"]["MemoryPage"];
+export type MemoryPhoto = components["schemas"]["MemoryPhoto"];
+export type MediaName = components["schemas"]["MediaName"];
 export type MemoryPages = components["schemas"]["MemoryPages"];
 export type PageList = components["schemas"]["PageList"];
 export type RecentChange = components["schemas"]["RecentChange"];
@@ -4766,6 +4810,32 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MemoryPage"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  getMemoryMedia: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        media: components["schemas"]["MediaName"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The photo. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "image/*": unknown;
         };
       };
       400: components["responses"]["InvalidRequest"];
