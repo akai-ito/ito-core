@@ -10,7 +10,7 @@ import type { Card, DoneEntry, ModelChoice } from "#protocol/types.ts";
 import { fail, ok } from "#result.ts";
 import type { ToolResult } from "#tools/mcp.ts";
 import { createFakeMail, type ArrivingMail, type FakeMail } from "./support/fake-mail.ts";
-import { createVirtualClock } from "./support/virtual-clock.ts";
+import { createVirtualClock, type VirtualClock } from "./support/virtual-clock.ts";
 
 // The inbox holds only what needs them: the attention pass bins noise, files what's worth keeping into their
 // folders, and hands the rest to Kumo.
@@ -36,6 +36,9 @@ type Inbox = {
   readonly choices: () => readonly (ModelChoice | undefined)[];
   readonly asked: () => readonly string[];
   readonly answer: (title: string, answer: CardAnswer) => Promise<void>;
+  // Takes a card off the Desk without an answer, as clearing it does.
+  readonly clear: (title: string) => void;
+  readonly clock: VirtualClock;
   readonly undo: (entry: DoneEntry) => Promise<void>;
   readonly setting: (key: string) => string | undefined;
 };
@@ -182,6 +185,10 @@ const openInbox = (
       cards.update((current) => current.filter(({ id }) => id !== card.id));
       await handler(card, answer);
     },
+    clear: (title) => {
+      cards.update((current) => current.filter((card) => card.title !== title));
+    },
+    clock,
     undo: async (entry) => {
       const payload = done.get().find(({ id }) => id === entry.id)?.payload;
       await Promise.all(undoers.get().map((undoer) => undoer(entry, payload)));
@@ -273,6 +280,59 @@ describe("an inbox of only what needs you", () => {
       reason: "This list only unsubscribes on its web page: https://mail.pizza.example/leave",
       quiet: false,
     });
+    await box.mailbox.close();
+  });
+
+  it("says once in Done when a list can't be left, and doesn't try again on its next promotion", async () => {
+    const box = openInbox({ decision: "promotion" });
+    box.mail.refuseUnsubscribes();
+    box.mail.arrive(promo);
+    await settled(() => {
+      expect(box.done()).toHaveLength(2);
+    });
+    box.mail.arrive({ ...promo, message_id: "deal-2@pizza.example" });
+
+    await settled(() => {
+      expect(box.done()).toHaveLength(3);
+    });
+    expect(box.done()).toMatchObject([
+      { text: 'Binned "Two for one tonight" from Pizza Place' },
+      {
+        text: "Couldn't unsubscribe from Pizza Place",
+        reason: "This list only unsubscribes on its web page: https://mail.pizza.example/leave",
+        mail: { message_id: promo.message_id },
+        quiet: false,
+      },
+      { text: 'Binned "Two for one tonight" from Pizza Place' },
+    ]);
+    expect(JSON.parse(box.setting("mail_unsubscribe_failed") ?? "[]")).toEqual(["deals@mail.pizza.example"]);
+    await box.mailbox.close();
+  });
+
+  it("asks again 30 days after an unsubscribe question was cleared without an answer", async () => {
+    const box = openInbox({ decision: "promotion" });
+    const title = "Unsubscribe from Pizza Place?";
+    box.mail.send("icloud", toHelpDesk);
+    box.mail.arrive(promo);
+    await settled(() => {
+      expect(box.cards().map((card) => card.title)).toEqual([title]);
+    });
+    box.clear(title);
+
+    box.mail.arrive({ ...promo, message_id: "deal-2@pizza.example" });
+    await settled(() => {
+      expect(box.done()).toHaveLength(2);
+    });
+    expect(box.cards()).toEqual([]);
+
+    box.clock.moveTo(box.clock.now() + 30 * 24 * 60 * 60 * 1000);
+    box.mail.arrive({ ...promo, message_id: "deal-3@pizza.example" });
+    await settled(() => {
+      expect(box.cards().map((card) => card.title)).toEqual([title]);
+    });
+    expect(JSON.parse(box.setting("mail_unsubscribe_asks") ?? "[]")).toMatchObject([
+      { message_id: "deal-3@pizza.example", at: "2026-12-10T22:00:00.000Z" },
+    ]);
     await box.mailbox.close();
   });
 
@@ -502,6 +562,10 @@ describe("their mail folders", () => {
       [...remembered, ["mail_unsubscribe_asks", asked]],
       [...first.cards(), ask],
     );
+    // An ask kept before asks were dated counts from now.
+    expect(JSON.parse(again.setting("mail_unsubscribe_asks") ?? "[]")).toMatchObject([
+      { card: "k_2", at: "2026-11-10T22:00:00.000Z" },
+    ]);
     again.mail.arrive(promo);
     await again.answer("Folders for your mail", { option: "Use these" });
     await again.answer("Unsubscribe from Pizza Place?", { option: "Unsubscribe" });
