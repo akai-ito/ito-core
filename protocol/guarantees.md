@@ -41,7 +41,7 @@ where the protocol has to make it possible, marked *App*.
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Ari can't start or change a trip without a cover, a photo for every place and every stop at its place, or any thing with a title over 28 characters. Forgetting a thing asks you first. | 62, 63, 64 |
 | G33 | **The Desk is home.** Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail come whole in the snapshot and in every change, so an app never pieces it together. | 65, 74, 78, 79, 84 |
 | G34 | **Waiting on you stays until it's done.** A card waits whatever the date, shows when the box is acting on your answer, and leaves only when that's done. | 65, 67 |
-| G35 | **Every mail is read, and only work becomes work.** A quick model judges each new mail by its consequences, not its tone; only mail with work to do starts a short-lived work thread, and the conversation stays clean. | 66 |
+| G35 | **Every mail is read, and only work becomes work.** A quick model judges each new mail by its consequences, not its tone; only mail with work to do starts a short-lived work thread, and the conversation hears only what Kumo chooses to tell you. | 66 |
 | G36 | **Kumo never sends what you'd write.** Replies to people are drafts in your Drafts folder and cards on the Desk; you send them from Mail. | 66 |
 | G37 | **The calendar goes through the box.** Events, holds and invite answers are written to iCloud by the box, so they land while your phone sleeps; an invite is held on Kumo's calendar until you answer. | 67 |
 | G39 | **Getting started reads before it asks.** Kumo reads your recent mail and calendar first, every app sees how far it has got, and its few questions come as ordinary messages in the conversation. What it believes about you waits for your word, and getting started ends when you say so. | 69, 70 |
@@ -57,6 +57,25 @@ where the protocol has to make it possible, marked *App*.
 | G54 | **Kumo goes where you go.** The phone says its time zone and, roughly, where it is; the box keeps only the latest, rounded to about 10 km. Kumo lives by that time zone: a repeating wake-up comes back at its time there, and moving zones wakes Kumo to move what should follow you. | 83 |
 | G55 | **The weather around you, never invented.** With a rough place, the Desk carries the temperature, the conditions and today's sunset there, read on the box and refreshed about every half hour. Without a place, or without a recent reading, there's no weather at all. | 83 |
 | G56 | **A line and a face, by judgement.** Kumo may put a short line at the top of the Desk with its mood, and changes them when the moment changes. Neither ever notifies. | 84 |
+
+## How Kumo decides to speak
+
+There are no fixed times and no rules about when Kumo speaks: no morning line, no quiet hours, no
+cap on sounds, no check-in timers. Kumo decides, from four building blocks, and these guarantees
+are what the server holds it to.
+
+- **It messages you** (G48, G15). A message is the only way Kumo speaks. Every message notifies;
+  your phone's Focus decides the sound, and only an urgent message breaks through it.
+- **It sets itself wake-ups** (G49, G50, G54). Each is a concrete time Kumo worked out and keeps
+  current, with what it's for and why. Setting one is quiet, and when one comes due Kumo looks
+  first.
+- **It wakes on what happens** (G35, G51, G54). A new mail, a change on your calendars and a move
+  to another time zone each reach Kumo's judgement, never a fixed rule.
+- **It acts and records** (G34, G36, G37, G43, G44, G53, G56). Cards, its own calendar blocks,
+  memory and its Desk line, with every action in Kumo's work and an undo where there can be one.
+  What it's learning about you is in the open, as tracks.
+
+When Kumo's model can't act, nothing stands in for it (G52).
 
 ## Scenario by scenario
 

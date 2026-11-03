@@ -41,10 +41,8 @@ another. `--engine demo` answers without Codex, to try Ari before signing in: a 
 in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a timeout,
 *ask* a question, *approve* an approval, *remember* writes a page and the journal in memory,
 *recall* looks it up, *trip* and *training* start things in motion, *booked* books the trip's
-Uffizi, *mail* reads a sample mail and puts a draft on the Desk, which Kumo tells you about in its
-line a moment later, and *moment* writes Kumo's first line of the day now. *plan* lays out a sample
-day of Kumo's plan and guesses in Coming up; *tonight*, *line* and *past* show the evening
-check-ins; *question* asks the day's question; and *drift* names a week that drifted.
+Uffizi, *mail* reads a sample mail, puts a draft on the Desk and messages you about it, and *plan*
+lays out a sample day of Kumo's plan and guesses in Coming up.
 
 Before reaching for your phone, check a real turn from the machine itself, with the server running
 and your token in `TOKEN`. The stream should show the turn start, statuses, the reply's text
@@ -130,25 +128,42 @@ pages changed on both sides.
 Connect iCloud, Outlook or Gmail in Ari's Settings › Capabilities, and Kumo, the agent working in
 the background, reads every mail as it arrives: it puts bookings on your calendar, drafts replies in
 your voice into your Drafts folder, and records what it did in Done, with an undo. It never sends a
-mail: a list you can only leave by mail gets that mail drafted onto your Desk, for you to send. At
-the top of the Desk, Kumo speaks for the moment, not the clock: a line or two at the first calm
-moment after your morning time, however late you open Ito, when something that matters arrives,
-or when your day changes, and otherwise all quiet. Each line is also a message in the conversation,
-written with your chosen model thinking modestly; once you've seen it on the Desk, no notification
-goes out for it.
+mail: a list you can only leave by mail gets that mail drafted onto your Desk, for you to send.
 
-With iCloud connected, Kumo keeps a picture of your day on its own calendar, never yours: each
-morning, before its first line, it plans soft blocks for what keeps your goals going (the session
-from a training block, prep for a coming interview, proper meals, winding down) and guesses the rest
-(working, building, seeing people, chilling). Coming up shows them all, guesses marked as guesses
-with why; tell Kumo one was wrong there, or in the chat, and its next guesses learn from it. In the
-evening, if you're likely to build, its line asks once when you'll stop and what's next; near and
-past that line it says plainly what tomorrow still fits or what it costs, and the next morning it
-moves the plan rather than scold. When your week's time drifts from what matters, it says so once,
-in numbers, and at most once a day it asks one small question you can skip. Add Ito to a Focus on
-your phone (Sleep, Work, Fitness, Personal) and Ari tells the box whenever it turns on or off; tell
-Kumo what you're up to ("building tonight") and it keeps that in mind for a few hours. Kumo's lines,
-plans and check-ins fit what it knows, and a Sleep Focus ends the night's check-ins.
+Kumo has no fixed times and no rules about when to speak; it decides, from four simple building
+blocks:
+
+- **It messages you** in the conversation, one message per thing. Every message notifies your phone,
+  and your Focus decides what makes a sound. Kumo marks a message urgent only when it can't wait,
+  and then it's time-sensitive, to break through Focus.
+- **It sets itself wake-ups:** a concrete time, what it's for and why, one-off or repeating (such as
+  weekdays at 9), who asked for it, and where it came from. "After the interview" is when the
+  interview ends, and Kumo moves a wake-up when life moves. Setting one is quiet: it shows in Kumo's
+  plans on the Desk, where you can move or cancel it. When one comes due, Kumo looks first, then
+  messages you, moves it or drops it, and Done says which.
+- **It wakes on what happens:** a new mail, a change on your calendars, the mail you send. Kumo looks
+  at each and decides; nothing is said by rule.
+- **It acts and records:** cards on the Desk, blocks on its own calendar, memory, and every action in
+  Kumo's work with an undo.
+
+When Kumo's model can't act, nothing robotic goes out in its place: what was due waits, the Desk and
+Settings show the problem, and Kumo catches up once its model answers.
+
+With iCloud connected, Kumo keeps a picture of your day on its own calendar, never yours: soft
+blocks for what keeps your goals going (the session from a training block, prep for a coming
+interview, proper meals, winding down) and its guesses at the rest (working, building, seeing
+people, chilling). It plans through its own wake-ups: when a day looks unplanned, it starts a
+conversation to shape it with you, and puts what you agree on the calendar. Coming up shows the
+blocks, guesses marked as guesses with why; tell Kumo one was wrong there, or in the chat, and its
+next guesses learn from it. Kumo can also put a short line and its mood at the top of the Desk,
+such as how something's going, and it changes them when the moment changes.
+
+Ari tells the box its time zone and, if you allow it, roughly where you are; the box keeps only the
+latest, rounded to about 10 km. Kumo lives by that time zone, so a weekday-morning wake-up comes at
+9 wherever you are, and a new zone wakes Kumo to move what should follow you. With a place, the Desk
+shows the weather there and today's sunset, read every half hour from
+[Open-Meteo](https://open-meteo.com) (the box needs to reach `api.open-meteo.com`); without one,
+there's no weather at all.
 
 In the conversation, Ari reaches the same mail through `ito mail` commands and a skill file, rather
 than more tools in every turn: ask it to go through the recruiters who wrote this month, and it
@@ -165,7 +180,8 @@ a new number in a signature or a birthday you mention. Each change is in Done wi
 undo that puts the card back; merging or deleting cards always waits for one question on the Desk.
 The story about a person stays on their People page in memory, linked to their card. Drafts find
 people's addresses in Contacts by name, and a few days before the birthday of someone you're close
-to, Kumo's line says so. In the conversation it's `ito contacts` commands and a skill file.
+to, Kumo messages you about it at a good moment. In the conversation it's `ito contacts` commands
+and a skill file.
 
 Drafts go into Drafts as proper formatted mail: Kumo writes in light Markdown, and the draft is HTML
 with a clean plain-text copy, photos you sent in the chat (or that Kumo found on the web) shown
@@ -179,18 +195,17 @@ Replies keep everyone on the thread, To and Cc, unless you ask for the sender al
 a mail to a big list. The
 Desk's draft card shows the formatted words, the signature and what's attached.
 
-Kumo earns your trust one kind of work at a time: sorting mail, the calendar, drafts, and contacts
-later. Each starts at Learning, where a quiet card each morning offers yesterday's calls to glance
-at. After a clean stretch, 20 calls and two weeks with no correction, it moves to Spot checks, where
-about one call in five may get a quiet "Was this right?", and then to Trusted, where only what needs
-you reaches you; Kumo's line says each time. "That was wrong" on anything in Kumo's work undoes it
-where it can, keeps what to do differently on your How to help you page (the attention pass reads
-the "Sorting mail" part as it sorts), and steps that kind back one rung. "Show me everything again",
-in the conversation or in Kumo's work, puts a kind back to Learning. The stretch is two settings,
-`trust_climb_calls` and `trust_climb_days`.
+Kumo learns one area at a time, in the open. It opens a learning track for anything it's getting
+to know you in or learning to do well, such as sorting your mail, writing as you or planning your
+weekends. Each track has a stage (Learning, where it shows you its calls; Spot checks; Trusted, where
+only what needs you reaches you) and the confirmations and corrections it stands on, and Kumo's work
+shows them as bars. Kumo moves a track by judgement. "That was wrong" on anything in Kumo's work
+undoes it where it can, keeps what to do differently on your How to help you page (the attention
+pass reads the "Sorting mail" part as it sorts), and steps its track back. To be shown everything
+again, tell Kumo.
 
-Ari notifies you while you're away: when a reply finishes, when something fails, when it asks you
-something, and when Kumo's line matters and you haven't seen it. To switch notifications on, create
+Ari notifies you of every reply, failure, question and message from Kumo, at once and whatever the
+hour; your phone's Focus decides what makes a sound. To switch notifications on, create
 an APNs key in your Apple Developer account (Certificates, Identifiers & Profiles, then Keys, with
 Apple Push Notifications service), download its `.p8` file once, and run:
 
@@ -224,8 +239,9 @@ package, install it with `sudo apt install espeak-ng`.
 When something on the box needs you, the app says so until it's fixed: on the Desk, in a quiet
 line per problem that opens how to fix it, and at the top of Settings. That's notifications that
 can't be sent (a phone wants them, but there's no APNs key), a mail or calendar account that
-refuses its sign-in or keeps failing for ten minutes (a reconnect never counts), and a capability
-that needs setting up. Each clears on its own once it's fixed.
+refuses its sign-in or keeps failing for ten minutes (a reconnect never counts), a capability that
+needs setting up, and Kumo's model not answering its work in the background for ten minutes. Each
+clears on its own once it's fixed.
 
 `ito serve` writes its log to `~/.ito/logs` as well as to the terminal, one file a day, kept for 14
 days, so it's there however the server was started: in tmux, under systemd or launchd. The log
