@@ -16,7 +16,6 @@ import type { Info } from "#turns/turns.ts";
 
 export type Calendar = {
   readonly tools: readonly Tool[];
-  readonly isBusy: () => boolean;
   readonly refresh: () => Promise<void>;
   readonly addEvent: (event: NewCalendarEvent, isKumo?: boolean) => Promise<Result<CalendarItem, string>>;
   // Moves, renames or re-notes an event by its uid, such as one of Kumo's blocks.
@@ -449,19 +448,6 @@ export const createCalendar = ({
 
   return {
     tools,
-    isBusy: () => {
-      const now = clock.now();
-      return events
-        .get()
-        .some(
-          (event) =>
-            !event.allDay &&
-            !event.calendar.isKumo &&
-            event.myStatus !== "declined" &&
-            toMs(event.start) <= now &&
-            now < toMs(event.end),
-        );
-    },
     refresh,
     addEvent,
     changeEvent,

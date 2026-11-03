@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.17"
+  version: "0.18"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -21,8 +21,8 @@ info:
     - **Answer** what the agent asks by sending a message, or cancel the ask.
     - **Shaped replies:** a reply may hold [`ari:` blocks](blocks.schema.json) the app draws
       natively: places, choices, pictures and things in motion.
-    - **Notify** a device while you're not looking: register it, then say when the conversation is
-      on screen. [The push schema](push.schema.json) describes what it receives.
+    - **Notify** a device: register it, and every reply, ask and message from Kumo reaches it at
+      once. [The push schema](push.schema.json) describes what it receives.
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
       and fill in its setup sheet, or connect it through its provider.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
@@ -65,7 +65,7 @@ tags:
   - name: Onboarding
     description: Getting started, with what Kumo found and the beliefs it checks with you.
   - name: Desk
-    description: Home, with Kumo's line for the moment, Coming up, Waiting on you, Kumo's work, its scheduled looks and the calendar.
+    description: Home, with Coming up, Waiting on you, Kumo's work, its scheduled looks and the calendar.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
   - name: Turns
@@ -73,7 +73,7 @@ tags:
   - name: Asks
     description: Settle what the agent asked you.
   - name: Notifications
-    description: Reach you through push notifications while you're not looking.
+    description: Reach you through push notifications.
   - name: Capabilities
     description: Switch capabilities on and off, and set them up.
   - name: Memory
@@ -157,7 +157,6 @@ paths:
                 version: 0.9.0
                 protocol: "0.9"
                 lead: { name: Kumo }
-                morning: { not_before: "07:30" }
                 agent:
                   model: gpt-6.1-sol
                   effort: low
@@ -496,10 +495,9 @@ paths:
       description: |
         "That was wrong", on anything Kumo did. Kumo undoes it where it can (as with
         `POST /v0/done/{entry}/undo`, and otherwise with its own tools in the background), keeps what
-        to do differently as a preference, and records that in Done. When it's one of Kumo's own calls
-        (the entry's `work`), that kind of work steps back one rung on the trust ladder, and Kumo's
-        next line says so. Say what was wrong in `text`, or send `{}` and Kumo works it out. The answer
-        is the entry, with `corrected_at`. Saying it again only adds your words.
+        to do differently as a preference, and records that in Done. Say what was wrong in `text`, or
+        send `{}` and Kumo works it out. The answer is the entry, with `corrected_at`. Saying it again
+        only adds your words.
       parameters:
         - name: entry
           in: path
@@ -528,9 +526,9 @@ paths:
       operationId: getDesk
       summary: Read the Desk
       description: |
-        Home: Kumo's line for the moment, Coming up, Waiting on you, how much Kumo handled today
-        and when it last read your mail. The snapshot carries it too, and `desk.changed` carries
-        the whole Desk whenever it changes.
+        Home: Coming up, Waiting on you, how much Kumo handled today and when it last read your
+        mail. The snapshot carries it too, and `desk.changed` carries the whole Desk whenever it
+        changes.
       responses:
         "200":
           description: The Desk.
@@ -540,62 +538,6 @@ paths:
             application/json:
               schema: { $ref: "events.schema.json#/$defs/Desk" }
         "401": { $ref: "#/components/responses/TokenRejected" }
-  /v0/desk/moment/{moment}/read:
-    post:
-      tags: [Desk]
-      operationId: readMoment
-      summary: Say Kumo's line was seen
-      description: |
-        Tells the box an app showed Kumo's line for the moment on the Desk. It's read from then
-        on, in the conversation too: no notification goes out for it, and three hours later it
-        gives way to all quiet. Saying it again changes nothing.
-      parameters:
-        - name: moment
-          in: path
-          required: true
-          schema: { $ref: "events.schema.json#/$defs/MomentId" }
-      responses:
-        "204":
-          description: Noted.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-        "401": { $ref: "#/components/responses/TokenRejected" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /v0/desk/moment/{moment}/answer:
-    post:
-      tags: [Desk]
-      operationId: answerMoment
-      summary: Answer Kumo's line
-      description: |
-        Answers Kumo's line for the moment, like a card: tap one of its `options`, or type `text`
-        when it `allows_text`. The line shows `state: working`, with your `answer`, while Kumo acts
-        on it in the background, then gives way to all quiet; Done says what you answered and what
-        followed. If Kumo couldn't act, the line comes back to answer again, and Done says why.
-        The same answer sent again while it's working is taken once; a different one is refused.
-        The day's question (`kind` `question`) can also be skipped: it gives way at once, with
-        nothing in Done, and Kumo never asks it again.
-      parameters:
-        - name: moment
-          in: path
-          required: true
-          schema: { $ref: "events.schema.json#/$defs/MomentId" }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/MomentAnswer" }
-            example: { option: Ask me tonight }
-      responses:
-        "202":
-          description: Taken; Kumo is acting on it.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MomentResult" }
-        "400": { $ref: "#/components/responses/InvalidRequest" }
-        "401": { $ref: "#/components/responses/TokenRejected" }
-        "404": { $ref: "#/components/responses/NotFound" }
   /v0/desk/guesses/{item}/answer:
     post:
       tags: [Desk]
@@ -637,9 +579,8 @@ paths:
       description: |
         Kumo's work today, local time, for "47 in: 3 need you, 6 handled, 38 cleared": what it
         handled, and the mail it read and cleared with nothing needed, each newest first with its
-        reason and whether it can be undone. What needs you is the Desk's `waiting`. `trust` is how
-        much Kumo checks with you for each kind of work it has done. Another day's work, such as the
-        day a review card asks you to glance at, comes with `day`; everything is in `GET /v0/done`.
+        reason and whether it can be undone. What needs you is the Desk's `waiting`. Another day's
+        work comes with `day`; everything is in `GET /v0/done`.
       parameters:
         - name: day
           in: query
@@ -655,31 +596,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Work" }
         "401": { $ref: "#/components/responses/TokenRejected" }
-  /v0/trust/{work}/reset:
-    post:
-      tags: [Desk]
-      operationId: resetTrust
-      summary: Show me everything again
-      description: |
-        Puts one kind of Kumo's work back to Learning, whatever its rung: Kumo shows you its calls
-        again, with a card a day to glance at them, and climbs only after a fresh clean stretch.
-        Saying "show me everything again" in the conversation does the same.
-      parameters:
-        - name: work
-          in: path
-          required: true
-          schema: { $ref: "events.schema.json#/$defs/WorkKind" }
-      responses:
-        "200":
-          description: Back to Learning.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/TrustResult" }
-        "400": { $ref: "#/components/responses/InvalidRequest" }
-        "401": { $ref: "#/components/responses/TokenRejected" }
-        "404": { $ref: "#/components/responses/NotFound" }
   /v0/desk/cards/{card}/answer:
     post:
       tags: [Desk]
@@ -761,31 +677,6 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Lead" }
-        "400": { $ref: "#/components/responses/InvalidRequest" }
-        "401": { $ref: "#/components/responses/TokenRejected" }
-  /v0/morning:
-    put:
-      tags: [Desk]
-      operationId: setMorning
-      summary: Set when your morning starts
-      description: |
-        Kumo's first line of the day comes at the first calm moment after `not_before`, local
-        time: when you first open the conversation, or the first gap with nothing on your
-        calendar, however late that is.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/MorningSettings" }
-            example: { not_before: "07:30" }
-      responses:
-        "200":
-          description: Saved.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MorningSettings" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/turns/{turn}/stop:
@@ -953,8 +844,9 @@ paths:
         always encrypts with its latest key. Keep the previous key on the device for a while: a
         notification already on its way names the key that encrypted it.
 
-        The server pushes only while you're not looking: when a reply finishes, when a turn fails,
-        when the agent asks you something, and once more for an ask still waiting after three hours.
+        The server pushes every reply when it finishes, every failed turn, every ask and every
+        message Kumo posts, at once and whatever the hour; the phone's Focus decides what makes a
+        sound. Only a message Kumo marks urgent is time-sensitive.
       parameters:
         - $ref: "#/components/parameters/Device"
       requestBody:
@@ -995,84 +887,6 @@ paths:
           description: The device is no longer registered.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-        "401": { $ref: "#/components/responses/TokenRejected" }
-  /v0/devices/{device}/presence:
-    put:
-      tags: [Notifications]
-      operationId: setPresence
-      summary: Say whether you're looking
-      description: |
-        Send `looking: true` when the conversation comes on screen, and `false` when it leaves the
-        screen or the app goes to the background. Nothing is pushed while any device is looking and
-        holds a live event stream, so a device that crashed or lost its connection is still
-        notified. The server forgets presence when it restarts: send it again after reconnecting.
-      parameters:
-        - $ref: "#/components/parameters/Device"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/Presence" }
-            example: { looking: true }
-      responses:
-        "204":
-          description: Noted.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-        "400": { $ref: "#/components/responses/InvalidRequest" }
-        "401": { $ref: "#/components/responses/TokenRejected" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /v0/devices/{device}/status:
-    get:
-      tags: [Notifications]
-      operationId: getStatus
-      summary: Read what the server holds of your phone's Focus
-      description: |
-        The Focus that counts for this device now, since when, when the device last said so, and
-        when it stops counting if the device never says it's off. Empty while none counts.
-      parameters:
-        - $ref: "#/components/parameters/Device"
-      responses:
-        "200":
-          description: What counts of this device's Focus.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/HeldStatus" }
-              example:
-                focus: sleep
-                since: "2026-11-11T23:10:00.000Z"
-                heard: "2026-11-12T03:00:00.000Z"
-                until: "2026-11-12T07:30:00.000Z"
-        "401": { $ref: "#/components/responses/TokenRejected" }
-    put:
-      tags: [Notifications]
-      operationId: setStatus
-      summary: Say what your phone's Focus is
-      description: |
-        Send it when a Focus you've added Ito to turns on, with what that Focus is for, and with
-        no `focus` when it turns off; send it again whenever you like, such as on reconnecting:
-        the same Focus said again while it counts changes nothing but when it was last heard.
-        Kumo reads it as what you're doing now: its lines, plans and check-ins fit it, a Sleep
-        Focus ends tonight's check-ins, and nothing is ever sent because of it. A Focus never said
-        to be off stops counting on its own: a Sleep Focus at your morning time, or 12 hours after
-        it came on, whichever is first; any other after 16 hours. Said again after that, it counts
-        afresh. Any device can say it, registered for notifications or not.
-      parameters:
-        - $ref: "#/components/parameters/Device"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/DeviceStatus" }
-            example: { focus: sleep }
-      responses:
-        "204":
-          description: Noted.
-          headers:
-            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
-        "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/capabilities:
     get:
@@ -2345,25 +2159,6 @@ components:
       required: [card]
       properties:
         card: { $ref: "events.schema.json#/$defs/Card" }
-    MomentAnswer:
-      description: Your answer to Kumo's line, one of `option`, `text` or, for the day's question, `skip`.
-      type: object
-      additionalProperties: false
-      minProperties: 1
-      maxProperties: 1
-      properties:
-        option:
-          description: The label of the option you tapped.
-          type: string
-          minLength: 1
-        text:
-          description: A typed reply.
-          type: string
-          minLength: 1
-          maxLength: 4000
-        skip:
-          description: Skips the day's question (`kind` `question`). It gives way at once, and Kumo never asks it again.
-          const: true
     GuessAnswer:
       description: |
         Your answer to one of Kumo's guesses at your day, one of: `right`; the `activity` it really
@@ -2383,15 +2178,10 @@ components:
           type: string
           minLength: 1
           maxLength: 60
-    MomentResult:
-      type: object
-      required: [moment]
-      properties:
-        moment: { $ref: "events.schema.json#/$defs/Moment" }
     Work:
-      description: Kumo's work for a day, today unless you asked for another, and how much it checks with you.
+      description: Kumo's work for a day, today unless you asked for another.
       type: object
-      required: [day, handled, cleared, trust]
+      required: [day, handled, cleared]
       properties:
         day:
           description: The local day, such as `2026-11-05`.
@@ -2405,41 +2195,6 @@ components:
           description: The mail Kumo read and left alone that day (`quiet`), newest first.
           type: array
           items: { $ref: "events.schema.json#/$defs/DoneEntry" }
-        trust:
-          description: |
-            The trust ladder, now: one rung for each kind of work Kumo has done, in a fixed order.
-            Draw each as three steps filled to its `step`, with its `line` under it.
-          type: array
-          items: { $ref: "#/components/schemas/Trust" }
-    Trust:
-      description: |
-        How much Kumo checks with you for one kind of work. `learning`: it shows you its calls, with a
-        card a day to glance at them. `spot_checks`: about one call in five may get a quiet "Was this
-        right?" card. `trusted`: only what needs you. It climbs a rung after a clean stretch (enough
-        calls and about two weeks with no correction), and a "That was wrong" steps it back one.
-      type: object
-      required: [work, title, step, line, since]
-      properties:
-        work: { $ref: "events.schema.json#/$defs/WorkKind" }
-        title:
-          description: Its name, such as "Sorting mail".
-          type: string
-          minLength: 1
-        step:
-          description: Show a step you don't recognise as Learning.
-          enum: [learning, spot_checks, trusted]
-        line:
-          description: Kumo's line on where it stands and why, such as "Two weeks without a correction on sorting."
-          type: string
-          minLength: 1
-        since:
-          $ref: "events.schema.json#/$defs/Timestamp"
-          description: When its current stretch began, with its first call, a climb, a correction or a reset.
-    TrustResult:
-      type: object
-      required: [trust]
-      properties:
-        trust: { $ref: "#/components/schemas/Trust" }
     CorrectDone:
       description: What was wrong, in your words; `{}` just says it was wrong.
       type: object
@@ -2475,18 +2230,9 @@ components:
           minLength: 1
           maxLength: 40
           pattern: \S
-    MorningSettings:
-      type: object
-      required: [not_before]
-      additionalProperties: false
-      properties:
-        not_before:
-          description: The earliest local time Kumo's first line of the day may come, such as `07:30`.
-          type: string
-          pattern: ^([01]\d|2[0-3]):[0-5]\d$
     ServerInfo:
       type: object
-      required: [name, version, protocol, lead, agent, morning, setup, capabilities]
+      required: [name, version, protocol, lead, agent, setup, capabilities]
       properties:
         name:
           description: The server's name, usually its host name.
@@ -2500,8 +2246,6 @@ components:
           pattern: ^\d+\.\d+$
         lead:
           $ref: "#/components/schemas/Lead"
-        morning:
-          $ref: "#/components/schemas/MorningSettings"
         agent:
           description: The model Kumo runs on.
           type: object
@@ -2730,38 +2474,6 @@ components:
       required: [device]
       properties:
         device: { $ref: "#/components/schemas/Device" }
-    Presence:
-      type: object
-      required: [looking]
-      properties:
-        looking:
-          description: Whether the conversation is on this device's screen.
-          type: boolean
-    DeviceStatus:
-      description: Your phone's Focus, when you've added Ito to it; absent while no such Focus is on.
-      type: object
-      additionalProperties: false
-      properties:
-        focus:
-          description: What the Focus is for, as you chose when adding Ito to it.
-          enum: [sleep, work, fitness, personal, other]
-    HeldStatus:
-      description: What the server holds of a device's Focus; empty while none counts.
-      type: object
-      additionalProperties: false
-      properties:
-        focus:
-          description: What the Focus is for.
-          enum: [sleep, work, fitness, personal, other]
-        since:
-          $ref: "events.schema.json#/$defs/Timestamp"
-          description: When it came on.
-        heard:
-          $ref: "events.schema.json#/$defs/Timestamp"
-          description: When the device last said so.
-        until:
-          $ref: "events.schema.json#/$defs/Timestamp"
-          description: When it stops counting if the device never says it's off.
     ErrorResult:
       type: object
       required: [error]

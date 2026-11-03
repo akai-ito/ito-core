@@ -17,7 +17,7 @@ const shortReply = [
   "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, or *approve* for an approval.",
   "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
   "- *trip* starts Florence with Mira in In motion, *training* a sub-20 5K block, and *booked* books the trip's Uffizi.",
-  "- *plan* lays out a day with Kumo's plan and guesses; *tonight*, *line* and *past* show the evening check-ins; *question* today's question; *drift* a week that drifted.",
+  "- *plan* lays out a day with Kumo's plan and guesses.",
 ].join("\n");
 
 const longReply = Array.from(
@@ -292,35 +292,19 @@ const showWork: Act["act"] = async (callTool) => {
   await callTool("show_work", {});
 };
 
-const momentNow: Act["act"] = async (callTool) => {
-  await callTool("moment_now", {});
-};
-
 const showDay: Act["act"] = async (callTool) => {
   await callTool("show_day", {});
 };
-
-const checkIn =
-  (kind: string): Act["act"] =>
-  async (callTool) => {
-    await callTool("show_checkin", { kind });
-  };
 
 const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {
   const chosen = [
     { pattern: /\bdesk\b/u, act: fillDesk, said: "I've put a question and an offer on your Desk." },
     { pattern: /\btimes\b/u, act: offerTimes, said: "Pick the times that are clear at work; they're on your Desk." },
-    { pattern: /\bmoment\b/u, act: momentNow, said: "My line for the moment is at the top of the Desk." },
     { pattern: /\binvite\b/u, act: showInvite, said: "Tess's invite is on your Desk." },
     { pattern: /\bmail\b/u, act: showMail, said: "A booking came in; there's a draft for you on the Desk." },
     { pattern: /\bstart\b/u, act: showGettingStarted, said: "I've read your mail. Here's what I found." },
     { pattern: /\bwork\b/u, act: showWork, said: "Here's my day so far, in my work on the Desk." },
     { pattern: /\bplan\b/u, act: showDay, said: "Here's the shape of today: my plan and my guesses are in Coming up." },
-    { pattern: /\btonight\b/u, act: checkIn("commit"), said: "I've asked about tonight at the top of the Desk." },
-    { pattern: /\bline\b/u, act: checkIn("pre"), said: "That's how I'd check in just before your line." },
-    { pattern: /\bpast\b/u, act: checkIn("past"), said: "And that's once you're past it." },
-    { pattern: /\bquestion\b/u, act: checkIn("question"), said: "Today's question is at the top of the Desk." },
-    { pattern: /\bdrift\b/u, act: checkIn("drift"), said: "That's how I'd name a week that drifted." },
   ].find(({ pattern }) => pattern.test(text));
   if (!chosen) return undefined;
   const actAt = lastAt(start) + 300;
@@ -331,9 +315,7 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
 export const demoWork =
   (callTool: CallTool): Engine["work"] =>
   async (prompt, run) => {
-    if (prompt.includes("It's past the line they set")) return ok("Moved tomorrow's run to the evening.");
-    if (prompt.includes("today's question")) return ok("Noted it on How to help you.");
-    if (prompt.includes("You asked them on the Desk") || prompt.includes("At the top of their Desk")) {
+    if (prompt.includes("You asked them on the Desk")) {
       return ok("Noted; nothing more was needed.");
     }
     if (prompt.includes("They told you this was wrong")) return ok("Noted on How to help you for next time.");
@@ -342,64 +324,11 @@ export const demoWork =
     return ok("Asked.");
   };
 
-// Kumo's check-ins as the demo writes them, by what the prompt asks for.
-const demoCheckin = (prompt: string): Readonly<Record<string, unknown>> => {
-  if (prompt.includes("just before their stop")) {
-    return {
-      text: "15 minutes to your 1. Note the next step now? Tomorrow's run and prep still fit if you're asleep by 1:30.",
-      options: [],
-    };
-  }
-  if (prompt.includes("They're past the line")) {
-    return {
-      text: "Every half hour now comes out of tomorrow's run or the interview prep. Your call. Which?",
-      options: ["The run", "The prep"],
-    };
-  }
-  if (prompt.includes("still going, an hour past")) {
-    return {
-      text: "It's gone 2. The run's already the cost of tonight; the prep can still fit.",
-      options: ["The prep"],
-    };
-  }
-  return {
-    text: "Last week: about 14h building, 1h interview prep, and the Northwind interview is in 10 days. Still the right split?",
-    options: [],
-  };
-};
-
-export const demoAnswers: Complete = (prompt, schema) => {
+export const demoAnswers: Complete = (_prompt, schema) => {
   const fields = Object.keys(schema.properties ?? {});
-  if (fields.includes("important")) {
-    return Promise.resolve(
-      ok(
-        prompt.includes("(your guess")
-          ? {
-              text: "Nothing fixed until tomorrow's dentist, so here's a quiet plan under today.",
-              detail: "Easy run · Northwind prep · a proper lunch · in bed by 00:30 so tomorrow works",
-              options: [],
-              reply: false,
-              important: true,
-            }
-          : {
-              text: "Hotel Orto needs a word before Friday; the rest of today can bend around your 2 o'clock.",
-              detail: "",
-              options: ["Ask me tonight"],
-              reply: true,
-              important: true,
-            },
-      ),
-    );
-  }
-  if (fields.includes("stop") && fields.includes("text")) {
-    return Promise.resolve(ok({ text: "Building tonight? Stop at 1, next step being…?", stop: "01:00" }));
-  }
-  if (fields.includes("next_step")) {
-    return Promise.resolve(ok({ stop: "", next_step: /They answered: (?<said>.*)/u.exec(prompt)?.groups?.said ?? "" }));
-  }
-  if (fields.includes("options") && fields.includes("text")) return Promise.resolve(ok(demoCheckin(prompt)));
-  if (fields.includes("changed")) return Promise.resolve(ok({ changed: false, label: "" }));
-  return Promise.resolve(fail("The demo answers nothing for that."));
+  return Promise.resolve(
+    fields.includes("changed") ? ok({ changed: false, label: "" }) : fail("The demo answers nothing for that."),
+  );
 };
 
 const motionScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {

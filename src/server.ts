@@ -31,26 +31,24 @@ import { codexVersion } from "#engine/codex/binary.ts";
 import { readChoice, restartedDetail, type Engine, type ToolServer } from "#engine/engine.ts";
 import { createApp } from "#http/app.ts";
 import { createGate, createToken, tokenSetting } from "#http/auth.ts";
-import { leadOf, notBeforeOf } from "#http/settings.ts";
+import { leadOf } from "#http/settings.ts";
 import { registerTools, toolsPath } from "#http/tools.ts";
 import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { createAttachments, type Attachments } from "#attachments/attachments.ts";
 import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
-import { createNotifier, defaultReminderMs } from "#notifications/notifier.ts";
-import { createPresence } from "#notifications/presence.ts";
+import { createNotifier } from "#notifications/notifier.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
 import { packageVersion } from "#version.ts";
-import type { ModelChoice } from "#protocol/types.ts";
+import type { Message, ModelChoice } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 import { toSpoken } from "#desk/day.ts";
 import { createDesk } from "#desk/desk.ts";
-import { createMoments } from "#desk/moments.ts";
 import { createWorkTools } from "#work/tools.ts";
-import { createTrust, sectionOf, type Trust } from "#work/trust.ts";
+import { createCorrections } from "#work/corrections.ts";
 import { createJobs, type Jobs } from "#jobs/jobs.ts";
 import { registerJobs } from "#http/jobs.ts";
 import { createJobStore } from "#store/jobs.ts";
@@ -63,7 +61,7 @@ import { createContacts, type Contacts, type PersonPage } from "#contacts/contac
 import { createContactsSource, type ContactsSource } from "#contacts/carddav.ts";
 import { contactsGroup } from "#contacts/group.ts";
 import { mailGroup } from "#mail/group.ts";
-import { parsePage, toAddress } from "#memory/pages.ts";
+import { parsePage, sectionOf, toAddress } from "#memory/pages.ts";
 import { createMailbox, type CreateMailSource, type Mailbox } from "#mail/mail.ts";
 import {
   calendarId,
@@ -80,14 +78,9 @@ import {
   pushProblem,
   type Problems,
 } from "#problems/problems.ts";
-import { createModestChoice, createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
+import { createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
 import { createBlockStore } from "#day/blocks.ts";
-import { createCheckins } from "#day/checkins.ts";
-import { createNights } from "#day/nights.ts";
 import { createDayPicture } from "#day/picture.ts";
-import { createQuestions } from "#day/questions.ts";
-import { createStatus } from "#day/status.ts";
-import { registerStatus } from "#http/status.ts";
 import { registerDay } from "#http/day.ts";
 import { contextRun, inToolContext } from "#tools/context.ts";
 import { createDemoTools } from "#demo/tools.ts";
@@ -112,11 +105,9 @@ export type ServerOptions = {
   readonly createMailSource?: CreateMailSource;
   readonly github?: GitHubHosts;
   readonly backupCheckMs?: number;
-  // Picks the trust ladder's spot checks; a test fixes it.
-  readonly random?: () => number;
 };
 
-export type PushOptions = { readonly hosts: ApnsHosts; readonly reminderMs: number };
+export type PushOptions = { readonly hosts: ApnsHosts };
 
 export type EngineContext = {
   readonly settings: Settings;
@@ -145,7 +136,6 @@ export type Server = {
   readonly contacts: Contacts;
   readonly mail: Mailbox;
   readonly problems: Problems;
-  readonly trust: Trust;
   readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
@@ -273,10 +263,8 @@ export const createServer = (options: ServerOptions): Server => {
       : "<call>\nThe call has ended, so they're reading the chat. Write as usual, and don't say you've put " +
           "something in the chat: that's only for calls.\n</call>";
   };
-  const statusCell = createCell<() => readonly string[]>(() => []);
-  // The time and what Kumo knows they're doing now, so replies fit the moment.
-  const nowText = (): string =>
-    ["<now>", `It's ${toSpoken(clock.now(), timeZone)}.`, ...statusCell.get()(), "</now>"].join("\n");
+  // The time, so replies fit the moment.
+  const nowText = (): string => ["<now>", `It's ${toSpoken(clock.now(), timeZone)}.`, "</now>"].join("\n");
   const engine = options.createEngine({
     settings: store,
     log,
@@ -290,7 +278,7 @@ export const createServer = (options: ServerOptions): Server => {
         memory.inMindText(),
         motions.inMindText(),
         jobs.inMindText(),
-        trust.inMindText(),
+        picture.inMindText(),
         gettingStarted.inMindText(),
         callContext(),
       ]
@@ -381,7 +369,6 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     log,
   });
-  const presence = createPresence();
   const problems = createProblems({
     clock,
     standing: () => [
@@ -482,23 +469,14 @@ export const createServer = (options: ServerOptions): Server => {
     },
     enrich: (item) => picture.enrich(item),
   });
-  const nights = createNights(store, timeZone);
-  const questions = createQuestions(store, clock, timeZone);
-  const status = createStatus({ settings: store, clock, timeZone, nights, info });
-  statusCell.set(status.lines);
   const picture = createDayPicture({
     blocks: createBlockStore(database),
     calendar,
     motions,
-    nights,
-    settings: store,
     clock,
     timeZone,
-    work: runWork,
     info,
     lead: () => leadOf(store),
-    morning: () => notBeforeOf(store),
-    now: status.lines,
   });
   calendar.onEventEnded((uid) => {
     jobs.onEventEnded(uid);
@@ -518,22 +496,14 @@ export const createServer = (options: ServerOptions): Server => {
         .map(({ id }) => id),
     info,
   });
-  const isBusy = (): boolean => calendar.isBusy();
-  const isGettingStarted = (): boolean => gettingStarted.state().state !== "done";
-  // Their own model, thinking modestly, for Kumo's lines and check-ins.
-  const modestChoice = createModestChoice(listedModels, () => readChoice(store.setting));
-  const push = { hosts: appleHosts, reminderMs: defaultReminderMs, ...options.push };
+  const push = { hosts: appleHosts, ...options.push };
   const apns = createApns(() => readApnsCredentials(store), push.hosts, clock);
   const notifier = createNotifier({
     store,
     apns,
     clock,
-    presence,
     agentName: () => leadOf(store),
     log,
-    reminderMs: push.reminderMs,
-    timeZone,
-    isBusy,
     // Push that isn't set up at all is its own standing problem.
     onHealth: (health) => {
       problems.report(
@@ -543,56 +513,8 @@ export const createServer = (options: ServerOptions): Server => {
       );
     },
   });
-  const moments = createMoments({
-    store,
-    desk,
-    clock,
-    timeZone,
-    presence,
-    complete: quickComplete,
-    choice: modestChoice,
-    isBusy,
-    isGettingStarted,
-    identifiers,
-    lead: () => leadOf(store),
-    notify: notifier.moment,
-    info,
-    beforeDay: () => picture.plan(),
-    now: status.lines,
-  });
-  const checkins = createCheckins({
-    store,
-    clock,
-    timeZone,
-    presence,
-    isBusy,
-    isGettingStarted,
-    nights,
-    picture,
-    questions,
-    moments,
-    complete: quickComplete,
-    choice: modestChoice,
-    work: runWork,
-    motions,
-    lead: () => leadOf(store),
-    morning: () => notBeforeOf(store),
-    info,
-    now: status.lines,
-    likely: status.likely,
-    isAsleep: status.isAsleep,
-  });
-  const trust = createTrust({
-    store,
-    desk,
-    clock,
-    timeZone,
-    tell: moments.tell,
-    work: runWork,
-    isGettingStarted,
-    ...(options.random && { random: options.random }),
-    info,
-  });
+  const corrections = createCorrections({ store, desk, clock, work: runWork, info });
+  const post = (text: string, isUrgent: boolean): Message => store.postMessage(text, { isUrgent });
 
   const app = createApp({
     store,
@@ -601,7 +523,6 @@ export const createServer = (options: ServerOptions): Server => {
     schemas,
     info: { name: options.name, version: packageVersion() },
     gate: createGate(() => [store.setting(tokenSetting) ?? "", ...store.pairedTokenHashes()].filter(Boolean), clock),
-    presence,
     attachments,
     host,
     memory,
@@ -613,7 +534,7 @@ export const createServer = (options: ServerOptions): Server => {
     models: () => engine.models(),
     heartbeatMs: options.heartbeatMs ?? defaultHeartbeatMs,
     desk,
-    trust,
+    corrections,
     timeZone,
     calendar,
     gettingStarted,
@@ -653,17 +574,14 @@ export const createServer = (options: ServerOptions): Server => {
     imageTool,
     ...memory.tools,
     ...motions.tools,
-    ...createWorkTools({ post: moments.tell, desk }),
-    ...trust.tools,
+    ...createWorkTools({ post, desk }),
     ...calendar.tools,
     ...picture.tools,
-    questions.tool,
-    status.tool,
     ...contacts.tools,
     ...jobs.tools,
     ...mail.tools,
     ...gettingStarted.tools,
-    ...createDemoTools({ store, desk, trust, moments, checkins, gettingStarted, identifiers, clock, timeZone }),
+    ...createDemoTools({ store, desk, post, gettingStarted, identifiers, clock, timeZone }),
   ];
   const noteRun = (tool: Tool): Tool => ({
     ...tool,
@@ -686,7 +604,6 @@ export const createServer = (options: ServerOptions): Server => {
   });
   registerJobs(app, { jobs, schemas });
   registerDay(app, { picture, schemas });
-  registerStatus(app, { status, schemas });
   registerTools(app, {
     token: toolsToken,
     tools: allTools,
@@ -711,9 +628,7 @@ export const createServer = (options: ServerOptions): Server => {
     await backup.close();
     motions.close();
     topics.close();
-    checkins.close();
-    moments.close();
-    trust.close();
+    desk.close();
     jobs.close();
     gettingStarted.close();
     calendar.close();
@@ -748,7 +663,6 @@ export const createServer = (options: ServerOptions): Server => {
     contacts,
     mail,
     problems,
-    trust,
     callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();

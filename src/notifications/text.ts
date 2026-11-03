@@ -18,5 +18,3 @@ export const toFirstLine = (markdown: string): string => {
 };
 
 export const toFailedText = (message: string): string => `Couldn't finish: ${message}`;
-
-export const toReminderText = (question: string): string => `Still waiting on one thing: ${question}`;

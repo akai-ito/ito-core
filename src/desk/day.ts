@@ -44,12 +44,6 @@ export const nextDay = (day: string): string => new Date((dayIndex(day) + 1) * d
 // When the local day began, as an instant: its midnight, whatever the change of clock that day.
 export const startOfDay = (now: number, timeZone: string): number => atLocal(toLocal(now, timeZone).day, 0, timeZone);
 
-// `07:30` as minutes after midnight.
-export const toMinutes = (time: string): number => {
-  const [hours = "7", minutes = "30"] = time.split(":", 2);
-  return Number(hours) * 60 + Number(minutes);
-};
-
 // How long until the next time the local clock shows `target` minutes after midnight.
 export const untilMinutes = (now: number, timeZone: string, target: number): number => {
   const { day } = toLocal(now, timeZone);

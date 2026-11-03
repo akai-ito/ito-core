@@ -242,7 +242,6 @@ describe("their iCloud Contacts, kept by Kumo", () => {
       text: expect.stringMatching(/^Updated Clara Voss in Contacts: work email clara@halcyon\.example/u) as unknown,
       reason: "Her new signature, 1 Nov",
       undo: true,
-      work: "contacts",
     });
 
     const undone = await box.desk.undo(entry?.id ?? "");
@@ -304,7 +303,6 @@ describe("their iCloud Contacts, kept by Kumo", () => {
     expect(badDate.text).toBe(`"31-02" isn't a date: give 1990-04-12, or 04-12 when the year isn't known.`);
     expect(box.done()[0]).toMatchObject({
       text: expect.stringMatching(/^Added Tess Harlow to Contacts: /u) as unknown,
-      work: "contacts",
     });
 
     const undone = await box.desk.undo(box.done()[0]?.id ?? "");
@@ -346,7 +344,6 @@ describe("their iCloud Contacts, kept by Kumo", () => {
       reason: "You agreed: One has his email, one his phone",
       undo: true,
     });
-    expect(box.done()[0]?.work).toBeUndefined();
 
     const unmerged = await box.desk.undo(box.done()[0]?.id ?? "");
 
@@ -448,7 +445,7 @@ describe("their iCloud Contacts, kept by Kumo", () => {
     expect(server().files("Contacts")).toEqual(["leo-1.vcf", "leo-2.vcf"]);
   });
 
-  it("brings up a birthday a few days ahead, once, for Kumo to judge and tell through its line", async () => {
+  it("brings up a birthday a few days ahead, once, for Kumo to judge and message about at a good moment", async () => {
     server().seed("Contacts", "leo.vcf", leoWithPhone);
     server().seed("Contacts", "clara.vcf", claraCard);
     const box = open([
@@ -463,7 +460,8 @@ describe("their iCloud Contacts, kept by Kumo", () => {
     expect(prompt).toContain(
       "- Leo Marsh: birthday, Thursday 5 November, in 4 days. People page memory:people/leo, circle friends: Your oldest friend.",
     );
-    expect(prompt).toContain("“Leo's birthday is Thursday. Want");
+    expect(prompt).toContain("“Leo's birthday is Thursday.");
+    expect(prompt).toContain("if now is a good moment in their day, or schedule a look for a better one");
     expect(prompt).not.toContain("Clara");
 
     box.clock.moveTo(now + 3 * 60 * 60 * 1000);

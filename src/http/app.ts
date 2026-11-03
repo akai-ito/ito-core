@@ -18,7 +18,7 @@ import { registerMemory } from "#http/memory.ts";
 import { registerMotion } from "#http/motion.ts";
 import type { Motions } from "#motion/motion.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
-import { leadOf, notBeforeOf, registerSettings } from "#http/settings.ts";
+import { leadOf, registerSettings } from "#http/settings.ts";
 import { registerDesk } from "#http/desk.ts";
 import { toLocal } from "#desk/day.ts";
 import { registerOnboarding } from "#http/onboarding.ts";
@@ -35,11 +35,10 @@ import { registerStream } from "#http/stream.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
-import type { Presence } from "#notifications/presence.ts";
-import type { Error as ErrorBody, Presence as PresenceBody, RegisterDevice } from "#protocol/types.ts";
+import type { Error as ErrorBody, RegisterDevice } from "#protocol/types.ts";
 import type { Store } from "#store/store.ts";
 import { toRetryFailure, type Turns } from "#turns/turns.ts";
-import type { Trust } from "#work/trust.ts";
+import type { Corrections } from "#work/corrections.ts";
 
 export type ServerInfo = { readonly name: string; readonly version: string };
 
@@ -50,7 +49,6 @@ export type AppOptions = {
   readonly schemas: Schemas;
   readonly info: ServerInfo;
   readonly gate: Gate;
-  readonly presence: Presence;
   readonly attachments: Attachments;
   readonly host: Host;
   readonly memory: Memory;
@@ -62,7 +60,7 @@ export type AppOptions = {
   readonly models: ListModels;
   readonly heartbeatMs: number;
   readonly desk: DeskKeeper;
-  readonly trust: Pick<Trust, "ladder" | "correct" | "reset">;
+  readonly corrections: Pick<Corrections, "correct">;
   readonly timeZone: string;
   readonly calendar: Calendar;
   readonly onLeadRenamed: () => void;
@@ -107,7 +105,6 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     schemas,
     info,
     gate,
-    presence,
     attachments,
     host,
     memory,
@@ -119,7 +116,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     models,
     heartbeatMs,
     desk,
-    trust,
+    corrections,
     timeZone,
     calendar,
     onLeadRenamed,
@@ -183,7 +180,6 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       version: info.version,
       protocol,
       lead: { name: leadOf(store) },
-      morning: { not_before: notBeforeOf(store) },
       agent: {
         ...(model && { model }),
         ...(effort && { effort }),
@@ -198,7 +194,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   registerCapabilities(app, host, schemaFor);
   registerSettings(app, { store, onLeadRenamed, schemaFor });
-  registerDesk(app, { store, desk, trust, today: () => toLocal(clock.now(), timeZone).day, schemaFor });
+  registerDesk(app, { store, desk, corrections, today: () => toLocal(clock.now(), timeZone).day, schemaFor });
   registerOnboarding(app, { gettingStarted, schemaFor });
   app.post<{
     Body: {
@@ -248,9 +244,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       protocol,
       heartbeatMs,
       maxReplay,
-      openStream: () => {
+      onOpen: () => {
         gettingStarted.begin();
-        return presence.openStream();
       },
     }),
   );
@@ -424,24 +419,6 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     async (request, reply) => {
       const device = toDeviceId(request.params.device);
       store.removeDevice(device);
-      presence.forget(device);
-      return reply.code(204).send();
-    },
-  );
-
-  app.put<{ Params: { readonly device: string }; Body: PresenceBody }>(
-    "/v0/devices/:device/presence",
-    { schema: schemaFor("setPresence") },
-    async (request, reply) => {
-      const device = toDeviceId(request.params.device);
-      if (store.devices().every((registered) => registered.id !== device)) {
-        return reply
-          .code(404)
-          .send(
-            toErrorResult("not_found", `No device ${device}.`, "Register this device before saying you're looking."),
-          );
-      }
-      presence.setLooking(device, request.body.looking);
       return reply.code(204).send();
     },
   );

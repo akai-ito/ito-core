@@ -904,7 +904,6 @@ export const createMailbox = ({
       title: `Unsubscribe from ${senderOf(mail)}?`,
       options: [{ label: "Unsubscribe" }, { label: "Stay subscribed" }],
       allows_text: false,
-      quiet: true,
       question: {
         text: `Their promotions go to the bin. You've written to ${siteOf(sender)} before, so I'm asking first.`,
       },

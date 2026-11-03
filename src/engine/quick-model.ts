@@ -54,25 +54,3 @@ export const createStakesChoice =
       ? thoroughOn(main, choice?.model === main.id ? choice.effort : undefined)
       : lightOn(listed.value, main);
   };
-
-const modestEffort = "medium";
-
-// Their chosen model, thinking modestly, such as for Kumo's line for the moment: few a day, and the voice matters.
-export const createModestChoice =
-  (models: Models, chosen: () => ModelChoice | undefined): (() => Promise<ModelChoice | undefined>) =>
-  async () => {
-    const listed = await models();
-    if (!listed.ok) return;
-    const choice = chosen();
-    const main =
-      listed.value.find(({ id }) => id === choice?.model) ??
-      listed.value.find(({ is_default: isDefault }) => isDefault) ??
-      listed.value[0];
-    if (!main) return;
-    const efforts = main.efforts.map(({ id }) => id);
-    const modest = efforts.includes(modestEffort) ? modestEffort : main.default_effort;
-    const own = choice?.model === main.id ? choice.effort : undefined;
-    // Never more than they chose themselves.
-    const isLess = own !== undefined && efforts.includes(own) && efforts.indexOf(own) < efforts.indexOf(modest);
-    return { model: main.id, effort: isLess ? own : modest };
-  };

@@ -10,7 +10,8 @@ export type StreamOptions = {
   readonly protocol: string;
   readonly heartbeatMs: number;
   readonly maxReplay: number;
-  readonly openStream: () => () => void;
+  // An app opened the stream, such as the first time on a fresh box.
+  readonly onOpen: () => void;
 };
 
 const maxLagBytes = 1024 * 1024;
@@ -35,7 +36,7 @@ const catchUp = (
 };
 
 export const createEventStream =
-  ({ store, clock, protocol, heartbeatMs, maxReplay, openStream }: StreamOptions) =>
+  ({ store, clock, protocol, heartbeatMs, maxReplay, onOpen }: StreamOptions) =>
   (request: FastifyRequest, reply: FastifyReply): void => {
     reply.hijack();
     const response = reply.raw;
@@ -47,7 +48,7 @@ export const createEventStream =
       "ito-protocol": protocol,
     });
     response.flushHeaders();
-    const release = openStream();
+    onOpen();
 
     const entries = catchUp(store, cursorOf(request), maxReplay);
     const burst = entries.map(({ event }) => toFrame(event.id, event)).join("");
@@ -78,6 +79,5 @@ export const createEventStream =
     response.on("close", () => {
       unsubscribe();
       heartbeat.get()?.();
-      release();
     });
   };

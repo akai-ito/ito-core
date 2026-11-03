@@ -1,21 +1,15 @@
-import { createCell } from "#cell.ts";
 import type { DeskKeeper, NewCard } from "#desk/desk.ts";
-import type { AskOption, Slot } from "#protocol/types.ts";
-import { contextRun } from "#tools/context.ts";
+import type { AskOption, Message, Slot } from "#protocol/types.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
-import { kinds } from "#work/trust.ts";
 
 export type WorkToolsOptions = {
-  // Tells them: into Kumo's line for the moment, or straight into the conversation while getting started.
-  // It answers how, for the tool's result.
-  readonly post: (text: string, isUrgent: boolean) => string;
+  // Messages them in the conversation; every message notifies them, and an urgent one breaks through Focus.
+  readonly post: (text: string, isUrgent: boolean) => Message;
   readonly desk: DeskKeeper;
 };
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
-
-const workKinds = kinds.map(({ work }) => work);
 
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
 
@@ -73,149 +67,132 @@ const toCard = (input: unknown): NewCard | string => {
   }
 };
 
-export const createWorkTools = ({ post, desk }: WorkToolsOptions): readonly Tool[] => {
-  const posted = createCell<ReadonlySet<string>>(new Set());
-  return [
-    {
-      name: "post",
-      title: "Tell them now",
-      audience: "work",
-      description:
-        "Tell the person something they should know now, such as a snag in their plans: it becomes your line at " +
-        "the top of their Desk and in the conversation, with anything else that came in. At most once per piece " +
-        "of work.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          text: { type: "string", description: "One or two lines, plain words." },
-          urgent: {
-            type: "boolean",
-            description: "Only when it can't wait: the notification sounds whatever the hour.",
+export const createWorkTools = ({ post, desk }: WorkToolsOptions): readonly Tool[] => [
+  {
+    name: "post",
+    title: "Message them",
+    audience: "work",
+    description:
+      "Message the person in the conversation, such as a snag in their plans or how something went: it notifies " +
+      "their phone at once, and their Focus decides whether it makes a sound. One message per thing, in plain words; " +
+      "say nothing when nothing's worth their attention.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "One or two lines, plain words." },
+        urgent: {
+          type: "boolean",
+          description: "Only when it can't wait: it's sent time-sensitive, so it breaks through their Focus.",
+        },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+    call: (input) => {
+      const text = textOf(input, "text").trim();
+      if (text === "") return Promise.resolve(failed("Give the message's text."));
+      const message = post(text, fieldOf(input, "urgent") === true);
+      return Promise.resolve({ text: `Sent as ${message.id}.` });
+    },
+  },
+  {
+    name: "add_card",
+    title: "Put a card on the Desk",
+    audience: "work",
+    description:
+      "Put a card in Waiting on you: a `question` when you're not sure (such as whether a mail you binned was right), " +
+      "an `offer` of something you'd take on (such as lessons for something that keeps coming up), or `times` for them " +
+      "to check against their work calendar.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { enum: ["question", "offer", "times"] },
+        title: { type: "string", description: "One line, such as “Binned a Revolut mail”." },
+        text: { type: "string", description: "question and offer: what you're asking or offering." },
+        options: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { label: { type: "string" }, acts: { type: "boolean" } },
+            required: ["label"],
+            additionalProperties: false,
           },
         },
-        required: ["text"],
-        additionalProperties: false,
-      },
-      call: (input) => {
-        const run = contextRun() ?? "";
-        const text = textOf(input, "text").trim();
-        if (text === "") return Promise.resolve(failed("Give the message's text."));
-        if (posted.get().has(run)) return Promise.resolve(failed("You've already posted once for this work."));
-        posted.update((current) => new Set([...current, run]));
-        return Promise.resolve({ text: post(text, fieldOf(input, "urgent") === true) });
-      },
-    },
-    {
-      name: "add_card",
-      title: "Put a card on the Desk",
-      audience: "work",
-      description:
-        "Put a card in Waiting on you: a `question` when you're not sure (such as whether a mail you binned was right), " +
-        "an `offer` of something you'd take on (such as lessons for something that keeps coming up), or `times` for them " +
-        "to check against their work calendar.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          kind: { enum: ["question", "offer", "times"] },
-          title: { type: "string", description: "One line, such as “Binned a Revolut mail”." },
-          text: { type: "string", description: "question and offer: what you're asking or offering." },
-          options: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: { label: { type: "string" }, acts: { type: "boolean" } },
-              required: ["label"],
-              additionalProperties: false,
-            },
-          },
-          allows_text: { type: "boolean" },
-          purpose: { type: "string", description: "times: such as “A first call with Clara at Northwind”." },
-          slots: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: { start: { type: "string" }, end: { type: "string" }, note: { type: "string" } },
-              required: ["start", "end"],
-              additionalProperties: false,
-            },
+        allows_text: { type: "boolean" },
+        purpose: { type: "string", description: "times: such as “A first call with Clara at Northwind”." },
+        slots: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { start: { type: "string" }, end: { type: "string" }, note: { type: "string" } },
+            required: ["start", "end"],
+            additionalProperties: false,
           },
         },
-        required: ["kind", "title"],
-        additionalProperties: false,
       },
-      call: (input) => {
-        const card = toCard(input);
-        if (typeof card === "string") return Promise.resolve(failed(card));
-        const added = desk.addCard(card);
-        return Promise.resolve({ text: `Put ${added.title} on the Desk as ${added.id}.` });
-      },
+      required: ["kind", "title"],
+      additionalProperties: false,
     },
-    {
-      name: "clear_card",
-      title: "Take a card off the Desk",
-      audience: "work",
-      description:
-        "Take a question, offer or times card off Waiting on you once it's settled without them, such as when " +
-        "they answered it in their own mail. It's recorded in their Done list with the reason.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          card: { type: "string", description: "The card's id, such as k_…" },
-          reason: { type: "string", description: "Why it's settled, in a line." },
-        },
-        required: ["card", "reason"],
-        additionalProperties: false,
-      },
-      call: (input) => {
-        const id = lineOf(input, "card");
-        const card = desk.cards().find((waiting) => waiting.id === id);
-        if (!card) return Promise.resolve(failed(`No card ${id} is waiting on them.`));
-        if (card.kind === "draft" || card.kind === "invite") {
-          return Promise.resolve(failed("A draft goes with drop_draft, and an invite once it's answered."));
-        }
-        const reason = lineOf(input, "reason");
-        desk.removeCard(card.id);
-        desk.addDone({
-          text: `Took “${card.title}” off Waiting on you`,
-          ...(reason !== "" && { reason }),
-          ...(card.motion !== undefined && { motion: card.motion }),
-          quiet: false,
-        });
-        return Promise.resolve({ text: `Took ${card.title} off the Desk.` });
-      },
+    call: (input) => {
+      const card = toCard(input);
+      if (typeof card === "string") return Promise.resolve(failed(card));
+      const added = desk.addCard(card);
+      return Promise.resolve({ text: `Put ${added.title} on the Desk as ${added.id}.` });
     },
-    {
-      name: "done",
-      title: "Record what you did",
-      audience: "work",
-      description:
-        "Record one thing you did without the person, for their Done list, with why in a line. Say which kind of " +
-        "work it was, so they can tell you when you got it wrong and you learn: calendar for anything you put on, " +
-        "moved or took off a calendar, drafts for a draft you wrote, sorting for mail you filed or cleared.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          text: { type: "string" },
-          reason: { type: "string" },
-          work: { enum: workKinds, description: "Leave it out for anything else." },
-        },
-        required: ["text"],
-        additionalProperties: false,
+  },
+  {
+    name: "clear_card",
+    title: "Take a card off the Desk",
+    audience: "work",
+    description:
+      "Take a question, offer or times card off Waiting on you once it's settled without them, such as when " +
+      "they answered it in their own mail. It's recorded in their Done list with the reason.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        card: { type: "string", description: "The card's id, such as k_…" },
+        reason: { type: "string", description: "Why it's settled, in a line." },
       },
-      call: (input) => {
-        const text = lineOf(input, "text");
-        if (text === "") return Promise.resolve(failed("Say what you did."));
-        const reason = lineOf(input, "reason");
-        const given = fieldOf(input, "work");
-        const work = workKinds.find((kind) => kind === given);
-        const entry = desk.addDone({
-          text,
-          ...(reason !== "" && { reason }),
-          ...(work !== undefined && { work }),
-          quiet: false,
-        });
-        return Promise.resolve({ text: `Recorded ${entry.id}.` });
-      },
+      required: ["card", "reason"],
+      additionalProperties: false,
     },
-  ];
-};
+    call: (input) => {
+      const id = lineOf(input, "card");
+      const card = desk.cards().find((waiting) => waiting.id === id);
+      if (!card) return Promise.resolve(failed(`No card ${id} is waiting on them.`));
+      if (card.kind === "draft" || card.kind === "invite") {
+        return Promise.resolve(failed("A draft goes with drop_draft, and an invite once it's answered."));
+      }
+      const reason = lineOf(input, "reason");
+      desk.removeCard(card.id);
+      desk.addDone({
+        text: `Took “${card.title}” off Waiting on you`,
+        ...(reason !== "" && { reason }),
+        ...(card.motion !== undefined && { motion: card.motion }),
+        quiet: false,
+      });
+      return Promise.resolve({ text: `Took ${card.title} off the Desk.` });
+    },
+  },
+  {
+    name: "done",
+    title: "Record what you did",
+    audience: "work",
+    description:
+      "Record one thing you did without the person, for their Done list, with why in a line, so they can see it " +
+      "and tell you when you got it wrong.",
+    inputSchema: {
+      type: "object",
+      properties: { text: { type: "string" }, reason: { type: "string" } },
+      required: ["text"],
+      additionalProperties: false,
+    },
+    call: (input) => {
+      const text = lineOf(input, "text");
+      if (text === "") return Promise.resolve(failed("Say what you did."));
+      const reason = lineOf(input, "reason");
+      const entry = desk.addDone({ text, ...(reason !== "" && { reason }), quiet: false });
+      return Promise.resolve({ text: `Recorded ${entry.id}.` });
+    },
+  },
+];

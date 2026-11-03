@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { toTimestamp, type Clock } from "#clock.ts";
 import type { Calendar } from "#calendar/calendar.ts";
-import { dayMs, minuteMs, toLocal, toSpoken } from "#desk/day.ts";
-import type { Work } from "#desk/desk.ts";
+import { dayMs, minuteMs } from "#desk/day.ts";
 import {
   isActivity,
   isGuessActivity,
@@ -12,12 +11,10 @@ import {
   type BlockAnswer,
   type BlockStore,
 } from "#day/blocks.ts";
-import type { Nights } from "#day/nights.ts";
-import { clockOf, hourMs, nextDay, spokenTime, weekdayOf } from "#day/time.ts";
+import { clockOf, hourMs, weekdayOf } from "#day/time.ts";
 import type { Motions } from "#motion/motion.ts";
 import type { CalendarItem } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
-import type { Settings } from "#store/store.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
@@ -30,21 +27,8 @@ export type DayPicture = {
   // Adds what Kumo knows of one of its blocks to the item, such as that it's a guess and why.
   readonly enrich: (item: CalendarItem) => CalendarItem;
   readonly answer: (id: string, answer: BlockAnswer) => Promise<Result<CalendarItem, GuessFailure>>;
-  // Before the day's first line: plans the day once, then says what the line should know.
-  readonly plan: () => Promise<readonly string[]>;
-  // What's on a local day, on every calendar, for a prompt, with Kumo's blocks marked.
-  readonly dayLines: (day: string) => readonly string[];
-  // The items on a local day, both calendars, with Kumo's picture added.
-  readonly dayItems: (day: string) => readonly CalendarItem[];
-  // What they're working towards, from what's in motion, for a prompt.
-  readonly goals: () => Promise<readonly string[]>;
-  // Hours by activity between two instants: what Kumo guessed (with their corrections) and what it planned.
-  readonly hours: (from: number, to: number) => Hours;
-};
-
-export type Hours = {
-  readonly guessed: ReadonlyMap<Activity, number>;
-  readonly planned: ReadonlyMap<Activity, number>;
+  // What they told Kumo about its guesses lately, so its next guesses learn from it.
+  readonly inMindText: () => string;
 };
 
 export type GuessFailure = { readonly code: "not_found" | "unavailable"; readonly detail: string };
@@ -52,22 +36,12 @@ export type GuessFailure = { readonly code: "not_found" | "unavailable"; readonl
 export type DayPictureOptions = {
   readonly blocks: BlockStore;
   readonly calendar: Pick<Calendar, "addEvent" | "changeEvent" | "isConnected" | "listItems" | "onRefreshed">;
-  readonly motions: Pick<Motions, "list" | "detail">;
-  readonly nights: Nights;
-  readonly settings: Settings;
+  readonly motions: Pick<Motions, "list">;
   readonly clock: Clock;
   readonly timeZone: string;
-  readonly work: Work;
   readonly info: Info;
   readonly lead: () => string;
-  readonly morning: () => string;
-  // What Kumo knows they're doing now, such as their Focus, for a prompt.
-  readonly now?: () => readonly string[];
 };
-
-export const plannedSetting = "day_planned";
-
-export const planNoteSetting = "day_plan_note";
 
 export const blockPrefix = "block-";
 
@@ -78,22 +52,10 @@ const longestBlockMs = 12 * hourMs;
 const keptMs = 35 * dayMs;
 const lookbackMs = 28 * dayMs;
 const settledMs = 2 * minuteMs;
-const goalDays = 21;
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
-
-const lastLine = (text: string): string =>
-  text
-    .split("\n")
-    .map((line) => line.trim())
-    .findLast((line) => line !== "") ?? "";
-
-const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? (value as readonly unknown[]) : []);
 
 const isInstant = (text: string): boolean => /T\d{2}:\d{2}/u.test(text) && !Number.isNaN(Date.parse(text));
 
@@ -124,15 +86,10 @@ export const createDayPicture = ({
   blocks,
   calendar,
   motions,
-  nights,
-  settings,
   clock,
   timeZone,
-  work,
   info,
   lead,
-  morning,
-  now: nowLines = () => [],
 }: DayPictureOptions): DayPicture => {
   const enrich = (item: CalendarItem): CalendarItem => {
     if (!item.calendar.kumo) return item;
@@ -172,90 +129,6 @@ export const createDayPicture = ({
 
   calendar.onRefreshed(sync);
 
-  const dayItems = (day: string): readonly CalendarItem[] =>
-    calendar
-      .listItems()
-      .filter(
-        (item) => (item.all_day ? item.start.slice(0, 10) : toLocal(Date.parse(item.start), timeZone).day) === day,
-      )
-      .map((item) => enrich(item))
-      .toSorted((left, right) => Date.parse(left.start) - Date.parse(right.start));
-
-  const whoseOf = (item: CalendarItem): string => {
-    const block = item.calendar.kumo ? blocks.find(item.uid) : undefined;
-    if (item.guess) return `your guess, ${item.guess.activity}, uid ${item.uid}`;
-    if (block) {
-      const motion = block.motion === undefined ? undefined : motions.list().find(({ id }) => id === block.motion);
-      return `your plan${motion ? ` for ${motion.title}` : ""}, uid ${item.uid}`;
-    }
-    if (item.calendar.kumo)
-      return item.status === "hold" ? `your hold, uid ${item.uid}` : `your block, uid ${item.uid}`;
-    return "theirs";
-  };
-
-  const dayLines = (day: string): readonly string[] =>
-    dayItems(day).map((item) => {
-      const start = Date.parse(item.start);
-      const when = item.all_day ? "all day" : `${clockOf(start, timeZone)}–${clockOf(Date.parse(item.end), timeZone)}`;
-      return `- ${weekdayOf(start, timeZone)} ${when} ${item.title} (${whoseOf(item)})`;
-    });
-
-  const goals = async (): Promise<readonly string[]> => {
-    const now = clock.now();
-    const today = toLocal(now, timeZone).day;
-    const tomorrow = nextDay(today);
-    const until = toLocal(now + goalDays * dayMs, timeZone).day;
-    const active = motions.list().filter(({ status }) => status === "active");
-    const described = await Promise.all(
-      active.map(async ({ id, title, kind, summary }) => {
-        const detail = await motions.detail(id);
-        const content = detail.ok ? detail.value.content : {};
-        const head = `- ${title} (${kind}, ${id}): ${summary}`;
-        if (kind === "training") {
-          const goal = isObject(content.goal) ? content.goal : {};
-          const sessions = listOf(content.weeks)
-            .flatMap((week) => listOf(fieldOf(week, "sessions")))
-            .filter((session) => [today, tomorrow].includes(textOf(session, "date")))
-            .map(
-              (session) =>
-                `  - ${textOf(session, "date") === today ? "today" : "tomorrow"}: ${textOf(session, "title")}` +
-                (textOf(session, "detail") === "" ? "" : `, ${textOf(session, "detail")}`) +
-                (fieldOf(session, "done") === true ? " (done)" : ""),
-            );
-          const by = textOf(goal, "by");
-          return [
-            head,
-            `  - goal: ${textOf(goal, "title")} in ${textOf(goal, "target")}${by ? ` by ${by}` : ""}`,
-            ...sessions,
-          ];
-        }
-        if (kind === "pursuit") {
-          const next = listOf(content.options)
-            .filter((option) => {
-              const at = textOf(fieldOf(option, "next"), "at");
-              return at !== "" && at.slice(0, 10) >= today && at.slice(0, 10) <= until;
-            })
-            .map(
-              (option) =>
-                `  - ${textOf(option, "org") || textOf(option, "name")}: ${textOf(fieldOf(option, "next"), "text")}, ` +
-                textOf(fieldOf(option, "next"), "at").replace("T", " "),
-            );
-          return [head, ...next];
-        }
-        if (kind === "occasion") {
-          const start = textOf(content, "start");
-          if (start.slice(0, 10) < today || start.slice(0, 10) > until) return [head];
-          const prep = listOf(content.prep)
-            .filter((todo) => fieldOf(todo, "done") !== true)
-            .map((todo) => textOf(todo, "text"));
-          return [head, `  - on ${start.replace("T", " ")}${prep.length > 0 ? `; prep left: ${prep.join("; ")}` : ""}`];
-        }
-        return [head];
-      }),
-    );
-    return described.flat();
-  };
-
   const corrections = (now: number): readonly string[] => {
     const answered = blocks
       .between(toTimestamp(now - lookbackMs), toTimestamp(now + dayMs))
@@ -269,107 +142,6 @@ export const createDayPicture = ({
       });
     const right = answered.length - fixed.length;
     return [...(right > 0 ? [`They said ${String(right)} of your guesses were right.`] : []), ...fixed];
-  };
-
-  const lastNight = (now: number): readonly string[] => {
-    const night = nights.get(nights.nightOf(now));
-    if (!night) return [];
-    const stop = night.stop === undefined ? undefined : nights.stopAt(night.night, night.stop);
-    const last = night.lastActive === undefined ? undefined : Date.parse(night.lastActive);
-    const said = night.stoppedAt === undefined ? undefined : Date.parse(night.stoppedAt);
-    const ranLate = stop !== undefined && last !== undefined && last > stop + 15 * minuteMs;
-    return [
-      ...(night.building === false ? ["Last night they said they weren't building."] : []),
-      ...(night.stop === undefined
-        ? []
-        : [
-            `Last night they set a stop at ${spokenTime(night.stop)}` +
-              (said === undefined ? "" : `, and said they were stopping at ${clockOf(said, timeZone)}`) +
-              (ranLate ? `; their last sign was at ${clockOf(last, timeZone)}` : "") +
-              ".",
-          ]),
-      ...(last !== undefined && night.stop === undefined && toLocal(last, timeZone).minutes < 6 * 60
-        ? [`Last night they were up until ${clockOf(last, timeZone)}.`]
-        : []),
-      ...(night.nextStep === undefined ? [] : [`The next step they noted for today: ${night.nextStep}`]),
-      ...((night.gaveUp ?? []).length > 0
-        ? [`For more time last night, they chose to give up: ${(night.gaveUp ?? []).join(", ")}.`]
-        : []),
-    ];
-  };
-
-  const planPrompt = async (now: number): Promise<string> => {
-    const today = toLocal(now, timeZone).day;
-    const calendarLines = [...dayLines(today), ...dayLines(nextDay(today))];
-    const goalLines = await goals();
-    const told = corrections(now);
-    const night = lastNight(now);
-    const status = nowLines();
-    return [
-      `Plan their next two days on your own calendar, ${lead()}'s, as soft blocks they see in Coming up and in iOS`,
-      "Calendar. You move them yourself as the day changes; never touch their own calendars.",
-      "",
-      `It's ${toSpoken(now, timeZone)}. Their morning starts at ${morning()}.`,
-      "",
-      "Today and tomorrow on every calendar:",
-      ...(calendarLines.length > 0 ? calendarLines : ["- Nothing yet."]),
-      ...(goalLines.length > 0 ? ["", "What they're working towards, in motion:", ...goalLines] : []),
-      ...(night.length > 0 ? ["", ...night] : []),
-      ...(told.length > 0 ? ["", "What they told you about your guesses lately:", ...told] : []),
-      ...(status.length > 0 ? ["", ...status] : []),
-      "",
-      "1. Plan: with plan_block (kind plan), put down what keeps their goals and their days going: the session",
-      "   from a training block that falls on the day, prep for an interview, exam or deadline that's coming,",
-      "   proper meals and groceries when the day allows, and winding down before sleep. Fit them around what's",
-      "   fixed, keep them few and realistic, and give each a short reason.",
-      "2. Adjust: move (change_event) or remove (delete_event) your own earlier blocks that no longer fit, such as",
-      "   a morning run after a late night. Move it; never scold.",
-      "3. Guess: with plan_block (kind guess), fill the rest of their waking hours with your guesses at what",
-      "   they'll be doing (working, building, training, seeing people, studying, chilling), from their past",
-      "   weeks, what they've said and their corrections. Say why in a line.",
-      "4. If you're unsure what matters to them now, or they seem to have changed, ask one small question with",
-      "   ask_today.",
-      "End with one line naming the shape of today and anything you moved, such as A free Sunday, with a quiet",
-      "plan under it; the run moved to 17:00 after a late night.",
-    ].join("\n");
-  };
-
-  const planNote = (day: string): string | undefined => {
-    const saved = settings.setting(planNoteSetting);
-    const note =
-      saved === undefined ? undefined : (JSON.parse(saved) as { readonly day: string; readonly note: string });
-    return note?.day === day && note.note !== "" ? note.note : undefined;
-  };
-
-  const plan = async (): Promise<readonly string[]> => {
-    const now = clock.now();
-    const today = toLocal(now, timeZone).day;
-    if (calendar.isConnected() && settings.setting(plannedSetting) !== today) {
-      settings.setSetting(plannedSetting, today);
-      const done = await work(await planPrompt(now));
-      if (done.ok) settings.setSetting(planNoteSetting, JSON.stringify({ day: today, note: lastLine(done.value) }));
-      else info("Kumo couldn't plan the day", { error: done.failure });
-    }
-    const note = planNote(today);
-    return [
-      ...lastNight(now),
-      ...(note === undefined ? [] : [`Your plan for today, as you put it after planning: ${note}`]),
-    ];
-  };
-
-  const hours = (from: number, to: number): Hours => {
-    const counted = blocks.between(toTimestamp(from), toTimestamp(to)).map((block) => ({
-      block,
-      length: Math.max(0, Math.min(to, Date.parse(block.end)) - Math.max(from, Date.parse(block.start))) / hourMs,
-    }));
-    const total = (kind: Block["kind"]): ReadonlyMap<Activity, number> =>
-      counted
-        .filter(({ block }) => block.kind === kind)
-        .reduce(
-          (sums, { block, length }) => new Map([...sums, [block.activity, (sums.get(block.activity) ?? 0) + length]]),
-          new Map<Activity, number>(),
-        );
-    return { guessed: total("guess"), planned: total("plan") };
   };
 
   const answer = async (
@@ -532,10 +304,16 @@ export const createDayPicture = ({
     tools,
     enrich,
     answer: (id, given) => answer((item) => item.id === id, given),
-    plan,
-    dayLines,
-    dayItems,
-    goals,
-    hours,
+    inMindText: () => {
+      const told = corrections(clock.now());
+      return told.length === 0
+        ? ""
+        : [
+            "<your_guesses>",
+            "What they told you about your guesses at their day lately:",
+            ...told,
+            "</your_guesses>",
+          ].join("\n");
+    },
   };
 };

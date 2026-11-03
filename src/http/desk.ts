@@ -1,15 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
-import type { CardAnswer, DeskKeeper, MomentAnswer } from "#desk/desk.ts";
+import type { CardAnswer, DeskKeeper } from "#desk/desk.ts";
 import type { RouteSchema } from "#http/validation.ts";
-import type { WorkKind } from "#protocol/types.ts";
 import type { Store } from "#store/store.ts";
-import type { Trust } from "#work/trust.ts";
+import type { Corrections } from "#work/corrections.ts";
 
 export type DeskOptions = {
   readonly store: Pick<Store, "desk" | "listDone" | "findDone">;
   readonly desk: DeskKeeper;
-  readonly trust: Pick<Trust, "ladder" | "correct" | "reset">;
+  readonly corrections: Pick<Corrections, "correct">;
   readonly today: () => string;
   readonly schemaFor: (operationId: string) => RouteSchema;
 };
@@ -18,7 +17,10 @@ const toErrorResult = (code: CommandFailureCode, detail: string, message?: strin
   error: toCommandError(code, detail, message),
 });
 
-export const registerDesk = (app: FastifyInstance, { store, desk, trust, today, schemaFor }: DeskOptions): void => {
+export const registerDesk = (
+  app: FastifyInstance,
+  { store, desk, corrections, today, schemaFor }: DeskOptions,
+): void => {
   app.get("/v0/desk", { schema: schemaFor("getDesk") }, () => store.desk());
 
   app.post<{ Params: { readonly card: string }; Body: CardAnswer }>(
@@ -35,31 +37,6 @@ export const registerDesk = (app: FastifyInstance, { store, desk, trust, today, 
     },
   );
 
-  app.post<{ Params: { readonly moment: string } }>(
-    "/v0/desk/moment/:moment/read",
-    { schema: schemaFor("readMoment") },
-    async (request, reply) =>
-      desk.readMoment(request.params.moment)
-        ? reply.code(204).send()
-        : reply
-            .code(404)
-            .send(toErrorResult("not_found", `No moment ${request.params.moment}.`, "That line has moved on.")),
-  );
-
-  app.post<{ Params: { readonly moment: string }; Body: MomentAnswer }>(
-    "/v0/desk/moment/:moment/answer",
-    { schema: schemaFor("answerMoment") },
-    async (request, reply) => {
-      const answered = desk.answerMoment(request.params.moment, request.body);
-      if (answered.ok) return reply.code(202).send({ moment: answered.value });
-      return answered.failure === "not_found"
-        ? reply
-            .code(404)
-            .send(toErrorResult("not_found", `No moment ${request.params.moment}.`, "That line has moved on."))
-        : reply.code(400).send(toErrorResult("invalid_request", answered.failure));
-    },
-  );
-
   app.get<{ Querystring: { readonly day?: string } }>("/v0/work", { schema: schemaFor("getWork") }, (request) => {
     const { day = today() } = request.query;
     const entries = day === today() ? desk.today() : desk.doneOn(day);
@@ -67,24 +44,8 @@ export const registerDesk = (app: FastifyInstance, { store, desk, trust, today, 
       day,
       handled: entries.filter(({ quiet }) => !quiet),
       cleared: entries.filter(({ quiet }) => quiet),
-      trust: trust.ladder(),
     };
   });
-
-  app.post<{ Params: { readonly work: WorkKind } }>(
-    "/v0/trust/:work/reset",
-    { schema: schemaFor("resetTrust") },
-    async (request, reply) => {
-      const reset = trust.reset(request.params.work);
-      return reset.ok
-        ? { trust: reset.value }
-        : reply
-            .code(404)
-            .send(
-              toErrorResult("not_found", `No ${request.params.work} work yet.`, "Kumo hasn't done any of that yet."),
-            );
-    },
-  );
 
   app.get<{ Querystring: { readonly before?: string; readonly limit: number } }>(
     "/v0/done",
@@ -103,7 +64,7 @@ export const registerDesk = (app: FastifyInstance, { store, desk, trust, today, 
     "/v0/done/:entry/wrong",
     { schema: schemaFor("correctDone") },
     async (request, reply) => {
-      const corrected = await trust.correct(request.params.entry, request.body.text);
+      const corrected = await corrections.correct(request.params.entry, request.body.text);
       return corrected.ok
         ? { entry: corrected.value }
         : reply.code(404).send(toErrorResult("not_found", `No entry ${request.params.entry}.`));
