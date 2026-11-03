@@ -541,10 +541,14 @@ export const createServer = (options: ServerOptions): Server => {
     },
     enrich: (item) => picture.enrich(item),
   });
+  const tracks = createTracks({ database, clock, identifiers, info });
   const picture = createDayPicture({
     blocks: createBlockStore(database),
     calendar,
     motions,
+    desk,
+    tracks,
+    settings: store,
     clock,
     timeZone,
     info,
@@ -592,7 +596,6 @@ export const createServer = (options: ServerOptions): Server => {
       );
     },
   });
-  const tracks = createTracks({ database, clock, identifiers, info });
   const corrections = createCorrections({ store, desk, clock, work: runWork, tracks, info });
   const deskLine = createDeskLine({ store, desk, clock });
   // Their phone moved to another time zone: repeating wake-ups follow at once, and Kumo looks at the rest.

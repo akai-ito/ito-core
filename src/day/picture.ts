@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { toTimestamp, type Clock } from "#clock.ts";
 import type { Calendar } from "#calendar/calendar.ts";
+import type { NewCalendarEvent } from "#calendar/icalendar.ts";
+import type { DeskKeeper } from "#desk/desk.ts";
 import { dayMs, minuteMs } from "#desk/day.ts";
 import {
   isActivity,
@@ -15,9 +17,11 @@ import { clockOf, hourMs, weekdayOf } from "#day/time.ts";
 import type { Motions } from "#motion/motion.ts";
 import type { CalendarItem } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
+import type { Settings } from "#store/store.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
+import type { Tracks } from "#work/tracks.ts";
 
 // Kumo's picture of your day, on its own calendar: its plan for the day (a run from your training block, prep for a
 // coming interview, proper meals, winding down) and its guesses at the rest (working, building, seeing people…),
@@ -27,16 +31,30 @@ export type DayPicture = {
   // Adds what Kumo knows of one of its blocks to the item, such as that it's a guess and why.
   readonly enrich: (item: CalendarItem) => CalendarItem;
   readonly answer: (id: string, answer: BlockAnswer) => Promise<Result<CalendarItem, GuessFailure>>;
+  // From the day view in Ito: moves or removes one of Kumo's own items, never one of theirs, with an undo in Done.
+  readonly move: (id: string, start: string, end: string) => Promise<Result<CalendarItem, ChangeFailure>>;
+  readonly remove: (id: string) => Promise<Result<undefined, ChangeFailure>>;
   // What they told Kumo about its guesses lately, so its next guesses learn from it.
   readonly inMindText: () => string;
 };
 
 export type GuessFailure = { readonly code: "not_found" | "unavailable"; readonly detail: string };
 
+export type ChangeFailure = {
+  readonly code: "not_found" | "not_kumos" | "invalid" | "unavailable";
+  readonly detail: string;
+};
+
 export type DayPictureOptions = {
   readonly blocks: BlockStore;
-  readonly calendar: Pick<Calendar, "addEvent" | "changeEvent" | "isConnected" | "listItems" | "onRefreshed">;
+  readonly calendar: Pick<
+    Calendar,
+    "addEvent" | "changeEvent" | "removeEvent" | "isConnected" | "listItems" | "onRefreshed"
+  >;
   readonly motions: Pick<Motions, "list">;
+  readonly desk: Pick<DeskKeeper, "addDone" | "onUndo">;
+  readonly tracks: Pick<Tracks, "find" | "corrected">;
+  readonly settings: Pick<Settings, "setting" | "setSetting">;
   readonly clock: Clock;
   readonly timeZone: () => string;
   readonly info: Info;
@@ -52,6 +70,27 @@ const longestBlockMs = 12 * hourMs;
 const keptMs = 35 * dayMs;
 const lookbackMs = 28 * dayMs;
 const settledMs = 2 * minuteMs;
+const toldKept = 12;
+
+// What they changed on Kumo's calendar from Ito, kept so Kumo sees it when it next looks at their day.
+export const toldSetting = "day_told";
+
+type Told = { readonly at: string; readonly text: string; readonly done: string };
+
+// How to undo a change they made from Ito: move it back, or put it back.
+type ChangeUndo =
+  | { readonly kind: "kumo_block_moved"; readonly uid: string; readonly start: string; readonly end: string }
+  | { readonly kind: "kumo_block_removed"; readonly event: NewCalendarEvent; readonly block?: Block };
+
+const isChangeUndo = (payload: unknown): payload is ChangeUndo => {
+  const kind = fieldOf(payload, "kind");
+  return kind === "kumo_block_moved" || kind === "kumo_block_removed";
+};
+
+const isTold = (value: unknown): value is Told =>
+  typeof fieldOf(value, "at") === "string" &&
+  typeof fieldOf(value, "text") === "string" &&
+  typeof fieldOf(value, "done") === "string";
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
@@ -60,6 +99,12 @@ const lineOf = (value: unknown, field: string): string => textOf(value, field).r
 const isInstant = (text: string): boolean => /T\d{2}:\d{2}/u.test(text) && !Number.isNaN(Date.parse(text));
 
 const withoutMark = (title: string): string => (title.endsWith(guessMark) ? title.slice(0, -guessMark.length) : title);
+
+// “Sun 15 Nov, 10:30–11:00”, local.
+const spanOf = (start: string, end: string, zone: string): string =>
+  `${new Intl.DateTimeFormat("en-GB", { timeZone: zone, weekday: "short", day: "numeric", month: "short" }).format(
+    Date.parse(start),
+  )}, ${clockOf(Date.parse(start), zone)}–${clockOf(Date.parse(end), zone)}`;
 
 const notesOf = (block: Block, lead: string): string => {
   if (block.answer !== undefined) return `${lead}'s picture of your day, as you told it.`;
@@ -86,6 +131,9 @@ export const createDayPicture = ({
   blocks,
   calendar,
   motions,
+  desk,
+  tracks,
+  settings,
   clock,
   timeZone,
   info,
@@ -112,7 +160,11 @@ export const createDayPicture = ({
     const items = calendar.listItems();
     const known = blocks.between(toTimestamp(now - dayMs + minuteMs), toTimestamp(now + 7 * dayMs));
     for (const block of known) {
-      const written = Math.max(Date.parse(block.at), Date.parse(block.answeredAt ?? block.at));
+      const written = Math.max(
+        Date.parse(block.at),
+        Date.parse(block.answeredAt ?? block.at),
+        Date.parse(block.changedAt ?? block.at),
+      );
       if (written > now - settledMs) continue;
       const item = items.find(({ uid }) => uid === block.uid);
       if (item) {
@@ -168,6 +220,133 @@ export const createDayPicture = ({
     return fail({ code: "unavailable", detail: changed.failure });
   };
 
+  const toldLately = (now: number): readonly Told[] => {
+    try {
+      const saved = JSON.parse(settings.setting(toldSetting) ?? "[]") as unknown;
+      return Array.isArray(saved) ? saved.filter(isTold).filter(({ at }) => Date.parse(at) > now - lookbackMs) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const keepTold = (told: readonly Told[]): void => {
+    settings.setSetting(toldSetting, JSON.stringify(told.slice(-toldKept)));
+  };
+
+  const tell = (told: Told): void => {
+    keepTold([...toldLately(clock.now()), told]);
+  };
+
+  // Once a change is undone, it's as if it never happened.
+  const untell = (done: string): void => {
+    keepTold(toldLately(clock.now()).filter((told) => told.done !== done));
+  };
+
+  const kumoItem = (id: string): Result<CalendarItem, ChangeFailure> => {
+    if (!calendar.isConnected()) {
+      return fail({ code: "unavailable", detail: `iCloud isn't set up, so ${lead()}'s calendar can't change.` });
+    }
+    const item = calendar.listItems().find((candidate) => candidate.id === id);
+    if (!item) return fail({ code: "not_found", detail: "That's no longer on the calendar." });
+    if (!item.calendar.kumo) {
+      return fail({
+        code: "not_kumos",
+        detail: `That's on your own calendar, so change it in Calendar. Only ${lead()}'s blocks change here.`,
+      });
+    }
+    return ok(enrich(item));
+  };
+
+  const move = async (id: string, startText: string, endText: string): Promise<Result<CalendarItem, ChangeFailure>> => {
+    if (!isInstant(startText) || !isInstant(endText)) {
+      return fail({ code: "invalid", detail: "Give start and end as instants with their offset." });
+    }
+    const found = kumoItem(id);
+    if (!found.ok) return found;
+    const item = found.value;
+    const start = toTimestamp(Date.parse(startText));
+    const end = toTimestamp(Date.parse(endText));
+    if (Date.parse(end) <= Date.parse(start) || Date.parse(end) - Date.parse(start) > longestBlockMs) {
+      return fail({ code: "invalid", detail: "A block ends after it starts, within 12 hours." });
+    }
+    const block = blocks.find(item.uid);
+    if (block) blocks.save({ ...block, start, end, changedAt: toTimestamp(clock.now()) });
+    const changed = await calendar.changeEvent(item.uid, { start, end });
+    if (!changed.ok) {
+      if (block) blocks.save(block);
+      return fail({ code: "unavailable", detail: changed.failure });
+    }
+    const zone = timeZone();
+    const title = withoutMark(item.title);
+    const entry = desk.addDone({
+      text: `You moved “${title}” to ${spanOf(start, end, zone)}`,
+      event: changed.value,
+      quiet: false,
+      undo: { kind: "kumo_block_moved", uid: item.uid, start: item.start, end: item.end } satisfies ChangeUndo,
+    });
+    tell({
+      at: entry.at,
+      done: entry.id,
+      text: `moved your “${title}” from ${spanOf(item.start, item.end, zone)} to ${spanOf(start, end, zone)}`,
+    });
+    return ok(changed.value);
+  };
+
+  // Removing one of Kumo's blocks says it got that one wrong, so a block in a track is a correction there. Moving
+  // one isn't: plans move.
+  const remove = async (id: string): Promise<Result<undefined, ChangeFailure>> => {
+    const found = kumoItem(id);
+    if (!found.ok) return found;
+    const item = found.value;
+    const block = blocks.find(item.uid);
+    const removed = await calendar.removeEvent(item.uid);
+    if (!removed.ok) return fail({ code: "unavailable", detail: removed.failure });
+    if (block) blocks.remove(item.uid);
+    const zone = timeZone();
+    const title = withoutMark(item.title);
+    const span = spanOf(item.start, item.end, zone);
+    const track = block?.track !== undefined && tracks.find(block.track) ? block.track : undefined;
+    const entry = desk.addDone({
+      text: `You removed “${title}”, ${span}`,
+      event: item,
+      quiet: false,
+      ...(track !== undefined && { track }),
+      undo: { kind: "kumo_block_removed", event: removed.value, ...(block && { block }) } satisfies ChangeUndo,
+    });
+    if (track !== undefined) tracks.corrected(entry, `You removed “${title}”, ${span}, from ${lead()}'s calendar`);
+    tell({
+      at: entry.at,
+      done: entry.id,
+      text: `removed your ${block?.kind === "guess" ? "guess" : "block"} “${title}”, ${span}`,
+    });
+    return ok(undefined);
+  };
+
+  const undoChange = async (undo: ChangeUndo): Promise<Result<undefined, string>> => {
+    const now = toTimestamp(clock.now());
+    if (undo.kind === "kumo_block_moved") {
+      const block = blocks.find(undo.uid);
+      if (block) blocks.save({ ...block, start: undo.start, end: undo.end, changedAt: now });
+      const changed = await calendar.changeEvent(undo.uid, { start: undo.start, end: undo.end });
+      if (changed.ok) return ok(undefined);
+      if (block) blocks.save(block);
+      return fail(changed.failure);
+    }
+    // The block is kept first, so the item comes back marked as it was.
+    if (undo.block) blocks.save({ ...undo.block, changedAt: now });
+    const added = await calendar.addEvent(undo.event, true);
+    if (added.ok) return ok(undefined);
+    if (undo.block) blocks.remove(undo.block.uid);
+    return fail(added.failure);
+  };
+
+  desk.onUndo(async (entry, payload) => {
+    if (!isChangeUndo(payload)) return ok(undefined);
+    const undone = await undoChange(payload);
+    if (undone.ok) untell(entry.id);
+    return undone;
+  });
+
   const planBlock = async (input: unknown): Promise<ToolResult> => {
     const kind = lineOf(input, "kind");
     if (kind !== "plan" && kind !== "guess") return failed("A block is kind plan or guess.");
@@ -191,6 +370,8 @@ export const createDayPicture = ({
     if (end <= start || end - start > longestBlockMs) return failed("A block ends after it starts, within 12 hours.");
     if (motion !== "" && motions.list().every(({ id }) => id !== motion))
       return failed(`Nothing in motion is ${motion}.`);
+    const track = lineOf(input, "track");
+    if (track !== "" && !tracks.find(track)) return failed(`There's no track ${track}.`);
     if (!calendar.isConnected()) return failed("iCloud isn't set up, so there's no calendar for your blocks.");
     const clash = calendar.listItems().find((item) => overlaps(start, end, item));
     if (clash) {
@@ -210,6 +391,7 @@ export const createDayPicture = ({
       activity,
       ...(why !== "" && { why }),
       ...(motion !== "" && { motion }),
+      ...(track !== "" && { track }),
       at: toTimestamp(clock.now()),
     };
     blocks.save(block);
@@ -267,6 +449,10 @@ export const createDayPicture = ({
             description: "One line, such as “Your usual weekday at the desk, from the last four weeks”.",
           },
           motion: { type: "string", description: "The thing in motion it serves, such as the training block's id." },
+          track: {
+            type: "string",
+            description: "The learning track it's part of, by id: if they remove it, that's a correction there.",
+          },
         },
         required: ["kind", "title", "start", "end", "activity"],
         additionalProperties: false,
@@ -305,16 +491,33 @@ export const createDayPicture = ({
     tools,
     enrich,
     answer: (id, given) => answer((item) => item.id === id, given),
+    move,
+    remove,
     inMindText: () => {
-      const told = corrections(clock.now());
-      return told.length === 0
-        ? ""
-        : [
-            "<your_guesses>",
-            "What they told you about your guesses at their day lately:",
-            ...told,
-            "</your_guesses>",
-          ].join("\n");
+      const now = clock.now();
+      const told = corrections(now);
+      const changed = toldLately(now);
+      const zone = timeZone();
+      return [
+        ...(told.length === 0
+          ? []
+          : [
+              "<your_guesses>",
+              "What they told you about your guesses at their day lately:",
+              ...told,
+              "</your_guesses>",
+            ]),
+        ...(changed.length === 0
+          ? []
+          : [
+              "<your_blocks>",
+              "What they changed on your calendar themselves lately, in Ito:",
+              ...changed.map(
+                ({ at, text }) => `- ${weekdayOf(Date.parse(at), zone)} ${clockOf(Date.parse(at), zone)}: they ${text}`,
+              ),
+              "</your_blocks>",
+            ]),
+      ].join("\n");
     },
   };
 };

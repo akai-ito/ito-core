@@ -20,7 +20,8 @@ export type Calendar = {
   readonly addEvent: (event: NewCalendarEvent, isKumo?: boolean) => Promise<Result<CalendarItem, string>>;
   // Moves, renames or re-notes an event by its uid, such as one of Kumo's blocks.
   readonly changeEvent: (uid: string, changes: Partial<NewCalendarEvent>) => Promise<Result<CalendarItem, string>>;
-  readonly removeEvent: (uid: string) => Promise<Result<undefined, string>>;
+  // Removes an event by its uid, and gives it as it was, so it can be put back.
+  readonly removeEvent: (uid: string) => Promise<Result<NewCalendarEvent, string>>;
   // Whether iCloud is set up, so there's a calendar to read and write.
   readonly isConnected: () => boolean;
   // Every event from yesterday to a week ahead, as last read, before Kumo's picture is added.
@@ -326,7 +327,7 @@ export const createCalendar = ({
     return ok(enrich(toCalendarItem(changed.value)));
   };
 
-  const removeEvent = async (uid: string): Promise<Result<undefined, string>> => {
+  const removeEvent = async (uid: string): Promise<Result<NewCalendarEvent, string>> => {
     const calendar = source();
     const event = findEvent(uid);
     if (!calendar || !event) return fail("There's no such event in the next week.");
@@ -334,7 +335,15 @@ export const createCalendar = ({
     const removed = await calendar.remove(event);
     if (!removed.ok) return removed;
     await refresh();
-    return ok(undefined);
+    return ok({
+      uid: event.uid,
+      title: event.title,
+      start: toInstant(event.start),
+      end: toInstant(event.end),
+      allDay: event.allDay,
+      ...(event.location !== undefined && { location: event.location }),
+      ...(event.notes !== undefined && { notes: event.notes }),
+    });
   };
 
   const describe = (event: CalendarEvent): string =>

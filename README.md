@@ -156,8 +156,11 @@ interview, proper meals, winding down) and its guesses at the rest (working, bui
 people, chilling). It plans through its own wake-ups: when a day looks unplanned, it starts a
 conversation to shape it with you, and puts what you agree on the calendar. Coming up shows the
 blocks, guesses marked as guesses with why; tell Kumo one was wrong there, or in the chat, and its
-next guesses learn from it. Kumo can also put a short line and its mood at the top of the Desk,
-such as how something's going, and it changes them when the moment changes.
+next guesses learn from it. You can move or remove any of Kumo's blocks there too, never your own
+events: Done keeps each change with an undo, removing a block in an area Kumo is learning counts as
+a correction, and Kumo sees what you changed when it next looks at your day. Kumo can also put a
+short line and its mood at the top of the Desk, such as how something's going, and it changes them
+when the moment changes.
 
 Ari tells the box its time zone and, if you allow it, roughly where you are; the box keeps only the
 latest, rounded to about 10 km. Kumo lives by that time zone, so a weekday-morning wake-up comes at

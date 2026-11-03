@@ -51,10 +51,14 @@ export type Block = {
   readonly activity: Activity;
   readonly why?: string;
   readonly motion?: string;
+  // The learning track it's part of, such as planning their days, so removing it is a correction there.
+  readonly track?: string;
   readonly answer?: BlockAnswer;
   readonly answeredAt?: string;
   // When Kumo put it down.
   readonly at: string;
+  // When they last moved it, or put it back, from Ito.
+  readonly changedAt?: string;
 };
 
 export type BlockStore = {
