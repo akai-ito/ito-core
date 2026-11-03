@@ -61,6 +61,7 @@ export const describe = (account: string, mail: Mail, limit = textLimit, sender?
     ...(sender === undefined ? [] : [sender]),
     ...replyToLines(mail),
     `To: ${mail.to.map(({ address }) => address).join(", ")}`,
+    ...(mail.cc.length === 0 ? [] : [`Cc: ${mail.cc.map(({ address }) => address).join(", ")}`]),
     `Subject: ${mail.subject}`,
     `Date: ${mail.date}`,
     `Account: ${account}, Message-ID: ${mail.messageId}`,
