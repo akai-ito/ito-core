@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, assert, describe, expect, it } from "vitest";
 import { createCell } from "#cell.ts";
 import { toTimestamp } from "#clock.ts";
 import type { Calendar } from "#calendar/calendar.ts";
@@ -14,6 +14,7 @@ import { startOfDay, untilMinutes } from "#desk/day.ts";
 import type { CalendarItem } from "#protocol/types.ts";
 import { fail, ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
+import { createTracks } from "#work/tracks.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-day-"));
@@ -31,7 +32,10 @@ const memoryCalendar = (theirs: readonly CalendarItem[] = []) => {
   const refreshed = (): void => {
     for (const listener of listeners.get()) listener();
   };
-  const calendar: Pick<Calendar, "addEvent" | "changeEvent" | "isConnected" | "listItems" | "onRefreshed"> = {
+  const calendar: Pick<
+    Calendar,
+    "addEvent" | "changeEvent" | "removeEvent" | "isConnected" | "listItems" | "onRefreshed"
+  > = {
     addEvent: (event: NewCalendarEvent) => {
       const item: CalendarItem = {
         id: `v_${randomUUID().slice(0, 8)}`,
@@ -54,6 +58,13 @@ const memoryCalendar = (theirs: readonly CalendarItem[] = []) => {
       items.update((current) => current.map((item) => (item.uid === uid ? changed : item)));
       refreshed();
       return Promise.resolve(ok(changed));
+    },
+    removeEvent: (uid) => {
+      const found = items.get().find((item) => item.uid === uid);
+      if (!found) return Promise.resolve(fail("There's no such event in the next week."));
+      items.update((current) => current.filter((item) => item.uid !== uid));
+      refreshed();
+      return Promise.resolve(ok({ uid, title: found.title, start: found.start, end: found.end }));
     },
     isConnected: () => true,
     listItems: () => items.get(),
@@ -78,10 +89,19 @@ const pictureWith = (name: string, theirs: readonly CalendarItem[] = []) => {
   const clock = createVirtualClock(sunday);
   const memory = memoryCalendar(theirs);
   const database = openDatabase(path.join(home, `${name}.db`));
+  const saved = createCell<ReadonlyMap<string, string>>(new Map());
   const picture = createDayPicture({
     blocks: createBlockStore(database),
     calendar: memory.calendar,
     motions: noMotions,
+    desk: { addDone: () => assert.fail("The day picture records nothing here."), onUndo: ignore },
+    tracks: createTracks({ database, clock, identifiers: { track: () => "l_day" }, info: ignore }),
+    settings: {
+      setting: (key) => saved.get().get(key),
+      setSetting: (key, value) => {
+        saved.update((current) => new Map([...current, [key, value]]));
+      },
+    },
     clock,
     timeZone: () => "UTC",
     info: ignore,

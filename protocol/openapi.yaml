@@ -701,6 +701,56 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/calendar/events/{item}:
+    patch:
+      tags: [Desk]
+      operationId: moveEvent
+      summary: Move one of Kumo's blocks
+      description: |
+        Moves an item on Kumo's own calendar, such as a block of its plan or a guess, to a new start
+        and end, within 12 hours. An event on your own calendar is refused with `invalid_request`:
+        change those in Calendar. Done keeps the move with an undo, Kumo sees it when it next looks
+        at your day, and `desk.changed` follows. It never wakes Kumo as a change to your calendar.
+      parameters:
+        - $ref: "#/components/parameters/CalendarItem"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventMove" }
+            example: { start: "2026-11-15T11:30:00.000Z", end: "2026-11-15T12:00:00.000Z" }
+      responses:
+        "200":
+          description: Moved.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+    delete:
+      tags: [Desk]
+      operationId: removeEvent
+      summary: Remove one of Kumo's blocks
+      description: |
+        Removes an item from Kumo's own calendar, such as a block of its plan or a guess. An event on
+        your own calendar is refused with `invalid_request`. Done keeps the removal with an undo that
+        puts it back. A block in an area Kumo is learning counts as a correction on that track, and
+        Kumo sees the removal when it next looks at your day. `desk.changed` follows.
+      parameters:
+        - $ref: "#/components/parameters/CalendarItem"
+      responses:
+        "204":
+          description: Removed.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v0/lead:
     put:
       tags: [Connecting]
@@ -1596,6 +1646,12 @@ components:
         type: integer
         minimum: 0
   parameters:
+    CalendarItem:
+      name: item
+      in: path
+      required: true
+      description: The item's id, from its `CalendarItem` in Coming up.
+      schema: { $ref: "events.schema.json#/$defs/CalendarItemId" }
     Motion:
       name: motion
       in: path
@@ -2323,6 +2379,14 @@ components:
         end: { $ref: "events.schema.json#/$defs/When" }
         location: { type: string }
         notes: { type: string }
+    EventMove:
+      description: Where one of Kumo's blocks goes.
+      type: object
+      required: [start, end]
+      additionalProperties: false
+      properties:
+        start: { $ref: "events.schema.json#/$defs/Timestamp" }
+        end: { $ref: "events.schema.json#/$defs/Timestamp" }
     EventResult:
       type: object
       required: [event]

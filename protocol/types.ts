@@ -487,6 +487,36 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/calendar/events/{item}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Remove one of Kumo's blocks
+     * @description Removes an item from Kumo's own calendar, such as a block of its plan or a guess. An event on
+     *     your own calendar is refused with `invalid_request`. Done keeps the removal with an undo that
+     *     puts it back. A block in an area Kumo is learning counts as a correction on that track, and
+     *     Kumo sees the removal when it next looks at your day. `desk.changed` follows.
+     */
+    delete: operations["removeEvent"];
+    options?: never;
+    head?: never;
+    /**
+     * Move one of Kumo's blocks
+     * @description Moves an item on Kumo's own calendar, such as a block of its plan or a guess, to a new start
+     *     and end, within 12 hours. An event on your own calendar is refused with `invalid_request`:
+     *     change those in Calendar. Done keeps the move with an undo, Kumo sees it when it next looks
+     *     at your day, and `desk.changed` follows. It never wakes Kumo as a change to your calendar.
+     */
+    patch: operations["moveEvent"];
+    trace?: never;
+  };
   "/v0/lead": {
     parameters: {
       query?: never;
@@ -2140,6 +2170,11 @@ export interface components {
       location?: string;
       notes?: string;
     };
+    /** @description Where one of Kumo's blocks goes. */
+    EventMove: {
+      start: components["schemas"]["Timestamp"];
+      end: components["schemas"]["Timestamp"];
+    };
     EventResult: {
       event: components["schemas"]["CalendarItem"];
     };
@@ -3152,6 +3187,8 @@ export interface components {
     };
   };
   parameters: {
+    /** @description The item's id, from its `CalendarItem` in Coming up. */
+    CalendarItem: components["schemas"]["CalendarItemId"];
     /** @description The thing's id, from its `Motion`. */
     Motion: components["schemas"]["MotionId"];
     /** @description The turn's id, from `turn.started`. */
@@ -3245,6 +3282,7 @@ export type GuessAnswer = components["schemas"]["GuessAnswer"];
 export type Work = components["schemas"]["Work"];
 export type CorrectDone = components["schemas"]["CorrectDone"];
 export type NewEvent = components["schemas"]["NewEvent"];
+export type EventMove = components["schemas"]["EventMove"];
 export type EventResult = components["schemas"]["EventResult"];
 export type Lead = components["schemas"]["Lead"];
 export type ServerInfo = components["schemas"]["ServerInfo"];
@@ -3349,6 +3387,7 @@ export type ResponseIdConflict = components["responses"]["IdConflict"];
 export type ResponseTooLarge = components["responses"]["TooLarge"];
 export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
+export type ParameterCalendarItem = components["parameters"]["CalendarItem"];
 export type ParameterMotion = components["parameters"]["Motion"];
 export type ParameterTurn = components["parameters"]["Turn"];
 export type ParameterUpload = components["parameters"]["Upload"];
@@ -4047,6 +4086,70 @@ export interface operations {
       };
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  removeEvent: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The item's id, from its `CalendarItem` in Coming up. */
+        item: components["parameters"]["CalendarItem"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Removed. */
+      204: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  moveEvent: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The item's id, from its `CalendarItem` in Coming up. */
+        item: components["parameters"]["CalendarItem"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "start": "2026-11-15T11:30:00.000Z",
+         *       "end": "2026-11-15T12:00:00.000Z"
+         *     }
+         */
+        "application/json": components["schemas"]["EventMove"];
+      };
+    };
+    responses: {
+      /** @description Moved. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
       503: components["responses"]["Unavailable"];
     };
   };
