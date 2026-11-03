@@ -142,7 +142,8 @@ blocks:
   plans on the Desk, where you can move or cancel it. When one comes due, Kumo looks first, then
   messages you, moves it or drops it, and Done says which.
 - **It wakes on what happens:** a new mail, a change on your calendars, the mail you send. Kumo looks
-  at each and decides; nothing is said by rule.
+  at each with the same memory pages and plans it has in the chat, and the end of your conversation,
+  and decides; nothing is said by rule.
 - **It acts and records:** cards on the Desk, blocks on its own calendar, memory, and every action in
   Kumo's work with an undo.
 

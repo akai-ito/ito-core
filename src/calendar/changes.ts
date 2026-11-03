@@ -147,9 +147,9 @@ export const createCalendarChanges = ({
       ...changes.map(lineOf),
       ...(tied.length > 0 ? ["", "Your wake-ups from these events:", ...tied.map(describe)] : []),
       "",
-      "Look and decide, as for a mail. Message them with post only if one of these matters to them now, one",
-      "message per thing. Move or drop a wake-up whose event moved or went, move your own blocks that now clash, and",
-      "set a wake-up for anything that needs a look later. Most changes need nothing.",
+      "Most changes need nothing. Message them with post only if one matters to them now, one message per thing.",
+      "Move or drop a wake-up whose event moved or went, move your own blocks that now clash, and set a wake-up for",
+      "anything that needs a look later, such as asking how a new interview went once it ends.",
       "End with one line saying what you did.",
     ].join("\n");
   };

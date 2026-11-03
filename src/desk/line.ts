@@ -25,13 +25,11 @@ export const createDeskLine = ({ store, desk, clock }: DeskLineOptions): DeskLin
     name: "set_desk_line",
     title: "Set your line on the Desk",
     description:
-      "Put a short line at the top of their Desk, with your mood for your face: something interesting right now, " +
-      "such as how something's going, a thought, or the day around them. Change it when the moment changes, and " +
-      "leave text empty to clear it. It never notifies; to tell them something, message them instead.",
+      "Set your line under your face on their Desk, with your mood, or clear it with empty text. It never notifies.",
     inputSchema: {
       type: "object",
       properties: {
-        text: { type: "string", description: `At most ${String(longestLine)} characters.` },
+        text: { type: "string", description: `A few words, at most ${String(longestLine)} characters.` },
         mood: { type: "string", description: `One word, such as ${knownMoods.join(", ")}.` },
       },
       required: ["text", "mood"],

@@ -236,7 +236,7 @@ export const createDayPicture = ({
       title: "Put a block on your calendar",
       description:
         "Put a soft block on your own calendar as part of your picture of their day: kind plan for what you plan " +
-        "for them (the run from their training block, interview prep, a proper meal, groceries, winding down), or " +
+        "or agree with them (the run from their training block, interview prep, a proper meal, winding down), or " +
         "kind guess for your guess at what they'll be doing (working, building, training, seeing people, " +
         "studying, chilling), with why. They see both in Coming up and iOS Calendar, guesses marked as guesses, " +
         "and can correct a guess. Move or remove a block with change_event or delete_event.",

@@ -20,6 +20,8 @@ import { startFakeCalDav, type FakeCalDav } from "./support/fake-caldav.ts";
 import { startFakeCardDav, type FakeCardDav } from "./support/fake-carddav.ts";
 import { createFakeMail } from "./support/fake-mail.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
+import { randomUUID } from "node:crypto";
+import { toMessageId } from "#conversation/ids.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-wakeups-"));
 const token = "ito_wakeups_test_not_a_real_token_0000000000000000000000";
@@ -146,6 +148,46 @@ const weekdayRun = {
 };
 
 describe("wake-ups", () => {
+  it("look with what's in Kumo's mind and the end of the conversation, which background work doesn't see", async () => {
+    const { open, runUntil, plan, prompts } = setUp("2026-11-02T23:30:00.000Z");
+    const server = await open();
+    try {
+      const now = await server.callTool("write_page", {
+        address: "memory:now",
+        title: "Now",
+        gist: "Building Ito late this week",
+        note: "Bed by 1 this week",
+        body: "As of 2 Nov, you're building Ito late into the night and aiming for bed by 1.",
+      });
+      expect(now.isError).toBeUndefined();
+      const said = server.store.acceptMessage(toMessageId(randomUUID()), "one more bug and then bed");
+      expect(said.ok).toBe(true);
+      server.store.postMessage("Night. I'll keep your 9:00 run unless you say.");
+      await server.callTool("set_wake_up", {
+        what: "See whether they made it to bed",
+        why: "They chose bed by 1 this week.",
+        at: "2026-11-03T00:45:00Z",
+        asked: false,
+        source: { kind: "chat", title: "“Bed by 1 this week”" },
+      });
+
+      plan(() => Promise.resolve(ok("Their last word was goodnight; nothing to say.")));
+      await runUntil("2026-11-03T01:00:00.000Z");
+
+      const [prompt = ""] = prompts.get();
+      expect(prompt).toContain("You're working for the person in the background");
+      expect(prompt).toContain("It's Tuesday 3 November at 00:45 where they are (Europe/London).");
+      expect(prompt).toContain("As of 2 Nov, you're building Ito late into the night and aiming for bed by 1.");
+      expect(prompt).toContain("“See whether they made it to bed” at Tue 3 Nov, 00:45");
+      expect(prompt).toContain("- Monday 2 November at 23:30, they: one more bug and then bed");
+      expect(prompt).toContain("- Monday 2 November at 23:30, you: Night. I'll keep your 9:00 run unless you say.");
+      expect(prompt.indexOf("<lately>")).toBeLessThan(prompt.indexOf("A wake-up you set has come due"));
+      expect(posts(server)).toEqual(["Night. I'll keep your 9:00 run unless you say."]);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("are set quietly, wake on time, look first, say in Done what they did, and repeat across a restart", async () => {
     const { open, runUntil, plan, prompts } = setUp();
     const first = await open();

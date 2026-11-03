@@ -274,9 +274,10 @@ export const createWakeUps = ({
         ? [`It repeats ${repeatWords(wakeUp.repeat)} and comes back by itself; move it only if this time is wrong.`]
         : []),
       "",
-      "Look first, then do what fits:",
+      "Look first at what's changed since you set it: the calendar, your memory, the end of the conversation.",
+      "Then do what fits:",
       "- Message them with post if it's useful now.",
-      `- If things changed, such as the event moving or this being a bad moment, move it with move_wake_up (${wakeUp.id}).`,
+      `- If now is the wrong time, such as the event moving or them being asleep, move it with move_wake_up (${wakeUp.id}).`,
       `- If it's moot, such as the event being cancelled or it already being done, drop it with drop_wake_up.`,
       "- When nothing is worth their attention, say nothing.",
       "End with one line saying what you did and why, for their Done list.",
@@ -387,11 +388,9 @@ export const createWakeUps = ({
       name: "set_wake_up",
       title: "Set a wake-up",
       description:
-        "Set a time to wake up and look at something: a follow-up with a real stake, a look after an event, a " +
-        "standing job they asked for, or something they asked you to remember. Work out a concrete time yourself: " +
-        "“after the interview” is when it ends, “an hour after I wake” is your best estimate. When it comes due " +
-        "you look first, then message them, move it or drop it. Setting one is quiet: it shows in your plans on " +
-        "their Desk, and they can move or cancel it there.",
+        "Set a time to wake up and look at something, one-off or repeating, at a concrete time you've worked out, " +
+        "such as when the interview ends. When it comes due you look first, then message them, move it or drop " +
+        "it. Setting one is quiet: it shows in your plans on their Desk, where they can move or cancel it.",
       inputSchema: {
         type: "object",
         properties: {
@@ -521,8 +520,7 @@ export const createWakeUps = ({
         ? ""
         : [
             "<wake_ups>",
-            "Your wake-ups, soonest first. You look at each when it comes due. Keep them current as their life",
-            "moves: move one whose time is wrong, drop one that's moot. They can move or cancel them in Ito too.",
+            "Your wake-ups, soonest first; they can move or cancel them in Ito too:",
             ...listed.map(describe),
             "</wake_ups>",
           ].join("\n");

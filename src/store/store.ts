@@ -166,6 +166,8 @@ export type Store = Settings & {
   readonly pairingCode: (hash: string) => PairingCode | undefined;
   readonly listMessages: (before: MessageId, limit: number) => Result<Page, "not_found">;
   readonly messageText: (message: MessageId) => string | undefined;
+  // The conversation's latest messages with words in them, oldest first.
+  readonly latestMessages: (limit: number) => readonly Message[];
   readonly recordMotion: (
     type: "motion.started" | "motion.changed" | "motion.finished",
     motion: Omit<Motion, "position"> & { readonly position?: number },
@@ -792,6 +794,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     },
 
     messageText: (message) => messageRow(message)?.text,
+
+    latestMessages: (limit) =>
+      (
+        database
+          .prepare("SELECT * FROM messages WHERE text != '' ORDER BY position DESC LIMIT ?")
+          .all(limit) as unknown as readonly MessageRow[]
+      )
+        .toReversed()
+        .map((row) => toMessage(row)),
 
     recordMotion: (type, given, note) =>
       transaction(() => {

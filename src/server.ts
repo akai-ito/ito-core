@@ -173,6 +173,8 @@ const motionSkill: OwnSkill = {
 const dayMs = 24 * 60 * 60 * 1000;
 
 const textRetentionMs = 30 * dayMs;
+const latelyMessages = 6;
+const latelyLength = 280;
 const defaultHeartbeatMs = 15_000;
 
 export const databaseFile = (dataDirectory: string): string => path.join(dataDirectory, "ito.db");
@@ -290,6 +292,36 @@ export const createServer = (options: ServerOptions): Server => {
       ...[places.weatherText() ?? []].flat(),
       "</now>",
     ].join("\n");
+  // The end of the conversation, for background work, which doesn't see the chat: what they said lately, and when.
+  const latelyText = (): string => {
+    const latest = store.latestMessages(latelyMessages);
+    return latest.length === 0
+      ? ""
+      : [
+          "<lately>",
+          "The end of your conversation with them:",
+          ...latest.map(
+            ({ role, text, at }) =>
+              `- ${toSpoken(Date.parse(at), timeZone())}, ${role === "user" ? "they" : "you"}: ` +
+              (text.length > latelyLength ? `${text.slice(0, latelyLength)}…` : text).replaceAll(/\s+/gu, " "),
+          ),
+          "</lately>",
+        ].join("\n");
+  };
+  // What background work has in mind: the same as a turn in the chat, without the call or getting started.
+  const backgroundText = (): string =>
+    [
+      nowText(),
+      memory.inMindText(),
+      motions.inMindText(),
+      wakeUps.inMindText(),
+      tracks.inMindText(),
+      deskLine.inMindText(),
+      picture.inMindText(),
+      latelyText(),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   const engine = options.createEngine({
     settings: store,
     log,
@@ -361,7 +393,7 @@ export const createServer = (options: ServerOptions): Server => {
     await listening.get();
     const attempt = async (retries: number): Promise<Result<string, string>> => {
       const run = given ?? randomUUID();
-      const done = await engine.work(`${workRules}\n\n${prompt}`, run, choice);
+      const done = await engine.work(`${workRules}\n\n${backgroundText()}\n\n${prompt}`, run, choice);
       const isTouched = touchedRuns.get().has(run);
       touchedRuns.update((runs) => new Set([...runs].filter((other) => other !== run)));
       const isCutOff = !done.ok && done.failure === restartedDetail && !isTouched;
@@ -569,10 +601,9 @@ export const createServer = (options: ServerOptions): Server => {
     void runWork(
       [
         `Their phone moved from ${from} to ${to}; it's ${toSpoken(clock.now(), to)} there.`,
-        "Your repeating wake-ups already come back at their local times there. Look at your other wake-ups and your",
-        "blocks on Kumo's calendar, and move what should follow their day, such as a morning look. Message them only if",
-        "something needs them, such as a call that now falls in their night.",
-        ...[wakeUps.inMindText() || []].flat(),
+        "Your repeating wake-ups already come back at their local times there. Move your other wake-ups and your",
+        "blocks on Kumo's calendar that should follow their day, keep Now true about where they are, and message",
+        "them only if something needs them, such as a call that now falls in their night.",
         "End with one line saying what you moved.",
       ].join("\n"),
     );
