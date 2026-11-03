@@ -7,6 +7,8 @@ export type WorkToolsOptions = {
   // Messages them in the conversation; every message notifies them, and an urgent one breaks through Focus.
   readonly post: (text: string, isUrgent: boolean) => Message;
   readonly desk: DeskKeeper;
+  // Whether a learning track is open, by id.
+  readonly isTrack: (id: string) => boolean;
 };
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
@@ -67,7 +69,7 @@ const toCard = (input: unknown): NewCard | string => {
   }
 };
 
-export const createWorkTools = ({ post, desk }: WorkToolsOptions): readonly Tool[] => [
+export const createWorkTools = ({ post, desk, isTrack }: WorkToolsOptions): readonly Tool[] => [
   {
     name: "post",
     title: "Message them",
@@ -180,10 +182,14 @@ export const createWorkTools = ({ post, desk }: WorkToolsOptions): readonly Tool
     audience: "work",
     description:
       "Record one thing you did without the person, for their Done list, with why in a line, so they can see it " +
-      "and tell you when you got it wrong.",
+      "and tell you when you got it wrong. Name the track when it's in an area you're learning.",
     inputSchema: {
       type: "object",
-      properties: { text: { type: "string" }, reason: { type: "string" } },
+      properties: {
+        text: { type: "string" },
+        reason: { type: "string" },
+        track: { type: "string", description: "The learning track it belongs to, by id." },
+      },
       required: ["text"],
       additionalProperties: false,
     },
@@ -191,7 +197,14 @@ export const createWorkTools = ({ post, desk }: WorkToolsOptions): readonly Tool
       const text = lineOf(input, "text");
       if (text === "") return Promise.resolve(failed("Say what you did."));
       const reason = lineOf(input, "reason");
-      const entry = desk.addDone({ text, ...(reason !== "" && { reason }), quiet: false });
+      const track = lineOf(input, "track");
+      if (track !== "" && !isTrack(track)) return Promise.resolve(failed(`There's no track ${track}.`));
+      const entry = desk.addDone({
+        text,
+        ...(reason !== "" && { reason }),
+        ...(track !== "" && { track }),
+        quiet: false,
+      });
       return Promise.resolve({ text: `Recorded ${entry.id}.` });
     },
   },

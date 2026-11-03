@@ -140,7 +140,7 @@ export type MemoryOptions = {
   readonly recordStep: (facts: StepFacts) => boolean;
   readonly approve: (fields: AskFields) => Promise<boolean>;
   readonly info: Info;
-  readonly timeZone: string;
+  readonly timeZone: () => string;
   readonly pushDelayMs?: number;
   readonly remote?: RemoteAccess;
 };
@@ -399,12 +399,12 @@ export const createMemory = ({
     serially(async () => {
       const words = textOf(input, "text");
       if (words.trim() === "") return fail("A journal entry needs text.");
-      const day = toDay(clock.now(), timeZone);
+      const day = toDay(clock.now(), timeZone());
       const location = toLocation(`memory:journal/${day}`);
       if (!location.ok) return location;
       const title = dayTitle(day);
       const existing = readPage(location.value);
-      const entry = toJournalEntry(words, fieldOf(input, "yours") === true, toTimeOfDay(clock.now(), timeZone));
+      const entry = toJournalEntry(words, fieldOf(input, "yours") === true, toTimeOfDay(clock.now(), timeZone()));
       const text = formatPage({
         title,
         gist: toOneLine(textOf(input, "gist")),

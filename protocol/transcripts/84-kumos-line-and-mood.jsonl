@@ -1,0 +1,10 @@
+{"transcript":"84-kumos-line-and-mood","start":"2026-11-12T09:30:00.000Z","scenario":84,"title":"Kumo's line and mood","summary":"With the Northwind prep under way, Kumo puts a short line at the top of the Desk with a focused face. When the deck is done it changes both: proud. Neither notifies.","guarantees":["G33","G56"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-12T09:30:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
+{"at":0,"app":{"method":"PUT","path":"/v0/devices/5299c3e5-dcb2-42ff-842b-471602c53b1a","body":{"apns_token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","environment":"production","notification_key":"MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="}}}
+{"at":0,"server":{"status":201,"body":{"device":{"id":"5299c3e5-dcb2-42ff-842b-471602c53b1a","environment":"production","key_id":"861009ec","registered_at":"2026-11-12T09:30:00.000Z"}}}}
+{"at":1000,"world":"agent_calls","tool":"set_desk_line","input":{"text":"Quiet morning. The Northwind deck is two-thirds done.","mood":"focused"}}
+{"at":1000,"event":{"id":"e_0001_79784","type":"desk.changed","at":"2026-11-12T09:30:01.000Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0,"line":{"text":"Quiet morning. The Northwind deck is two-thirds done.","mood":"focused","at":"2026-11-12T09:30:01.000Z"}}}}
+{"at":10801000,"world":"agent_calls","tool":"set_desk_line","input":{"text":"The Northwind deck is done, a day early.","mood":"proud"}}
+{"at":10801000,"event":{"id":"e_0002_86441","type":"desk.changed","at":"2026-11-12T12:30:01.000Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0,"line":{"text":"The Northwind deck is done, a day early.","mood":"proud","at":"2026-11-12T12:30:01.000Z"}}}}

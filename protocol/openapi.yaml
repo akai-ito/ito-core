@@ -86,6 +86,8 @@ tags:
     description: Choose the model the agent runs on.
   - name: Talk
     description: Call the agent and speak your messages.
+  - name: Whereabouts
+    description: Where you roughly are, for your time zone and the weather on the Desk.
 paths:
   /.well-known/ito:
     get:
@@ -929,6 +931,35 @@ paths:
           description: The device is no longer registered.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/devices/{device}/whereabouts:
+    put:
+      tags: [Whereabouts]
+      operationId: setWhereabouts
+      summary: Say where the phone roughly is
+      description: |
+        Send it when the app opens and whenever the time zone or the place changes, such as on a
+        trip: its time zone, and when you allow it, roughly where it is. The box keeps only the
+        latest one from any device, with the place rounded to about 10 km, and never anything more
+        precise.
+
+        The time zone is the one Kumo lives by: a repeating wake-up comes back at its time there,
+        and moving to another zone wakes Kumo to move what should follow you. The place gives the
+        Desk the weather around you; without one, there's no `ambient`.
+      parameters:
+        - $ref: "#/components/parameters/Device"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Whereabouts" }
+            example: { time_zone: Europe/Rome, area: { latitude: 41.9, longitude: 12.5, name: Rome } }
+      responses:
+        "204":
+          description: Noted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/capabilities:
     get:
@@ -2253,9 +2284,9 @@ components:
           minLength: 1
           maxLength: 60
     Work:
-      description: Kumo's work for a day, today unless you asked for another.
+      description: Kumo's work for a day, today unless you asked for another, and the areas it's learning.
       type: object
-      required: [day, handled, cleared]
+      required: [day, handled, cleared, tracks]
       properties:
         day:
           description: The local day, such as `2026-11-05`.
@@ -2269,6 +2300,10 @@ components:
           description: The mail Kumo read and left alone that day (`quiet`), newest first.
           type: array
           items: { $ref: "events.schema.json#/$defs/DoneEntry" }
+        tracks:
+          description: Every area Kumo is learning, in the order it opened them, now. Draw each with its stage as bars.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Track" }
     CorrectDone:
       description: What was wrong, in your words; `{}` just says it was wrong.
       type: object
@@ -2306,7 +2341,7 @@ components:
           pattern: \S
     ServerInfo:
       type: object
-      required: [name, version, protocol, lead, agent, setup, capabilities]
+      required: [name, version, protocol, lead, time_zone, agent, setup, capabilities]
       properties:
         name:
           description: The server's name, usually its host name.
@@ -2320,6 +2355,23 @@ components:
           pattern: ^\d+\.\d+$
         lead:
           $ref: "#/components/schemas/Lead"
+        time_zone:
+          description: The time zone Kumo lives by now, such as `Europe/London`. The latest a phone said, or the box's own.
+          type: string
+          minLength: 1
+        whereabouts:
+          description: What the box keeps of where you roughly are, once a phone has said. Show it in Settings.
+          type: object
+          required: [time_zone, as_of]
+          properties:
+            time_zone:
+              type: string
+              minLength: 1
+            area:
+              $ref: "#/components/schemas/Area"
+            as_of:
+              $ref: "events.schema.json#/$defs/Timestamp"
+              description: When a phone last said.
         agent:
           description: The model Kumo runs on.
           type: object
@@ -2548,6 +2600,32 @@ components:
       required: [device]
       properties:
         device: { $ref: "#/components/schemas/Device" }
+    Whereabouts:
+      type: object
+      required: [time_zone]
+      additionalProperties: false
+      properties:
+        time_zone:
+          description: The phone's time zone, as an IANA name such as `Europe/Rome`.
+          type: string
+          minLength: 1
+          maxLength: 64
+        area:
+          $ref: "#/components/schemas/Area"
+          description: Roughly where it is, when you allow it. The box rounds it to about 10 km.
+    Area:
+      description: Roughly where you are, never more precise than about 10 km.
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: false
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        name:
+          description: The town or city, such as `Rome`, as the phone names it.
+          type: string
+          minLength: 1
+          maxLength: 80
     ErrorResult:
       type: object
       required: [error]

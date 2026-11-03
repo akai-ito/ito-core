@@ -135,7 +135,7 @@ const openBox = (
       return added;
     },
   } as unknown as DeskKeeper;
-  const workTools = createWorkTools({ post: (text) => message(text), desk });
+  const workTools = createWorkTools({ post: (text) => message(text), desk, isTrack: () => false });
   const mailbox = createMailbox({
     host: {
       find: (id) => {

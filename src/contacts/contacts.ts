@@ -73,7 +73,7 @@ export type ContactsOptions = {
   readonly store: Pick<Store, "setting" | "setSetting">;
   readonly desk: DeskKeeper;
   readonly clock: Clock;
-  readonly timeZone: string;
+  readonly timeZone: () => string;
   readonly info: Info;
   readonly work: (prompt: string) => Promise<Result<string, string>>;
   readonly people: () => Promise<readonly PersonPage[]>;
@@ -519,7 +519,9 @@ export const createContacts = ({
   };
 
   const caughtUpLine = (words: string): string => {
-    const month = new Intl.DateTimeFormat("en-GB", { timeZone, month: "short", year: "numeric" }).format(clock.now());
+    const month = new Intl.DateTimeFormat("en-GB", { timeZone: timeZone(), month: "short", year: "numeric" }).format(
+      clock.now(),
+    );
     return `${caughtUpPrefix} ${month} · ${words.replaceAll(/\s+/gu, " ").trim()}`;
   };
 
@@ -1067,7 +1069,7 @@ export const createContacts = ({
   };
 
   const upcoming = (now: number): readonly Coming[] => {
-    const today = toLocal(now, timeZone).day;
+    const today = toLocal(now, timeZone()).day;
     const [year = 2026, month = 1, day = 1] = today.split("-").map(Number);
     const start = Date.UTC(year, month - 1, day);
     const next = ({ month: wantedMonth, day: wantedDay }: DayOfYear): number => {
@@ -1117,7 +1119,7 @@ export const createContacts = ({
 
   const checkDates = async (): Promise<void> => {
     const now = clock.now();
-    const local = toLocal(now, timeZone);
+    const local = toLocal(now, timeZone());
     if (store.setting(datesCheckedSetting) === local.day) return;
     await fresh();
     if (sourceOf() === undefined || pulledAt.get() === 0) return;
@@ -1214,7 +1216,7 @@ export const createContacts = ({
       );
     }
     const [preferred, ...alsoPreferred] = choices.filter((email) => email.preferred === true);
-    const options = ranked.map(({ email, latest }) => `${labelled(email)}, ${usedText(latest, timeZone)}`);
+    const options = ranked.map(({ email, latest }) => `${labelled(email)}, ${usedText(latest, timeZone())}`);
     return preferred !== undefined && alsoPreferred.length === 0
       ? pick(preferred.value, "their preferred address")
       : fail(

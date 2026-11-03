@@ -636,6 +636,33 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/devices/{device}/whereabouts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Say where the phone roughly is
+     * @description Send it when the app opens and whenever the time zone or the place changes, such as on a
+     *     trip: its time zone, and when you allow it, roughly where it is. The box keeps only the
+     *     latest one from any device, with the place rounded to about 10 km, and never anything more
+     *     precise.
+     *
+     *     The time zone is the one Kumo lives by: a repeating wake-up comes back at its time there,
+     *     and moving to another zone wakes Kumo to move what should follow you. The place gives the
+     *     Desk the weather around you; without one, there's no `ambient`.
+     */
+    put: operations["setWhereabouts"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/capabilities": {
     parameters: {
       query?: never;
@@ -2091,7 +2118,7 @@ export interface components {
       /** @description What it really was, in a few words, such as "Dentist, then errands". */
       text?: string;
     };
-    /** @description Kumo's work for a day, today unless you asked for another. */
+    /** @description Kumo's work for a day, today unless you asked for another, and the areas it's learning. */
     Work: {
       /** @description The local day, such as `2026-11-05`. */
       day: string;
@@ -2099,6 +2126,8 @@ export interface components {
       handled: components["schemas"]["DoneEntry"][];
       /** @description The mail Kumo read and left alone that day (`quiet`), newest first. */
       cleared: components["schemas"]["DoneEntry"][];
+      /** @description Every area Kumo is learning, in the order it opened them, now. Draw each with its stage as bars. */
+      tracks: components["schemas"]["Track"][];
     };
     /** @description What was wrong, in your words; `{}` just says it was wrong. */
     CorrectDone: {
@@ -2126,6 +2155,15 @@ export interface components {
       /** @description The protocol version of this route, as `MAJOR.MINOR`. */
       protocol: string;
       lead: components["schemas"]["Lead"];
+      /** @description The time zone Kumo lives by now, such as `Europe/London`. The latest a phone said, or the box's own. */
+      time_zone: string;
+      /** @description What the box keeps of where you roughly are, once a phone has said. Show it in Settings. */
+      whereabouts?: {
+        time_zone: string;
+        area?: components["schemas"]["Area"];
+        /** @description When a phone last said. */
+        as_of: components["schemas"]["Timestamp"];
+      };
       /** @description The model Kumo runs on. */
       agent: {
         /**
@@ -2282,9 +2320,28 @@ export interface components {
     DeviceResult: {
       device: components["schemas"]["Device"];
     };
+    Whereabouts: {
+      /** @description The phone's time zone, as an IANA name such as `Europe/Rome`. */
+      time_zone: string;
+      /** @description Roughly where it is, when you allow it. The box rounds it to about 10 km. */
+      area?: components["schemas"]["Area"];
+    };
+    /** @description Roughly where you are, never more precise than about 10 km. */
+    Area: {
+      latitude: number;
+      longitude: number;
+      /** @description The town or city, such as `Rome`, as the phone names it. */
+      name?: string;
+    };
     ErrorResult: {
       error: components["schemas"]["Error"];
     };
+    /**
+     * Format: date-time
+     * @description Server time, RFC 3339 in UTC with milliseconds.
+     * @example 2026-10-12T09:41:07.120Z
+     */
+    Timestamp: string;
     /** @description Something wrong on the server that needs you, shown until it's fixed, when it clears on its own: notifications that can't be sent, a mail or calendar account that keeps failing, a capability that needs setting up, or memory that isn't reaching its backup. A blip that sorts itself out, such as a reconnect, isn't one. */
     Problem: {
       /** @description Stable while it lasts, such as `push` or `mail:outlook`. */
@@ -2320,12 +2377,6 @@ export interface components {
     CalendarItemId: string;
     /** @description An instant, such as `2026-11-12T14:00:00Z`, or for an all-day event a date, such as `2026-11-12`. */
     When: string;
-    /**
-     * Format: date-time
-     * @description Server time, RFC 3339 in UTC with milliseconds.
-     * @example 2026-10-12T09:41:07.120Z
-     */
-    Timestamp: string;
     /** @description A thing's id: readable, chosen by Ari, unique on the server, such as `florence-with-mira`. */
     MotionId: string;
     /**
@@ -2503,6 +2554,8 @@ export interface components {
      * @description A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.
      */
     UploadId: string;
+    /** @description Opaque. The server makes it when Kumo opens a track. */
+    TrackId: string;
     /** @description One thing Kumo did without you, for the Done list. Reply to it with a message whose `done` names it, and the correction becomes a preference. */
     DoneEntry: {
       id: components["schemas"]["DoneId"];
@@ -2527,6 +2580,8 @@ export interface components {
       quiet: boolean;
       /** @description When you said it was wrong, with `POST /v0/done/{entry}/wrong`. Show it as noted rather than offering That was wrong again. */
       corrected_at?: components["schemas"]["Timestamp"];
+      /** @description The track this call belongs to, when it's in an area Kumo is learning. "That was wrong" on it steps the track back. */
+      track?: components["schemas"]["TrackId"];
     };
     /** @description Opaque. The server makes it when a wake-up is set. */
     WakeUpId: string;
@@ -2578,6 +2633,31 @@ export interface components {
       motion?: components["schemas"]["MotionId"];
       /** @description When it was set. */
       set_at: components["schemas"]["Timestamp"];
+    };
+    /** @description Something interesting at the top of the Desk, by Kumo's judgement: its mood, how something's going, a thought, the day around you. It changes when the moment does, and it never notifies. */
+    DeskLine: {
+      /** @description A short line, such as "Quiet morning. Your Northwind prep is two-thirds done." */
+      text: string;
+      /** @description How Kumo feels, for its face: known moods are `bright`, `calm`, `cosy`, `focused`, `drowsy`, `proud` and `concerned`. Show one you don't recognise as `calm`. */
+      mood: string;
+      /** @description When Kumo set it. */
+      at: components["schemas"]["Timestamp"];
+    };
+    /** @description The weather where you roughly are, read on the box from Open-Meteo every half hour or so. */
+    Ambient: {
+      /** @description Now, in degrees Celsius, rounded. */
+      temperature: number;
+      /**
+       * @description `clear`, `partly_cloudy`, `cloudy`, `fog`, `drizzle`, `rain`, `snow` or `thunder`. Show one you don't recognise as `cloudy`.
+       * @enum {unknown}
+       */
+      condition: "clear" | "partly_cloudy" | "cloudy" | "fog" | "drizzle" | "rain" | "snow" | "thunder";
+      /** @description Whether it's daylight there now. */
+      is_day: boolean;
+      /** @description Today's sunset there. */
+      sunset: components["schemas"]["Timestamp"];
+      /** @description Where, when the phone named it, such as "Rome". */
+      place?: string;
     };
     /** @description Opaque. The server makes it for each card. */
     CardId: string;
@@ -2663,8 +2743,12 @@ export interface components {
         capability?: string;
       };
     } & (unknown & unknown & unknown & unknown & unknown);
-    /** @description Home: Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail. */
+    /** @description Home: Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail. */
     Desk: {
+      /** @description Absent until Kumo sets one, or after it clears it. */
+      line?: components["schemas"]["DeskLine"];
+      /** @description Absent while the box doesn't know roughly where you are, or couldn't read the weather lately. */
+      ambient?: components["schemas"]["Ambient"];
       /** @description Kumo's plans: every wake-up, soonest first. Kumo setting one is quiet; it only shows here. */
       plans: components["schemas"]["WakeUp"][];
       /** @description Events in the next 36 hours or so, plus anything big this week, in time order. */
@@ -2675,6 +2759,40 @@ export interface components {
       handled: number;
       /** @description When Kumo last read a new mail, for "Reading · last mail 2 min ago". Absent while no mail account is connected, and until the first mail. */
       last_mail_at?: components["schemas"]["Timestamp"];
+    };
+    /**
+     * @description How far Kumo has come in an area: `learning`, it shows you its calls and asks when unsure; `spot_checks`, it checks with you now and then; `trusted`, it brings only what needs you. Draw it as three bars filled to the stage; show one you don't recognise as Learning.
+     * @enum {unknown}
+     */
+    TrackStage: "learning" | "spot_checks" | "trusted";
+    /** @description One thing a track stands on: a time you `confirmed` Kumo got it right, `corrected` it, or Kumo `moved` it to another stage, with why. */
+    TrackEvidence: {
+      at: components["schemas"]["Timestamp"];
+      /** @enum {unknown} */
+      kind: "confirmed" | "corrected" | "moved";
+      /** @description In a line, such as "You sent the Tess draft as I wrote it". */
+      text: string;
+      /** @description The stage it moved to, or stepped back to after a correction. */
+      stage?: components["schemas"]["TrackStage"];
+      /** @description The call it was about, in Done. */
+      done?: components["schemas"]["DoneId"];
+    };
+    /** @description An area Kumo is getting to know you in, or learning to do well, such as sorting your mail, writing as you, your food habits or planning your weekends. Kumo opens one when it starts learning something and moves it by judgement; a correction always steps it back. */
+    Track: {
+      id: components["schemas"]["TrackId"];
+      /** @description Such as "Writing as you". */
+      name: string;
+      stage: components["schemas"]["TrackStage"];
+      /** @description When it reached this stage. */
+      since: components["schemas"]["Timestamp"];
+      /** @description Kumo's line on where it stands, such as "Three weeks of drafts you sent as I wrote them." */
+      note?: string;
+      /** @description How many times you've confirmed Kumo got it right. */
+      confirmed: number;
+      /** @description How many times you've corrected it, such as with "That was wrong". */
+      corrected: number;
+      /** @description What it stands on, newest first, the latest ten. */
+      evidence: components["schemas"]["TrackEvidence"][];
     };
     /** @description A thing in motion: something going on that Ari keeps for you, such as a trip being planned. Its content and state come from `GET /v0/motion/{id}`. */
     Motion: {
@@ -3145,7 +3263,10 @@ export type AskResult = components["schemas"]["AskResult"];
 export type RegisterDevice = components["schemas"]["RegisterDevice"];
 export type Device = components["schemas"]["Device"];
 export type DeviceResult = components["schemas"]["DeviceResult"];
+export type Whereabouts = components["schemas"]["Whereabouts"];
+export type Area = components["schemas"]["Area"];
 export type ErrorResult = components["schemas"]["ErrorResult"];
+export type Timestamp = components["schemas"]["Timestamp"];
 export type Problem = components["schemas"]["Problem"];
 export type EventId = components["schemas"]["EventId"];
 export type BeliefId = components["schemas"]["BeliefId"];
@@ -3153,7 +3274,6 @@ export type MemoryAddress = components["schemas"]["MemoryAddress"];
 export type Belief = components["schemas"]["Belief"];
 export type CalendarItemId = components["schemas"]["CalendarItemId"];
 export type When = components["schemas"]["When"];
-export type Timestamp = components["schemas"]["Timestamp"];
 export type MotionId = components["schemas"]["MotionId"];
 export type Activity = components["schemas"]["Activity"];
 export type Guess = components["schemas"]["Guess"];
@@ -3181,16 +3301,22 @@ export type Call = components["schemas"]["Call"];
 export type TopicId = components["schemas"]["TopicId"];
 export type Topic = components["schemas"]["Topic"];
 export type UploadId = components["schemas"]["UploadId"];
+export type TrackId = components["schemas"]["TrackId"];
 export type DoneEntry = components["schemas"]["DoneEntry"];
 export type WakeUpId = components["schemas"]["WakeUpId"];
 export type Weekday = components["schemas"]["Weekday"];
 export type Repeat = components["schemas"]["Repeat"];
 export type WakeUpSource = components["schemas"]["WakeUpSource"];
 export type WakeUp = components["schemas"]["WakeUp"];
+export type DeskLine = components["schemas"]["DeskLine"];
+export type Ambient = components["schemas"]["Ambient"];
 export type CardId = components["schemas"]["CardId"];
 export type Slot = components["schemas"]["Slot"];
 export type Card = components["schemas"]["Card"];
 export type Desk = components["schemas"]["Desk"];
+export type TrackStage = components["schemas"]["TrackStage"];
+export type TrackEvidence = components["schemas"]["TrackEvidence"];
+export type Track = components["schemas"]["Track"];
 export type Motion = components["schemas"]["Motion"];
 export type MotionChange = components["schemas"]["MotionChange"];
 export type VoiceState = components["schemas"]["VoiceState"];
@@ -4217,6 +4343,44 @@ export interface operations {
         };
         content?: never;
       };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  setWhereabouts: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description A random UUID the app makes once per install, and keeps. */
+        device: components["parameters"]["Device"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "time_zone": "Europe/Rome",
+         *       "area": {
+         *         "latitude": 41.9,
+         *         "longitude": 12.5,
+         *         "name": "Rome"
+         *       }
+         *     }
+         */
+        "application/json": components["schemas"]["Whereabouts"];
+      };
+    };
+    responses: {
+      /** @description Noted. */
+      204: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
     };
   };

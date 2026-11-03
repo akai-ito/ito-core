@@ -241,6 +241,7 @@ export const replay = async (name: string): Promise<void> => {
   const callSocket = createCell<CallSocket | undefined>(undefined);
   const spokenPcm = new Uint8Array(fixture("spoken-sentence.wav")).slice(44);
   const web = createCell<ReadonlyMap<string, string>>(new Map());
+  const webJson = createCell<ReadonlyMap<string, unknown>>(new Map());
   const asides = createCell<readonly unknown[]>([]);
 
   const complete: Complete = (_prompt, schema) => {
@@ -295,6 +296,7 @@ export const replay = async (name: string): Promise<void> => {
   const fetchFromWorld = (url: string): Promise<Response> => {
     const answered = providerAnswer(url);
     if (answered) return Promise.resolve(answered);
+    if (webJson.get().has(url)) return Promise.resolve(Response.json(webJson.get().get(url)));
     const file = web.get().get(url);
     if (file === undefined) return Promise.resolve(new Response("Not found", { status: 404 }));
     const bytes = new Uint8Array(fixture(file));
@@ -645,8 +647,13 @@ export const replay = async (name: string): Promise<void> => {
       }
       case "web_has": {
         await advance(time);
-        const { url, file } = step as unknown as { readonly url: string; readonly file: string };
-        web.update((current) => new Map([...current, [url, file]]));
+        const { url, file, json } = step as unknown as {
+          readonly url: string;
+          readonly file?: string;
+          readonly json?: unknown;
+        };
+        if (json !== undefined) webJson.update((current) => new Map([...current, [url, json]]));
+        if (file !== undefined) web.update((current) => new Map([...current, [url, file]]));
         return;
       }
       case "pairing_code_shown": {

@@ -35,7 +35,9 @@ import { registerStream } from "#http/stream.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
-import type { Error as ErrorBody, RegisterDevice } from "#protocol/types.ts";
+import type { Error as ErrorBody, RegisterDevice, Whereabouts } from "#protocol/types.ts";
+import type { Places } from "#places/places.ts";
+import type { Tracks } from "#work/tracks.ts";
 import type { Store } from "#store/store.ts";
 import { toRetryFailure, type Turns } from "#turns/turns.ts";
 import type { Corrections } from "#work/corrections.ts";
@@ -61,7 +63,8 @@ export type AppOptions = {
   readonly heartbeatMs: number;
   readonly desk: DeskKeeper;
   readonly corrections: Pick<Corrections, "correct">;
-  readonly timeZone: string;
+  readonly tracks: Pick<Tracks, "list">;
+  readonly places: Pick<Places, "report" | "held" | "timeZone">;
   readonly calendar: Calendar;
   readonly onLeadRenamed: () => void;
   readonly gettingStarted: GettingStarted;
@@ -117,7 +120,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     heartbeatMs,
     desk,
     corrections,
-    timeZone,
+    tracks,
+    places,
     calendar,
     onLeadRenamed,
     gettingStarted,
@@ -180,6 +184,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       version: info.version,
       protocol,
       lead: { name: leadOf(store) },
+      time_zone: places.timeZone(),
+      ...(places.held() && { whereabouts: places.held() }),
       agent: {
         ...(model && { model }),
         ...(effort && { effort }),
@@ -194,7 +200,14 @@ export const createApp = (options: AppOptions): FastifyInstance => {
 
   registerCapabilities(app, host, schemaFor);
   registerSettings(app, { store, onLeadRenamed, schemaFor });
-  registerDesk(app, { store, desk, corrections, today: () => toLocal(clock.now(), timeZone).day, schemaFor });
+  registerDesk(app, {
+    store,
+    desk,
+    corrections,
+    tracks,
+    today: () => toLocal(clock.now(), places.timeZone()).day,
+    schemaFor,
+  });
   registerOnboarding(app, { gettingStarted, schemaFor });
   app.post<{
     Body: {
@@ -420,6 +433,17 @@ export const createApp = (options: AppOptions): FastifyInstance => {
       const device = toDeviceId(request.params.device);
       store.removeDevice(device);
       return reply.code(204).send();
+    },
+  );
+
+  app.put<{ Params: { readonly device: string }; Body: Whereabouts }>(
+    "/v0/devices/:device/whereabouts",
+    { schema: schemaFor("setWhereabouts") },
+    async (request, reply) => {
+      const reported = places.report(request.params.device, request.body);
+      return reported.ok
+        ? reply.code(204).send()
+        : reply.code(400).send(toErrorResult("invalid_request", reported.failure));
     },
   );
 

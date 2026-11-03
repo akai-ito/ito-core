@@ -83,7 +83,7 @@ const pictureWith = (name: string, theirs: readonly CalendarItem[] = []) => {
     calendar: memory.calendar,
     motions: noMotions,
     clock,
-    timeZone: "UTC",
+    timeZone: () => "UTC",
     info: ignore,
     lead: () => "Kumo",
   });

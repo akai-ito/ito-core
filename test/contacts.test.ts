@@ -103,7 +103,7 @@ describe("their iCloud Contacts, kept by Kumo", () => {
       store,
       identifiers: randomIdentifiers,
       clock,
-      timeZone: "UTC",
+      timeZone: () => "UTC",
       work: () => Promise.resolve(ok("Done.")),
       info: ignore,
     });
@@ -124,7 +124,7 @@ describe("their iCloud Contacts, kept by Kumo", () => {
       store,
       desk,
       clock,
-      timeZone: "UTC",
+      timeZone: () => "UTC",
       info: ignore,
       work: (prompt) => {
         prompts.update((all) => [...all, prompt]);

@@ -2,7 +2,7 @@ import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { startOfDay, toLocal, untilMinutes } from "#desk/day.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { CalendarItem, Card, Desk, DoneEntry, WakeUp } from "#protocol/types.ts";
+import type { Ambient, CalendarItem, Card, Desk, DeskLine, DoneEntry, WakeUp } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
 import type { Info } from "#turns/turns.ts";
@@ -32,6 +32,10 @@ export type DeskKeeper = {
   readonly setComingUp: (items: readonly CalendarItem[]) => void;
   // Kumo's plans: every wake-up, soonest first.
   readonly setPlans: (plans: readonly WakeUp[]) => void;
+  // Kumo's line and mood at the top, or none.
+  readonly setLine: (line: DeskLine | undefined) => void;
+  // The weather where they roughly are, or none.
+  readonly setAmbient: (ambient: Ambient | undefined) => void;
   // When Kumo last read a new mail, or undefined once no mail account is connected.
   readonly setLastMail: (at: string | undefined) => void;
   // Today's Done entries, newest first.
@@ -49,7 +53,7 @@ export type DeskOptions = {
   readonly store: Store;
   readonly identifiers: Identifiers;
   readonly clock: Clock;
-  readonly timeZone: string;
+  readonly timeZone: () => string;
   readonly work: Work;
   readonly info: Info;
 };
@@ -155,13 +159,13 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
   };
 
   const today = (): readonly DoneEntry[] => {
-    const since = startOfDay(clock.now(), timeZone);
+    const since = startOfDay(clock.now(), timeZone());
     return store.doneSince(toTimestamp(since));
   };
 
   const doneOn = (day: string): readonly DoneEntry[] => {
-    const since = dayStart(day, timeZone);
-    const until = toTimestamp(startOfDay(since + pastADayMs, timeZone));
+    const since = dayStart(day, timeZone());
+    const until = toTimestamp(startOfDay(since + pastADayMs, timeZone()));
     return store.doneSince(toTimestamp(since)).filter((entry) => entry.at < until);
   };
 
@@ -248,7 +252,7 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
 
   // A new day: what Kumo handled counts from nothing again.
   const scheduleMidnight = (): void => {
-    const untilMidnight = untilMinutes(clock.now(), timeZone, 0);
+    const untilMidnight = untilMinutes(clock.now(), timeZone(), 0);
     midnight.set(
       clock.after(untilMidnight, () => {
         recount();
@@ -294,6 +298,12 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     },
     setPlans: (plans) => {
       changeDesk((desk) => ({ ...desk, plans: [...plans] }));
+    },
+    setLine: (line) => {
+      changeDesk((desk) => (line ? { ...desk, line } : without(desk, "line")));
+    },
+    setAmbient: (ambient) => {
+      changeDesk((desk) => (ambient ? { ...desk, ambient } : without(desk, "ambient")));
     },
     setLastMail: (lastMail) => {
       changeDesk((desk) =>
