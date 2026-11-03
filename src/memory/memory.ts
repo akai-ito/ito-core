@@ -1,5 +1,6 @@
-import { statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { readDimensions } from "#attachments/media.ts";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import type { AskFields, StepFacts } from "#engine/engine.ts";
@@ -27,6 +28,16 @@ import {
   type Page,
   type Shelf,
 } from "#memory/pages.ts";
+import {
+  imagesIn,
+  isMediaName,
+  keepPhotos,
+  mediaFolder,
+  mediaNameOf,
+  mediaTypeOf,
+  type KeptPhotos,
+  type MediaFile,
+} from "#memory/photos.ts";
 import { mentions, toBoosted, toNames } from "#memory/vocabulary.ts";
 import { rank, toMessageChunk, toPageChunks, type Passage } from "#memory/recall.ts";
 import { openThread, type GitAccess, type Thread } from "#memory/thread.ts";
@@ -34,12 +45,20 @@ import { withoutBlocks } from "#replies/blocks.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { MemoryStore } from "#store/memory.ts";
 import type { Settings } from "#store/store.ts";
-import { createMemoryTools } from "#memory/tools.ts";
+import { createMemoryTools, type Saved } from "#memory/tools.ts";
 import { fieldOf, stringsOf, textOf } from "#tools/input.ts";
 import type { Tool } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 
 export type LinkBody = { readonly address: string; readonly title: string; readonly aliases: readonly string[] };
+
+// A photo a page shows, from the media folder: the source as the page's Markdown has it, and its name there.
+export type PhotoBody = {
+  readonly source: string;
+  readonly name: string;
+  readonly width?: number;
+  readonly height?: number;
+};
 
 export type PageBody = {
   readonly address: string;
@@ -51,9 +70,13 @@ export type PageBody = {
   readonly links: readonly LinkBody[];
   readonly changed_at: string;
   readonly markdown: string;
+  readonly photos?: readonly PhotoBody[];
 };
 
-type ReadPage = Omit<PageBody, "links"> & { readonly links: readonly string[] };
+// A photo from the media folder, to send as it is.
+export type MediaBody = { readonly file: string; readonly mediaType: string; readonly size: number };
+
+type ReadPage = Omit<PageBody, "links" | "photos"> & { readonly links: readonly string[] };
 
 export type PageSummary = {
   readonly address: string;
@@ -103,6 +126,7 @@ export type Memory = {
     address: string,
   ) => Result<PageBody, { readonly code: "invalid" | "not_found"; readonly detail: string }>;
   readonly change: (id: string) => Promise<ChangeBody | undefined>;
+  readonly media: (name: string) => MediaBody | undefined;
   readonly seed: (page: SeededPage) => Promise<Result<string, string>>;
   readonly isBackedUp: () => boolean;
   readonly pushedAt: () => string | undefined;
@@ -143,6 +167,8 @@ export type MemoryOptions = {
   readonly timeZone: () => string;
   readonly pushDelayMs?: number;
   readonly remote?: RemoteAccess;
+  // Kumo's workspace, where photos for a page come from, such as uploads from the chat.
+  readonly workspace?: string;
 };
 
 const indexModelSetting = "memory_index_model";
@@ -190,6 +216,7 @@ export const createMemory = ({
   timeZone,
   pushDelayMs = 30_000,
   remote = machineAccess,
+  workspace,
 }: MemoryOptions): Memory => {
   const thread = createCell<Thread | undefined>(undefined);
   const writes = createCell<Promise<unknown>>(Promise.resolve());
@@ -259,10 +286,41 @@ export const createMemory = ({
     return page && { address: location.value.address, title: page.title, aliases: page.aliases };
   };
 
-  const toPageBody = (page: ReadPage): PageBody => ({
-    ...page,
-    links: page.links.map((address) => toLink(address)).filter((link) => link !== undefined),
-  });
+  const isInThread = (file: string): boolean => existsSync(path.join(opened().directory, file));
+
+  const mediaFile = (name: string): string | undefined => {
+    if (!isMediaName(name)) return undefined;
+    const file = path.join(opened().directory, mediaFolder, name);
+    return lstatSync(file, { throwIfNoEntry: false })?.isFile() === true ? file : undefined;
+  };
+
+  const photosOf = (page: ReadPage): readonly PhotoBody[] => {
+    const location = toLocation(page.address);
+    if (!location.ok) return [];
+    const photos = imagesIn(page.markdown)
+      .map(({ source }) => {
+        const name = mediaNameOf(location.value.path, source);
+        const file = name === undefined ? undefined : mediaFile(name);
+        if (name === undefined || file === undefined) return;
+        const size = readDimensions(readFileSync(file), mediaTypeOf(name));
+        return { source, name, ...(size && { width: size.width, height: size.height }) };
+      })
+      .filter((photo) => photo !== undefined);
+    return new Map(photos.map((photo) => [photo.source, photo])).values().toArray();
+  };
+
+  const toPageBody = (page: ReadPage): PageBody => {
+    const photos = photosOf(page);
+    return {
+      ...page,
+      links: page.links.map((address) => toLink(address)).filter((link) => link !== undefined),
+      ...(photos.length > 0 && { photos }),
+    };
+  };
+
+  // The photos new Markdown names, copied into memory, and the Markdown pointing at them.
+  const keep = (markdown: string, location: Location): Promise<Result<KeptPhotos, string>> =>
+    keepPhotos({ markdown, page: location.path, workspace, isInThread });
 
   const indexPage = async (location: Location, title: string, markdown: string | undefined): Promise<void> => {
     if (markdown === undefined || isInMindPage(location.shelf)) {
@@ -339,8 +397,13 @@ export const createMemory = ({
     text: string | undefined,
     message: string,
     note: string | undefined,
+    media: readonly MediaFile[] = [],
   ): Promise<Result<string, string>> => {
-    const committed = await opened().write(location.path, text, note ? `${message}\n\n${note}` : message);
+    const full = note ? `${message}\n\n${note}` : message;
+    const committed =
+      text === undefined || media.length === 0
+        ? await opened().write(location.path, text, full)
+        : await opened().writeFiles([{ file: location.path, text }, ...media], full);
     if (!committed.ok) return committed;
     const id = identifiers.change();
     const at = toTimestamp(clock.now());
@@ -395,16 +458,21 @@ export const createMemory = ({
 
   const writeJournal = (
     input: unknown,
-  ): Promise<Result<{ readonly address: string; readonly title: string }, string>> =>
+  ): Promise<Result<{ readonly address: string; readonly title: string; readonly photos: number }, string>> =>
     serially(async () => {
-      const words = textOf(input, "text");
-      if (words.trim() === "") return fail("A journal entry needs text.");
+      if (textOf(input, "text").trim() === "") return fail("A journal entry needs text.");
       const day = toDay(clock.now(), timeZone());
       const location = toLocation(`memory:journal/${day}`);
       if (!location.ok) return location;
+      const words = await keep(textOf(input, "text"), location.value);
+      if (!words.ok) return words;
       const title = dayTitle(day);
       const existing = readPage(location.value);
-      const entry = toJournalEntry(words, fieldOf(input, "yours") === true, toTimeOfDay(clock.now(), timeZone()));
+      const entry = toJournalEntry(
+        words.value.markdown,
+        fieldOf(input, "yours") === true,
+        toTimeOfDay(clock.now(), timeZone()),
+      );
       const text = formatPage({
         title,
         gist: toOneLine(textOf(input, "gist")),
@@ -412,8 +480,15 @@ export const createMemory = ({
         links: [],
         markdown: appendEntry(existing?.markdown ?? "", entry),
       });
-      const committed = await commit(location.value, title, text, `Journal ${day}`, toOneLine(textOf(input, "note")));
-      return committed.ok ? ok({ address: location.value.address, title }) : committed;
+      const committed = await commit(
+        location.value,
+        title,
+        text,
+        `Journal ${day}`,
+        toOneLine(textOf(input, "note")),
+        words.value.files,
+      );
+      return committed.ok ? ok({ address: location.value.address, title, photos: words.value.count }) : committed;
     });
 
   const currentVersion = async (location: Location): Promise<string | undefined> => {
@@ -421,14 +496,13 @@ export const createMemory = ({
     return latest && !latest.isDeleted ? toVersion(latest.commit) : undefined;
   };
 
-  const toBodyEdit = (input: unknown): Result<BodyEdit | undefined, string> => {
+  const toBodyEdit = (input: unknown, replacement: string): Result<BodyEdit | undefined, string> => {
     const old = fieldOf(input, "old_text");
     const start = fieldOf(input, "start_line");
     const end = fieldOf(input, "end_line");
     if (typeof old === "string" && (start !== undefined || end !== undefined)) {
       return fail("Give either old_text or start_line and end_line, not both.");
     }
-    const replacement = textOf(input, "new_text");
     if (typeof old === "string") return ok({ kind: "passage", old, new: replacement });
     if (typeof start === "number" && typeof end === "number")
       return ok({ kind: "lines", start, end, new: replacement });
@@ -436,9 +510,7 @@ export const createMemory = ({
     return ok(undefined);
   };
 
-  const editPage = (
-    input: unknown,
-  ): Promise<Result<{ readonly title: string; readonly change: string; readonly version: string }, string>> =>
+  const editPage = (input: unknown): Promise<Result<Saved, string>> =>
     serially(async () => {
       const location = toLocation(textOf(input, "address").trim());
       if (!location.ok) return location;
@@ -452,7 +524,9 @@ export const createMemory = ({
           `${existing.title} has changed since you read it: it's at version ${version} now. Read it again, then edit.`,
         );
       }
-      const bodyEdit = toBodyEdit(input);
+      const replacement = await keep(textOf(input, "new_text"), location.value);
+      if (!replacement.ok) return replacement;
+      const bodyEdit = toBodyEdit(input, replacement.value.markdown);
       if (!bodyEdit.ok) return bodyEdit;
       const markdown = bodyEdit.value ? applyEdit(existing.markdown, bodyEdit.value) : ok(existing.markdown);
       if (!markdown.ok) return markdown;
@@ -483,15 +557,25 @@ export const createMemory = ({
         markdown: markdown.value,
       });
       if (text === opened().read(location.value.path)) return fail(`${title} already says exactly that.`);
-      const committed = await commit(location.value, title, text, `Update ${title}`, toOneLine(textOf(input, "note")));
+      const committed = await commit(
+        location.value,
+        title,
+        text,
+        `Update ${title}`,
+        toOneLine(textOf(input, "note")),
+        replacement.value.files,
+      );
       return committed.ok
-        ? ok({ title, change: committed.value, version: (await currentVersion(location.value)) ?? "" })
+        ? ok({
+            title,
+            change: committed.value,
+            version: (await currentVersion(location.value)) ?? "",
+            photos: replacement.value.count,
+          })
         : committed;
     });
 
-  const writeNewPage = (
-    input: unknown,
-  ): Promise<Result<{ readonly title: string; readonly change: string; readonly version: string }, string>> =>
+  const writeNewPage = (input: unknown): Promise<Result<Saved, string>> =>
     serially(async () => {
       const location = toLocation(textOf(input, "address").trim());
       if (!location.ok) return location;
@@ -499,8 +583,10 @@ export const createMemory = ({
       if (existing) {
         return fail(`${existing.title} is already a page. Read it with read_page, then change it with edit_page.`);
       }
-      const markdown = toMarkdown(textOf(input, "body"));
-      if (markdown === "") return fail("A new page needs a body.");
+      if (toMarkdown(textOf(input, "body")) === "") return fail("A new page needs a body.");
+      const body = await keep(textOf(input, "body"), location.value);
+      if (!body.ok) return body;
+      const markdown = toMarkdown(body.value.markdown);
       const title = isInMindPage(location.value.shelf)
         ? fallbackTitle(location.value)
         : textOf(input, "title").trim() || fallbackTitle(location.value);
@@ -520,20 +606,28 @@ export const createMemory = ({
         links: stringsOf(input, "links"),
         markdown,
       });
-      const committed = await commit(location.value, title, text, `Add ${title}`, toOneLine(textOf(input, "note")));
+      const committed = await commit(
+        location.value,
+        title,
+        text,
+        `Add ${title}`,
+        toOneLine(textOf(input, "note")),
+        body.value.files,
+      );
       return committed.ok
-        ? ok({ title, change: committed.value, version: (await currentVersion(location.value)) ?? "" })
+        ? ok({
+            title,
+            change: committed.value,
+            version: (await currentVersion(location.value)) ?? "",
+            photos: body.value.count,
+          })
         : committed;
     });
 
   const forgetPage = (location: Location, title: string, reason: string): Promise<Result<string, string>> =>
     serially(() => commit(location, title, undefined, `Forget ${title}`, reason));
 
-  const restorePage = (
-    location: Location,
-    version: string,
-    note: string,
-  ): Promise<Result<{ readonly title: string; readonly change: string; readonly version: string }, string>> =>
+  const restorePage = (location: Location, version: string, note: string): Promise<Result<Saved, string>> =>
     serially(async () => {
       const text = await opened().readAt(version, location.path);
       if (text === undefined) return fail(`${location.address} has no version ${version}. See page_history.`);
@@ -541,7 +635,7 @@ export const createMemory = ({
       const { title } = parsePage(text, fallbackTitle(location));
       const committed = await commit(location, title, text, `Restore ${title}`, note);
       return committed.ok
-        ? ok({ title, change: committed.value, version: (await currentVersion(location)) ?? "" })
+        ? ok({ title, change: committed.value, version: (await currentVersion(location)) ?? "", photos: 0 })
         : committed;
     });
 
@@ -758,6 +852,10 @@ export const createMemory = ({
         ...(before !== undefined && { before: parsePage(before, fallback).markdown }),
         ...(after !== undefined && { after: parsePage(after, fallback).markdown }),
       };
+    },
+    media: (name) => {
+      const file = thread.get() ? mediaFile(name) : undefined;
+      return file === undefined ? undefined : { file, mediaType: mediaTypeOf(name), size: statSync(file).size };
     },
     seed: (page) =>
       whenReady(async () => {

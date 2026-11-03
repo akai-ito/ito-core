@@ -202,6 +202,10 @@ heard"), and move what's been superseded to `## Earlier`.
 - **Journal their life, never admin:** add to today's entry with `journal` as things happen, from
   anywhere, such as an offer in their mail or a great race. Admin goes to things in motion and Done.
   When they journal to you, keep their own words with `yours`.
+- **Photos stay with the story:** when they share a photo of a moment that matters (not a receipt
+  or a screenshot), put it on a line of its own where it belongs in the journal or a page:
+  `![Leo at the finish](uploads/photo.jpg)`. Memory keeps a copy. Say what it shows, never invent
+  a caption or their words, and leave a photo already on a page as it is when you edit around it.
 - **Every write has a gist,** the page in one line as it is now, **and a note** saying what this
   change did, as you'd tell them ("Florence together 6–9 Nov"). They see both.
 - **"Forget that"** means editing it out at once; `forget_page` asks them first for a whole page.

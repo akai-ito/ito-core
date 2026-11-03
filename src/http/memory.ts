@@ -1,3 +1,4 @@
+import { createReadStream } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import { toCommandError } from "#conversation/failures.ts";
 import type { RouteSchema } from "#http/validation.ts";
@@ -61,6 +62,23 @@ export const registerMemory = (
       return page.failure.code === "not_found"
         ? reply.code(404).send({ error: toCommandError("not_found", page.failure.detail) })
         : reply.code(400).send({ error: toCommandError("invalid_request", page.failure.detail) });
+    },
+  );
+
+  // A photo's name is made from what's in it, so its bytes never change.
+  app.get<{ Params: { readonly media: string } }>(
+    "/v0/memory/media/:media",
+    { schema: schemaFor("getMemoryMedia") },
+    async (request, reply) => {
+      await memory.ready;
+      const found = memory.media(request.params.media);
+      return found
+        ? reply
+            .header("content-type", found.mediaType)
+            .header("content-length", String(found.size))
+            .header("cache-control", "private, max-age=31536000, immutable")
+            .send(createReadStream(found.file))
+        : reply.code(404).send({ error: toCommandError("not_found", `No photo ${request.params.media} in memory.`) });
     },
   );
 

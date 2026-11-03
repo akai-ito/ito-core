@@ -26,8 +26,9 @@ info:
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
       and fill in its setup sheet, or connect it through its provider.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
-      journal, what Ari changed lately and why, and what each change changed. Ari writes memory
-      itself; the API only reads it, and backs it up to GitHub.
+      journal, the photos a page keeps with its story, what Ari changed lately and why, and what
+      each change changed. Ari writes memory itself; the API only reads it, and backs it up to
+      GitHub.
     - **Choose the model** the agent runs on, and how hard it thinks, from those its engine offers.
     - **Talk:** start and end a call with the agent, and stream it: your microphone up, Ari's voice
       down, with states and captions. The server hears your turns, steered toward the names in
@@ -1215,7 +1216,9 @@ paths:
       summary: One page, or one journal day
       description: |
         The page's Markdown, without its front matter: the present first, then any *Earlier*
-        section, as Ari wrote it. Render it as Markdown.
+        section, as Ari wrote it. Render it as Markdown. A photo shared in the chat may stay with
+        the story, as a Markdown image where it belongs; `photos` lists those memory keeps, to
+        fetch with `getMemoryMedia`.
       parameters:
         - name: address
           in: query
@@ -1229,6 +1232,32 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MemoryPage" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/memory/media/{media}:
+    get:
+      tags: [Memory]
+      operationId: getMemoryMedia
+      summary: A photo a page keeps
+      description: |
+        The bytes of a photo in memory, named in a page's `photos`. Ari keeps each one scaled down
+        (at most 2,000 pixels on the long edge, as JPEG), named by what's in it, so its bytes never
+        change: keep them once fetched.
+      parameters:
+        - name: media
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/MediaName" }
+      responses:
+        "200":
+          description: The photo.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            image/*:
+              schema:
+                description: The photo's bytes.
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1925,6 +1954,35 @@ components:
         markdown:
           description: The page as Ari wrote it, without front matter.
           type: string
+        photos:
+          description: |
+            The photos the page shows from memory, in the order the Markdown first shows them.
+            Absent when it shows none. A Markdown image whose source isn't here isn't in memory:
+            show its words instead.
+          type: array
+          items: { $ref: "#/components/schemas/MemoryPhoto" }
+    MemoryPhoto:
+      description: A photo a page keeps with its story.
+      type: object
+      required: [source, name]
+      properties:
+        source:
+          description: The image's source as the page's Markdown has it, such as `../media/3f9a1c2b4d5e6f70.jpg`.
+          type: string
+        name: { $ref: "#/components/schemas/MediaName" }
+        width:
+          description: Its width in pixels, when its header gives it.
+          type: integer
+          minimum: 1
+        height:
+          description: Its height in pixels, when its header gives it.
+          type: integer
+          minimum: 1
+    MediaName:
+      description: A photo's name in memory, to fetch with `getMemoryMedia`.
+      type: string
+      maxLength: 128
+      pattern: "^[A-Za-z0-9_-][A-Za-z0-9_.-]*\\.(jpg|jpeg|png|gif|webp|JPG|JPEG|PNG|GIF|WEBP)$"
     MemoryPages:
       type: object
       required: [pages]
