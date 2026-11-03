@@ -4,7 +4,7 @@ import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 
 export type WorkToolsOptions = {
-  // Messages them in the conversation; every message notifies them, and an urgent one breaks through Focus.
+  // Messages them in the conversation; every message notifies them, and an urgent one breaks through their Focus.
   readonly post: (text: string, isUrgent: boolean) => Message;
   readonly desk: DeskKeeper;
   // Whether a learning track is open, by id.
@@ -84,7 +84,9 @@ export const createWorkTools = ({ post, desk, isTrack }: WorkToolsOptions): read
         text: { type: "string", description: "One or two lines, plain words." },
         urgent: {
           type: "boolean",
-          description: "Only when it can't wait: it's sent time-sensitive, so it breaks through their Focus.",
+          description:
+            "Only for what truly can't wait, such as a same-day change, a security alert, or something blocked on " +
+            "them with a deadline: it's sent time-sensitive, so it breaks through their Focus.",
         },
       },
       required: ["text"],

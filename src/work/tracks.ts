@@ -124,9 +124,8 @@ export const createTracks = ({ database, clock, identifiers, info }: TracksOptio
       name: "move_track",
       title: "Move a learning track",
       description:
-        "Move a track to another stage when what it stands on says so, such as weeks of their confirmations with " +
-        "no correction, or back when you've been getting it wrong. Learning shows them each call; Spot checks " +
-        "checks now and then; Trusted brings only what needs them.",
+        "Move a track to another stage on evidence, such as weeks of their confirmations with no correction, or " +
+        "back when you've been getting it wrong.",
       inputSchema: {
         type: "object",
         properties: {
@@ -209,9 +208,7 @@ export const createTracks = ({ database, clock, identifiers, info }: TracksOptio
         ? ""
         : [
             "<tracks>",
-            "The areas you're learning, and how far you've come in each. Learning: show them your calls and ask when",
-            "unsure. Spot checks: check with them now and then. Trusted: bring only what needs them. Move one when what",
-            "it stands on says so; a correction steps it back.",
+            "The areas you're learning, with each one's stage and what it stands on:",
             ...listed.map(
               (track) =>
                 `- ${track.name} (${track.id}): ${stageWords[track.stage]}, ${String(track.confirmed)} confirmed, ` +

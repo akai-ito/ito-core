@@ -48,29 +48,32 @@ const failed = (text: string): ToolResult => ({ text, isError: true });
 const questionPrompt = [
   "You're meeting the person for the first time, while they set up Ito. Kumo is reading their recent mail and",
   "calendar in the background. Post your first question with post: one short, warm question about what would",
-  "make the next month a good one for them. Their answers come as ordinary messages; you'll ask at most three",
-  "questions in all.",
+  "make the next month a good one for them. Their answers come as ordinary messages, and you'll go on from there",
+  "in the chat.",
 ].join("\n");
 
 const gettingStartedNote = [
   "<getting_started>",
-  "You're getting to know them while they set up Ito, and reading their recent mail in the background. Ask at",
-  "most three short questions in all, one at a time, about what they want from the next months; skip any they",
-  "don't want to answer. Then say you'll show what you found. Remember what they tell you.",
+  "You're getting to know them while they set up Ito, and reading their recent mail in the background. One short",
+  "question at a time, skipping any they'd rather not answer: one or two about what they want from the next",
+  "months, then a short talk about how you'll check in, in your own words, such as when they like to plan their",
+  "day and what they'd like you to keep an eye on. Set your first wake-ups from their answers, quietly, and keep",
+  "the rhythm you agree on How to help you. Then say you'll show what you found. Remember what they tell you.",
   "</getting_started>",
 ].join("\n");
 
 const replayQuestionPrompt = [
   "They're going through getting started again, to see it; nothing they have is reset. Post your first question",
   "with post: one short, warm question about what's changed lately, or what would make the next month a good one.",
-  "Their answers come as ordinary messages; you'll ask at most three questions in all.",
+  "Their answers come as ordinary messages, and you'll go on from there in the chat.",
 ].join("\n");
 
 const replayNote = [
   "<getting_started>",
-  "They're going through getting started again, to see it; nothing they have is reset. Ask at most three short",
-  "questions in all, one at a time, about what's changed or what they want from the next months; skip any they",
-  "don't want to answer. Then say you'll show what you found. Remember what they tell you.",
+  "They're going through getting started again, to see it; nothing they have is reset. One short question at a",
+  "time, skipping any they'd rather not answer: one or two about what's changed or what they want from the next",
+  "months, then whether the way you check in still suits them. Move, drop or set wake-ups from their answers,",
+  "quietly, and keep How to help you true. Then say you'll show what you found. Remember what they tell you.",
   "</getting_started>",
 ].join("\n");
 

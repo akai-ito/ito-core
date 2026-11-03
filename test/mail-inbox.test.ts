@@ -662,8 +662,7 @@ describe("effort that follows the stakes", () => {
 
     const [prompt = ""] = box.work();
     expect(prompt).toContain("put a two-line brief of what it actually does in that option's note");
-    expect(prompt).toContain("a time that's only proposed goes on");
-    expect(prompt).toContain("Kumo's calendar as a hold");
+    expect(prompt).toContain("and a time that's only proposed on Kumo's calendar as a hold");
     await box.mailbox.close();
   });
 
