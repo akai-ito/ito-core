@@ -522,6 +522,29 @@ describe("mail in the conversation, through ito mail commands", () => {
     );
   });
 
+  it("puts a filed mail back where it came from on Undo, not in the inbox", async () => {
+    const [binned, filed] = ["receipt-2@quillfield.example", "receipt-3@quillfield.example"];
+    const bin = await command(["file", "--message-id", binned, "--to", "bin", "--reason", "Old"]);
+    const [binnedEntry] = running().server.store.listDone(undefined, 1).entries;
+    await command(["file", "--message-id", filed, "--to", "folder", "--folder", "Money & receipts"]);
+    const [filedEntry] = running().server.store.listDone(undefined, 1).entries;
+
+    expect(bin).toEqual({ status: 200, text: "Filed it: bin." });
+    expect([mail.folderOf("icloud", binned), mail.folderOf("icloud", filed)]).toEqual(["Trash", "Money & receipts"]);
+    expect(binnedEntry).toMatchObject({ text: 'Binned "Receipt 2" from Quillfield Dental', undo: true });
+    expect(filedEntry).toMatchObject({ text: 'Filed "Receipt 3" from Quillfield Dental into Money & receipts' });
+
+    const undone = await Promise.all(
+      [binnedEntry, filedEntry].map((entry) => inApp(`/v0/done/${entry?.id ?? "none"}/undo`)),
+    );
+
+    expect(undone.map(({ statusCode }) => statusCode)).toEqual([200, 200]);
+    expect([mail.folderOf("icloud", binned), mail.folderOf("icloud", filed)]).toEqual([
+      "Receipts (old)",
+      "Receipts (old)",
+    ]);
+  });
+
   it("searches and reads mail, only for the session's token", async () => {
     const found = await command(["search", "--from", "northwind.example"]);
     const read = await command(["read", "--message-id", offer.message_id]);

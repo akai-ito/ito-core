@@ -113,9 +113,16 @@ export const createFakeMail = (now: () => string): FakeMail => {
     flags: [],
   });
 
-  const move = (account: string, messageId: string, to: string): ReturnType<MailSource["file"]> => {
+  // Records the move and puts the mail there, a filing by its folder, as the server would: flags leave it in place.
+  const move = (account: string, messageId: string, to: string): string => {
+    const origin = boxOf(account).inbox.find((mail) => mail.messageId === messageId)?.folder ?? "INBOX";
+    const folder = to === "flag" || to === "unflag" ? origin : (folderPaths[to] ?? to);
     moves.update((all) => [...all, { account, messageId, to }]);
-    return Promise.resolve(ok(undefined));
+    change(account, (box) => ({
+      ...box,
+      inbox: box.inbox.map((mail) => (mail.messageId === messageId ? { ...mail, folder } : mail)),
+    }));
+    return origin;
   };
 
   const create = ({ account, user, onHealth }: SourceOptions): MailSource => {
@@ -216,8 +223,11 @@ export const createFakeMail = (now: () => string): FakeMail => {
       removed.update((all) => [...all, messageId]);
       return Promise.resolve(ok(undefined));
     },
-    file: (messageId, filing) => move(account, messageId, filing),
-    fileInto: (messageId, folder) => move(account, messageId, folder),
+    file: (messageId, filing) => {
+      move(account, messageId, filing);
+      return Promise.resolve(ok(undefined));
+    },
+    fileInto: (messageId, folder) => Promise.resolve(ok({ origin: move(account, messageId, folder) })),
     hasWritten: (address) =>
       Promise.resolve(
         ok((sentMail.get().get(account) ?? []).some((mail) => mail.to.some((to) => has(to.address, address)))),
