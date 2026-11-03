@@ -1,14 +1,13 @@
 import type { Mail } from "#mail/message.ts";
-import type { Letter } from "#mail/smtp.ts";
 import { fail, ok, type Result } from "#result.ts";
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
-export type Unsubscriber = {
-  readonly fetch: Fetch;
-  readonly send: (letter: Letter) => Promise<Result<undefined, string>>;
-  readonly from: string;
-};
+// The mail that leaves a list which only takes mail, for them to send: Kumo never sends mail.
+export type UnsubscribeLetter = { readonly to: readonly string[]; readonly subject: string; readonly body: string };
+
+// How a list is left: by its one-click link, done, or with a mail of their own to send.
+export type Unsubscribed = "posted" | { readonly letter: UnsubscribeLetter };
 
 const answerMs = 30_000;
 
@@ -29,7 +28,7 @@ const toField = (pair: string): readonly [string, string] => {
     : [decode(pair.slice(0, equals)).toLowerCase(), decode(pair.slice(equals + 1))];
 };
 
-export const toLetter = (mailto: string, from: string): Letter | undefined => {
+export const toLetter = (mailto: string): UnsubscribeLetter | undefined => {
   if (!/^mailto:/i.test(mailto)) return undefined;
   const rest = mailto.slice("mailto:".length);
   const question = rest.indexOf("?");
@@ -41,12 +40,15 @@ export const toLetter = (mailto: string, from: string): Letter | undefined => {
       .filter((pair) => pair !== "")
       .map(toField),
   );
-  const to = [decode(target), fields.get("to") ?? ""].filter((address) => address.trim() !== "").join(", ");
+  const to = [decode(target), fields.get("to") ?? ""]
+    .flatMap((addresses) => addresses.split(","))
+    .map((address) => address.trim())
+    .filter((address) => address !== "");
   const subject = fields.get("subject") ?? "";
   const body = fields.get("body") ?? "";
-  return to === ""
+  return to.length === 0
     ? undefined
-    : { from, to, subject: subject === "" ? "unsubscribe" : subject, text: body === "" ? "unsubscribe" : body };
+    : { to, subject: subject === "" ? "unsubscribe" : subject, body: body === "" ? "unsubscribe" : body };
 };
 
 const isHttps = (url: string): boolean => URL.canParse(url) && new URL(url).protocol === "https:";
@@ -71,18 +73,16 @@ export const postOneClick = async (fetcher: Fetch, url: string): Promise<Result<
   }
 };
 
+// One-click first; when there's none or it's refused, a list that takes mail gets the mail that leaves it, to send.
 export const unsubscribeFrom = async (
   mail: Pick<Mail, "unsubscribe">,
-  unsubscriber: Unsubscriber,
-): Promise<Result<"posted" | "mailed", string>> => {
+  fetcher: Fetch,
+): Promise<Result<Unsubscribed, string>> => {
   const { post, url, mailto } = mail.unsubscribe ?? {};
-  const posted = post === undefined ? undefined : await postOneClick(unsubscriber.fetch, post);
+  const posted = post === undefined ? undefined : await postOneClick(fetcher, post);
   if (posted?.ok) return posted;
-  const letter = mailto === undefined ? undefined : toLetter(mailto, unsubscriber.from);
-  if (letter !== undefined) {
-    const sent = await unsubscriber.send(letter);
-    return sent.ok ? ok("mailed") : sent;
-  }
+  const letter = mailto === undefined ? undefined : toLetter(mailto);
+  if (letter !== undefined) return ok({ letter });
   if (posted !== undefined) return posted;
   return fail(
     url === undefined ? "This mail has no unsubscribe link." : `This list only unsubscribes on its web page: ${url}`,
