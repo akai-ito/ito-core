@@ -327,6 +327,7 @@ describe("an inbox of only what needs you", () => {
         'Filed "Issue 88: seed rounds" from The Weekly into Newsletters',
       ]);
     });
+    expect(box.asked()[0]).toContain("such as an editorial newsletter. It goes into Newsletters.");
     expect(box.mail.unsubscribed()).toEqual([]);
     await box.mailbox.close();
   });

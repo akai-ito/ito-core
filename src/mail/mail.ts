@@ -1035,7 +1035,7 @@ export const createMailbox = ({
     if (!draft) return fail("There's no draft on the card.");
     const connection = connectionOf(draft.account);
     if (!connection) return fail(`${draft.account} mail isn't set up any more.`);
-    const answered = await complete(rewritePrompt(draft.body, change), rewriteSchema);
+    const answered = await complete(rewritePrompt(draft.body, change, draft.in_reply_to !== undefined), rewriteSchema);
     if (!answered.ok) return answered;
     const body = textOf(answered.value, "body").trim();
     if (body === "") return fail("The rewrite came back empty.");

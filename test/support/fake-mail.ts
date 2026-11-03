@@ -8,6 +8,7 @@ export type ArrivingMail = {
   readonly message_id: string;
   readonly from: string;
   readonly reply_to?: string;
+  readonly in_reply_to?: string;
   readonly to: readonly string[];
   readonly subject: string;
   readonly text: string;
@@ -99,7 +100,8 @@ export const createFakeMail = (now: () => string): FakeMail => {
     folder: "INBOX",
     uid,
     messageId: mail.message_id,
-    references: [],
+    ...(mail.in_reply_to !== undefined && { inReplyTo: mail.in_reply_to }),
+    references: mail.in_reply_to === undefined ? [] : [mail.in_reply_to],
     from: toAddress(mail.from),
     ...(mail.reply_to !== undefined && { replyTo: [toAddress(mail.reply_to)] }),
     to: mail.to.map((address) => toAddress(address)),
