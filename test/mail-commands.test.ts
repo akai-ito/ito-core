@@ -16,6 +16,7 @@ import { hashToken, tokenSetting } from "#http/auth.ts";
 import { commandsPath } from "#http/tools.ts";
 import { randomIdentifiers } from "#identifiers.ts";
 import { foldersSetting } from "#mail/folders.ts";
+import { simpleParser } from "mailparser";
 import { toDraftMime, type Draft, type Mail } from "#mail/message.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import type { Card, Step } from "#protocol/types.ts";
@@ -771,5 +772,45 @@ describe("mail in the conversation, through ito mail commands", () => {
     expect(senderAlone.card?.cc).toBeUndefined();
     expect(senderAlone.headers.to).toBe("Clara Voss <clara.voss@northwind.example>");
     expect(senderAlone.headers.cc).toBeUndefined();
+  });
+
+  it("quotes the mail a reply answers below it, in both parts, and keeps the quote when redrafted", async () => {
+    const venue = "venue-1@halcyon.example";
+    mail.keep("INBOX", {
+      account: "icloud",
+      message_id: venue,
+      from: "Tess Harlow <tess.harlow@halcyon.example>",
+      to: ["sam@icloud.com"],
+      subject: "Venue for the launch",
+      date: "2026-11-03T12:00:00.000Z",
+      text: "Shall we book the rooftop?",
+      full_text: "Shall we book the rooftop?\n\nOn 2 Nov 2026, Sam Rivera wrote:\n> Any venue ideas?",
+    });
+    const parsedDraft = async (): Promise<{ readonly text: string; readonly html: string }> => {
+      const saved = mail.drafts().at(-1);
+      if (!saved) throw new Error("No draft was saved.");
+      const parsed = await simpleParser(await toDraftMime(saved, "quote@icloud.com", new Date()));
+      return { text: parsed.text ?? "", html: typeof parsed.html === "string" ? parsed.html : "" };
+    };
+
+    await command(["draft", "--reply-to", venue, "--body", "Yes, let's."]);
+    const drafted = await parsedDraft();
+    const card = drafts().find((waiting) => waiting.draft?.in_reply_to === venue);
+    const before = mail.drafts().length;
+    await inApp(`/v0/desk/cards/${card?.id ?? "none"}/answer`, { text: "Mention the date" });
+    await vi.waitFor(() => {
+      expect(mail.drafts()).toHaveLength(before + 1);
+    });
+    const redrafted = await parsedDraft();
+
+    const quoted =
+      "On 3 Nov 2026, Tess Harlow wrote:\n> Shall we book the rooftop?\n>\n> On 2 Nov 2026, Sam Rivera wrote:\n" +
+      "> > Any venue ideas?";
+    expect(drafted.text.trimEnd()).toBe(`Yes, let's.\n\n${signature}\n\n${quoted}`);
+    expect(drafted.html).toContain("<div>On 3 Nov 2026, Tess Harlow wrote:</div>");
+    expect(drafted.html).toMatch(/<blockquote type="cite"[^>]*>Shall we book the rooftop\?<br>/u);
+    expect(card?.draft?.body).toBe("Yes, let's.");
+    expect(redrafted.text.trimEnd()).toBe(`Rewritten: Mention the date\n\n${signature}\n\n${quoted}`);
+    expect(redrafted.html).toContain("<div>On 3 Nov 2026, Tess Harlow wrote:</div>");
   });
 });

@@ -168,7 +168,9 @@ to, Kumo's line says so. In the conversation it's `ito contacts` commands and a 
 
 Drafts go into Drafts as proper formatted mail: Kumo writes in light Markdown, and the draft is HTML
 with a clean plain-text copy, photos you sent in the chat (or that Kumo found on the web) shown
-inline, small files attached, and your own signature at the end, exactly as you send it. Kumo learns
+inline, small files attached, and your own signature at the end, exactly as you send it. A reply
+quotes the mail it answers below it ("On 3 Nov 2026, Clara Voss wrote:"), so the thread reads on in
+any mail app. Kumo learns
 each account's signature from your recent sent mail, and adds none if you don't use one. Sent mail
 also tells it which addresses are yours and the name you send under: a reply comes from the address
 the mail went to, aliases included, and a new mail from the one you last used with that person.

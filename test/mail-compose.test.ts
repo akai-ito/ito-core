@@ -128,6 +128,30 @@ describe("a draft as formatted mail", () => {
     expect(letter.attachments.map(({ filename }) => filename)).toEqual(["notes.pdf"]);
   });
 
+  it("quotes the mail a reply answers below the signature, in plain text and in HTML", async () => {
+    const letter = value(
+      await composeLetter({
+        markdown: "Thursday works.",
+        attach: [],
+        find: findAny,
+        signature: { text: "Divy", images: [] },
+        quote: {
+          attribution: "On 3 Nov 2026, Clara Voss wrote:",
+          text: "Would Thursday suit?\r\n\r\n> Earlier, <you> said Friday.\r\n",
+        },
+      }),
+    );
+
+    expect(letter.text).toBe(
+      "Thursday works.\n\nDivy\n\nOn 3 Nov 2026, Clara Voss wrote:\n> Would Thursday suit?\n>\n> > Earlier, <you> said Friday.",
+    );
+    expect(letter.html).toContain(
+      "<div>Divy</div>\n<br>\n<div>On 3 Nov 2026, Clara Voss wrote:</div>\n" +
+        '<blockquote type="cite" style="margin: 0 0 0 0.8ex; border-left: 1px solid #ccc; padding-left: 1ex">' +
+        "Would Thursday suit?<br>\n<br>\n&gt; Earlier, &lt;you&gt; said Friday.</blockquote>",
+    );
+  });
+
   it("writes a plain signature into the HTML line by line", async () => {
     const letter = value(
       await composeLetter({

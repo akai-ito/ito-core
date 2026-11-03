@@ -21,7 +21,10 @@ export type Mail = {
   readonly cc: readonly Address[];
   readonly subject: string;
   readonly date: string;
+  // Its own words, without the history it quotes.
   readonly text: string;
+  // The whole text, history and all, when the history was cut from text: what a reply quotes.
+  readonly fullText?: string;
   readonly unsubscribe?: Unsubscribe;
   readonly flags: readonly string[];
 };
@@ -205,6 +208,8 @@ export const toMail = (parsed: ParsedMail, meta: MailMeta): Mail => {
   const [inReplyTo] = toMessageIds(parsed.inReplyTo);
   const [from] = toAddresses(parsed.from);
   const replyTo = toAddresses(parsed.replyTo);
+  const fullText = (parsed.text ?? "").replaceAll("\r\n", "\n").trim();
+  const text = trimQuoted(parsed.text ?? "");
   const unsubscribe = toUnsubscribe({
     "list-unsubscribe": unfoldHeader(parsed.headerLines, "list-unsubscribe"),
     "list-unsubscribe-post": unfoldHeader(parsed.headerLines, "list-unsubscribe-post"),
@@ -222,7 +227,8 @@ export const toMail = (parsed: ParsedMail, meta: MailMeta): Mail => {
     cc: toAddresses(parsed.cc),
     subject: parsed.subject ?? "",
     date: validDate(parsed.date) ?? meta.receivedAt ?? new Date(0).toISOString(),
-    text: trimQuoted(parsed.text ?? ""),
+    text,
+    ...(fullText !== text && { fullText }),
     ...(unsubscribe !== undefined && { unsubscribe }),
     flags: meta.flags,
   };
