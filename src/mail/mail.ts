@@ -163,8 +163,14 @@ const askAgainMs = 30 * dayMs;
 // How sure the attention pass must be to bin or file a mail itself; below it, Kumo looks.
 const sureEnough = 0.7;
 
-// What a draft carried besides its words, so redrafting it keeps them: files attached, and whether it's signed.
-type DraftParts = { readonly attach: readonly string[]; readonly signature: boolean };
+// What a draft carried besides its words, so redrafting it keeps them: files attached, whether it's signed, the names
+// its people are written with, by address, and the References of the thread it answers.
+type DraftParts = {
+  readonly attach: readonly string[];
+  readonly signature: boolean;
+  readonly names?: Readonly<Record<string, string>>;
+  readonly references?: readonly string[];
+};
 
 type StoredImage = {
   readonly cid: string;
@@ -256,6 +262,19 @@ const textValue = (values: Values, name: string): string => {
 const senderOf = (mail: Mail): string => mail.from.name ?? mail.from.address;
 
 const toAddress = (address: string): { readonly address: string } => ({ address });
+
+const namesOf = (addresses: readonly Address[]): Readonly<Record<string, string>> =>
+  Object.fromEntries(
+    addresses.flatMap(({ address, name }) => (name === undefined ? [] : [[addressKey(address), name]])),
+  );
+
+// An address with the name kept for it, when there is one.
+const namedIn =
+  (names: Readonly<Record<string, string>> = {}) =>
+  (address: string): Address => {
+    const name = names[addressKey(address)];
+    return name === undefined ? toAddress(address) : { address, name };
+  };
 
 const listOf = (value: unknown): readonly string[] =>
   (Array.isArray(value) ? (value as readonly unknown[]) : []).flatMap((item) =>
@@ -1085,6 +1104,7 @@ export const createMailbox = ({
     const body = textOf(answered.value, "body").trim();
     if (body === "") return fail("The rewrite came back empty.");
     const parts = partsOf(card.id) ?? { attach: [], signature: draft.signature !== undefined };
+    const named = namedIn(parts.names);
     const signed = parts.signature ? await signatureOf(connection) : ok(undefined);
     if (!signed.ok) return signed;
     const signature = signed.value;
@@ -1096,15 +1116,15 @@ export const createMailbox = ({
     });
     if (!letter.ok) return letter;
     const saved = await connection.source.draft({
-      from: toAddress(draft.from),
-      to: draft.to.map((address) => toAddress(address)),
-      ...(draft.cc && { cc: draft.cc.map((address) => toAddress(address)) }),
+      from: named(draft.from),
+      to: draft.to.map((address) => named(address)),
+      ...(draft.cc && { cc: draft.cc.map((address) => named(address)) }),
       subject: draft.subject,
       body: letter.value.text,
       html: letter.value.html,
       inline: letter.value.inline,
       attachments: letter.value.attachments,
-      ...(draft.in_reply_to !== undefined && { inReplyTo: draft.in_reply_to }),
+      ...(draft.in_reply_to !== undefined && { inReplyTo: draft.in_reply_to, references: parts.references ?? [] }),
       replaces: draft.message_id,
     });
     if (!saved.ok) return saved;
@@ -1557,24 +1577,30 @@ export const createMailbox = ({
         [...(answering.replyTo ?? []), answering.from, ...answering.to, ...answering.cc].find(
           (written) => address !== undefined && written.name !== undefined && isSameAddress(written.address, address),
         )?.name;
+      // A redraft keeps what the earlier one carried; a new draft is signed and carries nothing.
+      const earlierParts: DraftParts = before
+        ? (partsOf(earlier.id) ?? { attach: [], signature: before.signature !== undefined })
+        : { attach: [], signature: true };
+      // A name from Contacts, as the mail it answers wrote it, or as the earlier draft had it.
       const nameOf = (address: string): Address => {
         const name = found.find((recipient) => recipient.address === address)?.name ?? headerName(address);
-        return name === undefined ? toAddress(address) : { address, name };
+        return name === undefined ? namedIn(earlierParts.names)(address) : { address, name };
       };
       const subject = filled(textOf(input, "subject"), before?.subject, answering && reSubject(answering.subject));
       const body = filled(textOf(input, "body").trim(), before?.body);
       if (body === "" || subject === "" || to.length === 0) {
         return failed("A draft needs who it's to, a subject and a body, or reply_to.");
       }
-      // A redraft keeps what the earlier one carried; a new draft is signed and carries nothing.
-      const earlierParts = before
-        ? (partsOf(earlier.id) ?? { attach: [], signature: before.signature !== undefined })
-        : { attach: [], signature: true };
+      const from = toAddress(user);
+      const recipients = { to: to.map((address) => nameOf(address)), cc: cc.map((address) => nameOf(address)) };
+      const references = answering ? [...answering.references, answering.messageId] : [];
       const givenAttach = fieldOf(input, "attach");
       const givenSignature = fieldOf(input, "signature");
       const parts: DraftParts = {
         attach: Array.isArray(givenAttach) ? listOf(givenAttach) : earlierParts.attach,
         signature: typeof givenSignature === "boolean" ? givenSignature : earlierParts.signature,
+        names: namesOf([from, ...recipients.to, ...recipients.cc]),
+        ...(references.length > 0 && { references }),
       };
       const learned = parts.signature ? await signatureOf(connection) : ok(undefined);
       if (!learned.ok) {
@@ -1591,18 +1617,15 @@ export const createMailbox = ({
       });
       if (!letter.ok) return failed(letter.failure);
       const saved = await source.draft({
-        from: toAddress(user),
-        to: to.map((address) => nameOf(address)),
-        ...(cc.length > 0 && { cc: cc.map((address) => nameOf(address)) }),
+        from,
+        to: recipients.to,
+        ...(cc.length > 0 && { cc: recipients.cc }),
         subject,
         body: letter.value.text,
         html: letter.value.html,
         inline: letter.value.inline,
         attachments: letter.value.attachments,
-        ...(answering && {
-          inReplyTo: answering.messageId,
-          references: [...answering.references, answering.messageId],
-        }),
+        ...(answering && { inReplyTo: answering.messageId, references }),
       });
       if (!saved.ok) return failed(saved.failure);
       const kept = await clearEarlier(connection, replacing, answering?.messageId);
