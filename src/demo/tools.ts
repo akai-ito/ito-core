@@ -119,7 +119,7 @@ export const createDemoTools = ({
       description: "Read a sample mail: put a draft on the Desk and tell them about it, for the demo.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       call: () => {
-        desk.addCard({
+        const card = desk.addCard({
           kind: "draft",
           title: "Note to Hotel Orto",
           options: [{ label: "Drop it" }],
@@ -142,7 +142,7 @@ export const createDemoTools = ({
             "drafted a note.",
           false,
         );
-        return Promise.resolve({ text: "Put a sample draft on the Desk." });
+        return Promise.resolve({ text: `Put a sample draft on the Desk as ${card.id}.` });
       },
     },
     {

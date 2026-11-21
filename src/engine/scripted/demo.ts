@@ -18,6 +18,8 @@ const shortReply = [
   "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
   "- *trip* starts Florence with Mira in In motion, *training* a sub-20 5K block, and *booked* books the trip's Uffizi.",
   "- *plan* lays out a day with Kumo's plan and guesses.",
+  "- *menu* answers with shape (a table with verdicts, picks with pictures, a total), *guide* makes a page with " +
+    "things to spot, and *cards* shows an event, a place, a Desk question and a person as cards.",
 ].join("\n");
 
 const longReply = Array.from(
@@ -296,6 +298,181 @@ const showDay: Act["act"] = async (callTool) => {
   await callTool("show_day", {});
 };
 
+const demoPictureOf = async (
+  callTool: CallTool,
+  name: string,
+  alt: string,
+): Promise<Readonly<Record<string, string>>> => {
+  const kept = await callTool("keep_image", { url: `${demoPictures}${name}.jpg` });
+  return {
+    attachment: String(kept.structured?.attachment),
+    alt,
+    source_url: `https://example.org/ito-demo/about/${name}`,
+    credit: "Ito demo picture",
+  };
+};
+
+const block = (kind: string, value: unknown): string => ["```ari:" + kind, JSON.stringify(value), "```"].join("\n");
+
+const verdict = (label: string, tone: string): Readonly<Record<string, string>> => ({ label, tone });
+
+// A menu answered with shape: the table with verdicts, picks with pictures, the total, and choices. It comes as a
+// message of Kumo's, since its pictures are kept as it goes.
+const showMenu: Act["act"] = async (callTool) => {
+  const dishes = [
+    ["Clay pot glass noodles", "£9.50", "What people come for: smoky, peppery, crab all through it."],
+    ["Langoustine laab", "£11", "Bright and sharp, so it cuts the richness of the noodles."],
+    ["Lamb skewers", "£8", "Two skewers, easy to split, properly charred."],
+    ["Wild ginger greens", "£6.50", "Something green, since you said not too heavy."],
+    ["Sticky rice × 2", "£7", "For the laab's juices. You'll want the second."],
+  ] as const;
+  const picks = await Promise.all(
+    dishes.map(async ([name, detail, why], index) => ({
+      name,
+      detail,
+      why,
+      image: await demoPictureOf(callTool, `dish-${String(index + 1)}`, name),
+    })),
+  );
+  const text = [
+    "Good menu. It's northern Thai, cooked over wood, all small plates to share: four or five between two, plus rice.",
+    "",
+    block("table", {
+      columns: ["Dish", "My take"],
+      rows: [
+        {
+          name: "Clay pot glass noodles",
+          detail: "Pork belly, brown crab, white pepper",
+          verdict: verdict("Must try", "strong"),
+        },
+        {
+          name: "Langoustine laab",
+          detail: "Minced, toasted rice, herbs, lime",
+          verdict: verdict("Must try", "strong"),
+        },
+        {
+          name: "Lamb & cumin skewers",
+          detail: "Aged lamb, charred over wood",
+          verdict: verdict("Recommended", "good"),
+        },
+        { name: "Jungle curry", detail: "Pork, fiery, no coconut", verdict: verdict("If you like heat", "quiet") },
+        { name: "Isaan sausage", detail: "Fermented pork, ginger, peanut", verdict: verdict("Skip today", "quiet") },
+        { name: "Sticky rice", detail: "Steamed in a basket", verdict: verdict("Best value", "neutral") },
+      ],
+    }),
+    "",
+    block("picks", { title: "What I'd order", picks }),
+    "",
+    block("number", {
+      label: "Estimated for two",
+      value: "£47",
+      context: "Five plates and rice. £53 with the 12.5% service.",
+    }),
+    "",
+    "Want a drink matched to it, or is that the lot? Say hi to [Alex](memory:people/alex).",
+    "",
+    block("choices", { options: ["Add drinks", "Lighter swap", "That's the lot"] }),
+  ].join("\n");
+  await callTool("post", { text });
+};
+
+const guideRoom = (
+  id: string,
+  title: string,
+  detail: string,
+  items: readonly (readonly [string, string, string])[],
+) => ({
+  id,
+  title,
+  detail,
+  items: items.map(([item, name, where]) => ({ id: item, title: name, detail: where })),
+});
+
+// A page Kumo made: a gallery guide with rooms that fold, things to spot and a place for coffee.
+const makeGuide: Act["act"] = async (callTool) => {
+  const cover = await demoPictureOf(callTool, "gallery", "The gallery's dome");
+  const casts = await demoPictureOf(callTool, "casts", "The Cast Courts");
+  await callTool("make_made_page", {
+    id: "gallery-guide",
+    title: "Your guide to the gallery",
+    summary: "3 rooms · 4 things to spot",
+    cover,
+    content: {
+      intro: "Two hours, three rooms, in walking order from the main door. Coffee halfway.",
+      check: "Spotted",
+      sections: [
+        {
+          ...guideRoom("cast-courts", "Cast Courts", "Room 46a–b · 25 min", [
+            ["column", "Trajan's Column", "Cut in two to fit under the roof. Find the join."],
+            ["fig-leaf", "David's fig leaf", "Not on him: it hangs in a case behind."],
+          ]),
+          image: casts,
+          text: "Plaster copies of great monuments, made so people who couldn't travel could still stand in front of them.",
+        },
+        guideRoom("south-asia", "South Asia", "Room 41 · 20 min", [
+          ["tiger", "Tipu's Tiger", "A wooden tiger with an organ inside."],
+        ]),
+        guideRoom("fashion", "Fashion", "Room 40 · 20 min", [
+          ["mantua", "The silk mantua", "So wide you went through doors sideways."],
+        ]),
+        {
+          id: "halfway",
+          title: "Halfway",
+          numbered: false,
+          text: block("place", {
+            name: "The Morris Room",
+            address: "Cromwell Road, London",
+            note: "the first museum café",
+          }),
+        },
+      ],
+    },
+  });
+};
+
+const cardIn = (text: string): string => /as (?<card>k_\S+?)\.?$/u.exec(text)?.groups?.card ?? "";
+
+// Action cards: a question on the Desk shown in the chat, an event to add, a place with Directions, and a person.
+const showCards: Act["act"] = async (callTool) => {
+  const added = await callTool("add_card", {
+    kind: "question",
+    title: "Walk in, or book?",
+    text: "The restaurant only books for six or more. Walk in and queue, or find somewhere that books?",
+    options: [{ label: "Walk in", acts: true }, { label: "Find one that books" }],
+  });
+  const card = cardIn(added.text);
+  const mailed = await callTool("show_mail", {});
+  const draft = cardIn(mailed.text);
+  await callTool("post", {
+    text: [
+      "Thursday works: you're free after your 17:00 call. Here's the evening, and one question.",
+      "",
+      block("event", {
+        title: "Dinner with Rohan",
+        start: "2026-11-27T19:30:00+00:00",
+        end: "2026-11-27T21:30:00+00:00",
+        place: "Saffron Lane, Soho",
+      }),
+      "",
+      block("place", {
+        name: "Saffron Lane",
+        address: "Greek Street, London",
+        note: "open till 23:00",
+        lat: 51.5136,
+        lon: -0.1318,
+      }),
+      "",
+      block("desk", { card }),
+      "",
+      block("person", { page: alex }),
+      "",
+      "And the hotel note, which is in your Drafts:",
+      "",
+      block("desk", { card: draft }),
+    ].join("\n"),
+  });
+};
+
 const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {
   const chosen = [
     { pattern: /\bdesk\b/u, act: fillDesk, said: "I've put a question and an offer on your Desk." },
@@ -305,6 +482,13 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
     { pattern: /\bstart\b/u, act: showGettingStarted, said: "I've read your mail. Here's what I found." },
     { pattern: /\bwork\b/u, act: showWork, said: "Here's my day so far, in my work on the Desk." },
     { pattern: /\bplan\b/u, act: showDay, said: "Here's the shape of today: my plan and my guesses are in Coming up." },
+    { pattern: /\bmenu\b/u, act: showMenu, said: "That's what I'd get for two." },
+    {
+      pattern: /\bguide\b/u,
+      act: makeGuide,
+      said: `I've made you a guide, in walking order, with things to spot in each room.\n\n${block("made", { made: "gallery-guide" })}`,
+    },
+    { pattern: /\bcards\b/u, act: showCards, said: "That's Thursday sorted, bar the question." },
   ].find(({ pattern }) => pattern.test(text));
   if (!chosen) return undefined;
   const actAt = lastAt(start) + 300;
