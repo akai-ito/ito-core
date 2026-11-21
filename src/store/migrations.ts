@@ -244,4 +244,6 @@ export const migrations: readonly string[] = [
     position INTEGER NOT NULL,
     body TEXT NOT NULL
   );`,
+  // What Kumo learnt about them from a change to memory, in a line to them: only real learnings, never housekeeping.
+  `ALTER TABLE memory_changes ADD COLUMN learnt TEXT;`,
 ];

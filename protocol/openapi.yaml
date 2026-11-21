@@ -26,9 +26,9 @@ info:
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
       and fill in its setup sheet, or connect it through its provider.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
-      journal, the photos a page keeps with its story, what Ari changed lately and why, and what
-      each change changed. Ari writes memory itself; the API only reads it, and backs it up to
-      GitHub.
+      journal, the photos a page keeps with its story, the chapters of your life Ari noticed, what
+      it learnt about you lately, what Ari changed lately and why, and what each change changed.
+      Ari writes memory itself; the API only reads it, and backs it up to GitHub.
     - **Choose the model** the agent runs on, and how hard it thinks, from those its engine offers.
     - **Talk:** start and end a call with the agent, and stream it: your microphone up, Ari's voice
       down, with states and captions. The server hears your turns, steered toward the names in
@@ -1162,9 +1162,12 @@ paths:
       tags: [Memory]
       operationId: listShelves
       summary: The shelves, with how much is on each
+      description: |
+        Chapters aren't among them: the Library shows them as a row of their own, from
+        `listChapters`.
       responses:
         "200":
-          description: Every shelf, in order, the journal last.
+          description: Every shelf but chapters, in order, the journal last.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
           content:
@@ -1208,6 +1211,44 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RecentChanges" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/memory/chapters:
+    get:
+      tags: [Memory]
+      operationId: listChapters
+      summary: The chapters of your life Ari noticed
+      description: |
+        Arcs Ari noticed and named, such as "Florence with Mira" or "Back to training", each a page
+        on the `chapters` shelf: a short story with photos, then what changed. Those still going
+        come first, the one changed most lately leading; then the rest, the latest to end first.
+        `getPage` opens one.
+      responses:
+        "200":
+          description: Every chapter.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChapterList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/memory/learnt:
+    get:
+      tags: [Memory]
+      operationId: listLearnt
+      summary: What Ari learnt about you lately
+      description: |
+        The five newest lines Ari learnt about you, newest first, each in its own words to you,
+        such as "Half marathons suit you more than 5Ks." A line comes only with a change to memory
+        that taught Ari something about you, never with one that tidies, reconciles or fixes
+        records. One Ari took back, or whose page it forgot, is gone. To correct one, you tell Ari.
+      responses:
+        "200":
+          description: The lines.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearntLines" }
         "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/memory/page:
     get:
@@ -1897,8 +1938,8 @@ components:
         is_default: { description: True for the engine's default model., type: boolean }
         images: { description: Whether it can see photos you attach., type: boolean }
     Shelf:
-      description: A shelf in memory; `people` holds one page per person, `groups` one per group of people, and `journal` one per day.
-      enum: [people, groups, goals, projects, places, topics, journal]
+      description: A shelf in memory; `people` holds one page per person, `groups` one per group of people, `chapters` one per chapter of your life, and `journal` one per day.
+      enum: [people, groups, goals, projects, places, topics, chapters, journal]
     Gist:
       description: |
         What the page is now, in one line, written by Ari and kept current with every change: a
@@ -1941,7 +1982,7 @@ components:
         circle: { $ref: "#/components/schemas/Circle" }
         shelf:
           description: Its shelf, or `portrait`, `now` or `helping-you` for the pages in mind.
-          enum: [portrait, now, helping-you, people, groups, goals, projects, places, topics, journal]
+          enum: [portrait, now, helping-you, people, groups, goals, projects, places, topics, chapters, journal]
         aliases:
           description: Other names Ari knows it by.
           type: array
@@ -1961,6 +2002,7 @@ components:
             show its words instead.
           type: array
           items: { $ref: "#/components/schemas/MemoryPhoto" }
+        chapter: { $ref: "#/components/schemas/ChapterFacts" }
     MemoryPhoto:
       description: A photo a page keeps with its story.
       type: object
@@ -2019,6 +2061,80 @@ components:
         changes:
           type: array
           items: { $ref: "#/components/schemas/RecentChange" }
+    Day:
+      description: A day, as YYYY-MM-DD, where you are.
+      type: string
+      format: date
+    Chapter:
+      description: A chapter in the Library's row.
+      type: object
+      required: [address, title, began, changed_at]
+      properties:
+        address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        title:
+          description: Its name, such as "Florence with Mira".
+          type: string
+        gist: { $ref: "#/components/schemas/Gist" }
+        began: { $ref: "#/components/schemas/Day" }
+        ended:
+          description: The day it ended. Absent while it's still going.
+          $ref: "#/components/schemas/Day"
+        cover:
+          description: The first photo its story shows. Absent when it shows none.
+          $ref: "#/components/schemas/MemoryPhoto"
+        changed_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    ChapterList:
+      type: object
+      required: [chapters]
+      properties:
+        chapters:
+          type: array
+          items: { $ref: "#/components/schemas/Chapter" }
+    ChapterFacts:
+      description: |
+        A chapter's page only: when it began and ended, when Ari noticed it, and what it drew on,
+        counted by the server rather than said by Ari. The story and *What changed* are its Markdown.
+      type: object
+      required: [began, drawn_from]
+      properties:
+        began: { $ref: "#/components/schemas/Day" }
+        ended:
+          description: The day it ended. Absent while it's still going.
+          $ref: "#/components/schemas/Day"
+        noticed:
+          description: The day Ari first wrote it. Absent for a chapter that came from outside.
+          $ref: "#/components/schemas/Day"
+        drawn_from:
+          type: object
+          required: [journal_days, photos]
+          properties:
+            journal_days:
+              description: The journal days it links to.
+              type: integer
+              minimum: 0
+            photos:
+              description: The photos in memory that it and those days show.
+              type: integer
+              minimum: 0
+    LearntLine:
+      type: object
+      required: [text, at, address, change]
+      properties:
+        text:
+          description: What Ari learnt, in a line to you.
+          type: string
+        at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        address:
+          description: The page whose change taught it.
+          $ref: "events.schema.json#/$defs/MemoryAddress"
+        change: { $ref: "events.schema.json#/$defs/ChangeId" }
+    LearntLines:
+      type: object
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/LearntLine" }
     ShelfList:
       type: object
       required: [shelves]

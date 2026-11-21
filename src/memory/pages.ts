@@ -1,7 +1,7 @@
 import { parse as parseYaml, stringify as toYaml } from "yaml";
 import { fail, ok, type Result } from "#result.ts";
 
-export const shelves = ["people", "groups", "goals", "projects", "places", "topics", "journal"] as const;
+export const shelves = ["people", "groups", "goals", "projects", "places", "topics", "chapters", "journal"] as const;
 
 export type Shelf = (typeof shelves)[number];
 
@@ -21,6 +21,10 @@ export type Page = {
   readonly circle?: string;
   // On a people page, the uid of their card in Contacts, which holds the facts about them.
   readonly contact?: string;
+  // On a chapter, the days it began and ended (none while it's still going), and the day Kumo noticed it.
+  readonly began?: string;
+  readonly ended?: string;
+  readonly noticed?: string;
   readonly aliases: readonly string[];
   readonly links: readonly string[];
   readonly markdown: string;
@@ -76,6 +80,12 @@ const frontMatter = /^---\n(?<yaml>[\s\S]*?)\n---\n?/u;
 const strings = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 
+// A day in front matter, as YYYY-MM-DD, however YAML read it.
+const dayOf = (value: unknown): string | undefined => {
+  const text = value instanceof Date ? value.toISOString().slice(0, 10) : value;
+  return typeof text === "string" && dayPattern.test(text.trim()) ? text.trim() : undefined;
+};
+
 export const parsePage = (text: string, fallbackTitle: string): Page => {
   const yaml = frontMatter.exec(text)?.groups?.yaml;
   const fields = (yaml === undefined ? {} : parseYaml(yaml)) as Readonly<Record<string, unknown>> | null;
@@ -83,23 +93,43 @@ export const parsePage = (text: string, fallbackTitle: string): Page => {
   const gist = fields?.gist;
   const circle = fields?.circle;
   const contact = fields?.contact;
+  const began = dayOf(fields?.began);
+  const ended = dayOf(fields?.ended);
+  const noticed = dayOf(fields?.noticed);
   return {
     title: typeof title === "string" ? title : fallbackTitle,
     ...(typeof gist === "string" && gist.trim() !== "" && { gist: gist.trim() }),
     ...(typeof circle === "string" && circle.trim() !== "" && { circle: circle.trim() }),
     ...(typeof contact === "string" && contact.trim() !== "" && { contact: contact.trim() }),
+    ...(began !== undefined && { began }),
+    ...(ended !== undefined && { ended }),
+    ...(noticed !== undefined && { noticed }),
     aliases: strings(fields?.aliases),
     links: strings(fields?.links),
     markdown: text.replace(frontMatter, "").replace(/^\n+/u, ""),
   };
 };
 
-export const formatPage = ({ title, gist, circle, contact, aliases, links, markdown }: Page): string => {
+export const formatPage = ({
+  title,
+  gist,
+  circle,
+  contact,
+  began,
+  ended,
+  noticed,
+  aliases,
+  links,
+  markdown,
+}: Page): string => {
   const fields = {
     title,
     ...(gist !== undefined && { gist }),
     ...(circle !== undefined && { circle }),
     ...(contact !== undefined && { contact }),
+    ...(began !== undefined && { began }),
+    ...(ended !== undefined && { ended }),
+    ...(noticed !== undefined && { noticed }),
     ...(aliases.length > 0 && { aliases }),
     ...(links.length > 0 && { links }),
   };

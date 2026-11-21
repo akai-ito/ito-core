@@ -831,7 +831,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** The shelves, with how much is on each */
+    /**
+     * The shelves, with how much is on each
+     * @description Chapters aren't among them: the Library shows them as a row of their own, from
+     *     `listChapters`.
+     */
     get: operations["listShelves"];
     put?: never;
     post?: never;
@@ -874,6 +878,52 @@ export interface paths {
      *     changed. A page changed twice has two rows. `getChange` opens any of them.
      */
     get: operations["listRecentChanges"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/memory/chapters": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The chapters of your life Ari noticed
+     * @description Arcs Ari noticed and named, such as "Florence with Mira" or "Back to training", each a page
+     *     on the `chapters` shelf: a short story with photos, then what changed. Those still going
+     *     come first, the one changed most lately leading; then the rest, the latest to end first.
+     *     `getPage` opens one.
+     */
+    get: operations["listChapters"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/memory/learnt": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * What Ari learnt about you lately
+     * @description The five newest lines Ari learnt about you, newest first, each in its own words to you,
+     *     such as "Half marathons suit you more than 5Ks." A line comes only with a change to memory
+     *     that taught Ari something about you, never with one that tidies, reconciles or fixes
+     *     records. One Ari took back, or whose page it forgot, is gone. To correct one, you tell Ari.
+     */
+    get: operations["listLearnt"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1356,10 +1406,10 @@ export interface components {
       images: boolean;
     };
     /**
-     * @description A shelf in memory; `people` holds one page per person, `groups` one per group of people, and `journal` one per day.
+     * @description A shelf in memory; `people` holds one page per person, `groups` one per group of people, `chapters` one per chapter of your life, and `journal` one per day.
      * @enum {unknown}
      */
-    Shelf: "people" | "groups" | "goals" | "projects" | "places" | "topics" | "journal";
+    Shelf: "people" | "groups" | "goals" | "projects" | "places" | "topics" | "chapters" | "journal";
     /**
      * @description What the page is now, in one line, written by Ari and kept current with every change: a
      *     journal day's headline, who someone is to you, where a project stands. Absent until Ari
@@ -1405,6 +1455,7 @@ export interface components {
         | "projects"
         | "places"
         | "topics"
+        | "chapters"
         | "journal";
       /** @description Other names Ari knows it by. */
       aliases: string[];
@@ -1419,6 +1470,7 @@ export interface components {
        *     show its words instead.
        */
       photos?: components["schemas"]["MemoryPhoto"][];
+      chapter?: components["schemas"]["ChapterFacts"];
     };
     /** @description A photo a page keeps with its story. */
     MemoryPhoto: {
@@ -1452,6 +1504,55 @@ export interface components {
     };
     RecentChanges: {
       changes: components["schemas"]["RecentChange"][];
+    };
+    /**
+     * Format: date
+     * @description A day, as YYYY-MM-DD, where you are.
+     */
+    Day: string;
+    /** @description A chapter in the Library's row. */
+    Chapter: {
+      address: components["schemas"]["MemoryAddress"];
+      /** @description Its name, such as "Florence with Mira". */
+      title: string;
+      gist?: components["schemas"]["Gist"];
+      began: components["schemas"]["Day"];
+      /** @description The day it ended. Absent while it's still going. */
+      ended?: components["schemas"]["Day"];
+      /** @description The first photo its story shows. Absent when it shows none. */
+      cover?: components["schemas"]["MemoryPhoto"];
+      changed_at: components["schemas"]["Timestamp"];
+    };
+    ChapterList: {
+      chapters: components["schemas"]["Chapter"][];
+    };
+    /**
+     * @description A chapter's page only: when it began and ended, when Ari noticed it, and what it drew on,
+     *     counted by the server rather than said by Ari. The story and *What changed* are its Markdown.
+     */
+    ChapterFacts: {
+      began: components["schemas"]["Day"];
+      /** @description The day it ended. Absent while it's still going. */
+      ended?: components["schemas"]["Day"];
+      /** @description The day Ari first wrote it. Absent for a chapter that came from outside. */
+      noticed?: components["schemas"]["Day"];
+      drawn_from: {
+        /** @description The journal days it links to. */
+        journal_days: number;
+        /** @description The photos in memory that it and those days show. */
+        photos: number;
+      };
+    };
+    LearntLine: {
+      /** @description What Ari learnt, in a line to you. */
+      text: string;
+      at: components["schemas"]["Timestamp"];
+      /** @description The page whose change taught it. */
+      address: components["schemas"]["MemoryAddress"];
+      change: components["schemas"]["ChangeId"];
+    };
+    LearntLines: {
+      lines: components["schemas"]["LearntLine"][];
     };
     ShelfList: {
       shelves: {
@@ -3281,6 +3382,12 @@ export type MemoryPages = components["schemas"]["MemoryPages"];
 export type PageList = components["schemas"]["PageList"];
 export type RecentChange = components["schemas"]["RecentChange"];
 export type RecentChanges = components["schemas"]["RecentChanges"];
+export type Day = components["schemas"]["Day"];
+export type Chapter = components["schemas"]["Chapter"];
+export type ChapterList = components["schemas"]["ChapterList"];
+export type ChapterFacts = components["schemas"]["ChapterFacts"];
+export type LearntLine = components["schemas"]["LearntLine"];
+export type LearntLines = components["schemas"]["LearntLines"];
 export type ShelfList = components["schemas"]["ShelfList"];
 export type MemoryChange = components["schemas"]["MemoryChange"];
 export type MemoryBackup = components["schemas"]["MemoryBackup"];
@@ -4733,7 +4840,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Every shelf, in order, the journal last. */
+      /** @description Every shelf but chapters, in order, the journal last. */
       200: {
         headers: {
           "Ito-Protocol": components["headers"]["ItoProtocol"];
@@ -4788,6 +4895,50 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RecentChanges"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  listChapters: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Every chapter. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ChapterList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  listLearnt: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The lines. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LearntLines"];
         };
       };
       401: components["responses"]["TokenRejected"];

@@ -4314,6 +4314,192 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.deskLine({ ...done, at: "2026-11-12T12:30:01.000Z" });
     return transcript;
   },
+
+  () => {
+    const transcript = createTranscript({
+      name: "90-chapters-and-what-kumo-learnt",
+      scenario: 90,
+      title: "Chapters and what Kumo learnt",
+      summary:
+        "You're home from Florence. Kumo keeps the trip as a chapter of your life, a short story that began and " +
+        "ended, linked to the journal days it draws on, and learns something about you on the way. Tidying a page " +
+        "teaches it nothing, so it adds no line. The Library shows the chapter in its own row, what Kumo learnt " +
+        "lately, newest first, and the chapter's page with when Kumo noticed it and what it drew on.",
+      guarantees: ["G60"],
+    });
+    const seededAt = "2026-11-10T18:00:00.000Z";
+    const mira = {
+      address: "memory:people/mira",
+      title: "Mira",
+      gist: "Your oldest friend, from school",
+      aliases: ["Mimi"],
+      links: [],
+      markdown: "Your oldest friend; you met at school in Pune (as of 20 Oct).\n",
+      note: "Oldest friend, from school",
+      circle: "friends",
+    };
+    const days = [
+      {
+        address: "memory:journal/2026-11-05",
+        title: "5 November 2026",
+        gist: "Florence: the Uffizi at opening",
+        aliases: [],
+        links: [],
+        markdown: "### 21:40\n\nThe Uffizi at opening with Mira, then a long lunch.\n",
+        note: "The Uffizi",
+      },
+      {
+        address: "memory:journal/2026-11-06",
+        title: "6 November 2026",
+        gist: "Florence: rain, and a bookshop café",
+        aliases: [],
+        links: [],
+        markdown: "### 22:05\n\nRain all day, so a bookshop café near Santo Spirito instead.\n",
+        note: "The rainy day",
+      },
+    ];
+    const half = {
+      address: "memory:goals/half-marathon",
+      title: "Half marathon",
+      gist: "A half in March",
+      aliases: [],
+      links: [],
+      markdown: "A half marathon in March (as of 2 Nov).\n",
+      note: "The March half",
+      learnt: "Half marathons suit you more than 5Ks.",
+    };
+    const trips = {
+      address: "memory:topics/trips",
+      title: "Trips",
+      gist: "How you like to travel",
+      aliases: [],
+      links: [],
+      markdown: "You like a plan for the first days of a trip (as of 2 Nov).\n",
+      note: "How you travel",
+    };
+    const chapter = {
+      address: "memory:chapters/florence-with-mira",
+      title: "Florence with Mira",
+      gist: "Six days in Florence for Mira's birthday",
+      aliases: [],
+      links: [mira.address, ...days.map(({ address }) => address)],
+      markdown:
+        "You'd been promising Mira Florence since spring, and went for her birthday week. The first days were " +
+        "all plans; then the rain cancelled everything, and a bookshop café near Santo Spirito turned out the " +
+        "best day.\n\n## What changed\n\n- You want an empty day in every trip now.\n",
+    };
+    const learnt = "You want an empty day in every trip now: the unplanned one tends to be the best.";
+    transcript.begin(seededAt);
+    transcript.world("memory_holds", { pages: [mira, ...days, half, trips] });
+    transcript.wait(60 * 60 * 1000);
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(
+      transcript,
+      "Home from Florence! The rainy day in that bookshop café was the best one. Every trip gets an empty day now.",
+    );
+    transcript.wait(700);
+    const written = transcript.change();
+    agentCalls(transcript, "write_page", {
+      address: chapter.address,
+      title: chapter.title,
+      gist: chapter.gist,
+      note: "Noticed Florence with Mira",
+      began: "2026-11-04",
+      ended: "2026-11-09",
+      links: chapter.links,
+      body: chapter.markdown,
+    });
+    memoryStep(
+      transcript,
+      "updated",
+      [{ address: chapter.address, title: chapter.title }],
+      { title: "Updating Florence with Mira", endedTitle: "Updated Florence with Mira" },
+      written,
+    );
+    transcript.wait(400);
+    const taught = transcript.change();
+    agentCalls(transcript, "edit_page", {
+      address: trips.address,
+      version: "seeded",
+      old_text: "You like a plan for the first days of a trip (as of 2 Nov).",
+      new_text: "You like a plan for the first days of a trip, and an empty day in every one (as of 10 Nov).",
+      note: "An empty day in every trip",
+      learnt,
+    });
+    memoryStep(
+      transcript,
+      "updated",
+      [{ address: trips.address, title: trips.title }],
+      { title: "Updating Trips", endedTitle: "Updated Trips" },
+      taught,
+    );
+    transcript.wait(400);
+    const tidied = transcript.change();
+    agentCalls(transcript, "edit_page", {
+      address: mira.address,
+      version: "seeded",
+      old_text: "(as of 20 Oct)",
+      new_text: "(as of 20 October)",
+      note: "Tidied the date",
+    });
+    memoryStep(
+      transcript,
+      "updated",
+      [{ address: mira.address, title: mira.title }],
+      { title: "Updating Mira", endedTitle: "Updated Mira" },
+      tidied,
+    );
+    transcript.wait(300);
+    writeWhole(transcript, "Welcome home. I've kept Florence as a chapter, rainy day and all.");
+    transcript.endTurn("completed");
+    transcript.wait(5000);
+    const turnAt = Date.parse(seededAt) + 60 * 60 * 1000 + 2000;
+    const writtenAt = new Date(turnAt + 700).toISOString();
+    const taughtAt = new Date(turnAt + 1100).toISOString();
+    memoryCall(transcript, "/v0/memory/chapters", {
+      chapters: [
+        {
+          address: chapter.address,
+          title: chapter.title,
+          gist: chapter.gist,
+          began: "2026-11-04",
+          ended: "2026-11-09",
+          changed_at: writtenAt,
+        },
+      ],
+    });
+    transcript.wait(1000);
+    memoryCall(transcript, "/v0/memory/learnt", {
+      lines: [
+        { text: learnt, at: taughtAt, address: trips.address, change: taught },
+        { text: half.learnt, at: seededAt, address: half.address, change: transcript.change() },
+      ],
+    });
+    transcript.wait(2000);
+    memoryCall(transcript, `/v0/memory/page?address=${chapter.address}`, {
+      ...pageBody(chapter, writtenAt, [mira, ...days]),
+      chapter: {
+        began: "2026-11-04",
+        ended: "2026-11-09",
+        noticed: "2026-11-10",
+        drawn_from: { journal_days: 2, photos: 0 },
+      },
+    });
+    transcript.wait(2000);
+    memoryCall(transcript, "/v0/memory/shelves", {
+      shelves: [
+        { shelf: "people", count: 1 },
+        { shelf: "groups", count: 0 },
+        { shelf: "goals", count: 1 },
+        { shelf: "projects", count: 0 },
+        { shelf: "places", count: 0 },
+        { shelf: "topics", count: 1 },
+        { shelf: "journal", count: 2 },
+      ],
+    });
+    return transcript;
+  },
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

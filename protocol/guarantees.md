@@ -57,6 +57,7 @@ where the protocol has to make it possible, marked *App*.
 | G54 | **Kumo goes where you go.** The phone says its time zone and, roughly, where it is; the box keeps only the latest, rounded to about 10 km. Kumo lives by that time zone: a repeating wake-up comes back at its time there, and moving zones wakes Kumo to move what should follow you. | 83 |
 | G55 | **The weather around you, never invented.** With a rough place, the Desk carries the temperature, the conditions and today's sunset there, read on the box and refreshed about every half hour. Without a place, or without a recent reading, there's no weather at all. | 83 |
 | G56 | **A line and a face, by judgement.** Kumo may put a short line at the top of the Desk with its mood, and changes them when the moment changes. Neither ever notifies. | 84 |
+| G60 | **Chapters and what Kumo learnt come from memory.** A chapter is a page Kumo writes and keeps on its own shelf: a story with the day it began, the day it ended once it's over, and the day Kumo noticed it, which the server stamps; what it drew on is counted by the server, never said by Kumo. A line Kumo learnt about you comes only with a change that taught it, never with one that tidies or fixes records, is kept in the Thread with that change, and leaves the Library when Kumo takes it back or forgets its page. | 90 |
 
 ## How Kumo decides to speak
 
@@ -555,6 +556,17 @@ When Kumo's model can't act, nothing stands in for it (G52).
 
 - Kumo sets its line and mood together, and changes them when the moment does; the Desk carries
   them as `line`, and nothing notifies. (G56, G33)
+
+### 90 · [Chapters and what Kumo learnt](transcripts/90-chapters-and-what-kumo-learnt.jsonl)
+
+- Kumo writes a chapter as a page on `memory:chapters/…` with the day it began and the day it
+  ended; the server stamps the day Kumo noticed it, and counts the journal days and photos it
+  draws on. (G60)
+- A change that teaches Kumo something about you carries a line to you; tidying a page carries
+  none, so the Library's *What Kumo learnt lately* shows only real learnings, newest first. (G60)
+- Chapters are the Library's own row: the shelves leave them out. *App:* Now, then Chapters, then
+  what Kumo learnt, then the shelves; a chapter opens as its story, what changed, its links and
+  where it came from.
 
 ## Not in this version
 

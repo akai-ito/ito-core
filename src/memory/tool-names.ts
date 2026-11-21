@@ -8,4 +8,5 @@ export const memoryToolNames: ReadonlySet<string> = new Set([
   "page_history",
   "restore_page",
   "journal",
+  "unlearn",
 ]);

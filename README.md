@@ -107,6 +107,10 @@ Kumo's, and when you correct something, Kumo finds every copy, journal previews 
 A photo you share in the chat can stay with the story: Kumo puts it where it belongs in the journal
 or on a page, and the Thread keeps a copy in its `media` folder, scaled down to at most 2,000 pixels
 on the long edge as JPEG, without its location or camera details, so it goes to the backup too.
+Kumo also notices the chapters of your life, such as a trip or a training block, and keeps each as a
+short story with its photos on `chapters/`, with when it began and ended. When a change teaches it
+something about you, it says so in a line to you, kept with the change (in the Thread too, as a
+`Learnt:` line in its commit); the Library shows the newest few, and tidying a page adds none.
 
 To back it up, tap *Back up to GitHub* in Ari's Settings › Memory and approve the code on GitHub.
 Your server finds your private `ito-thread` repository, or makes one, and GitHub asks you to install

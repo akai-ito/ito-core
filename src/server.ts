@@ -65,6 +65,7 @@ import { createContacts, type Contacts, type PersonPage } from "#contacts/contac
 import { createContactsSource, type ContactsSource } from "#contacts/carddav.ts";
 import { contactsGroup } from "#contacts/group.ts";
 import { mailGroup } from "#mail/group.ts";
+import { chaptersSkill } from "#memory/chapters.ts";
 import { parsePage, sectionOf, toAddress } from "#memory/pages.ts";
 import { createMailbox, type CreateMailSource, type Mailbox } from "#mail/mail.ts";
 import {
@@ -256,7 +257,7 @@ export const createServer = (options: ServerOptions): Server => {
   const launcher = writeLauncher(path.join(options.dataDirectory, "bin", "ito"));
   const groups = createGroups({ groups: [mailGroup, contactsGroup], tools: () => allTools(), command: launcher });
   const skills = (): string =>
-    writeOwnSkills(path.join(options.dataDirectory, "skills"), [motionSkill, ...groups.skills()]) +
+    writeOwnSkills(path.join(options.dataDirectory, "skills"), [motionSkill, chaptersSkill, ...groups.skills()]) +
     writeSkills(path.join(options.dataDirectory, "skills"), host.offered(), launcher);
   const memory = createMemory({
     directory: path.join(options.dataDirectory, "thread"),
