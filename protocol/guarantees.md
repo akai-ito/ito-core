@@ -15,7 +15,7 @@ where the protocol has to make it possible, marked *App*.
 | G4 | **Exact resume.** Every event carries a cursor. Reconnecting with the last cursor the app applied delivers every later event once: nothing missing, nothing repeated, including reply text streamed in the meantime. | 2, 11, 13 |
 | G5 | **An honest reset.** When the server can't continue from a cursor (too old, restored from a backup, a different server), it says so and sends a fresh snapshot. It never resumes from the wrong place. Ids are never reused, even after a restore. | 14 |
 | G6 | **Turns outlive connections.** A turn runs to its end whether or not any app is connected. Only Stop, a failure or a restart ends it early, never silence, however long: Kumo may show nothing for minutes, such as while it writes a long document in one tool call, and the person decides when it has gone on too long. | 13, 85 |
-| G7 | **Text only grows.** Reply text streams as appended pieces and is never revised. A finished message's text is exactly what was streamed, and a stopped message keeps everything it had streamed. | 5, 7, 8, 11 |
+| G7 | **Text only grows.** Reply text streams as appended pieces and is never revised. A finished message's text is exactly what was streamed, and a stopped message keeps everything it had streamed. A message is never half taken back: when the model's stream drops and the model writes an unfinished message again from the start, the unfinished one ends `discarded`, whole, and leaves the conversation. | 5, 7, 8, 11, 85 |
 | G8 | **Every turn ends, with a reason.** Completed, stopped, interrupted by a restart, or failed with a typed error. Nothing is left "still writing", and live status never outlives its turn. A turn that fails or is cut off before writing a reply still leaves one, empty and carrying the reason, so the conversation itself shows what happened. | 4, 6, 14, 15 |
 | G9 | **Stop jumps every queue.** Stop is a command of its own, addressed to one turn, safe to repeat, and handled ahead of everything else on both sides: never behind a send, a steer or a reconnect. It is confirmed only once the agent has really stopped. | 7, 55 |
 | G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17, 37, 42, 43, 44, 49, 85 |
@@ -564,6 +564,8 @@ catches up once (G57).
 - Its status stays on what it was last doing, and says "Reconnecting to the model" while the engine
   retries a dropped stream. *App:* how long it has been working, with Stop, from the turn's start
   (`turn.started`, or `started_at` in a snapshot). (G10)
+- The reply it was writing when the stream dropped ends `discarded`, since the model writes it again
+  from the start: snapshots and history leave it out, and apps hide it. (G7)
 - Stop ends it whenever you choose, at once even when the engine no longer answers: the server
   restarts the engine and ends the turn without waiting for it.
 

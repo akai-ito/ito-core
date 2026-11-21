@@ -95,6 +95,16 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
           event.error ? toJson(event.error) : null,
           event.message,
         );
+      // A reply taken back no longer counts as the turn's reply.
+      if (event.outcome === "discarded") {
+        database
+          .prepare(
+            `UPDATE turns SET has_started_reply = EXISTS (
+               SELECT 1 FROM messages WHERE turn = turns.id AND kind = 'reply' AND outcome IS NOT 'discarded'
+             ) WHERE id = (SELECT turn FROM messages WHERE id = ?)`,
+          )
+          .run(event.message);
+      }
       return;
     }
     case "turn.started": {

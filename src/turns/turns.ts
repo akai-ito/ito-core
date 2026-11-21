@@ -64,6 +64,8 @@ type Running = {
   readonly phase: "running" | "stopping" | "asking";
   readonly writing: Writing | undefined;
   readonly hasStartedReply: boolean;
+  // A reply finished in this turn, which a later one taken back leaves standing.
+  readonly hasFinishedReply: boolean;
   readonly awaitingRead: readonly MessageId[];
   readonly buffered: string;
   readonly lastFlushAt: number | undefined;
@@ -203,7 +205,30 @@ export const createTurns = (
     const state = current(turn);
     if (!state?.writing) return;
     store.endMessage(state.writing.message, "completed", sentLength(state));
-    running.set({ ...state, writing: undefined });
+    running.set({
+      ...state,
+      writing: undefined,
+      hasFinishedReply: state.hasFinishedReply || state.writing.kind === "reply",
+    });
+  };
+
+  // The engine writes what it hadn't finished again from the start, so the unfinished message is taken back whole
+  // rather than left as half a reply above the whole one, and unfinished thinking ends.
+  const discardUnfinished = (turn: TurnId): void => {
+    const state = current(turn);
+    if (!state) return;
+    state.cancelFlush?.();
+    if (state.writing) store.endMessage(state.writing.message, "discarded", sentLength(state));
+    running.set({
+      ...state,
+      writing: undefined,
+      buffered: "",
+      cancelFlush: undefined,
+      hasStartedReply: state.hasFinishedReply,
+    });
+    for (const [key, step] of state.steps) {
+      if (step.kind === "thinking") endStep(turn, { type: "step.ended", key, outcome: "completed", facts: {} });
+    }
   };
 
   const cancelApprovals = (state: Running): void => {
@@ -425,7 +450,9 @@ export const createTurns = (
         return;
       }
       case "reconnecting": {
-        if (!isQuiet) store.setStatus(turn, reconnectingStatus);
+        if (isQuiet) return;
+        discardUnfinished(turn);
+        store.setStatus(turn, reconnectingStatus);
         return;
       }
       case "stopped": {
@@ -493,6 +520,7 @@ export const createTurns = (
       phase: "running",
       writing: undefined,
       hasStartedReply: false,
+      hasFinishedReply: false,
       awaitingRead: [],
       buffered: "",
       lastFlushAt: undefined,

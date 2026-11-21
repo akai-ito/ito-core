@@ -166,8 +166,8 @@
       "minimum": 1
     },
     "Outcome": {
-      "description": "How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.",
-      "enum": ["completed", "stopped", "interrupted", "failed"]
+      "description": "How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. A message alone may end `discarded`: the agent took it back unfinished, such as a reply whose model stream dropped and that the model writes again from the start, so hide it; snapshots and history leave it out. Treat an outcome you don't recognise as ended.",
+      "enum": ["completed", "stopped", "interrupted", "failed", "discarded"]
     },
     "Error": {
       "description": "Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `pairing_code_rejected`, `not_found`, `id_conflict`, `too_large`, `attachment_missing`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise.",

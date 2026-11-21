@@ -271,12 +271,16 @@ export const startMockModel = async (): Promise<MockModel> => {
       );
       return;
     }
-    // "[[drop]]" loses the stream once, before it completes, so Codex reconnects.
+    // "[[drop]]" loses the stream once, halfway through a reply, so Codex reconnects and writes it again.
     const said = texts.at(-1) ?? "";
     if (scenario === "drop" && !dropped.get().has(said)) {
       dropped.update((current) => new Set([...current, said]));
       response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
-      await createSend(response)("response.created", { response: { id: nextId("resp") } });
+      const send = createSend(response);
+      const item = { type: "message", id: nextId("msg"), role: "assistant", phase: "final_answer" };
+      await send("response.created", { response: { id: nextId("resp") } });
+      await send("response.output_item.added", { item: { ...item, content: [] } });
+      await send("response.output_text.delta", { item_id: item.id, output_index: 0, content_index: 0, delta: "Half" });
       response.end();
       return;
     }

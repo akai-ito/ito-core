@@ -2547,10 +2547,10 @@ export interface components {
       audio?: components["schemas"]["Attachment"];
     };
     /**
-     * @description How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.
+     * @description How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. A message alone may end `discarded`: the agent took it back unfinished, such as a reply whose model stream dropped and that the model writes again from the start, so hide it; snapshots and history leave it out. Treat an outcome you don't recognise as ended.
      * @enum {unknown}
      */
-    Outcome: "completed" | "stopped" | "interrupted" | "failed";
+    Outcome: "completed" | "stopped" | "interrupted" | "failed" | "discarded";
     /** @description Opaque. The server makes it for each entry. */
     DoneId: string;
     /** @description Opaque. The server makes it when a step starts. */

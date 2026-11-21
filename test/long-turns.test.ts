@@ -34,9 +34,13 @@ const scriptFor = (text: string, now: number): readonly { readonly at: number; r
   if (text.includes("[[stuck]]")) {
     return [{ at: now + 100, event: { type: "step.started", key: "think", kind: "thinking", facts: {} } }];
   }
+  // The stream drops mid-reply; the model writes the reply again from the start.
   if (text.includes("[[reconnect]]")) {
     return [
-      { at: now + 100, event: { type: "reconnecting", detail: "Reconnecting... 1/5" } },
+      { at: now + 100, event: { type: "step.started", key: "think", kind: "thinking", facts: {} } },
+      { at: now + 200, event: { type: "text.started", kind: "reply" } },
+      { at: now + 300, event: { type: "text", text: "Half of" } },
+      { at: now + 400, event: { type: "reconnecting", detail: "Reconnecting... 1/5" } },
       ...answering(now + 3 * minuteMs),
     ];
   }
@@ -88,10 +92,12 @@ server.store.setSetting(tokenSetting, hashToken(token));
 
 const failures = createCell<readonly string[]>([]);
 const statuses = createCell<readonly Status[]>([]);
+const endings = createCell<readonly string[]>([]);
 server.store.subscribe(({ event }) => {
   if (event.type === "turn.ended" && event.error) {
     failures.update((current) => [...current, event.error?.message ?? ""]);
   }
+  if (event.type === "message.ended") endings.update((current) => [...current, event.outcome]);
   if (event.type !== "turn.status") return;
   const { kind, label, detail } = event;
   statuses.update((current) => [...current, { kind, label, ...(detail !== undefined && { detail }) }]);
@@ -151,10 +157,15 @@ describe("a long turn in the chat", () => {
     expect(failures.get()).toEqual([]);
   });
 
-  it("says it's reconnecting when the model's stream drops, and goes on", async () => {
+  it("takes back the half reply when the model's stream drops, says it's reconnecting, and goes on", async () => {
     expect(await sendAndFinish("[[reconnect]] Plan Saturday")).toBe("completed");
     expect(statuses.get()).toContainEqual({ kind: "waiting", label: "Reconnecting to the model" });
     expect(failures.get()).toEqual([]);
+    expect(endings.get().slice(-2)).toEqual(["discarded", "completed"]);
+    const { messages, steps } = server.store.snapshot("no_cursor").event;
+    expect(messages.map(({ text }) => text)).not.toContain("Half of");
+    expect(messages.at(-1)).toMatchObject({ text: "Here it is.", outcome: "completed" });
+    expect(steps.at(-1)).toMatchObject({ kind: "thinking", outcome: "completed" });
   });
 
   it("stops when you say, even when the engine no longer answers", async () => {

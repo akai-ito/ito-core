@@ -1,4 +1,4 @@
-{"transcript":"85-a-long-quiet-stretch","start":"2026-10-12T08:41:00.000Z","scenario":85,"title":"A long quiet stretch","summary":"Kumo works for minutes with nothing to show, as it does while it writes a long document in one tool call. Nothing fails on its own: the turn keeps running and its status stays on what it was last doing. When the model's stream drops, the status says it's reconnecting. Stop ends the turn whenever you choose, keeping the note it wrote.","guarantees":["G6","G10"],"app":{"cursor":"e_0009_40874"}}
+{"transcript":"85-a-long-quiet-stretch","start":"2026-10-12T08:41:00.000Z","scenario":85,"title":"A long quiet stretch","summary":"Kumo works for minutes with nothing to show, as it does while it writes a long document in one tool call. Nothing fails on its own: the turn keeps running and its status stays on what it was last doing. When the model's stream drops mid-reply, the half-written reply is discarded, since the model writes it again from the start, and the status says it's reconnecting. Stop ends the turn whenever you choose, keeping the note it wrote.","guarantees":["G6","G7","G10"],"app":{"cursor":"e_0009_40874"}}
 {"given":{"id":"e_0001_36648","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"c51fdd0d-6423-44a6-a01d-d8139b1eb9f6","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z","position":1}}}
 {"given":{"id":"e_0002_72493","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_45831","inputs":["c51fdd0d-6423-44a6-a01d-d8139b1eb9f6"]}}
 {"given":{"id":"e_0003_29703","type":"step.started","at":"2026-10-11T21:14:00.301Z","step":{"id":"s_0001_23176","turn":"t_0001_45831","kind":"thinking","title":"Thinking it through","at":"2026-10-11T21:14:00.301Z","position":3}}}
@@ -22,8 +22,14 @@
 {"at":3920,"event":{"id":"e_0017_83763","type":"message.delta","at":"2026-10-12T08:41:03.920Z","message":"m_0002_09603","offset":22,"text":"one document, with the "}}
 {"at":4040,"event":{"id":"e_0018_66800","type":"message.delta","at":"2026-10-12T08:41:04.040Z","message":"m_0002_09603","offset":45,"text":"bookings at the end."}}
 {"at":4040,"event":{"id":"e_0019_27413","type":"message.ended","at":"2026-10-12T08:41:04.040Z","message":"m_0002_09603","outcome":"completed","length":65}}
-{"at":244040,"event":{"id":"e_0020_04972","type":"turn.status","at":"2026-10-12T08:45:04.040Z","turn":"t_0002_43421","kind":"waiting","label":"Reconnecting to the model"}}
-{"at":424040,"app":{"method":"POST","path":"/v0/turns/t_0002_43421/stop"}}
-{"at":424040,"server":{"status":202,"body":{"turn":"t_0002_43421","state":"stopping"}}}
-{"at":424040,"event":{"id":"e_0021_81888","type":"turn.status","at":"2026-10-12T08:48:04.040Z","turn":"t_0002_43421","kind":"stopping","label":"Stopping"}}
-{"at":424190,"event":{"id":"e_0022_57193","type":"turn.ended","at":"2026-10-12T08:48:04.190Z","turn":"t_0002_43421","outcome":"stopped"}}
+{"at":244040,"event":{"id":"e_0020_04972","type":"turn.status","at":"2026-10-12T08:45:04.040Z","turn":"t_0002_43421","kind":"writing","label":"Writing"}}
+{"at":244040,"event":{"id":"e_0021_81888","type":"message.started","at":"2026-10-12T08:45:04.040Z","message":{"id":"m_0003_93533","role":"agent","kind":"reply","turn":"t_0002_43421","text":"","at":"2026-10-12T08:45:04.040Z","position":21}}}
+{"at":244040,"event":{"id":"e_0022_57193","type":"message.delta","at":"2026-10-12T08:45:04.040Z","message":"m_0003_93533","offset":0,"text":"Your Lisbon document "}}
+{"at":244160,"event":{"id":"e_0023_06307","type":"message.delta","at":"2026-10-12T08:45:04.160Z","message":"m_0003_93533","offset":21,"text":"is ready: four days, "}}
+{"at":244280,"event":{"id":"e_0024_42596","type":"message.delta","at":"2026-10-12T08:45:04.280Z","message":"m_0003_93533","offset":42,"text":"from the tram up to"}}
+{"at":246280,"event":{"id":"e_0025_06915","type":"message.ended","at":"2026-10-12T08:45:06.280Z","message":"m_0003_93533","outcome":"discarded","length":61}}
+{"at":246280,"event":{"id":"e_0026_63409","type":"turn.status","at":"2026-10-12T08:45:06.280Z","turn":"t_0002_43421","kind":"waiting","label":"Reconnecting to the model"}}
+{"at":426280,"app":{"method":"POST","path":"/v0/turns/t_0002_43421/stop"}}
+{"at":426280,"server":{"status":202,"body":{"turn":"t_0002_43421","state":"stopping"}}}
+{"at":426280,"event":{"id":"e_0027_37815","type":"turn.status","at":"2026-10-12T08:48:06.280Z","turn":"t_0002_43421","kind":"stopping","label":"Stopping"}}
+{"at":426430,"event":{"id":"e_0028_29908","type":"turn.ended","at":"2026-10-12T08:48:06.430Z","turn":"t_0002_43421","outcome":"stopped"}}

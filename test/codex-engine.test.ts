@@ -395,7 +395,14 @@ describe("the Codex engine against the pinned codex app-server", () => {
     const events = await runTurn("[[drop]] Plan my Sunday");
     await currentEngine().close();
     engine.set(openEngine(currentModel().baseUrl));
-    expect(events).toContainEqual({ type: "reconnecting", detail: "Reconnecting... 1/1" });
+    const reconnecting = events.findIndex((event) => event.type === "reconnecting");
+    expect(events[reconnecting]).toEqual({ type: "reconnecting", detail: "Reconnecting... 1/1" });
+    // The half reply is over without ending: the reply is written again from the start.
+    expect(events.slice(0, reconnecting)).toEqual([
+      { type: "text.started", kind: "reply" },
+      { type: "text", text: "Half" },
+    ]);
+    expect(events.slice(reconnecting).filter((event) => event.type === "text.started")).toHaveLength(2);
     expect(events.at(-1)).toEqual({ type: "ended" });
   });
 

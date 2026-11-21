@@ -4322,9 +4322,10 @@ const scenarios: readonly (() => Transcript)[] = [
       summary:
         "Kumo works for minutes with nothing to show, as it does while it writes a long document in one tool " +
         "call. Nothing fails on its own: the turn keeps running and its status stays on what it was last doing. " +
-        "When the model's stream drops, the status says it's reconnecting. Stop ends the turn whenever you " +
-        "choose, keeping the note it wrote.",
-      guarantees: ["G6", "G10"],
+        "When the model's stream drops mid-reply, the half-written reply is discarded, since the model writes it " +
+        "again from the start, and the status says it's reconnecting. Stop ends the turn whenever you choose, " +
+        "keeping the note it wrote.",
+      guarantees: ["G6", "G7", "G10"],
     });
     yesterday(transcript);
     transcript.begin(todayAt, { cursor: "latest" });
@@ -4339,6 +4340,11 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.write("I'll put every day in one document, with the bookings at the end.", { pieces: 3 });
     transcript.endMessage("completed");
     transcript.wait(4 * 60_000);
+    transcript.status("writing", "Writing");
+    transcript.reply();
+    transcript.write("Your Lisbon document is ready: four days, from the tram up to", { pieces: 3 });
+    transcript.wait(2000);
+    transcript.endMessage("discarded");
     transcript.status("waiting", "Reconnecting to the model");
     transcript.wait(3 * 60_000);
     transcript.stop(turn);

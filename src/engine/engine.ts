@@ -67,7 +67,8 @@ export type EngineEvent =
   | { readonly type: "approval"; readonly key: string; readonly fields: AskFields }
   | { readonly type: "asked" }
   | { readonly type: "progress" }
-  // The model's connection dropped and the engine is trying again, such as "Reconnecting... 2/5".
+  // The model's connection dropped and the engine is trying again, such as "Reconnecting... 2/5". What it hadn't
+  // finished, an open message or thinking, it starts again from the beginning.
   | { readonly type: "reconnecting"; readonly detail: string }
   | { readonly type: "stopped" }
   | { readonly type: "ended" };

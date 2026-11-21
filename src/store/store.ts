@@ -318,6 +318,9 @@ const toStoredTurn = (row: TurnRow): StoredTurn => ({
   outcome: row.outcome ?? undefined,
 });
 
+// A message the agent took back unfinished, ended discarded, is out of everything read from the conversation.
+const kept = "outcome IS NOT 'discarded'";
+
 const toLiveTurn = (row: TurnRow, startedAt: string | undefined): LiveTurn => ({
   id: row.id,
   inputs: [...parseIds(row.inputs)],
@@ -530,7 +533,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       const latest = database.prepare("SELECT seq, id FROM events ORDER BY seq DESC LIMIT 1").get() as
         { readonly seq: number; readonly id: string } | undefined;
       const rows = database
-        .prepare("SELECT * FROM messages ORDER BY position DESC LIMIT ?")
+        .prepare(`SELECT * FROM messages WHERE ${kept} ORDER BY position DESC LIMIT ?`)
         .all(snapshotSize + 1) as unknown as readonly MessageRow[];
       const turn = database
         .prepare("SELECT * FROM turns WHERE outcome IS NULL ORDER BY position DESC LIMIT 1")
@@ -758,7 +761,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       return rows.toReversed().map((row) => {
         const inputs = parseIds(row.inputs).flatMap((id) => messageRow(id) ?? []);
         const replies = database
-          .prepare("SELECT text FROM messages WHERE turn = ? AND kind = 'reply' ORDER BY position")
+          .prepare(`SELECT text FROM messages WHERE turn = ? AND kind = 'reply' AND ${kept} ORDER BY position`)
           .all(row.id) as unknown as readonly { readonly text: string }[];
         return {
           turn: toTurnId(row.id),
@@ -791,7 +794,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         { readonly position: number } | undefined;
       if (!anchor) return fail("not_found");
       const rows = database
-        .prepare("SELECT * FROM messages WHERE position < ? ORDER BY position DESC LIMIT ?")
+        .prepare(`SELECT * FROM messages WHERE position < ? AND ${kept} ORDER BY position DESC LIMIT ?`)
         .all(anchor.position, limit + 1) as unknown as readonly MessageRow[];
       const page = rows.slice(0, limit).toReversed();
       return ok({
@@ -809,7 +812,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     latestMessages: (limit) =>
       (
         database
-          .prepare("SELECT * FROM messages WHERE text != '' ORDER BY position DESC LIMIT ?")
+          .prepare(`SELECT * FROM messages WHERE text != '' AND ${kept} ORDER BY position DESC LIMIT ?`)
           .all(limit) as unknown as readonly MessageRow[]
       )
         .toReversed()
@@ -1082,7 +1085,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     lastReply: (turn) => {
       const row = database
         .prepare(
-          "SELECT id, text FROM messages WHERE turn = ? AND kind = 'reply' AND text != '' ORDER BY position DESC LIMIT 1",
+          `SELECT id, text FROM messages WHERE turn = ? AND kind = 'reply' AND text != '' AND ${kept} ORDER BY position DESC LIMIT 1`,
         )
         .get(turn) as { readonly id: string; readonly text: string } | undefined;
       return row ? { id: toMessageId(row.id), text: row.text } : undefined;
