@@ -62,6 +62,8 @@ export type EngineEvent =
   | { readonly type: "approval"; readonly key: string; readonly fields: AskFields }
   | { readonly type: "asked" }
   | { readonly type: "progress" }
+  // The model's connection dropped and the engine is trying again, such as "Reconnecting... 2/5".
+  | { readonly type: "reconnecting"; readonly detail: string }
   | { readonly type: "stopped" }
   | { readonly type: "ended" };
 
@@ -71,14 +73,29 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
 
 export type Complete = (prompt: string, schema: JsonSchema, choice?: ModelChoice) => Promise<Result<unknown, string>>;
 
+// Why background work didn't finish: a turn's failure codes, and the technical cause.
+export type WorkFailure = { readonly code: EngineFailureCode; readonly detail: string };
+
+export type WorkOptions = {
+  // The model and effort to work on, or else the one they chose.
+  readonly choice?: ModelChoice;
+  // Each sign of life while it works, such as text, reasoning or a tool starting, so its silence can be told.
+  readonly onActivity?: () => void;
+  // Aborting it interrupts the work.
+  readonly signal?: AbortSignal;
+};
+
 export type Engine = {
   readonly start: (turn: TurnId, inputs: readonly Input[]) => AsyncIterable<EngineEvent>;
   readonly steer: (turn: TurnId, input: Input) => Promise<SteerOutcome>;
   readonly interrupt: (turn: TurnId) => Promise<void>;
   readonly approve: (turn: TurnId, key: string, isAllowed: boolean) => void;
   readonly complete: Complete;
-  // Background work in a thread of its own, on the model and effort given, or else the one they chose.
-  readonly work: (prompt: string, run: string, choice?: ModelChoice) => Promise<Result<string, string>>;
+  // Background work in a thread of its own, under a run that its tool calls carry.
+  readonly work: (prompt: string, run: string, options?: WorkOptions) => Promise<Result<string, WorkFailure>>;
+  // When the model provider's usage limit resets, in milliseconds, as it last said; undefined while it isn't
+  // reached, or when it never said.
+  readonly usageResetsAt: () => number | undefined;
   readonly restart: () => Promise<void>;
   readonly refresh: () => Promise<void>;
   readonly models: () => Promise<Result<readonly ModelOption[], string>>;
@@ -86,3 +103,6 @@ export type Engine = {
 };
 
 export const restartedDetail = "Codex restarted before it answered.";
+
+// Background work held back while Kumo's model is paused by a usage limit: the one catch-up after takes it in.
+export const pausedDetail = "Kumo's paused until its model's usage limit resets, and catches up then.";

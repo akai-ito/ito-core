@@ -14,7 +14,7 @@ const shortReply = [
   "",
   "- It streams a reply in small pieces, the way a real model does.",
   "- Send a message while it writes to try **steering**.",
-  "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, or *approve* for an approval.",
+  "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a quiet turn that works until you stop it, *ask* for a question, or *approve* for an approval.",
   "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
   "- *trip* starts Florence with Mira in In motion, *training* a sub-20 5K block, and *booked* books the trip's Uffizi.",
   "- *plan* lays out a day with Kumo's plan and guesses.",
@@ -319,7 +319,9 @@ export const demoWork =
       return ok("Noted; nothing more was needed.");
     }
     if (prompt.includes("They told you this was wrong")) return ok("Noted on How to help you for next time.");
-    if (!prompt.includes("Post your first question")) return fail("The demo does no background work.");
+    if (!prompt.includes("Post your first question")) {
+      return fail({ code: "engine_failed", detail: "The demo does no background work." });
+    }
     await callTool("post", { text: "While I read: what would make the next month a good one for you?" }, run);
     return ok("Asked.");
   };

@@ -3,6 +3,7 @@ import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { atLocal, nextDay, toLocal, toSpoken } from "#desk/day.ts";
 import { lastLine, type DeskKeeper } from "#desk/desk.ts";
+import { pausedDetail } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type { CalendarItem, Repeat, WakeUp, WakeUpChange, WakeUpSource, Weekday } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -28,6 +29,13 @@ export type WakeUps = {
   readonly describe: (wakeUp: WakeUp) => string;
   // Their time zone changed: each repeating wake-up comes back at its time where they are now.
   readonly refit: () => void;
+  // While Kumo's paused, such as by a usage limit, wake-ups that come due wait: these, for the one catch-up after.
+  readonly overdue: () => readonly WakeUp[];
+  // The catch-up looked at these in a run: each moved or dropped stays so, a repeating one comes back at its next
+  // time, and the rest go, each in Done.
+  readonly caughtUp: (wakeUps: readonly WakeUp[], run: string) => void;
+  // Back to running each when it comes due, at once for any that came due during the catch-up.
+  readonly resume: () => void;
   readonly close: () => void;
 };
 
@@ -45,6 +53,8 @@ export type WakeUpsOptions = {
   readonly event: (uid: string) => CalendarItem | undefined;
   readonly desk: Pick<DeskKeeper, "addDone" | "setPlans">;
   readonly info: Info;
+  // Whether Kumo's paused, so a wake-up that comes due waits for the catch-up instead of running and retrying.
+  readonly isHolding?: () => boolean;
 };
 
 export const weekdays: readonly Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -182,6 +192,7 @@ export const createWakeUps = ({
   event,
   desk,
   info,
+  isHolding = () => false,
 }: WakeUpsOptions): WakeUps => {
   const wakeUps = createCell<ReadonlyMap<string, WakeUp>>(new Map(store.list().map((saved) => [saved.id, saved])));
   const timers = createCell<ReadonlyMap<string, Cancel>>(new Map());
@@ -283,9 +294,9 @@ export const createWakeUps = ({
       "End with one line saying what you did and why, for their Done list.",
     ].join("\n");
 
-  const record = (before: WakeUp, run: string, answer: string): void => {
+  const record = (before: WakeUp, run: string, answer: string, isCatchUp = false): void => {
     const after = wakeUps.get().get(before.id);
-    const reason = lastLine(answer);
+    const reason = isCatchUp ? "Caught up after Kumo's pause" : lastLine(answer);
     const why = reason === "" ? {} : { reason };
     if (!after) {
       desk.addDone({ text: `Dropped “${before.what}”`, ...why, quiet: false });
@@ -295,9 +306,14 @@ export const createWakeUps = ({
       desk.addDone({ text: `Moved “${before.what}” to ${whenOf(Date.parse(after.at))}`, ...why, quiet: false });
       return;
     }
-    const isMessaged = postedIn(run);
+    // A catch-up's one message is for all it looked at, so its wake-ups are quiet in Done.
+    const isMessaged = !isCatchUp && postedIn(run);
     desk.addDone({
-      text: isMessaged ? `Woke up for “${before.what}” and messaged you` : `Woke up for “${before.what}”`,
+      text: isCatchUp
+        ? `Woke up late for “${before.what}”`
+        : isMessaged
+          ? `Woke up for “${before.what}” and messaged you`
+          : `Woke up for “${before.what}”`,
       ...why,
       quiet: !isMessaged,
     });
@@ -316,6 +332,11 @@ export const createWakeUps = ({
   const run = async (id: string): Promise<void> => {
     const due = wakeUps.get().get(id);
     if (!due || running.get().has(id) || isClosed.get()) return;
+    if (isHolding()) {
+      disarm(id);
+      info("A wake-up came due while Kumo's paused, so it waits for the catch-up", { wakeUp: id });
+      return;
+    }
     running.update((current) => new Set([...current, id]));
     disarm(id);
     const piece = `wake-up-${randomUUID()}`;
@@ -324,6 +345,11 @@ export const createWakeUps = ({
     if (isClosed.get()) return;
     if (done.ok) {
       record(due, piece, done.value);
+      return;
+    }
+    // The model reached its usage limit: it waits, without retrying, for the one catch-up once the limit resets.
+    if (done.failure === pausedDetail) {
+      info("A wake-up waits for the catch-up after Kumo's pause", { wakeUp: id });
       return;
     }
     // Nothing robotic stands in: it waits, the problem shows, and Kumo looks again soon.
@@ -531,6 +557,13 @@ export const createWakeUps = ({
       for (const wakeUp of sorted()) {
         if (wakeUp.repeat) save(nextTime(wakeUp, wakeUp.repeat));
       }
+    },
+    overdue: () => sorted().filter((wakeUp) => Date.parse(wakeUp.at) <= clock.now() && !running.get().has(wakeUp.id)),
+    caughtUp: (looked, run) => {
+      for (const before of looked) record(before, run, "", true);
+    },
+    resume: () => {
+      for (const wakeUp of sorted()) arm(wakeUp);
     },
     close: () => {
       isClosed.set(true);

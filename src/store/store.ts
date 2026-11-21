@@ -318,11 +318,12 @@ const toStoredTurn = (row: TurnRow): StoredTurn => ({
   outcome: row.outcome ?? undefined,
 });
 
-const toLiveTurn = (row: TurnRow): LiveTurn => ({
+const toLiveTurn = (row: TurnRow, startedAt: string | undefined): LiveTurn => ({
   id: row.id,
   inputs: [...parseIds(row.inputs)],
   read: [...parseIds(row.read)],
   ...(row.retry_of && { retry_of: row.retry_of }),
+  ...(startedAt !== undefined && { started_at: startedAt }),
   status: row.status ? (JSON.parse(row.status) as Status) : null,
 });
 
@@ -393,6 +394,16 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       append(build({ id: identifiers.event(), at: now() }, nextSeq()));
     });
   };
+
+  // When a turn started, from its turn.started in the log, unless that's been compacted away.
+  const turnStartedAt = (turn: string): string | undefined =>
+    (
+      database
+        .prepare(
+          "SELECT at FROM events WHERE type = 'turn.started' AND json_extract(body, '$.turn') = ? ORDER BY seq DESC LIMIT 1",
+        )
+        .get(turn) as { readonly at: string } | undefined
+    )?.at;
 
   const stepsFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Step[] =>
     (
@@ -541,7 +552,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           asks: window[0] ? [...asksFrom(window[0].position)] : [],
           calls: [...callsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
           topics: [...topicsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
-          turn: turn ? toLiveTurn(turn) : null,
+          turn: turn ? toLiveTurn(turn, turnStartedAt(turn.id)) : null,
           next: next.map((row) => row.message),
           desk: currentDesk(),
           ...(currentOnboarding().state !== "done" && { onboarding: currentOnboarding() }),

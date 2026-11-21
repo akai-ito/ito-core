@@ -36,6 +36,9 @@ type Playing = {
 
 const noTools: CallTool = (name) => Promise.resolve({ text: `The demo has no tool ${name}.`, isError: true });
 
+// The scripted engine's provider never says its usage limit resets.
+const noReset: number | undefined = undefined;
+
 const noAnswers: Complete = () => Promise.resolve(fail("The scripted engine answers nothing outside a turn."));
 
 const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "failed", "stopped"]);
@@ -48,7 +51,9 @@ export const createScriptEngine = (
   callTool = noTools,
   models: readonly ModelOption[] = demoModels,
   complete = noAnswers,
-  work: Engine["work"] = () => Promise.resolve(fail("The scripted engine does no background work.")),
+  work: Engine["work"] = () =>
+    Promise.resolve(fail({ code: "engine_failed", detail: "The scripted engine does no background work." })),
+  usageResetsAt: Engine["usageResetsAt"] = () => noReset,
 ): Engine => {
   const playing = createCell<ReadonlyMap<TurnId, Playing>>(new Map());
 
@@ -98,6 +103,7 @@ export const createScriptEngine = (
     },
     complete,
     work,
+    usageResetsAt,
     start: (turn, inputs) => {
       const queue = createAsyncQueue<EngineEvent>();
       const script = scriptFor(turn, inputs, clock.now());

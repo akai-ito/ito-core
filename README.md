@@ -38,7 +38,7 @@ node bin/ito.ts serve    # the first run prints your token, once
 Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code instead of a browser
 redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new` makes
 another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
-in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a timeout,
+in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a quiet turn that works until you stop it,
 *ask* a question, *approve* an approval, *remember* writes a page and the journal in memory,
 *recall* looks it up, *trip* and *training* start things in motion, *booked* books the trip's
 Uffizi, *mail* reads a sample mail, puts a draft on the Desk and messages you about it, and *plan*
@@ -153,6 +153,17 @@ blocks:
 When Kumo's model can't act, nothing robotic goes out in its place: what was due waits, the Desk and
 Settings show the problem, and Kumo catches up once its model answers.
 
+A turn in the chat is never cut off for being quiet: Kumo can show nothing for minutes, such as while
+it writes a long document in one tool call, and the app says how long it has been working, next to
+Stop. Stop always works, even when Codex has stopped answering: the box restarts it and ends the turn.
+Work in the background, with nobody watching, gets a backstop instead: after 15 minutes without a sign
+of life it's stopped and tried once more, and if that goes quiet too, the problem shows.
+
+When your plan's usage limit is reached, Kumo's background work pauses until the limit resets, with
+nothing retried meanwhile, and the app shows "Kumo's paused until 18:00" with the other problems.
+Wake-ups that come due wait. At the reset, or as soon as a message in the chat goes through, Kumo
+catches up once on what it missed and tells you in one message.
+
 With iCloud connected, Kumo keeps a picture of your day on its own calendar, never yours: soft
 blocks for what keeps your goals going (the session from a training block, prep for a coming
 interview, proper meals, winding down) and its guesses at the rest (working, building, seeing
@@ -247,8 +258,9 @@ When something on the box needs you, the app says so until it's fixed: on the De
 line per problem that opens how to fix it, and at the top of Settings. That's notifications that
 can't be sent (a phone wants them, but there's no APNs key), a mail or calendar account that
 refuses its sign-in or keeps failing for ten minutes (a reconnect never counts), a capability that
-needs setting up, and Kumo's model not answering its work in the background for ten minutes. Each
-clears on its own once it's fixed.
+needs setting up, Kumo's model not answering its work in the background for ten minutes, and Kumo
+paused by your plan's usage limit (at once, saying until when). Each clears on its own once it's
+fixed.
 
 `ito serve` writes its log to `~/.ito/logs` as well as to the terminal, one file a day, kept for 14
 days, so it's there however the server was started: in tmux, under systemd or launchd. The log

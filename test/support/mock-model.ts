@@ -24,6 +24,9 @@ type InputItem = {
 type Send = (type: string, payload: Readonly<Record<string, unknown>>, delayMs?: number) => Promise<void>;
 
 const markerPattern = /\[\[(?<scenario>[a-z]+)\]\]/u;
+
+// When a usage limit resets, as the provider's headers say: 1 January 2100.
+export const usageResetsAt = 4_102_444_800;
 const usage = {
   input_tokens: 120,
   input_tokens_details: { cached_tokens: 0 },
@@ -87,6 +90,7 @@ export const startMockModel = async (): Promise<MockModel> => {
   const latestToolOutputs = createCell<readonly string[]>([]);
   const latestRun = createCell<{ readonly model?: string; readonly effort?: string }>({});
   const latestFormat = createCell<string | undefined>(undefined);
+  const dropped = createCell<ReadonlySet<string>>(new Set());
   const nextId = (prefix: string): string => `${prefix}_${String(counter.update((count) => count + 1))}`;
 
   const reason = async (send: Send, text: string): Promise<void> => {
@@ -251,9 +255,29 @@ export const startMockModel = async (): Promise<MockModel> => {
       return;
     }
     if (scenario === "usage") {
-      sendJson(response, 429, {
-        error: { type: "usage_limit_reached", message: "The usage limit has been reached", plan_type: "plus" },
+      response.writeHead(429, {
+        "content-type": "application/json",
+        "x-codex-primary-used-percent": "100",
+        "x-codex-primary-window-minutes": "300",
+        "x-codex-primary-reset-at": String(usageResetsAt),
+        "x-codex-secondary-used-percent": "40",
+        "x-codex-secondary-window-minutes": "10080",
+        "x-codex-secondary-reset-at": String(usageResetsAt + 86_400),
       });
+      response.end(
+        JSON.stringify({
+          error: { type: "usage_limit_reached", message: "The usage limit has been reached", plan_type: "plus" },
+        }),
+      );
+      return;
+    }
+    // "[[drop]]" loses the stream once, before it completes, so Codex reconnects.
+    const said = texts.at(-1) ?? "";
+    if (scenario === "drop" && !dropped.get().has(said)) {
+      dropped.update((current) => new Set([...current, said]));
+      response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+      await createSend(response)("response.created", { response: { id: nextId("resp") } });
+      response.end();
       return;
     }
     const code =

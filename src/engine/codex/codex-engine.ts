@@ -7,6 +7,8 @@ import type { ServerNotification } from "#engine/codex/bindings/ServerNotificati
 import type { JsonValue } from "#engine/codex/bindings/serde_json/JsonValue.ts";
 import type { Account } from "#engine/codex/bindings/v2/Account.ts";
 import type { Model } from "#engine/codex/bindings/v2/Model.ts";
+import type { RateLimitSnapshot } from "#engine/codex/bindings/v2/RateLimitSnapshot.ts";
+import type { RateLimitWindow } from "#engine/codex/bindings/v2/RateLimitWindow.ts";
 import type { ThreadStartParams } from "#engine/codex/bindings/v2/ThreadStartParams.ts";
 import type { ThreadStartResponse } from "#engine/codex/bindings/v2/ThreadStartResponse.ts";
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
@@ -14,7 +16,7 @@ import { startCodexProcess, type CodexProcess } from "#engine/codex/codex-proces
 import { declined, toApprovalFields, toElicitationResponse } from "#engine/codex/approvals.ts";
 import type { McpServerElicitationRequestParams } from "#engine/codex/bindings/v2/McpServerElicitationRequestParams.ts";
 import type { McpServerElicitationRequestResponse } from "#engine/codex/bindings/v2/McpServerElicitationRequestResponse.ts";
-import { initialTurnState, toEngineEvents, type TurnState } from "#engine/codex/mapping.ts";
+import { initialTurnState, toEngineEvents, toFailure, type TurnState } from "#engine/codex/mapping.ts";
 import {
   accountSetting,
   effortSetting,
@@ -27,6 +29,7 @@ import {
   type Input,
   type InputAttachment,
   type ToolServer,
+  type WorkFailure,
 } from "#engine/engine.ts";
 import type { ModelOption } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -65,7 +68,14 @@ type ActiveTurn = {
 
 type Scope = Readonly<Partial<Record<"threadId" | "turnId", unknown>>>;
 
-type SideJob = { readonly answer: string; readonly finish: (answer: Result<string, string>) => void };
+type SideJob = {
+  readonly answer: string;
+  readonly finish: (answer: Result<string, WorkFailure>) => void;
+  readonly onActivity?: () => void;
+};
+
+// The usage windows the provider last reported, kept across its sparse updates.
+type UsageWindows = { readonly primary?: RateLimitWindow; readonly secondary?: RateLimitWindow };
 
 export const threadSetting = "codex_thread_id";
 
@@ -73,6 +83,24 @@ const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "faile
 
 const signedOut: SessionFailure = { code: "engine_signed_out", detail: "Codex has no account signed in." };
 
+const engineFailed = (detail: string): WorkFailure => ({ code: "engine_failed", detail });
+
+const withUpdate = (windows: UsageWindows, { primary, secondary }: RateLimitSnapshot): UsageWindows => ({
+  ...windows,
+  ...(primary && { primary }),
+  ...(secondary && { secondary }),
+});
+
+// A usage limit is reached in a window that's used up; it resets when the last such window does.
+const resetOf = ({ primary, secondary }: UsageWindows): number | undefined => {
+  const resets = [primary, secondary]
+    .filter(
+      (window): window is RateLimitWindow & { readonly resetsAt: number } =>
+        window !== undefined && window.usedPercent >= 100 && window.resetsAt !== null,
+    )
+    .map(({ resetsAt }) => resetsAt * 1000);
+  return resets.length > 0 ? Math.max(...resets) : undefined;
+};
 const toAccount = (account: Account): Readonly<Record<string, string>> => {
   switch (account.type) {
     case "chatgpt": {
@@ -240,6 +268,7 @@ export const createCodexEngine = ({
   const approvals = createCell<ReadonlyMap<string, (isAllowed: boolean) => void>>(new Map());
   const approvalCount = createCell(0);
   const sideJobs = createCell<ReadonlyMap<string, SideJob>>(new Map());
+  const usage = createCell<UsageWindows>({});
   const threadOptions = (server: ToolServer | undefined): ThreadStartParams => ({
     cwd: workspace,
     approvalPolicy: appApprovalsOnly,
@@ -269,18 +298,43 @@ export const createCodexEngine = ({
   });
 
   const failSideJobs = (detail: string): void => {
-    for (const job of sideJobs.get().values()) job.finish(fail(detail));
+    for (const job of sideJobs.get().values()) job.finish(fail(engineFailed(detail)));
   };
 
+  // Every notification on a side thread is a sign of life; Codex sends none while a tool call's arguments stream.
   const routeSideJob = (threadId: string, job: SideJob, notification: ServerNotification): void => {
+    job.onActivity?.();
     if (notification.method === "item/completed" && notification.params.item.type === "agentMessage") {
       const { text } = notification.params.item;
       sideJobs.update((jobs) => new Map([...jobs, [threadId, { ...job, answer: text }]]));
     }
     if (notification.method !== "turn/completed") return;
     const { status, error } = notification.params.turn;
-    job.finish(status === "completed" ? ok(job.answer) : fail(error?.message ?? `Codex's turn ${status}.`));
+    if (status === "completed") {
+      job.finish(ok(job.answer));
+      return;
+    }
+    const failed = toFailure(error);
+    job.finish(
+      fail(
+        error && failed.type === "failed"
+          ? { code: failed.code, detail: failed.detail }
+          : engineFailed(`Codex's turn ${status}.`),
+      ),
+    );
   };
+
+  // Side jobs share one finish: off the list, and answered.
+  const addSideJob = (threadId: string, onActivity?: () => void): Promise<Result<string, WorkFailure>> =>
+    new Promise((resolve) => {
+      const finish = (answer: Result<string, WorkFailure>): void => {
+        sideJobs.update((jobs) => new Map([...jobs].filter(([id]) => id !== threadId)));
+        resolve(answer);
+      };
+      sideJobs.update(
+        (jobs) => new Map([...jobs, [threadId, { answer: "", finish, ...(onActivity && { onActivity }) }]]),
+      );
+    });
 
   const emit = (turn: TurnId, events: readonly EngineEvent[]): void => {
     for (const event of events) {
@@ -294,6 +348,10 @@ export const createCodexEngine = ({
   };
 
   const route = (notification: ServerNotification): void => {
+    if (notification.method === "account/rateLimits/updated") {
+      usage.update((windows) => withUpdate(windows, notification.params.rateLimits));
+      return;
+    }
     const threadId = fieldOf(notification, "threadId");
     const sideJob = threadId === undefined ? undefined : sideJobs.get().get(threadId);
     if (threadId !== undefined && sideJob) {
@@ -515,9 +573,9 @@ export const createCodexEngine = ({
       respond?.(isAllowed);
     },
 
-    work: async (prompt, run, choice) => {
+    work: async (prompt, run, { choice, onActivity, signal } = {}) => {
       const opened = await ensureSession();
-      if (!opened.ok) return fail(opened.failure.detail);
+      if (!opened.ok) return fail(opened.failure);
       const { process } = opened.value;
       const server = tools?.();
       const started = await process.call("thread/start", {
@@ -525,27 +583,30 @@ export const createCodexEngine = ({
         approvalPolicy: "never",
         ephemeral: true,
       });
-      if (!started.ok) return fail(`Codex couldn't start a work thread: ${started.failure.message}`);
+      if (!started.ok) return fail(engineFailed(`Codex couldn't start a work thread: ${started.failure.message}`));
       const threadId = started.value.thread.id;
-      const finished = new Promise<Result<string, string>>((resolve) => {
-        const finish = (answer: Result<string, string>): void => {
-          sideJobs.update((jobs) => new Map([...jobs].filter(([id]) => id !== threadId)));
-          resolve(answer);
-        };
-        sideJobs.update((jobs) => new Map([...jobs, [threadId, { answer: "", finish }]]));
-      });
+      const finished = addSideJob(threadId, onActivity);
       const turn = await process.call("turn/start", {
         threadId,
         input: [{ type: "text", text: prompt, text_elements: [] }],
         ...(choice ?? readChoice(settings.setting)),
       });
-      if (!turn.ok)
+      if (!turn.ok) {
         sideJobs
           .get()
           .get(threadId)
-          ?.finish(fail(`Codex didn't start the work: ${turn.failure.message}`));
+          ?.finish(fail(engineFailed(`Codex didn't start the work: ${turn.failure.message}`)));
+        return finished;
+      }
+      const interrupt = (): void => {
+        void process.call("turn/interrupt", { threadId, turnId: turn.value.turn.id });
+      };
+      if (signal?.aborted === true) interrupt();
+      else signal?.addEventListener("abort", interrupt, { once: true });
       return finished;
     },
+
+    usageResetsAt: () => resetOf(usage.get()),
 
     complete: async (prompt, schema, choice) => {
       const opened = await ensureSession();
@@ -554,13 +615,7 @@ export const createCodexEngine = ({
       const started = await process.call("thread/start", sideThreadOptions());
       if (!started.ok) return fail(`Codex couldn't start a side thread: ${started.failure.message}`);
       const threadId = started.value.thread.id;
-      const finished = new Promise<Result<string, string>>((resolve) => {
-        const finish = (answer: Result<string, string>): void => {
-          sideJobs.update((jobs) => new Map([...jobs].filter(([id]) => id !== threadId)));
-          resolve(answer);
-        };
-        sideJobs.update((jobs) => new Map([...jobs, [threadId, { answer: "", finish }]]));
-      });
+      const finished = addSideJob(threadId);
       const turn = await process.call("turn/start", {
         threadId,
         input: [{ type: "text", text: prompt, text_elements: [] }],
@@ -571,9 +626,9 @@ export const createCodexEngine = ({
         sideJobs
           .get()
           .get(threadId)
-          ?.finish(fail(`Codex didn't start: ${turn.failure.message}`));
+          ?.finish(fail(engineFailed(`Codex didn't start: ${turn.failure.message}`)));
       const answered = await finished;
-      if (!answered.ok) return answered;
+      if (!answered.ok) return fail(answered.failure.detail);
       try {
         return ok(JSON.parse(answered.value) as unknown);
       } catch {

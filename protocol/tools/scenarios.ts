@@ -1045,7 +1045,7 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 15,
       title: "Something fails",
       summary:
-        "The model goes silent mid-reply; after 60 seconds the turn fails with a typed error and " +
+        "The model's stream drops mid-reply and doesn't come back; the turn fails with a typed error and " +
         "the text so far is kept. Try again, tapped twice, starts one new attempt that answers the " +
         "same message. A turn that fails before writing still leaves a reply: empty, carrying the " +
         "error, and the step it was on ends with it.",
@@ -1062,12 +1062,11 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.status("writing", "Writing");
     transcript.reply();
     transcript.write(upTo(saturdayAnswer, "café opens at 9."), { everyMs: 110 });
-    transcript.world("engine_stalls");
-    transcript.wait(60_000);
+    transcript.wait(2000);
     const error: ErrorBody = {
-      code: "model_timeout",
-      message: "The model didn't respond for 60 seconds.",
-      detail: "No progress from the engine for 60 seconds while it was writing.",
+      code: "model_unavailable",
+      message: "The model service isn't responding right now.",
+      detail: "Reconnecting... 5/5 stream disconnected before completion: stream closed before response.completed",
     };
     transcript.endMessage("failed", { error });
     transcript.endTurn("failed", error);
@@ -4312,6 +4311,90 @@ const scenarios: readonly (() => Transcript)[] = [
     const done = { text: "The Northwind deck is done, a day early.", mood: "proud" };
     transcript.world("agent_calls", { tool: "set_desk_line", input: done });
     transcript.deskLine({ ...done, at: "2026-11-12T12:30:01.000Z" });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "85-a-long-quiet-stretch",
+      scenario: 85,
+      title: "A long quiet stretch",
+      summary:
+        "Kumo works for minutes with nothing to show, as it does while it writes a long document in one tool " +
+        "call. Nothing fails on its own: the turn keeps running and its status stays on what it was last doing. " +
+        "When the model's stream drops, the status says it's reconnecting. Stop ends the turn whenever you " +
+        "choose, keeping the note it wrote.",
+      guarantees: ["G6", "G10"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.wait(2000);
+    const { turn } = sendAndStart(transcript, "Write my whole Lisbon trip into one document I can print.");
+    transcript.wait(300);
+    transcript.step("thinking", thinking);
+    transcript.wait(1500);
+    transcript.endStep();
+    transcript.reply("note");
+    transcript.write("I'll put every day in one document, with the bookings at the end.", { pieces: 3 });
+    transcript.endMessage("completed");
+    transcript.wait(4 * 60_000);
+    transcript.status("waiting", "Reconnecting to the model");
+    transcript.wait(3 * 60_000);
+    transcript.stop(turn);
+    transcript.status("stopping", "Stopping");
+    transcript.wait(150);
+    transcript.endTurn("stopped");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "86-when-kumos-paused",
+      scenario: 86,
+      title: "When Kumo's paused",
+      summary:
+        "A wake-up comes due just as Kumo's model reaches its plan's usage limit. Background work pauses until " +
+        "the limit resets, shown at once as a problem that says when; nothing is retried meanwhile. When it " +
+        "resets, Kumo catches up once on what it missed and tells you in one message, and the problem clears.",
+      guarantees: ["G40", "G57"],
+    });
+    transcript.begin("2026-11-12T15:20:00.000Z");
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(1000);
+    const what = "Ask how the Halcyon technical went";
+    const why = "It ends at 15:30, and you wanted to talk it through while it's fresh.";
+    const source = { kind: "chat" as const, title: "“Ask me how it went after”" };
+    transcript.world("agent_calls", {
+      tool: "set_wake_up",
+      input: { what, why, at: "2026-11-12T15:30:00Z", asked: true, source },
+    });
+    transcript.wakeUp({ at: halcyonTechnical.end, what, why, by: "you", source });
+    transcript.world("usage_limit_reached", { resets_at: "2026-11-12T18:00:00.000Z" });
+    transcript.time(halcyonTechnical.end);
+    transcript.problems([
+      {
+        id: "kumo:paused",
+        area: "kumo",
+        title: "Kumo's paused until 18:00",
+        detail:
+          "Your plan's usage limit was reached, so wake-ups and mail wait until it resets. Then Kumo catches up " +
+          "once, and tells you in one message what it missed.",
+        fix:
+          "Nothing to do: Kumo picks up on its own. To go on sooner, add usage to your plan; Kumo starts again as " +
+          "soon as a message in the chat goes through.",
+      },
+    ]);
+    const caughtUp =
+      "I was paused from 15:30 by your plan's usage limit, so I missed asking after the Halcyon technical. " +
+      "How did it go?";
+    transcript.world("kumo_works", { calls: [], answer: caughtUp });
+    transcript.time("2026-11-12T18:00:00.000Z");
+    transcript.problems([]);
+    transcript.addDone({ text: `Woke up late for “${what}”`, reason: "Caught up after Kumo's pause", quiet: true });
+    transcript.plans([]);
+    transcript.post(caughtUp);
     return transcript;
   },
 ];

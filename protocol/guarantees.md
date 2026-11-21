@@ -14,11 +14,11 @@ where the protocol has to make it possible, marked *App*.
 | G3 | **One order.** Everything in the conversation has one position, the same for every app. Messages take effect in the order the server accepted them, and an app's messages are accepted in the order it sent them. | 7, 9, 10, 12 |
 | G4 | **Exact resume.** Every event carries a cursor. Reconnecting with the last cursor the app applied delivers every later event once: nothing missing, nothing repeated, including reply text streamed in the meantime. | 2, 11, 13 |
 | G5 | **An honest reset.** When the server can't continue from a cursor (too old, restored from a backup, a different server), it says so and sends a fresh snapshot. It never resumes from the wrong place. Ids are never reused, even after a restore. | 14 |
-| G6 | **Turns outlive connections.** A turn runs to its end whether or not any app is connected. Only Stop, a failure or a restart ends it early. | 13 |
+| G6 | **Turns outlive connections.** A turn runs to its end whether or not any app is connected. Only Stop, a failure or a restart ends it early, never silence, however long: Kumo may show nothing for minutes, such as while it writes a long document in one tool call, and the person decides when it has gone on too long. | 13, 85 |
 | G7 | **Text only grows.** Reply text streams as appended pieces and is never revised. A finished message's text is exactly what was streamed, and a stopped message keeps everything it had streamed. | 5, 7, 8, 11 |
 | G8 | **Every turn ends, with a reason.** Completed, stopped, interrupted by a restart, or failed with a typed error. Nothing is left "still writing", and live status never outlives its turn. A turn that fails or is cut off before writing a reply still leaves one, empty and carrying the reason, so the conversation itself shows what happened. | 4, 6, 14, 15 |
 | G9 | **Stop jumps every queue.** Stop is a command of its own, addressed to one turn, safe to repeat, and handled ahead of everything else on both sides: never behind a send, a steer or a reconnect. It is confirmed only once the agent has really stopped. | 7, 55 |
-| G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17, 37, 42, 43, 44, 49 |
+| G10 | **Plain words, typed errors.** Every status label and step title is plain words written by the server, safe to show as it is. Specifics (commands, paths, queries, URLs, tool names, output) travel in typed fields, exactly as the agent used them, and the app decides what to show. Errors carry a stable code, a plain sentence and a technical detail. | 4, 15, 16, 17, 37, 42, 43, 44, 49, 85 |
 | G11 | **The token stays secret.** It travels only over HTTPS (loopback excepted, for development), is never logged and is never sent back. | 1, 31 |
 | G12 | **Versioned and tolerant.** The server states its protocol version before asking for the token. Both sides ignore what they don't recognise. A major mismatch says which side to update. | 1 |
 | G13 | **Several apps, one conversation.** Several devices can be connected at once. Every app receives every event, and a send or a Stop from either applies to the one shared conversation. | 2, 30, 41 |
@@ -45,7 +45,7 @@ where the protocol has to make it possible, marked *App*.
 | G36 | **Kumo never sends what you'd write.** Replies to people are drafts in your Drafts folder and cards on the Desk; you send them from Mail. | 66 |
 | G37 | **The calendar goes through the box.** Events, holds and invite answers are written to iCloud by the box, so they land while your phone sleeps; an invite is held on Kumo's calendar until you answer. | 67 |
 | G39 | **Getting started reads before it asks.** Kumo reads your recent mail and calendar first, every app sees how far it has got, and its few questions come as ordinary messages in the conversation. What it believes about you waits for your word, and getting started ends when you say so. | 69, 70 |
-| G40 | **Problems show until they're fixed.** Something wrong on the server that needs you (notifications it can't send, a mail or calendar account that keeps failing, a capability that needs setting up, Kumo's model not answering its work in the background) is listed with how to fix it, live on every app, and clears on its own once fixed. A blip that sorts itself out never shows. | 71, 81 |
+| G40 | **Problems show until they're fixed.** Something wrong on the server that needs you (notifications it can't send, a mail or calendar account that keeps failing, a capability that needs setting up, Kumo's model not answering its work in the background, or pausing it at a usage limit) is listed with how to fix it, live on every app, and clears on its own once fixed. A blip that sorts itself out never shows. | 71, 81, 86 |
 | G43 | **"That was wrong" is taken in.** On anything Kumo did, it undoes what it can and keeps what to do differently as a preference on How to help you, and Done says so. Saying it again only adds your words. | 73, 82 |
 | G44 | **Kumo's picture of your day is on its own calendar.** Its plan for your day and its guesses at the rest are written to Kumo's calendar, never yours, and show in Coming up as they land. A guess is marked as one, with why; once you've answered it, it's yours rather than a guess, and Kumo's next guesses learn from it. | 74 |
 | G48 | **Kumo speaks in messages.** What its work in the background has to tell you, such as a mail that changes your plans, comes as Kumo's own message in the conversation: one per thing, as it happens, never batched, rewritten or stood in for by a template. A card on the Desk makes no sound of its own. | 65, 66 |
@@ -57,6 +57,7 @@ where the protocol has to make it possible, marked *App*.
 | G54 | **Kumo goes where you go.** The phone says its time zone and, roughly, where it is; the box keeps only the latest, rounded to about 10 km. Kumo lives by that time zone: a repeating wake-up comes back at its time there, and moving zones wakes Kumo to move what should follow you. | 83 |
 | G55 | **The weather around you, never invented.** With a rough place, the Desk carries the temperature, the conditions and today's sunset there, read on the box and refreshed about every half hour. Without a place, or without a recent reading, there's no weather at all. | 83 |
 | G56 | **A line and a face, by judgement.** Kumo may put a short line at the top of the Desk with its mood, and changes them when the moment changes. Neither ever notifies. | 84 |
+| G57 | **Paused at a usage limit, then caught up once.** When the model provider's usage limit is reached, Kumo's background work pauses until the limit resets, with nothing retried meanwhile, and the pause shows at once as a problem that says when it ends. Once the limit resets, or a turn in the chat goes through, Kumo catches up once on what it missed, each wake-up and kind of work counted once, and tells you in one message. Background work with nobody watching that shows no sign of life for 15 minutes is stopped and tried once more. | 86 |
 
 ## How Kumo decides to speak
 
@@ -75,7 +76,8 @@ are what the server holds it to.
   memory and its Desk line, with every action in Kumo's work and an undo where there can be one.
   What it's learning about you is in the open, as tracks.
 
-When Kumo's model can't act, nothing stands in for it (G52).
+When Kumo's model can't act, nothing stands in for it (G52); at a usage limit it pauses, then catches up
+once (G57).
 
 ## Scenario by scenario
 
@@ -197,12 +199,11 @@ When Kumo's model can't act, nothing stands in for it (G52).
 
 ### 15 · [Something fails](transcripts/15-something-fails.jsonl)
 
-- A failed turn ends with a typed error: a stable code, a plain sentence ("The model didn't respond
-  for 60 seconds") and the technical detail. (G10)
+- A failed turn ends with a typed error: a stable code, a plain sentence ("The model service isn't
+  responding right now") and the technical detail. (G10)
 - Your message and any text already written are kept.
-- Every turn is bounded: if the agent makes no progress for a set time, the turn fails with a
-  timeout instead of spinning forever. Compacting a long conversation shows no progress for a while,
-  so it gets longer: up to 10 minutes rather than 60 seconds.
+- A turn fails only when the engine says it did, here once its retries of the model's stream ran
+  out; never for being quiet (see 85).
 - Try again is a command keyed by the failed turn: it starts one new attempt and never sends your
   message twice.
 - A turn that fails before writing a reply still leaves one: empty, carrying the error. The failure
@@ -555,6 +556,27 @@ When Kumo's model can't act, nothing stands in for it (G52).
 
 - Kumo sets its line and mood together, and changes them when the moment does; the Desk carries
   them as `line`, and nothing notifies. (G56, G33)
+
+### 85 · [A long quiet stretch](transcripts/85-a-long-quiet-stretch.jsonl)
+
+- Kumo can work for minutes with nothing to show, such as while the model writes a long document in
+  one tool call, which Codex streams without a word. The turn keeps running; no timer fails it. (G6)
+- Its status stays on what it was last doing, and says "Reconnecting to the model" while the engine
+  retries a dropped stream. *App:* how long it has been working, with Stop, from the turn's start
+  (`turn.started`, or `started_at` in a snapshot). (G10)
+- Stop ends it whenever you choose, at once even when the engine no longer answers: the server
+  restarts the engine and ends the turn without waiting for it.
+
+### 86 · [When Kumo's paused](transcripts/86-when-kumos-paused.jsonl)
+
+- A usage limit pauses Kumo's background work until the provider's reset time, shown at once as the
+  problem `kumo:paused` with when it ends; when the provider doesn't say, Kumo looks again in an hour.
+  (G57, G40)
+- A wake-up that comes due meanwhile waits, without retries, and so does other work, such as a mail
+  arriving. (G57)
+- At the reset, Kumo catches up once: each missed wake-up and kind of work once, then one message
+  saying what it missed and what it did; the wake-ups show in Done, quietly. A turn in the chat that
+  goes through ends the pause early. (G57)
 
 ## Not in this version
 

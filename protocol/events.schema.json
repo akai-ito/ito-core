@@ -178,13 +178,13 @@
           "description": "Stable and snake_case.",
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "examples": ["model_timeout"]
+          "examples": ["model_unavailable"]
         },
         "message": {
           "description": "A plain sentence for the person using the app, written by the server.",
           "type": "string",
           "minLength": 1,
-          "examples": ["The model didn't respond for 60 seconds."]
+          "examples": ["The model service isn't responding right now."]
         },
         "detail": {
           "description": "The technical cause, for a Details view.",
@@ -785,6 +785,10 @@
         "retry_of": {
           "$ref": "#/$defs/TurnId",
           "description": "Present when the turn is a new attempt at a failed one."
+        },
+        "started_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the turn started, as in its `turn.started`, so an app can say how long the agent has been working. A turn is never failed for being quiet, so this is what tells you when it has gone on too long. Absent when the server no longer knows."
         },
         "status": {
           "description": "The current live status, if there is one yet.",
@@ -2604,7 +2608,7 @@
           "minLength": 1
         },
         "area": {
-          "description": "What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities`, `memory`, or `kumo` when its own work in the background can't go on. Show an area you don't know plainly.",
+          "description": "What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities`, `memory`, or `kumo` when its own work in the background can't go on, such as `kumo:paused` while its model's usage limit holds it until a reset. Show an area you don't know plainly.",
           "type": "string",
           "minLength": 1
         },

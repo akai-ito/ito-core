@@ -1,7 +1,6 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
-import { randomUUID } from "node:crypto";
 import { createCell } from "#cell.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, type Host, type Installed } from "#capabilities/host.ts";
@@ -28,7 +27,7 @@ import { createGroups } from "#tools/groups.ts";
 import { withCheckedInput } from "#tools/input.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
-import { readChoice, restartedDetail, type Engine, type ToolServer } from "#engine/engine.ts";
+import { readChoice, type Engine, type ToolServer } from "#engine/engine.ts";
 import { createApp } from "#http/app.ts";
 import { createGate, createToken, tokenSetting } from "#http/auth.ts";
 import { leadOf } from "#http/settings.ts";
@@ -42,6 +41,7 @@ import { createNotifier } from "#notifications/notifier.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
 import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
+import { createBackground, whenWords, type Background } from "#turns/background.ts";
 import { packageVersion } from "#version.ts";
 import type { Message, ModelChoice } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
@@ -77,6 +77,7 @@ import {
   mailProblem,
   memoryBackupId,
   memoryBackupProblem,
+  pausedProblem,
   pushDeliveryId,
   pushDeliveryProblem,
   pushProblem,
@@ -142,6 +143,7 @@ export type Server = {
   readonly contacts: Contacts;
   readonly mail: Mailbox;
   readonly problems: Problems;
+  readonly background: Background;
   readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
@@ -387,24 +389,32 @@ export const createServer = (options: ServerOptions): Server => {
     return engine.models();
   };
   const topics = createTopics({ store, complete: quickComplete, models: listedModels, info });
-  const touchedRuns = createCell<ReadonlySet<string>>(new Set());
-  // One piece of Kumo's work in the background, under a run of its own unless it's given one. When the model can't
-  // act, nothing stands in for it: the problem shows until a later piece of work goes through.
-  const runWork = async (prompt: string, choice?: ModelChoice, given?: string): Promise<Result<string, string>> => {
-    await listening.get();
-    const attempt = async (retries: number): Promise<Result<string, string>> => {
-      const run = given ?? randomUUID();
-      const done = await engine.work(`${workRules}\n\n${backgroundText()}\n\n${prompt}`, run, choice);
-      const isTouched = touchedRuns.get().has(run);
-      touchedRuns.update((runs) => new Set([...runs].filter((other) => other !== run)));
-      const isCutOff = !done.ok && done.failure === restartedDetail && !isTouched;
-      return isCutOff && retries > 0 ? attempt(retries - 1) : done;
-    };
-    const done = await attempt(2);
-    if (!done.ok) info("Kumo's background work didn't finish", { error: done.failure });
-    problems.report(workId, done.ok ? { ok: true } : { ok: false, reason: done.failure, isAuth: false }, workProblem);
-    return done;
-  };
+  // Kumo's work in the background: a backstop on silence, one retry, and a pause through a usage limit with one
+  // catch-up after. When the model can't act, nothing stands in for it: the problem shows until work goes through.
+  const background = createBackground({
+    engine,
+    clock,
+    settings: store,
+    info,
+    timeZone,
+    ready: () => listening.get(),
+    frame: (prompt) => `${workRules}\n\n${backgroundText()}\n\n${prompt}`,
+    wakeUps: () => wakeUps,
+    post: (text) => {
+      store.postMessage(text);
+    },
+    report: (health) => {
+      problems.report(workId, health, workProblem);
+    },
+    onPause: () => {
+      problems.refresh();
+    },
+  });
+  // Background work that, while Kumo's paused, the catch-up takes in once under this line.
+  const workFor =
+    (missed: string) =>
+    (prompt: string, choice?: ModelChoice): Promise<Result<string, string>> =>
+      background.work(prompt, { missed, ...(choice && { choice }) });
   // The runs Kumo messaged them in, so a wake-up can say it did.
   const postedRuns = createCell<ReadonlySet<string>>(new Set());
   // One part of their How to help you page, such as how they like their mail sorted.
@@ -412,14 +422,21 @@ export const createServer = (options: ServerOptions): Server => {
     const page = memory.page("memory:helping-you");
     return page.ok ? sectionOf(page.value.markdown, section) : "";
   };
-  const desk = createDesk({ store, identifiers, clock, timeZone, work: runWork, info });
+  const desk = createDesk({
+    store,
+    identifiers,
+    clock,
+    timeZone,
+    work: workFor("Answers they gave on the Desk, which went back on it"),
+    info,
+  });
   const wakeUps = createWakeUps({
     store: createWakeUpStore(database),
     isMotion: (id) => store.findMotion(id) !== undefined,
     clock,
     timeZone,
     identifiers,
-    work: (prompt, run) => runWork(prompt, undefined, run),
+    work: (prompt, run) => background.work(prompt, { run }),
     postedIn: (run) => {
       const isPosted = postedRuns.get().has(run);
       postedRuns.update((runs) => new Set([...runs].filter((other) => other !== run)));
@@ -428,6 +445,7 @@ export const createServer = (options: ServerOptions): Server => {
     event: (uid) => calendar.listItems().find((item) => item.uid === uid && !item.calendar.kumo),
     desk,
     info,
+    isHolding: () => background.isHolding(),
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
   const calls = createCalls({
@@ -446,6 +464,9 @@ export const createServer = (options: ServerOptions): Server => {
     clock,
     standing: () => [
       ...(store.devices().length > 0 && readApnsCredentials(store) === undefined ? [pushProblem] : []),
+      ...[background.paused() ?? []]
+        .flat()
+        .map(({ until, isKnown }) => pausedProblem(whenWords(until, clock.now(), timeZone()), isKnown)),
       ...host.list().flatMap((capability) => capabilityProblem(capability) ?? []),
     ],
     publish: (current) => {
@@ -495,7 +516,7 @@ export const createServer = (options: ServerOptions): Server => {
     clock,
     timeZone,
     info,
-    work: runWork,
+    work: workFor("Dates coming up in their contacts, such as birthdays"),
     people: peoplePages,
     createSource: options.createContactsSource ?? icloudContacts,
     onHealth: (health) => {
@@ -510,7 +531,7 @@ export const createServer = (options: ServerOptions): Server => {
     fetch: fetcher,
     complete: quickComplete,
     quickChoice: createQuickChoice(listedModels),
-    work: runWork,
+    work: workFor("Mail they got or sent: look through their inboxes and Sent"),
     stakesChoice: createStakesChoice(listedModels, () => readChoice(store.setting)),
     matters: () =>
       motions
@@ -560,7 +581,7 @@ export const createServer = (options: ServerOptions): Server => {
     settings: store,
     clock,
     timeZone,
-    work: runWork,
+    work: workFor("Changes on their calendars"),
     wakeUps,
     describe: wakeUps.describe,
     info,
@@ -568,7 +589,7 @@ export const createServer = (options: ServerOptions): Server => {
   const gettingStarted = createGettingStarted({
     store,
     identifiers,
-    work: runWork,
+    work: workFor("Getting started"),
     catchUp: mail.catchUp,
     mailAccounts: mail.accounts,
     onSources: (listener) => host.subscribe(listener),
@@ -597,12 +618,19 @@ export const createServer = (options: ServerOptions): Server => {
       );
     },
   });
-  const corrections = createCorrections({ store, desk, clock, work: runWork, tracks, info });
+  const corrections = createCorrections({
+    store,
+    desk,
+    clock,
+    work: workFor("What they told you was wrong in your work"),
+    tracks,
+    info,
+  });
   const deskLine = createDeskLine({ store, desk, clock });
   // Their phone moved to another time zone: repeating wake-ups follow at once, and Kumo looks at the rest.
   places.onMoved((from, to) => {
     wakeUps.refit();
-    void runWork(
+    void background.work(
       [
         `Their phone moved from ${from} to ${to}; it's ${toSpoken(clock.now(), to)} there.`,
         "Your repeating wake-ups already come back at their local times there. Move your other wake-ups and your",
@@ -610,6 +638,7 @@ export const createServer = (options: ServerOptions): Server => {
         "them only if something needs them, such as a call that now falls in their night.",
         "End with one line saying what you moved.",
       ].join("\n"),
+      { missed: `A move from ${from} to ${to}` },
     );
   });
   const post = (text: string, isUrgent: boolean): Message => {
@@ -692,7 +721,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...tool,
     call: (input) => {
       const run = contextRun();
-      if (run !== undefined) touchedRuns.update((runs) => new Set([...runs, run]));
+      if (run !== undefined) background.touch(run);
       return tool.call(input);
     },
   });
@@ -705,7 +734,11 @@ export const createServer = (options: ServerOptions): Server => {
       : { text: `Ito has no tool ${name}.`, isError: true };
   };
   store.subscribe(({ event }) => {
-    if (event.type === "turn.ended") memory.indexConversation();
+    if (event.type !== "turn.ended") return;
+    memory.indexConversation();
+    // A turn in the chat shows how the model stands: a usage limit pauses background work, an answer ends a pause.
+    if (event.outcome === "completed") background.answered();
+    if (event.error?.code === "usage_limit") background.limitReached();
   });
   registerWakeUps(app, { wakeUps, schemas });
   registerDay(app, { picture, schemas });
@@ -734,6 +767,7 @@ export const createServer = (options: ServerOptions): Server => {
     motions.close();
     topics.close();
     desk.close();
+    background.close();
     wakeUps.close();
     calendarChanges.close();
     places.close();
@@ -770,6 +804,7 @@ export const createServer = (options: ServerOptions): Server => {
     contacts,
     mail,
     problems,
+    background,
     callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();

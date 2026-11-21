@@ -1,5 +1,6 @@
 import { createCell } from "#cell.ts";
 import { toMessageId } from "#conversation/ids.ts";
+import { reconnectingStatus } from "#conversation/status.ts";
 import { factsOf } from "#conversation/steps.ts";
 import type { EngineFailureCode } from "#engine/engine.ts";
 import type { ScriptSource, TimedEvent, TurnScript } from "#engine/scripted/script-engine.ts";
@@ -82,7 +83,12 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
         ? { at, event: { type: "approval", key: id, fields } }
         : { at, event: { type: "ask", fields } };
     }
-    case "turn.status":
+    // The engine says it's reconnecting; every other status is the server's own.
+    case "turn.status": {
+      return event.label === reconnectingStatus.label
+        ? { at, event: { type: "reconnecting", detail: "Reconnecting... 1/5" } }
+        : undefined;
+    }
     case "ask.ended": {
       return;
     }
@@ -112,7 +118,7 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
     }
     case "turn.ended": {
       if (event.outcome === "completed") return { at, event: { type: "ended" } };
-      if (event.outcome !== "failed" || !event.error || event.error.code === "model_timeout") return;
+      if (event.outcome !== "failed" || !event.error) return;
       return {
         at,
         event: { type: "failed", code: event.error.code as EngineFailureCode, detail: event.error.detail ?? "" },

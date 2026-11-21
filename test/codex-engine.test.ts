@@ -14,7 +14,7 @@ import type { AskFields } from "#engine/engine.ts";
 import type { Settings } from "#store/store.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
 import type { Tool } from "#tools/mcp.ts";
-import { startMockModel, type MockModel } from "./support/mock-model.ts";
+import { startMockModel, usageResetsAt, type MockModel } from "./support/mock-model.ts";
 import { startToolServer, type RunningToolServer } from "./support/tool-server.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-codex-"));
@@ -70,7 +70,7 @@ const writeCodexConfig = (baseUrl: string): void => {
   );
 };
 
-const openEngine = (baseUrl: string, given = instructions, context?: () => string): Engine =>
+const openEngine = (baseUrl: string, given = instructions, context?: () => string, streamRetries = 0): Engine =>
   createCodexEngine({
     codexHome,
     workspace,
@@ -83,7 +83,13 @@ const openEngine = (baseUrl: string, given = instructions, context?: () => strin
     modelProvider: "mock",
     config: {
       model_providers: {
-        mock: { name: "Mock", base_url: baseUrl, wire_api: "responses", request_max_retries: 0, stream_max_retries: 0 },
+        mock: {
+          name: "Mock",
+          base_url: baseUrl,
+          wire_api: "responses",
+          request_max_retries: 0,
+          stream_max_retries: streamRetries,
+        },
       },
     },
   });
@@ -351,6 +357,35 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(events.at(-1)).toMatchObject({ type: "failed", code: "usage_limit" });
   });
 
+  it("fails background work at a usage limit with usage_limit, and says when the limit resets", async () => {
+    const done = await currentEngine().work("[[usage]] Look at the wake-up", "run-limited");
+    expect(done).toMatchObject({ ok: false, failure: { code: "usage_limit" } });
+    expect(currentEngine().usageResetsAt()).toBe(usageResetsAt * 1000);
+  });
+
+  it("shows signs of life while it works in the background, and stops when interrupted", async () => {
+    const controller = new AbortController();
+    const signs = createCell(0);
+    const done = await currentEngine().work("[[slow]] Read the long thread", "run-slow", {
+      onActivity: () => {
+        if (signs.update((count) => count + 1) === 3) controller.abort();
+      },
+      signal: controller.signal,
+    });
+    expect(signs.get()).toBeGreaterThanOrEqual(3);
+    expect(done).toMatchObject({ ok: false, failure: { code: "engine_failed" } });
+  });
+
+  it("says it's reconnecting when the model's stream drops, then goes on", async () => {
+    await currentEngine().close();
+    engine.set(openEngine(currentModel().baseUrl, instructions, undefined, 1));
+    const events = await runTurn("[[drop]] Plan my Sunday");
+    await currentEngine().close();
+    engine.set(openEngine(currentModel().baseUrl));
+    expect(events).toContainEqual({ type: "reconnecting", detail: "Reconnecting... 1/1" });
+    expect(events.at(-1)).toEqual({ type: "ended" });
+  });
+
   it("maps a rejected sign-in to engine_signed_out", async () => {
     const events = await runTurn("[[signedout]] Are you there?");
     expect(events.at(-1)).toMatchObject({ type: "failed", code: "engine_signed_out" });
@@ -448,8 +483,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
     settings.setSetting(choiceSetting, JSON.stringify({ model: "gpt-6.1-sol", effort: "low" }));
 
     const done = await currentEngine().work("[[reply]] File the receipt", "run-light", {
-      model: "gpt-6-luna",
-      effort: "medium",
+      choice: { model: "gpt-6-luna", effort: "medium" },
     });
     const light = currentModel().lastRun();
     await currentEngine().work("[[reply]] Read the recruiter's mail", "run-chosen");
