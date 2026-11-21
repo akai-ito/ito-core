@@ -327,7 +327,7 @@ describe("mail in the conversation, through ito mail commands", () => {
     expect(listed.text).toContain("--to takes one value each time: repeat --to for each, rather than giving a list.");
     expect(commas.status).toBe(422);
     expect(commas.text).toBe(
-      '"clara.voss@northwind.example, tess.harlow@halcyon.example" isn\'t an email address. Give one address each ' +
+      '"clara.voss@northwind.example, tess.harlow@halcyon.example" holds more than one address. Give one address each ' +
         "time and repeat --to for each, such as --to clara.voss@northwind.example --to tess.harlow@halcyon.example.",
     );
     expect(mail.drafts()).toHaveLength(before);
@@ -349,7 +349,8 @@ describe("mail in the conversation, through ito mail commands", () => {
 
     expect(fixed.text).toBe(
       `Saved the draft in Drafts and put it on the Desk as ${first?.id ?? ""}, in place of the earlier one. ` +
-        "Their signature from their sent mail is at the end.",
+        "Their signature from their sent mail is at the end. Read back from Drafts: To tess.harlow@halcyon.example; " +
+        "“Coffee next week?”; 2 words of theirs; no files. The earlier draft is out of Drafts.",
     );
     expect(drafts().filter((card) => card.draft?.subject === "Coffee next week?")).toEqual([
       expect.objectContaining({
@@ -387,7 +388,7 @@ describe("mail in the conversation, through ito mail commands", () => {
     const missing = await command(["drop", "--card", stale, "--reason", "Again"]);
 
     expect(dropped.text).toBe("Dropped Old plans.");
-    expect(cardOnly.text).toBe("Dropped Maybe later.");
+    expect(cardOnly.text).toBe("Dropped Maybe later. It's still in Drafts.");
     expect(drafts().map(({ id }) => id)).not.toEqual(expect.arrayContaining([stale]));
     expect(drafts().map(({ id }) => id)).not.toEqual(expect.arrayContaining([kept]));
     expect(mail.removedDrafts()).toContain(staleDraft);
@@ -416,7 +417,8 @@ describe("mail in the conversation, through ito mail commands", () => {
 
     expect(drafted.text).toBe(
       `Saved the draft in Drafts and put it on the Desk as ${card.id}. Their signature from their sent mail is at ` +
-        "the end. It carries beach.jpg (inline) and plan.pdf.",
+        "the end. Read back from Drafts: To leo@halcyon.example; “The weekend”; 14 words of theirs; carrying " +
+        "plan.pdf (1 KB) and 1 picture inline.",
     );
     expect(card.draft).toMatchObject({
       body,

@@ -282,6 +282,52 @@ describe("the mailbox", () => {
     await box.mailbox.close();
   });
 
+  it("takes a draft's card off the Desk once its draft is gone from Drafts two looks running, or binned", async () => {
+    const box = openBox("notice");
+    const draftCard = (id: string, title: string): Card =>
+      box.addDraftCard(
+        {
+          kind: "draft",
+          title,
+          options: [{ label: "Drop it" }],
+          allows_text: true,
+          draft: {
+            account: "icloud",
+            from: "divy@icloud.com",
+            to: ["leo@halcyon.example"],
+            subject: title,
+            body: "Still on?",
+            message_id: id,
+          },
+        },
+        "2026-11-10T21:00:00.000Z",
+      );
+    const deleted = draftCard("deleted@icloud.com", "Lunch with Leo");
+    const binned = draftCard("binned@icloud.com", "Dinner with Leo");
+    const kept = draftCard("kept@icloud.com", "Drinks with Leo");
+    box.mail.deleteInMail("deleted@icloud.com");
+
+    await box.runSentCheck();
+    expect(box.cards().map(({ id }) => id)).toEqual([deleted.id, binned.id, kept.id]);
+
+    await box.runSentCheck();
+    const file = box.mailbox.tools.find(({ name }) => name === "file_mail");
+    await file?.call({ message_id: "binned@icloud.com", to: "bin", reason: "They asked" });
+
+    expect(box.cards().map(({ id }) => id)).toEqual([kept.id]);
+    expect(box.done()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: "“Lunch with Leo” left Waiting on you",
+          reason: "Its draft is no longer in your Drafts: sent, deleted or changed in your mail app.",
+          quiet: true,
+        }),
+        expect.objectContaining({ text: "“Dinner with Leo” left Waiting on you", reason: "Its draft was binned." }),
+      ]),
+    );
+    await box.mailbox.close();
+  });
+
   it("clears a draft's card when Apple Mail sends it under headers of its own", async () => {
     const box = openBox("work");
     const draftTool = box.mailbox.tools.find(({ name }) => name === "draft");

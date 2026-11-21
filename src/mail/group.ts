@@ -6,8 +6,9 @@ export const mailGroup: ToolGroup = {
   id: "mail",
   title: "Mail",
   summary:
-    "their mail: find it, go through the inbox a page at a time, read whole threads, draft replies in their voice " +
-    "(never sent), file into their folders one or many at a time, bin, unsubscribe and block, with ito mail commands",
+    "their mail: find it, go through the inbox a page at a time, read whole threads and the files mails carry " +
+    "(PDFs, pictures, invitations), draft replies in their voice with files attached (never sent), mark read or " +
+    "flagged, file into their folders one or many at a time, bin, unsubscribe and block, with ito mail commands",
   skill: readFileSync(new URL("../../agent/mail.md", import.meta.url), "utf8"),
   operations: [
     {
@@ -37,6 +38,19 @@ export const mailGroup: ToolGroup = {
       running: "Reading a thread",
       done: "Read a thread",
       run: { present: "Reading {count} threads", past: "Read {count} threads" },
+    },
+    {
+      name: "attachment",
+      tool: "mail_attachment",
+      running: "Reading a mail's file",
+      done: "Read a mail's file",
+      run: { present: "Reading {count} files from mail", past: "Read {count} files from mail" },
+    },
+    {
+      name: "mark",
+      tool: "mail_mark",
+      running: "Marking mail",
+      done: "Marked mail",
     },
     {
       name: "draft",
