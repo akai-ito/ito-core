@@ -76,8 +76,8 @@ are what the server holds it to.
   memory and its Desk line, with every action in Kumo's work and an undo where there can be one.
   What it's learning about you is in the open, as tracks.
 
-When Kumo's model can't act, nothing stands in for it (G52); at a usage limit it pauses, then catches up
-once (G57).
+When Kumo's model can't act, nothing stands in for it (G52); at a usage limit it pauses, then
+catches up once (G57).
 
 ## Scenario by scenario
 
