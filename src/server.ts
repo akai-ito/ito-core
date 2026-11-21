@@ -37,9 +37,14 @@ import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { createAttachments, type Attachments } from "#attachments/attachments.ts";
-import { createUploads, type Limits as UploadLimits } from "#attachments/uploads.ts";
+import {
+  createUploads,
+  defaultLimits as defaultUploadLimits,
+  type Limits as UploadLimits,
+} from "#attachments/uploads.ts";
 import { createRecordings, type Recordings } from "#recordings/recordings.ts";
 import { createRecordingTools } from "#recordings/tools.ts";
+import { createShownFiles, type ShownFiles } from "#files/files.ts";
 import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
 import { createNotifier } from "#notifications/notifier.ts";
 import { openDatabase } from "#store/database.ts";
@@ -138,6 +143,7 @@ export type Server = {
   readonly turns: Turns;
   readonly attachments: Attachments;
   readonly recordings: Recordings;
+  readonly files: ShownFiles;
   readonly host: Host;
   readonly memory: Memory;
   readonly backup: Backup;
@@ -446,6 +452,15 @@ export const createServer = (options: ServerOptions): Server => {
     info,
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
+  const files = createShownFiles({
+    database,
+    attachments,
+    store,
+    newAttachment: () => identifiers.attachment(),
+    workspace: path.join(options.dataDirectory, "workspace"),
+    maxBytes: options.uploadLimits?.fileBytes ?? defaultUploadLimits.fileBytes,
+    clock,
+  });
   const recordings = createRecordings({
     database,
     store,
@@ -655,6 +670,7 @@ export const createServer = (options: ServerOptions): Server => {
     attachments,
     uploads,
     recordings,
+    files,
     host,
     memory,
     backup,
@@ -716,6 +732,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...mail.tools,
     ...gettingStarted.tools,
     ...createRecordingTools(recordings),
+    files.tool,
     ...createDemoTools({ store, desk, post, gettingStarted, identifiers, clock, timeZone }),
   ];
   const noteRun = (tool: Tool): Tool => ({
@@ -792,6 +809,7 @@ export const createServer = (options: ServerOptions): Server => {
     turns,
     attachments,
     recordings,
+    files,
     host,
     memory,
     backup,

@@ -106,3 +106,41 @@ export const looksLike = (kind: UploadKind, mediaType: string, start: Buffer): b
 };
 
 export const describeAudioFormats = "M4A, MP3, WAV, AAC, Ogg/Opus, FLAC, WebM, AMR, Core Audio or AIFF";
+
+const typesByExtension: Readonly<Record<string, string>> = {
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".csv": "text/csv",
+  ".ics": "text/calendar",
+  ".vcf": "text/vcard",
+  ".json": "application/json",
+  ".rtf": "application/rtf",
+  ".html": "text/html",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".pages": "application/vnd.apple.pages",
+  ".key": "application/vnd.apple.keynote",
+  ".numbers": "application/vnd.apple.numbers",
+  ".zip": "application/zip",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".heic": "image/heic",
+  ".svg": "image/svg+xml",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+};
+
+// A file's media type from its name, for a file Kumo made in its workspace.
+export const mediaTypeOfName = (name: string): string => {
+  const dot = name.lastIndexOf(".");
+  return (dot === -1 ? undefined : typesByExtension[name.slice(dot).toLowerCase()]) ?? "application/octet-stream";
+};

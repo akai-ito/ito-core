@@ -275,6 +275,10 @@ telling voices apart is a best guess: voices that overlap, or that sound alike, 
 can correct a misheard name and delete a recording with its transcript. It needs ffmpeg on the box
 (`sudo apt install ffmpeg`); `ito voice check` times a two-person recording through it.
 
+When Kumo makes or changes a file for you, such as a PDF, it shows it in the chat at one version,
+so what you say about it is about that version. Every version stays on the server exactly as made,
+until you delete the file, and a mail draft can attach exactly the version you looked at.
+
 Photos and files you attach in the chat stay on your server and never go into the Thread, unless
 Kumo keeps a photo with a story. Up to 20 MB goes in one request; anything bigger, such as an hour's
 recording, goes up in chunks that carry on after a dropped connection: recordings up to 1 GB,

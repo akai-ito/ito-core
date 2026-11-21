@@ -23,7 +23,9 @@ info:
       for Kumo to read; follow it, read and correct its transcript, and delete it.
     - **Answer** what the agent asks by sending a message, or cancel the ask.
     - **Shaped replies:** a reply may hold [`ari:` blocks](blocks.schema.json) the app draws
-      natively: places, choices, pictures and things in motion.
+      natively: places, choices, pictures, things in motion and files to look at.
+    - **Files to review:** a file Kumo made or changed, such as a PDF, shown in the chat at one
+      version, with its bytes exactly as made; every version stays until you delete the file.
     - **Notify** a device: register it, and every reply, ask and message from Kumo reaches it at
       once. [The push schema](push.schema.json) describes what it receives.
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
@@ -76,6 +78,10 @@ tags:
     description: |
       The recordings you send, transcribed on the server for Kumo to read, with times and, as a best
       guess, who spoke. Audio and transcript stay on the server until you delete them.
+  - name: Files
+    description: |
+      Files Kumo showed you in the chat to look at, such as a PDF it made, with every version. Each
+      version is an attachment whose bytes never change.
   - name: Turns
     description: Control the agent's work on a turn.
   - name: Asks
@@ -1280,6 +1286,61 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/NotTranscribed" }
         "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/files:
+    get:
+      tags: [Files]
+      operationId: listFiles
+      summary: List the files Kumo showed you
+      description: Newest change first, each with all its versions, for a shelf of what Kumo made.
+      responses:
+        "200":
+          description: The files.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/files/{file}:
+    get:
+      tags: [Files]
+      operationId: getFile
+      summary: See a file Kumo showed you, with its versions
+      description: |
+        What an `ari:file` card needs: the file's versions, oldest first, each with its attachment
+        (name, media type and size) and what changed. Fetch a version's bytes with
+        `GET /v0/attachments/{attachment}`; they are exactly what Kumo made, and never change.
+      parameters:
+        - $ref: "#/components/parameters/File"
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    delete:
+      tags: [Files]
+      operationId: deleteFile
+      summary: Delete a file Kumo showed you, every version
+      description: |
+        Deletes every version's bytes from the server, and the copies kept for mail drafts; the
+        file Kumo works on in its workspace stays. Cards for it then say it's gone. Deleting one
+        that isn't there changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/File"
+      responses:
+        "204":
+          description: Gone.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
   /v0/asks/{ask}/cancel:
     post:
       tags: [Asks]
@@ -2072,6 +2133,12 @@ components:
       required: true
       description: The id the app made for what it's uploading.
       schema: { $ref: "events.schema.json#/$defs/UploadId" }
+    File:
+      name: file
+      in: path
+      required: true
+      description: The file's id, from an `ari:file` block.
+      schema: { $ref: "events.schema.json#/$defs/FileId" }
     BigUpload:
       name: upload
       in: path
@@ -3327,6 +3394,46 @@ components:
           type: array
           maxItems: 20
           items: { $ref: "#/components/schemas/SpeakerName" }
+    FileVersion:
+      type: object
+      required: [version, attachment, made_at]
+      properties:
+        version:
+          description: 1 for the first one Kumo showed, then one more each time it showed a change.
+          type: integer
+          minimum: 1
+        attachment:
+          $ref: "events.schema.json#/$defs/Attachment"
+          description: This version's bytes, name, media type and size.
+        note:
+          description: What changed since the version before, in Kumo's words.
+          type: string
+        made_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    ShownFile:
+      type: object
+      required: [id, name, versions]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/FileId" }
+        name:
+          description: The latest version's name.
+          type: string
+        versions:
+          description: Oldest first; the last is the latest.
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/FileVersion" }
+    FileList:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/ShownFile" }
+    FileResult:
+      type: object
+      required: [file]
+      properties:
+        file: { $ref: "#/components/schemas/ShownFile" }
     FinishUpload:
       type: object
       properties:

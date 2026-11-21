@@ -68,6 +68,16 @@
           }
         }
       }
+    },
+    "File": {
+      "title": "ari:file",
+      "description": "A file Ari made or changed for you to look at before it goes anywhere, such as a PDF, at one version. Draw it as a card with its name, kind, size and version that opens a preview (a PDF's pages) and shares it. `GET /v0/files/{file}` gives its versions and their attachments; fetch the bytes, exactly as made, with `GET /v0/attachments/{attachment}`. When a newer version exists, say so on the card. Feedback on a card is about its version.",
+      "type": "object",
+      "required": ["file", "version"],
+      "properties": {
+        "file": { "$ref": "events.schema.json#/$defs/FileId" },
+        "version": { "description": "Which version this card shows.", "type": "integer", "minimum": 1 }
+      }
     }
   }
 }

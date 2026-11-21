@@ -820,6 +820,54 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/files": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the files Kumo showed you
+     * @description Newest change first, each with all its versions, for a shelf of what Kumo made.
+     */
+    get: operations["listFiles"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/files/{file}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * See a file Kumo showed you, with its versions
+     * @description What an `ari:file` card needs: the file's versions, oldest first, each with its attachment
+     *     (name, media type and size) and what changed. Fetch a version's bytes with
+     *     `GET /v0/attachments/{attachment}`; they are exactly what Kumo made, and never change.
+     */
+    get: operations["getFile"];
+    put?: never;
+    post?: never;
+    /**
+     * Delete a file Kumo showed you, every version
+     * @description Deletes every version's bytes from the server, and the copies kept for mail drafts; the
+     *     file Kumo works on in its workspace stays. Cards for it then say it's gone. Deleting one
+     *     that isn't there changes nothing.
+     */
+    delete: operations["deleteFile"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/asks/{ask}/cancel": {
     parameters: {
       query?: never;
@@ -2702,6 +2750,28 @@ export interface components {
       replace?: components["schemas"]["TranscriptCorrection"][];
       speakers?: components["schemas"]["SpeakerName"][];
     };
+    FileVersion: {
+      /** @description 1 for the first one Kumo showed, then one more each time it showed a change. */
+      version: number;
+      /** @description This version's bytes, name, media type and size. */
+      attachment: components["schemas"]["Attachment"];
+      /** @description What changed since the version before, in Kumo's words. */
+      note?: string;
+      made_at: components["schemas"]["Timestamp"];
+    };
+    ShownFile: {
+      id: components["schemas"]["FileId"];
+      /** @description The latest version's name. */
+      name: string;
+      /** @description Oldest first; the last is the latest. */
+      versions: components["schemas"]["FileVersion"][];
+    };
+    FileList: {
+      files: components["schemas"]["ShownFile"][];
+    };
+    FileResult: {
+      file: components["schemas"]["ShownFile"];
+    };
     FinishUpload: {
       /** @description The whole file's SHA-256, in lowercase hex, for the server to check. */
       sha256?: string;
@@ -3249,6 +3319,8 @@ export interface components {
       error?: components["schemas"]["Error"];
       changed_at: components["schemas"]["Timestamp"];
     };
+    /** @description Opaque: the id of a file Kumo showed you, which stays the same across its versions. */
+    FileId: string;
     /** @description A thing in motion: something going on that Ari keeps for you, such as a trip being planned. Its content and state come from `GET /v0/motion/{id}`. */
     Motion: {
       id: components["schemas"]["MotionId"];
@@ -3707,6 +3779,8 @@ export interface components {
     Turn: components["schemas"]["TurnId"];
     /** @description The id the app made for what it's uploading. */
     Upload: components["schemas"]["UploadId"];
+    /** @description The file's id, from an `ari:file` block. */
+    File: components["schemas"]["FileId"];
     /** @description The id the app made for the big upload, which becomes its attachment's id. */
     BigUpload: components["schemas"]["UploadId"];
     /** @description The attachment's id, from its message. */
@@ -3830,6 +3904,10 @@ export type SpeakerName = components["schemas"]["SpeakerName"];
 export type Transcript = components["schemas"]["Transcript"];
 export type TranscriptResult = components["schemas"]["TranscriptResult"];
 export type CorrectTranscript = components["schemas"]["CorrectTranscript"];
+export type FileVersion = components["schemas"]["FileVersion"];
+export type ShownFile = components["schemas"]["ShownFile"];
+export type FileList = components["schemas"]["FileList"];
+export type FileResult = components["schemas"]["FileResult"];
 export type FinishUpload = components["schemas"]["FinishUpload"];
 export type Pair = components["schemas"]["Pair"];
 export type PairResult = components["schemas"]["PairResult"];
@@ -3893,6 +3971,7 @@ export type TrackEvidence = components["schemas"]["TrackEvidence"];
 export type Track = components["schemas"]["Track"];
 export type RecordingState = components["schemas"]["RecordingState"];
 export type Recording = components["schemas"]["Recording"];
+export type FileId = components["schemas"]["FileId"];
 export type Motion = components["schemas"]["Motion"];
 export type MotionChange = components["schemas"]["MotionChange"];
 export type VoiceState = components["schemas"]["VoiceState"];
@@ -3936,6 +4015,7 @@ export type ParameterCalendarItem = components["parameters"]["CalendarItem"];
 export type ParameterMotion = components["parameters"]["Motion"];
 export type ParameterTurn = components["parameters"]["Turn"];
 export type ParameterUpload = components["parameters"]["Upload"];
+export type ParameterFile = components["parameters"]["File"];
 export type ParameterBigUpload = components["parameters"]["BigUpload"];
 export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
@@ -5325,6 +5405,80 @@ export interface operations {
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
       409: components["responses"]["NotTranscribed"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  listFiles: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The files. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FileList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  getFile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The file's id, from an `ari:file` block. */
+        file: components["parameters"]["File"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The file. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FileResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  deleteFile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The file's id, from an `ari:file` block. */
+        file: components["parameters"]["File"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Gone. */
+      204: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components["responses"]["TokenRejected"];
       429: components["responses"]["SlowDown"];
     };
   };

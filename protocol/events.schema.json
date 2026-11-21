@@ -139,6 +139,12 @@
       "minLength": 1,
       "maxLength": 64
     },
+    "FileId": {
+      "description": "Opaque: the id of a file Kumo showed you, which stays the same across its versions.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
     "UploadId": {
       "description": "A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.",
       "type": "string",
