@@ -17,7 +17,8 @@ info:
     - **Stop** a turn, or **try again** after one failed, with commands on the turn.
     - **Pair** a new app by exchanging the short-lived code in the QR code `ito pair` shows for a
       token of its own.
-    - **Attach** photos and files: upload each one, then name them in a message.
+    - **Attach** photos and files: upload each one, then name them in a message. Big files, such as
+      a recording, go up in chunks that resume after any drop.
     - **Answer** what the agent asks by sending a message, or cancel the ask.
     - **Shaped replies:** a reply may hold [`ari:` blocks](blocks.schema.json) the app draws
       natively: places, choices, pictures and things in motion.
@@ -891,21 +892,230 @@ paths:
       tags: [Attachments]
       operationId: getAttachment
       summary: Fetch an attachment's bytes
-      description: The bytes, with the media type they were uploaded with. They never change, so keep them once fetched.
+      description: |
+        The bytes, exactly as they were uploaded or made, with their media type and their name in
+        `Content-Disposition`. They never change, so keep them once fetched. Ask for part of a big
+        file with one `Range: bytes=…` range, such as to play a recording as it downloads or to
+        resume a download; the answer is a `206` with `Content-Range`.
       parameters:
         - $ref: "#/components/parameters/Attachment"
+        - name: Range
+          in: header
+          required: false
+          description: One byte range, such as `bytes=0-1048575` or `bytes=1048576-`.
+          schema: { type: string }
       responses:
         "200":
           description: The file.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+            Accept-Ranges:
+              description: Always `bytes`.
+              schema: { type: string }
           content:
             "*/*":
               schema:
                 description: The file's bytes.
+        "206":
+          description: The part of the file the range asked for.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+            Content-Range:
+              description: Which bytes these are, such as `bytes 0-1048575/52428800`.
+              schema: { type: string }
+          content:
+            "*/*":
+              schema:
+                description: Those bytes.
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "416":
+          description: The range is past the end of the file; `Content-Range` gives its size as `bytes */size`.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+            Content-Range:
+              description: The file's size, such as `bytes */52428800`.
+              schema: { type: string }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/uploads:
+    get:
+      tags: [Attachments]
+      operationId: listUploads
+      summary: See the limits, and the big uploads still going
+      description: |
+        What the server takes, to show before anything is uploaded: the media types and the largest
+        size of each kind, the largest chunk, and what happens to a recording. Then the big uploads
+        that haven't finished, so an app that was closed mid-upload can carry on from `received`.
+      responses:
+        "200":
+          description: The limits and the unfinished uploads.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    post:
+      tags: [Attachments]
+      operationId: createUpload
+      summary: Start a big upload
+      description: |
+        For a file too big for `PUT /v0/attachments/{attachment}` (over 20 MB), such as a recorded
+        conversation. Say what's coming: the id the app made, which becomes the attachment's id, the
+        file's name, media type and size in bytes. Then send it in chunks with
+        `PUT /v0/uploads/{upload}`, in order, and finish with `POST /v0/uploads/{upload}/finish`.
+        The finished upload is an attachment like any other: name it in a message.
+
+        Starting the same upload again changes nothing and answers where it stands, so it's also how
+        an app resumes. Only the media types `GET /v0/uploads` lists are taken, each kind up to its
+        size. An upload no chunk reaches for two days is deleted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUpload" }
+            example:
+              id: 6f1c1f4e-9b7a-4c52-8f0e-2b6d1f0a9c31
+              name: Interview with Northwind.m4a
+              media_type: audio/mp4
+              size: 96468992
+      responses:
+        "201":
+          description: Started; send the first chunk at offset 0.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "200":
+          description: Already started, or finished; this is where it stands.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedType" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+        "507": { $ref: "#/components/responses/ServerDiskFull" }
+  /v0/uploads/{upload}:
+    get:
+      tags: [Attachments]
+      operationId: getUpload
+      summary: See where a big upload stands
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+      responses:
+        "200":
+          description: How much the server has, or the attachment it became.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    put:
+      tags: [Attachments]
+      operationId: sendUploadChunk
+      summary: Send a chunk of a big upload
+      description: |
+        The body is the next bytes of the file, at most `chunk_bytes` (about 8 MB is a good size),
+        and `offset` says where they start. The server answers once they're on its disk, with how
+        much it now has: show that as the upload's progress, and send the next chunk from there.
+
+        Sending a chunk again is safe: bytes the server already has are skipped. A chunk that starts
+        past what the server has is refused with `offset_mismatch` and the upload as it stands, so
+        the app carries on from its `received`.
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+        - name: offset
+          in: query
+          required: true
+          description: Where in the file this chunk starts, in bytes.
+          schema:
+            type: integer
+            minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              description: The chunk's bytes.
+      responses:
+        "200":
+          description: On disk.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/OffsetMismatch" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+        "507": { $ref: "#/components/responses/ServerDiskFull" }
+    delete:
+      tags: [Attachments]
+      operationId: cancelUpload
+      summary: Give up a big upload
+      description: Deletes what the server has of an unfinished upload. Cancelling one that isn't there changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+      responses:
+        "204":
+          description: Gone.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/uploads/{upload}/finish:
+    post:
+      tags: [Attachments]
+      operationId: finishUpload
+      summary: Finish a big upload
+      description: |
+        Once the server has every byte, this makes the upload an attachment, after checking that its
+        first bytes fit its media type (a recording must be audio, a PDF a PDF). Give the file's
+        SHA-256 to have the server check it arrived whole; when it doesn't match, the server starts
+        the upload over from offset 0 and says so with `checksum_mismatch`. Finishing again answers
+        the same attachment.
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FinishUpload" }
+      responses:
+        "201":
+          description: The attachment it became.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachmentResult" }
+        "200":
+          description: Already finished; this is its attachment.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachmentResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/UploadIncomplete" }
+        "415": { $ref: "#/components/responses/UnsupportedType" }
+        "422": { $ref: "#/components/responses/ChecksumMismatch" }
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/asks/{ask}/cancel:
     post:
@@ -1699,6 +1909,12 @@ components:
       required: true
       description: The id the app made for what it's uploading.
       schema: { $ref: "events.schema.json#/$defs/UploadId" }
+    BigUpload:
+      name: upload
+      in: path
+      required: true
+      description: The id the app made for the big upload, which becomes its attachment's id.
+      schema: { $ref: "events.schema.json#/$defs/UploadId" }
     Attachment:
       name: attachment
       in: path
@@ -1794,6 +2010,54 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
+    UnsupportedType:
+      description: |
+        The server doesn't take this media type in a big upload, or the file's first bytes don't fit
+        the type it was given (`unsupported_type`). The message names what it takes.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+          example:
+            error:
+              code: unsupported_type
+              message: "Ito takes recordings as M4A, MP3, WAV, AAC, Ogg/Opus, FLAC, WebM, AMR, Core Audio or AIFF."
+              detail: video/quicktime isn't a media type big uploads take.
+    ServerDiskFull:
+      description: The server's disk hasn't room for the file (`server_disk_full`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+    OffsetMismatch:
+      description: |
+        The chunk starts past what the server has (`offset_mismatch`). Send again from the upload's
+        `received`.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadErrorResult" }
+    UploadIncomplete:
+      description: |
+        The server hasn't every byte yet (`upload_incomplete`). Send the rest from the upload's
+        `received`, then finish again.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadErrorResult" }
+    ChecksumMismatch:
+      description: |
+        The bytes that arrived don't have the SHA-256 the app gave (`checksum_mismatch`). The server
+        has started the upload over: send it again from offset 0.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadErrorResult" }
     SlowDown:
       description: Too many requests, or too many wrong tokens (`slow_down`).
       headers:
@@ -2661,6 +2925,108 @@ components:
       required: [attachment]
       properties:
         attachment: { $ref: "events.schema.json#/$defs/Attachment" }
+    UploadKind:
+      description: "`audio` for a recording, `image` for a photo, `file` for a document."
+      enum: [audio, image, file]
+    UploadKindLimit:
+      type: object
+      required: [kind, max_bytes, media_types]
+      properties:
+        kind: { $ref: "#/components/schemas/UploadKind" }
+        max_bytes:
+          description: The largest file of this kind, in bytes.
+          type: integer
+          minimum: 1
+        media_types:
+          description: The media types of this kind that big uploads take.
+          type: array
+          items: { type: string }
+    UploadLimits:
+      type: object
+      required: [simple_bytes, chunk_bytes, kinds]
+      properties:
+        simple_bytes:
+          description: The largest file `PUT /v0/attachments/{attachment}` takes in one go; anything bigger goes in chunks.
+          type: integer
+          minimum: 1
+        chunk_bytes:
+          description: The most one chunk may hold.
+          type: integer
+          minimum: 1
+        kinds:
+          type: array
+          items: { $ref: "#/components/schemas/UploadKindLimit" }
+    CreateUpload:
+      type: object
+      required: [id, name, media_type, size]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/UploadId" }
+        name:
+          description: The file's name, shown with the message and used in the agent's workspace.
+          type: string
+          minLength: 1
+          maxLength: 255
+        media_type:
+          description: Its media type, such as `audio/mp4` for a Voice Memos recording.
+          type: string
+          minLength: 1
+          maxLength: 255
+        size:
+          description: Its whole size, in bytes.
+          type: integer
+          minimum: 1
+    Upload:
+      type: object
+      required: [id, name, media_type, kind, size, received, state]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/UploadId" }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        media_type: { type: string, minLength: 1 }
+        kind: { $ref: "#/components/schemas/UploadKind" }
+        size:
+          description: Its whole size, in bytes, as the app said.
+          type: integer
+          minimum: 1
+        received:
+          description: How many bytes from the start the server has on disk. The next chunk starts here.
+          type: integer
+          minimum: 0
+        state:
+          description: "`receiving` until it's finished; `finished` once it's an attachment."
+          enum: [receiving, finished]
+        expires_at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: "`receiving` only: when the server deletes it if no more arrives."
+        attachment:
+          $ref: "events.schema.json#/$defs/Attachment"
+          description: "`finished` only: the attachment it became."
+    UploadResult:
+      type: object
+      required: [upload]
+      properties:
+        upload: { $ref: "#/components/schemas/Upload" }
+    UploadErrorResult:
+      type: object
+      required: [error, upload]
+      properties:
+        error: { $ref: "events.schema.json#/$defs/Error" }
+        upload: { $ref: "#/components/schemas/Upload" }
+    UploadList:
+      type: object
+      required: [limits, uploads]
+      properties:
+        limits: { $ref: "#/components/schemas/UploadLimits" }
+        uploads:
+          description: The big uploads that haven't finished, oldest first.
+          type: array
+          items: { $ref: "#/components/schemas/Upload" }
+    FinishUpload:
+      type: object
+      properties:
+        sha256:
+          description: The whole file's SHA-256, in lowercase hex, for the server to check.
+          type: string
+          pattern: ^[0-9a-f]{64}$
     Pair:
       type: object
       required: [code, device_name]

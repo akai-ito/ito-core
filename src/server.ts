@@ -37,6 +37,7 @@ import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { createAttachments, type Attachments } from "#attachments/attachments.ts";
+import { createUploads, type Limits as UploadLimits } from "#attachments/uploads.ts";
 import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
 import { createNotifier } from "#notifications/notifier.ts";
 import { openDatabase } from "#store/database.ts";
@@ -111,6 +112,9 @@ export type ServerOptions = {
   readonly createMailSource?: CreateMailSource;
   readonly github?: GitHubHosts;
   readonly backupCheckMs?: number;
+  // The largest big upload of each kind, and the largest chunk; ITO_MAX_RECORDING_MB and ITO_MAX_FILE_MB set them.
+  readonly uploadLimits?: Partial<UploadLimits>;
+  readonly freeBytes?: (directory: string) => number;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts };
@@ -360,6 +364,13 @@ export const createServer = (options: ServerOptions): Server => {
       log,
     }) ?? noVoice("This server runs without a voice.");
   const attachments = createAttachments(store, path.join(options.dataDirectory, "attachments"));
+  const uploads = createUploads({
+    directory: path.join(options.dataDirectory, "uploads"),
+    attachments,
+    clock,
+    ...(options.uploadLimits && { limits: options.uploadLimits }),
+    ...(options.freeBytes && { freeBytes: options.freeBytes }),
+  });
   const turns = createTurns(store, engine, clock, identifiers, log, {
     limits: options.limits ?? defaultLimits,
     attachmentPath: attachments.pathOf,
@@ -626,6 +637,7 @@ export const createServer = (options: ServerOptions): Server => {
     info: { name: options.name, version: packageVersion() },
     gate: createGate(() => [store.setting(tokenSetting) ?? "", ...store.pairedTokenHashes()].filter(Boolean), clock),
     attachments,
+    uploads,
     host,
     memory,
     backup,
@@ -720,6 +732,7 @@ export const createServer = (options: ServerOptions): Server => {
   const compact = (): void => {
     store.compact(toTimestamp(clock.now() - textRetentionMs));
     attachments.sweep(toTimestamp(clock.now() - dayMs));
+    uploads.sweep();
     compaction.set(clock.after(dayMs, compact));
   };
   compact();

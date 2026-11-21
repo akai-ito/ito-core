@@ -265,10 +265,19 @@ node bin/ito.ts logs --since 2026-10-31 --raw # the JSON lines themselves
 Each readable line has the local time, the level, the message and its details. Requests to the
 API only show with `--about requests`.
 
+Photos and files you attach in the chat stay on your server and never go into the Thread, unless
+Kumo keeps a photo with a story. Up to 20 MB goes in one request; anything bigger, such as an hour's
+recording, goes up in chunks that carry on after a dropped connection: recordings up to 1 GB,
+documents such as PDFs up to 100 MB and photos up to 50 MB. To change the first two, set
+`ITO_MAX_RECORDING_MB` or `ITO_MAX_FILE_MB` for the server, such as
+`Environment=ITO_MAX_RECORDING_MB=2048` in its systemd unit. An upload nothing reaches for two days
+is deleted, and so is a finished one no message names after a day.
+
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, the agent's working directory in `workspace`, its memory in
-`thread`, the embedding and voice models in `models`, each capability's own folder in
-`capabilities`, and the log in `logs`.
+`thread`, what you attach in `attachments` (and big uploads on their way in `uploads`), the
+embedding and voice models in `models`, each capability's own folder in `capabilities`, and the log
+in `logs`.
 
 ## What it will do
 

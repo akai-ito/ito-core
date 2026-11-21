@@ -594,7 +594,10 @@ export interface paths {
     };
     /**
      * Fetch an attachment's bytes
-     * @description The bytes, with the media type they were uploaded with. They never change, so keep them once fetched.
+     * @description The bytes, exactly as they were uploaded or made, with their media type and their name in
+     *     `Content-Disposition`. They never change, so keep them once fetched. Ask for part of a big
+     *     file with one `Range: bytes=…` range, such as to play a recording as it downloads or to
+     *     resume a download; the answer is a `206` with `Content-Range`.
      */
     get: operations["getAttachment"];
     /**
@@ -607,6 +610,95 @@ export interface paths {
      */
     put: operations["uploadAttachment"];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/uploads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * See the limits, and the big uploads still going
+     * @description What the server takes, to show before anything is uploaded: the media types and the largest
+     *     size of each kind, the largest chunk, and what happens to a recording. Then the big uploads
+     *     that haven't finished, so an app that was closed mid-upload can carry on from `received`.
+     */
+    get: operations["listUploads"];
+    put?: never;
+    /**
+     * Start a big upload
+     * @description For a file too big for `PUT /v0/attachments/{attachment}` (over 20 MB), such as a recorded
+     *     conversation. Say what's coming: the id the app made, which becomes the attachment's id, the
+     *     file's name, media type and size in bytes. Then send it in chunks with
+     *     `PUT /v0/uploads/{upload}`, in order, and finish with `POST /v0/uploads/{upload}/finish`.
+     *     The finished upload is an attachment like any other: name it in a message.
+     *
+     *     Starting the same upload again changes nothing and answers where it stands, so it's also how
+     *     an app resumes. Only the media types `GET /v0/uploads` lists are taken, each kind up to its
+     *     size. An upload no chunk reaches for two days is deleted.
+     */
+    post: operations["createUpload"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/uploads/{upload}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** See where a big upload stands */
+    get: operations["getUpload"];
+    /**
+     * Send a chunk of a big upload
+     * @description The body is the next bytes of the file, at most `chunk_bytes` (about 8 MB is a good size),
+     *     and `offset` says where they start. The server answers once they're on its disk, with how
+     *     much it now has: show that as the upload's progress, and send the next chunk from there.
+     *
+     *     Sending a chunk again is safe: bytes the server already has are skipped. A chunk that starts
+     *     past what the server has is refused with `offset_mismatch` and the upload as it stands, so
+     *     the app carries on from its `received`.
+     */
+    put: operations["sendUploadChunk"];
+    post?: never;
+    /**
+     * Give up a big upload
+     * @description Deletes what the server has of an unfinished upload. Cancelling one that isn't there changes nothing.
+     */
+    delete: operations["cancelUpload"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/uploads/{upload}/finish": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Finish a big upload
+     * @description Once the server has every byte, this makes the upload an attachment, after checking that its
+     *     first bytes fit its media type (a recording must be audio, a PDF a PDF). Give the file's
+     *     SHA-256 to have the server check it arrived whole; when it doesn't match, the server starts
+     *     the upload over from offset 0 and says so with `checksum_mismatch`. Finishing again answers
+     *     the same attachment.
+     */
+    post: operations["finishUpload"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2358,6 +2450,69 @@ export interface components {
     AttachmentResult: {
       attachment: components["schemas"]["Attachment"];
     };
+    /**
+     * @description `audio` for a recording, `image` for a photo, `file` for a document.
+     * @enum {unknown}
+     */
+    UploadKind: "audio" | "image" | "file";
+    UploadKindLimit: {
+      kind: components["schemas"]["UploadKind"];
+      /** @description The largest file of this kind, in bytes. */
+      max_bytes: number;
+      /** @description The media types of this kind that big uploads take. */
+      media_types: string[];
+    };
+    UploadLimits: {
+      /** @description The largest file `PUT /v0/attachments/{attachment}` takes in one go; anything bigger goes in chunks. */
+      simple_bytes: number;
+      /** @description The most one chunk may hold. */
+      chunk_bytes: number;
+      kinds: components["schemas"]["UploadKindLimit"][];
+    };
+    CreateUpload: {
+      id: components["schemas"]["UploadId"];
+      /** @description The file's name, shown with the message and used in the agent's workspace. */
+      name: string;
+      /** @description Its media type, such as `audio/mp4` for a Voice Memos recording. */
+      media_type: string;
+      /** @description Its whole size, in bytes. */
+      size: number;
+    };
+    Upload: {
+      id: components["schemas"]["UploadId"];
+      name: string;
+      media_type: string;
+      kind: components["schemas"]["UploadKind"];
+      /** @description Its whole size, in bytes, as the app said. */
+      size: number;
+      /** @description How many bytes from the start the server has on disk. The next chunk starts here. */
+      received: number;
+      /**
+       * @description `receiving` until it's finished; `finished` once it's an attachment.
+       * @enum {unknown}
+       */
+      state: "receiving" | "finished";
+      /** @description `receiving` only: when the server deletes it if no more arrives. */
+      expires_at?: components["schemas"]["Timestamp"];
+      /** @description `finished` only: the attachment it became. */
+      attachment?: components["schemas"]["Attachment"];
+    };
+    UploadResult: {
+      upload: components["schemas"]["Upload"];
+    };
+    UploadErrorResult: {
+      error: components["schemas"]["Error"];
+      upload: components["schemas"]["Upload"];
+    };
+    UploadList: {
+      limits: components["schemas"]["UploadLimits"];
+      /** @description The big uploads that haven't finished, oldest first. */
+      uploads: components["schemas"]["Upload"][];
+    };
+    FinishUpload: {
+      /** @description The whole file's SHA-256, in lowercase hex, for the server to check. */
+      sha256?: string;
+    };
     Pair: {
       /** @description The code from the QR code, with or without its dash, in any case. */
       code: string;
@@ -3205,6 +3360,77 @@ export interface components {
         "application/json": components["schemas"]["ErrorResult"];
       };
     };
+    /**
+     * @description The server doesn't take this media type in a big upload, or the file's first bytes don't fit
+     *     the type it was given (`unsupported_type`). The message names what it takes.
+     */
+    UnsupportedType: {
+      headers: {
+        "Ito-Protocol": components["headers"]["ItoProtocol"];
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "error": {
+         *         "code": "unsupported_type",
+         *         "message": "Ito takes recordings as M4A, MP3, WAV, AAC, Ogg/Opus, FLAC, WebM, AMR, Core Audio or AIFF.",
+         *         "detail": "video/quicktime isn't a media type big uploads take."
+         *       }
+         *     }
+         */
+        "application/json": components["schemas"]["ErrorResult"];
+      };
+    };
+    /** @description The server's disk hasn't room for the file (`server_disk_full`). */
+    ServerDiskFull: {
+      headers: {
+        "Ito-Protocol": components["headers"]["ItoProtocol"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["ErrorResult"];
+      };
+    };
+    /**
+     * @description The chunk starts past what the server has (`offset_mismatch`). Send again from the upload's
+     *     `received`.
+     */
+    OffsetMismatch: {
+      headers: {
+        "Ito-Protocol": components["headers"]["ItoProtocol"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["UploadErrorResult"];
+      };
+    };
+    /**
+     * @description The server hasn't every byte yet (`upload_incomplete`). Send the rest from the upload's
+     *     `received`, then finish again.
+     */
+    UploadIncomplete: {
+      headers: {
+        "Ito-Protocol": components["headers"]["ItoProtocol"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["UploadErrorResult"];
+      };
+    };
+    /**
+     * @description The bytes that arrived don't have the SHA-256 the app gave (`checksum_mismatch`). The server
+     *     has started the upload over: send it again from offset 0.
+     */
+    ChecksumMismatch: {
+      headers: {
+        "Ito-Protocol": components["headers"]["ItoProtocol"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["UploadErrorResult"];
+      };
+    };
     /** @description Too many requests, or too many wrong tokens (`slow_down`). */
     SlowDown: {
       headers: {
@@ -3237,6 +3463,8 @@ export interface components {
     Turn: components["schemas"]["TurnId"];
     /** @description The id the app made for what it's uploading. */
     Upload: components["schemas"]["UploadId"];
+    /** @description The id the app made for the big upload, which becomes its attachment's id. */
+    BigUpload: components["schemas"]["UploadId"];
     /** @description The attachment's id, from its message. */
     Attachment: components["schemas"]["AttachmentId"];
     /** @description The ask's id, from `ask.started`. */
@@ -3339,6 +3567,15 @@ export type MotionState = components["schemas"]["MotionState"];
 export type StopResult = components["schemas"]["StopResult"];
 export type RetryResult = components["schemas"]["RetryResult"];
 export type AttachmentResult = components["schemas"]["AttachmentResult"];
+export type UploadKind = components["schemas"]["UploadKind"];
+export type UploadKindLimit = components["schemas"]["UploadKindLimit"];
+export type UploadLimits = components["schemas"]["UploadLimits"];
+export type CreateUpload = components["schemas"]["CreateUpload"];
+export type Upload = components["schemas"]["Upload"];
+export type UploadResult = components["schemas"]["UploadResult"];
+export type UploadErrorResult = components["schemas"]["UploadErrorResult"];
+export type UploadList = components["schemas"]["UploadList"];
+export type FinishUpload = components["schemas"]["FinishUpload"];
 export type Pair = components["schemas"]["Pair"];
 export type PairResult = components["schemas"]["PairResult"];
 export type AskResult = components["schemas"]["AskResult"];
@@ -3429,12 +3666,18 @@ export type ResponsePairingCodeRejected = components["responses"]["PairingCodeRe
 export type ResponseNotFound = components["responses"]["NotFound"];
 export type ResponseIdConflict = components["responses"]["IdConflict"];
 export type ResponseTooLarge = components["responses"]["TooLarge"];
+export type ResponseUnsupportedType = components["responses"]["UnsupportedType"];
+export type ResponseServerDiskFull = components["responses"]["ServerDiskFull"];
+export type ResponseOffsetMismatch = components["responses"]["OffsetMismatch"];
+export type ResponseUploadIncomplete = components["responses"]["UploadIncomplete"];
+export type ResponseChecksumMismatch = components["responses"]["ChecksumMismatch"];
 export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
 export type ParameterCalendarItem = components["parameters"]["CalendarItem"];
 export type ParameterMotion = components["parameters"]["Motion"];
 export type ParameterTurn = components["parameters"]["Turn"];
 export type ParameterUpload = components["parameters"]["Upload"];
+export type ParameterBigUpload = components["parameters"]["BigUpload"];
 export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
 export type ParameterDevice = components["parameters"]["Device"];
@@ -4326,7 +4569,10 @@ export interface operations {
   getAttachment: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        /** @description One byte range, such as `bytes=0-1048575` or `bytes=1048576-`. */
+        Range?: string;
+      };
       path: {
         /** @description The attachment's id, from its message. */
         attachment: components["parameters"]["Attachment"];
@@ -4339,6 +4585,20 @@ export interface operations {
       200: {
         headers: {
           "Ito-Protocol": components["headers"]["ItoProtocol"];
+          /** @description Always `bytes`. */
+          "Accept-Ranges"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": unknown;
+        };
+      };
+      /** @description The part of the file the range asked for. */
+      206: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          /** @description Which bytes these are, such as `bytes 0-1048575/52428800`. */
+          "Content-Range"?: string;
           [name: string]: unknown;
         };
         content: {
@@ -4348,6 +4608,16 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+      /** @description The range is past the end of the file; `Content-Range` gives its size as `bytes *\/size`. */
+      416: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          /** @description The file's size, such as `bytes *\/52428800`. */
+          "Content-Range"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
       429: components["responses"]["SlowDown"];
     };
   };
@@ -4394,6 +4664,213 @@ export interface operations {
       401: components["responses"]["TokenRejected"];
       409: components["responses"]["IdConflict"];
       413: components["responses"]["TooLarge"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  listUploads: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The limits and the unfinished uploads. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UploadList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  createUpload: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "id": "6f1c1f4e-9b7a-4c52-8f0e-2b6d1f0a9c31",
+         *       "name": "Interview with Northwind.m4a",
+         *       "media_type": "audio/mp4",
+         *       "size": 96468992
+         *     }
+         */
+        "application/json": components["schemas"]["CreateUpload"];
+      };
+    };
+    responses: {
+      /** @description Already started, or finished; this is where it stands. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UploadResult"];
+        };
+      };
+      /** @description Started; send the first chunk at offset 0. */
+      201: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UploadResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      409: components["responses"]["IdConflict"];
+      413: components["responses"]["TooLarge"];
+      415: components["responses"]["UnsupportedType"];
+      429: components["responses"]["SlowDown"];
+      507: components["responses"]["ServerDiskFull"];
+    };
+  };
+  getUpload: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The id the app made for the big upload, which becomes its attachment's id. */
+        upload: components["parameters"]["BigUpload"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description How much the server has, or the attachment it became. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UploadResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  sendUploadChunk: {
+    parameters: {
+      query: {
+        /** @description Where in the file this chunk starts, in bytes. */
+        offset: number;
+      };
+      header?: never;
+      path: {
+        /** @description The id the app made for the big upload, which becomes its attachment's id. */
+        upload: components["parameters"]["BigUpload"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/octet-stream": unknown;
+      };
+    };
+    responses: {
+      /** @description On disk. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UploadResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["OffsetMismatch"];
+      413: components["responses"]["TooLarge"];
+      429: components["responses"]["SlowDown"];
+      507: components["responses"]["ServerDiskFull"];
+    };
+  };
+  cancelUpload: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The id the app made for the big upload, which becomes its attachment's id. */
+        upload: components["parameters"]["BigUpload"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Gone. */
+      204: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components["responses"]["TokenRejected"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  finishUpload: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The id the app made for the big upload, which becomes its attachment's id. */
+        upload: components["parameters"]["BigUpload"];
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["FinishUpload"];
+      };
+    };
+    responses: {
+      /** @description Already finished; this is its attachment. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AttachmentResult"];
+        };
+      };
+      /** @description The attachment it became. */
+      201: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AttachmentResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["UploadIncomplete"];
+      415: components["responses"]["UnsupportedType"];
+      422: components["responses"]["ChecksumMismatch"];
       429: components["responses"]["SlowDown"];
     };
   };

@@ -45,6 +45,8 @@ sequenceDiagram
   once the message is on disk; what it does next arrives on the stream.
 - **Stop** a turn, or **try again** after one failed, with commands addressed to the turn.
 - **Attach** photos and files: upload each under an id the app makes, then name them in a message.
+  Anything over 20 MB, such as a recording, goes up in chunks that resume after any drop; `GET
+  /v0/uploads` says what the server takes, and how big, before anything is sent.
 - **Pair** a new app with the short-lived code in the QR code `ito pair` shows, for a token of its
   own.
 - **Answer** what the agent asks by sending a message, or cancel the ask. Asking ends the agent's

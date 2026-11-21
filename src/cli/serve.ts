@@ -18,6 +18,7 @@ import { fail, ok, type Result } from "#result.ts";
 import { createServer, type EngineContext, type ServerOptions } from "#server.ts";
 import { createLocalEmbedder, wordEmbedder } from "#memory/embedder.ts";
 import { createSidecarVoice, voiceDirectory, voiceModels } from "#voice/sidecar.ts";
+import { limitsFrom } from "#attachments/uploads.ts";
 
 export const defaultPort = 8787;
 
@@ -97,6 +98,11 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
     return 1;
   }
   const { engine, port, name, onboarding } = parsed.value;
+  const uploadLimits = limitsFrom(io.environment);
+  if (!uploadLimits.ok) {
+    io.printError(uploadLimits.failure);
+    return 1;
+  }
   const paths = toPaths(io.environment);
   const logFile = createLogFile({
     directory: logDirectory(paths.home),
@@ -112,6 +118,7 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
     dataDirectory: paths.home,
     createEngine: toEngineFactory(engine, paths),
     name,
+    uploadLimits: uploadLimits.value,
     capabilities: engine === "demo" ? demoInstalled : installed,
     ...(engine === "demo" && { fetch: withDemoPictures(fetch) }),
     logger: {
