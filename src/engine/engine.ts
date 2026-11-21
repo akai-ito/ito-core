@@ -2,7 +2,12 @@ import type { MessageId, TurnId } from "#conversation/ids.ts";
 import type { Ask, ModelChoice, ModelOption, Step, StepKind } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 
-export type InputAttachment = { readonly kind: "image" | "file"; readonly name: string; readonly source: string };
+// A recording can be large (up to a gigabyte), so it stays where the server keeps it, out of the workspace.
+export type InputAttachment = {
+  readonly kind: "image" | "audio" | "file";
+  readonly name: string;
+  readonly source: string;
+};
 
 export type Input = {
   readonly messageId: MessageId;

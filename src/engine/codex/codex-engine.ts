@@ -1,4 +1,4 @@
-import { constants, copyFileSync, lstatSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, constants, copyFileSync, lstatSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import path from "node:path";
 import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
@@ -122,13 +122,31 @@ const maxExtensionBytes = 16;
 
 type Placed = InputAttachment & { readonly path: string; readonly relative?: string };
 
+const chunkBytes = 64 * 1024;
+
+// Whether two files hold the same bytes, read a chunk at a time, so a large file never sits in memory whole.
+const isSameContent = (source: string, target: string): boolean => {
+  const left = openSync(source, "r");
+  const right = openSync(target, "r");
+  try {
+    const leftChunk = Buffer.alloc(chunkBytes);
+    const rightChunk = Buffer.alloc(chunkBytes);
+    const compareFrom = (offset: number): boolean => {
+      const read = readSync(left, leftChunk, 0, chunkBytes, offset);
+      if (read === 0) return true;
+      if (readSync(right, rightChunk, 0, chunkBytes, offset) !== read) return false;
+      return leftChunk.subarray(0, read).equals(rightChunk.subarray(0, read)) && compareFrom(offset + read);
+    };
+    return compareFrom(0);
+  } finally {
+    closeSync(left);
+    closeSync(right);
+  }
+};
+
 const isSameFile = (source: string, target: string): boolean => {
   const found = lstatSync(target, { throwIfNoEntry: false });
-  return (
-    found?.isFile() === true &&
-    found.size === statSync(source).size &&
-    readFileSync(source).equals(readFileSync(target))
-  );
+  return found?.isFile() === true && found.size === statSync(source).size && isSameContent(source, target);
 };
 
 const placeName = (
@@ -174,7 +192,11 @@ const place = (folder: string, attachment: InputAttachment, log: Log): Placed =>
     mkdirSync(folder, { recursive: true });
     if (!lstatSync(folder).isDirectory()) throw new Error(`${folder} isn't a folder`);
     const { name, isThere } = placeName(folder, attachment.source, safeName(attachment.name));
-    if (!isThere) copyFileSync(attachment.source, path.join(folder, name), constants.COPYFILE_EXCL);
+    // A copy-on-write clone where the disk can make one, so a large file costs nothing; a plain copy elsewhere. Never
+    // a link: Kumo may change its copy, and the attachment must stay as it was sent.
+    if (!isThere) {
+      copyFileSync(attachment.source, path.join(folder, name), constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+    }
     return { ...attachment, path: path.join(folder, name), relative: `${uploadsFolder}/${name}` };
   } catch (error) {
     log(`Couldn't save ${attachment.name} in the workspace, so the agent is told it's missing`, error);
@@ -183,12 +205,17 @@ const place = (folder: string, attachment: InputAttachment, log: Log): Placed =>
 };
 
 const toUserInputs = (workspace: string, { text, attachments = [] }: Input, log: Log): readonly UserInput[] => {
-  const placed = attachments.map((attachment) => place(path.join(workspace, uploadsFolder), attachment, log));
+  const recordings = attachments.filter(({ kind }) => kind === "audio").map(({ name }) => safeName(name));
+  const placed = attachments
+    .filter(({ kind }) => kind !== "audio")
+    .map((attachment) => place(path.join(workspace, uploadsFolder), attachment, log));
   const saved = placed.flatMap((attachment) => attachment.relative ?? []);
   const unsaved = placed.filter((attachment) => attachment.relative === undefined).map(({ name }) => name);
   const notes = [
     saved.length > 0 && `(Attached, and saved in your workspace: ${saved.join(", ")})`,
     unsaved.length > 0 && `(Attached, but it couldn't be saved in your workspace: ${unsaved.join(", ")})`,
+    recordings.length > 0 &&
+      `(Recordings attached, kept on Ito rather than in your workspace: ${recordings.join(", ")})`,
   ];
   return [
     { type: "text", text: [text, ...notes].filter(Boolean).join("\n\n"), text_elements: [] },

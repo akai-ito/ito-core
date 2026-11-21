@@ -320,6 +320,19 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(currentModel().userTexts().at(-1)).toContain("uploads/riverside.jpg, uploads/running-log.csv");
   });
 
+  it("keeps a recording out of the workspace, saying it came", async () => {
+    const recording = {
+      kind: "audio" as const,
+      name: "debrief.m4a",
+      source: path.join(fixtureDirectory, "running-log.csv"),
+    };
+    expect(await sendAttachments([recording])).toEqual({ type: "ended" });
+    expect(existsSync(path.join(workspace, "uploads", "debrief.m4a"))).toBe(false);
+    expect(currentModel().userTexts().at(-1)).toContain(
+      "(Recordings attached, kept on Ito rather than in your workspace: debrief.m4a)",
+    );
+  });
+
   it("fits a long name, steps around a planted link, and says when it can't save an attachment", async () => {
     const uploads = path.join(workspace, "uploads");
     const log = path.join(fixtureDirectory, "running-log.csv");
