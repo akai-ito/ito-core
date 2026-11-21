@@ -14,7 +14,7 @@ export type PdfReading = {
   readonly pages: number;
   // The words on each page read, in order, up to the first so many pages.
   readonly texts: readonly string[];
-  // Pages with too few words to stand on their own, drawn as PNGs.
+  // Pages with too few words to stand on their own, drawn as PNG pictures.
   readonly drawn: readonly { readonly page: number; readonly png: Buffer }[];
 };
 
