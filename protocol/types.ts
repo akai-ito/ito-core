@@ -2873,22 +2873,30 @@ export interface components {
       /** @description What it stands on, newest first, the latest ten. */
       evidence: components["schemas"]["TrackEvidence"][];
     };
-    /** @description A thing in motion: something going on that Ari keeps for you, such as a trip being planned. Its content and state come from `GET /v0/motion/{id}`. */
+    /** @description A thing in motion: something going on that Kumo keeps for you, such as a trip being planned or a role you're interviewing for. Its content and state come from `GET /v0/motion/{id}`. */
     Motion: {
       id: components["schemas"]["MotionId"];
       /**
-       * @description Which widget draws it. Show a plain card, with its title and summary, for a kind you don't recognise.
+       * @description Which widget draws it, and which section of In motion it sits in: `career`, `body`, `trip`, `project`, `learning` or `other`, always in that order. 0.18's `training` sits in Body, `pursuit` in Career, and `occasion` and `case` in Other until Kumo reshapes them. Show a kind you don't recognise as a plain card in Other.
        * @example trip
        */
       kind: string;
       /** @description Short, such as "Florence with Mira": Ari keeps it to 28 characters or fewer. */
       title: string;
-      /** @description Where it stands, in one line, for the pinned line and the In motion tab, such as "6–9 Nov · 3 to book". Ari keeps it current with every change. */
+      /** @description Kumo's line for you: where it stands, short, such as "Virtual 1 · Python PR review" or "6–9 Nov · 3 to book". Kumo keeps it current with every change, and keeps sources, guesses and ids out of it, in the content's notes. Once it's finished, it says how it ended, such as "No offer after the final round". */
       summary: string;
-      /** @enum {unknown} */
+      /**
+       * @description `done` once Kumo stops keeping it: tracking ended, which isn't the same as achieving it. `outcome` says how it ended.
+       * @enum {unknown}
+       */
       status: "active" | "done";
       /** @description Whether it's pinned above the composer. Ari pins a thing it starts, unpins it when it's done or when you ask, and pins it again when you ask. */
       pinned: boolean;
+      /**
+       * @description How much it matters to you now, by Kumo's judgement of the stakes, the timing and what you've said, never by its stage or date: `loud` is big and carries the picture in its section, `normal` is a row, and `quiet` folds into "+ N quieter". You correct it by telling Kumo. Show a value you don't recognise as `normal`.
+       * @enum {unknown}
+       */
+      salience: "loud" | "normal" | "quiet";
       /** @description The content's cover photo, for the card. Absent when it has none. */
       cover?: components["schemas"]["AttachmentId"];
       /** @description How many times it has changed, counting its start as 1. */
@@ -2897,6 +2905,13 @@ export interface components {
       changed_at: components["schemas"]["Timestamp"];
       /** @description When it was finished. Absent while it's active. */
       done_at?: components["schemas"]["Timestamp"];
+      /**
+       * @description How it ended, once it's done: `achieved`; `not_met`, a goal missed; `let_go`, stopped by choice; `merged` into another thing; or one never to show, kept only to recover: `duplicate`, a copy of another thing, `test`, and `elsewhere`, small admin that lives on the Desk and in Kumo's plans now. Absent for a thing finished before 0.19 until Kumo gives it one: show it as ended, never as achieved. Show a value you don't recognise as ended.
+       * @enum {unknown}
+       */
+      outcome?: "achieved" | "not_met" | "let_go" | "merged" | "duplicate" | "test" | "elsewhere";
+      /** @description For `merged` and `duplicate`: the thing it went into, to open. */
+      merged_into?: components["schemas"]["MotionId"];
       /** @description The position of your message Ari was answering when it started the thing. */
       position: components["schemas"]["Position"];
     };

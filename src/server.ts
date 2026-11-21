@@ -166,7 +166,7 @@ export const icloudContacts = (values: Values): ContactsSource =>
 const motionSkill: OwnSkill = {
   id: "things-in-motion",
   summary:
-    "starting and keeping things in motion, such as a trip, a job search, a dinner or a refund, and finding photos",
+    "starting, keeping and honestly ending things in motion, such as a role, a training block or a trip, and finding photos",
   text: readFileSync(new URL("../agent/motion.md", import.meta.url), "utf8"),
 };
 

@@ -214,6 +214,7 @@ const startTrip: Act["act"] = async (callTool) => {
     kind: "trip",
     title: "Florence with Mira",
     summary: "6–9 Nov · 4 to book",
+    salience: "loud",
     content: florenceTrip(Object.fromEntries(kept) as FlorencePictures),
     note: "Started the trip",
   });
@@ -222,9 +223,10 @@ const startTrip: Act["act"] = async (callTool) => {
 const startTraining: Act["act"] = async (callTool) => {
   await callTool("start_motion", {
     id: sub20Id,
-    kind: "training",
+    kind: "body",
     title: "Sub-20 5K",
     summary: "Week 6 of 10 · intervals today",
+    salience: "normal",
     content: sub20Training,
     note: "Started the block",
   });

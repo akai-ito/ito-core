@@ -244,4 +244,30 @@ export const migrations: readonly string[] = [
     position INTEGER NOT NULL,
     body TEXT NOT NULL
   );`,
+  // In motion, rethought: every thing has a salience, normal until Kumo judges it, and a thing already ended keeps no
+  // outcome, so it shows as ended, never as achieved. Where there's anything in motion, a one-off wake-up a few
+  // minutes on has Kumo tidy it into the new kinds and tell them what it did.
+  `UPDATE motions SET body = json_set(body, '$.salience', 'normal') WHERE json_extract(body, '$.salience') IS NULL;
+  UPDATE events SET body = json_set(body, '$.motion.salience', 'normal')
+    WHERE type IN ('motion.started', 'motion.changed', 'motion.finished')
+    AND json_extract(body, '$.motion.salience') IS NULL;
+  INSERT INTO wake_ups (id, at, body)
+  SELECT id, at, json_object(
+    'id', id,
+    'at', at,
+    'what', 'Tidy In motion into its new shapes',
+    'why', 'In motion changed shape with Ito 0.19. Follow "Tidying from 0.18" in the Things in motion skill: ' ||
+      'reshape what fits, make the job search one pipeline of roles, end what''s over with an honest outcome and ' ||
+      'story, hide duplicates and tests, move small admin to the Desk and your plans, and judge how loud each ' ||
+      'thing is. Then tell them with post what you did, in a short message: this is worth their attention.',
+    'by', 'kumo',
+    'source', json(json_object('kind', 'chat', 'title', 'Ito 0.19: In motion, rethought')),
+    'set_at', set_at
+  )
+  FROM (
+    SELECT 'w_motion_0_19' AS id,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+5 minutes') AS at,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AS set_at
+  )
+  WHERE EXISTS (SELECT 1 FROM motions);`,
 ];
