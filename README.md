@@ -99,7 +99,7 @@ puts a sample draft on the Desk, *plan* lays out a sample day, *approve* asks fo
 ## How it fits together
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph phone["iPhone"]
     app["Ito app<br/>ari-ios: SwiftUI and AriKit"]
   end
