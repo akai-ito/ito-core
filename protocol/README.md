@@ -7,7 +7,7 @@
 | [openapi.yaml](openapi.yaml) | The commands, as OpenAPI 3.1 |
 | [events.schema.json](events.schema.json) | Every event on the stream, as JSON Schema |
 | [push.schema.json](push.schema.json) | What a push notification carries, encrypted and decrypted |
-| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: places, choices, pictures, things in motion and files to look at |
+| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: places, choices, pictures, things in motion, files to look at and changes to approve, and what your taps on them send |
 | [motion.schema.json](motion.schema.json) | What a thing in motion holds, for each kind, and the changes Ari makes to it |
 | [stream.schema.json](stream.schema.json) | The frames on a call's stream, both ways |
 | [guarantees.md](guarantees.md) | What the server and the protocol promise |

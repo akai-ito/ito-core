@@ -195,10 +195,12 @@ export const createRecordings = (options: RecordingsOptions): Recordings => {
       "Read it with read_recording before you say anything about it: use from to read on, and find for a topic.",
       "Then message them once with post; longer than usual is right here. Say what it was in a line, then what",
       "they'd want from it: for an interview or a meeting, a debrief of how it went, what landed, what to improve and",
-      "the follow-ups it implies. Quote the transcript with its times for what was said, and keep your reading",
-      "separate and marked as yours. Voices are told apart by a best guess, so say so where it matters.",
-      "Propose, don't do: end with the actions and memory updates you suggest, and ask which to keep. Don't write",
-      "memory, start or change things in motion, add cards or set wake-ups from it until they answer.",
+      "the follow-ups it implies. Your take comes first. Quote the transcript with its times for what was said, each",
+      `time a link that opens the transcript there, such as [18:42](recording:${recording.attachment}?t=18:42), and`,
+      "keep your reading separate and marked as yours. Voices are told apart by a best guess, so say so where it matters.",
+      "Propose, don't do: end with the actions and memory updates you suggest as one ari:proposals block, a row each,",
+      "and make none of them until they tap one. Don't write memory, start or change things in motion, add cards or",
+      "set wake-ups from it until they do.",
       "End with one line saying what you posted.",
     ].join("\n");
   };

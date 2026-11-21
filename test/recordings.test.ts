@@ -170,6 +170,8 @@ describe("recordings", () => {
     expect(prompt).toContain(`A recording they sent is transcribed: Interview.m4a (${id}), 62 seconds long`);
     expect(prompt).toContain('sent with the words: "How did my interview go?"');
     expect(prompt).toContain("Propose, don't do");
+    expect(prompt).toContain("as one ari:proposals block");
+    expect(prompt).toContain(`[18:42](recording:${id}?t=18:42)`);
     const listed = await call(server, "GET", "/v0/recordings");
     expect(listed.json<{ recordings: Recording[] }>().recordings.map(({ attachment }) => attachment)).toEqual([id]);
   });
