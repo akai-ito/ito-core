@@ -37,7 +37,7 @@ where the protocol has to make it possible, marked *App*.
 | G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
 | G28 | **An app asks before it acts.** When an app's action, or a capability's such as filing a report, needs your approval, it waits inside the running turn, which carries on once you answer. An approval that would send your pictures out shows them. Your next message answers it: Allow, or a plain yes, lets it run; anything else doesn't, and your words reach the agent. Stop cancels it. | 17, 53, 54, 55 |
 | G29 | **Topics mark where the subject changed.** When you change the subject, Ito puts a label of a few plain words on the message that changed it, just after the turn, typed or spoken, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
-| G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
+| G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60, 90, 91 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Ari can't start or change a trip without a cover, a photo for every place and every stop at its place, or any thing with a title over 28 characters. Forgetting a thing asks you first. | 62, 63, 64 |
 | G33 | **The Desk is home.** Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail come whole in the snapshot and in every change, so an app never pieces it together. | 65, 74, 78, 79, 84 |
 | G34 | **Waiting on you stays until it's done.** A card waits whatever the date, shows when the box is acting on your answer, and leaves only when that's done. | 65, 67 |
@@ -57,6 +57,7 @@ where the protocol has to make it possible, marked *App*.
 | G54 | **Kumo goes where you go.** The phone says its time zone and, roughly, where it is; the box keeps only the latest, rounded to about 10 km. Kumo lives by that time zone: a repeating wake-up comes back at its time there, and moving zones wakes Kumo to move what should follow you. | 83 |
 | G55 | **The weather around you, never invented.** With a rough place, the Desk carries the temperature, the conditions and today's sunset there, read on the box and refreshed about every half hour. Without a place, or without a recent reading, there's no weather at all. | 83 |
 | G56 | **A line and a face, by judgement.** Kumo may put a short line at the top of the Desk with its mood, and changes them when the moment changes. Neither ever notifies. | 84 |
+| G57 | **Pages Kumo makes stay current, and your ticks are yours.** A rich, lasting answer can come as a page Kumo made: a card in the reply that opens it, and a place on the Made shelf. Kumo makes a page whole, with pictures it kept and blocks the app draws, then changes it only from the version it read, with a note that says what changed; a change never notifies. Your ticks carry when you ticked, every app hears them, and a change that drops an item lets its tick go. Forgetting a page asks you first. | 91 |
 
 ## How Kumo decides to speak
 
@@ -555,6 +556,23 @@ When Kumo's model can't act, nothing stands in for it (G52).
 
 - Kumo sets its line and mood together, and changes them when the moment does; the Desk carries
   them as `line`, and nothing notifies. (G56, G33)
+
+### 90 · [A reply that shows](transcripts/90-a-reply-that-shows.jsonl)
+
+- Where an answer has shape, Ari writes it as blocks: a table that fits a phone with its verdict on
+  each row as a chip, its picks in order each with a picture, a price and a line, the number that
+  matters, and choices to tap. Every picture is one it kept on the server. (G31)
+- A name linked to a page in memory, `[Maya](memory:people/maya-lind)`, opens a small card about her.
+
+### 91 · [A page Kumo made](transcripts/91-a-page-kumo-made.jsonl)
+
+- Ari makes a page with `make_made_page`, whole, and every app hears `made.created`; the reply shows
+  it as an `ari:made` card. (G57)
+- Opening it fetches its content, your ticks and what changed from `GET /v0/made/{made}`. (G57)
+- Ari changes it from the version it read, with a note, and every app hears `made.changed`; no
+  message comes with it. (G57)
+- A tick carries when you ticked, and every app hears the whole state in `made.state`. (G57)
+- The Made shelf comes from `GET /v0/made`, most recently changed first. (G57)
 
 ## Not in this version
 

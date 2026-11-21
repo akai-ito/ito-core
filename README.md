@@ -165,6 +165,14 @@ a correction, and Kumo sees what you changed when it next looks at your day. Kum
 short line and its mood at the top of the Desk, such as how something's going, and it changes them
 when the moment changes.
 
+Replies show what has a shape: a menu as a table that fits a phone, with Kumo's verdict on each
+dish as a chip, then its picks with pictures and the total; places, events, drafts and Desk
+questions as cards with their buttons (a draft opens in Mail, never sends); names you can tap for
+who someone is. A rich answer worth keeping, such as a gallery guide, becomes a page Kumo made: a
+card in the reply and a place on the Made shelf, with sections that fold and things to tick. Kumo
+keeps a page current and says what changed. Pages live in the box's database, not in memory: they
+are things Kumo made for you, not what it knows about you.
+
 Ari tells the box its time zone and, if you allow it, roughly where you are; the box keeps only the
 latest, rounded to about 10 km. Kumo lives by that time zone, so a weekday-morning wake-up comes at
 9 wherever you are, and a new zone wakes Kumo to move what should follow you. With a place, the Desk

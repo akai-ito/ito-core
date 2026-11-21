@@ -325,6 +325,19 @@ const pageBody = (
   markdown: page.markdown,
 });
 
+// One room of a gallery guide: its things to spot, each with where to look.
+const guideRoom = (
+  id: string,
+  title: string,
+  detail: string,
+  items: readonly (readonly [string, string, string])[],
+) => ({
+  id,
+  title,
+  detail,
+  items: items.map(([item, name, where]) => ({ id: item, title: name, detail: where })),
+});
+
 const memoryCall = (transcript: Transcript, path: string, answer: unknown): void => {
   transcript.request("GET", path);
   transcript.wait(50);
@@ -4312,6 +4325,268 @@ const scenarios: readonly (() => Transcript)[] = [
     const done = { text: "The Northwind deck is done, a day early.", mood: "proud" };
     transcript.world("agent_calls", { tool: "set_desk_line", input: done });
     transcript.deskLine({ ...done, at: "2026-11-12T12:30:01.000Z" });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "90-a-reply-that-shows",
+      scenario: 90,
+      title: "A reply that shows",
+      summary:
+        "You ask what to order at a restaurant. Kumo answers with shape: a phone-sized table of the menu with its " +
+        "verdict on each dish as a chip, its picks in order with a picture, a price and a line each, the total for " +
+        "two, and a question with choices. A friend's name links to her page in memory.",
+      guarantees: ["G31"],
+    });
+    transcript.begin("2026-11-21T12:40:00.000Z");
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "What should we get at Hearth? Two of us, not too heavy.");
+    transcript.wait(600);
+    const dishes = [
+      ["noodles", "Clay pot glass noodles"],
+      ["laab", "Langoustine laab"],
+      ["skewers", "Lamb skewers"],
+      ["greens", "Wild ginger greens"],
+      ["rice", "Sticky rice"],
+    ] as const;
+    const pictures = dishes.map(([name, dish]) => {
+      const url = `https://photos.example.org/hearth-${name}.jpg`;
+      transcript.world("web_has", { url, file: "riverside.jpg" });
+      const attachment = transcript.keptImage("riverside.jpg", `hearth-${name}.jpg`);
+      agentCalls(transcript, "keep_image", { url }, { attachment });
+      transcript.wait(300);
+      return {
+        attachment,
+        alt: dish,
+        source_url: `https://commons.example.org/wiki/File:${name}.jpg`,
+        credit: "Photo by J. Example, CC BY 4.0",
+      };
+    });
+    const [noodles, laab, skewers, greens, rice] = pictures;
+    writeWhole(
+      transcript,
+      [
+        "Good menu. It's northern Thai, cooked over wood, all small plates to share: four or five between two, " +
+          "plus rice.",
+        "",
+        "```ari:table",
+        JSON.stringify({
+          columns: ["Dish", "My take"],
+          rows: [
+            {
+              name: "Clay pot glass noodles",
+              detail: "Pork belly, brown crab, white pepper",
+              verdict: { label: "Must try", tone: "strong" },
+            },
+            {
+              name: "Langoustine laab",
+              detail: "Minced, toasted rice, herbs, lime",
+              verdict: { label: "Must try", tone: "strong" },
+            },
+            {
+              name: "Lamb & cumin skewers",
+              detail: "Aged lamb, charred over wood",
+              verdict: { label: "Recommended", tone: "good" },
+            },
+            {
+              name: "Jungle curry",
+              detail: "Pork, fiery, no coconut",
+              verdict: { label: "If you like heat", tone: "quiet" },
+            },
+            {
+              name: "Isaan sausage",
+              detail: "Fermented pork, ginger, peanut",
+              verdict: { label: "Skip today", tone: "quiet" },
+            },
+            { name: "Sticky rice", detail: "Steamed in a basket", verdict: { label: "Best value", tone: "neutral" } },
+          ],
+        }),
+        "```",
+        "",
+        "```ari:picks",
+        JSON.stringify({
+          title: "What I'd order",
+          picks: [
+            {
+              name: "Clay pot glass noodles",
+              detail: "£9.50",
+              why: "What people come for: smoky, peppery, crab all through it.",
+              image: noodles,
+            },
+            {
+              name: "Langoustine laab",
+              detail: "£11",
+              why: "Bright and sharp, so it cuts the richness of the noodles.",
+              image: laab,
+            },
+            {
+              name: "Lamb skewers",
+              detail: "£8",
+              why: "Two skewers, easy to split, properly charred.",
+              image: skewers,
+            },
+            {
+              name: "Wild ginger greens",
+              detail: "£6.50",
+              why: "Something green, since you said not too heavy.",
+              image: greens,
+            },
+            {
+              name: "Sticky rice × 2",
+              detail: "£7",
+              why: "For the laab's juices. You'll want the second.",
+              image: rice,
+            },
+          ],
+        }),
+        "```",
+        "",
+        "```ari:number",
+        JSON.stringify({
+          label: "Estimated for two",
+          value: "£47",
+          context: "Five plates and rice. £53 with the 12.5% service.",
+        }),
+        "```",
+        "",
+        "Want a drink matched to it, or is that the lot?",
+        "",
+        "```ari:choices",
+        JSON.stringify({ options: ["Add drinks", "Lighter swap", "That's the lot"] }),
+        "```",
+      ].join("\n"),
+    );
+    transcript.endTurn("completed");
+    transcript.wait(1500);
+    transcript.fetchAttachment(noodles?.attachment ?? "");
+    transcript.wait(30_000);
+    sendAndStart(transcript, "That's the lot");
+    transcript.wait(700);
+    writeWhole(transcript, "Enjoy. Say hi to [Maya](memory:people/maya-lind).");
+    transcript.endTurn("completed");
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "91-a-page-kumo-made",
+      scenario: 91,
+      title: "A page Kumo made",
+      summary:
+        "You ask what not to miss at a museum. Kumo makes a page, a guide in walking order with things to spot, and " +
+        "answers in a few sentences with a card that opens it. You open it. The next morning Kumo keeps it current: " +
+        "a room reopened, so it's back in, with a note that says so. At the museum you tick things off as you spot " +
+        "them, and the Made shelf lists the page.",
+      guarantees: ["G31", "G57"],
+    });
+    transcript.begin("2026-11-21T18:10:00.000Z");
+    transcript.connect();
+    transcript.wait(2000);
+    sendAndStart(transcript, "We're at the V&A tomorrow for two hours. What shouldn't I miss?");
+    transcript.wait(800);
+    transcript.step("web_search", searching("V&A highlights two hours"));
+    transcript.wait(1500);
+    transcript.endStep();
+    const keep = (name: string, alt: string) => {
+      const url = `https://photos.example.org/${name}.jpg`;
+      transcript.world("web_has", { url, file: "riverside.jpg" });
+      const attachment = transcript.keptImage("riverside.jpg", `${name}.jpg`);
+      agentCalls(transcript, "keep_image", { url }, { attachment });
+      transcript.wait(300);
+      return {
+        attachment,
+        alt,
+        source_url: `https://commons.example.org/wiki/File:${name}.jpg`,
+        credit: "Photo by A. Example, CC BY-SA 4.0",
+      };
+    };
+    const cover = keep("va-dome", "The V&A's dome over Cromwell Road");
+    const casts = keep("cast-courts", "The Cast Courts, with Trajan's Column in two halves");
+    const castCourts = {
+      ...guideRoom("cast-courts", "Cast Courts", "Room 46a–b · 25 min", [
+        ["trajans-column", "Trajan's Column", "Cut in two to fit under the roof. Find the join."],
+        ["fig-leaf", "David's fig leaf", "Not on him: it hangs in a case behind, made for royal visits."],
+      ]),
+      image: casts,
+      text: "Plaster copies of Europe's great monuments, made so people who couldn't travel could still stand in front of them.",
+    };
+    const southAsia = guideRoom("south-asia", "South Asia", "Room 41 · 20 min", [
+      ["tipus-tiger", "Tipu's Tiger", "A wooden tiger with an organ inside. It growls."],
+    ]);
+    const fashion = guideRoom("fashion", "Fashion", "Room 40 · 20 min", [
+      ["mantua", "The silk mantua", "A court dress so wide you went through doors sideways."],
+    ]);
+    const halfway = {
+      id: "halfway",
+      title: "Halfway",
+      numbered: false,
+      text: [
+        "```ari:place",
+        JSON.stringify({
+          name: "The Morris Room",
+          address: "V&A, Cromwell Road, London",
+          note: "the first museum café",
+        }),
+        "```",
+      ].join("\n"),
+    };
+    const intro = "Two hours, three rooms, in walking order from the Cromwell Road door. Coffee halfway.";
+    const first = { intro, check: "Spotted", sections: [castCourts, southAsia, fashion, halfway] };
+    const page = {
+      id: "va-guide",
+      title: "Your guide to the V&A",
+      summary: "3 rooms · 4 things to spot",
+      cover,
+      for_day: "2026-11-22",
+    };
+    agentCalls(transcript, "make_made_page", { ...page, content: first }, { made: "va-guide", version: 1 });
+    const made = transcript.made("created", { ...page, version: 1 }, "Made it");
+    transcript.wait(500);
+    writeWhole(
+      transcript,
+      [
+        "Two hours is three rooms if you skip the paid show. I've made you a guide, in walking order from the " +
+          "Cromwell Road door, with things to spot in each.",
+        "",
+        "```ari:made",
+        JSON.stringify({ made: "va-guide" }),
+        "```",
+      ].join("\n"),
+    );
+    transcript.endTurn("completed");
+    transcript.wait(4000);
+    memoryCall(transcript, "/v0/made/va-guide", { made: made.made, content: first, state: {}, changes: [made.change] });
+    transcript.wait(14 * 60 * 60 * 1000);
+    const cartoons = {
+      ...guideRoom("raphael-cartoons", "Raphael Cartoons", "Room 48a · 15 min", [
+        ["miraculous-draught", "The Miraculous Draught of Fishes", "Look for the cranes on the shore."],
+      ]),
+      badge: "Back in",
+    };
+    const second = { intro, check: "Spotted", sections: [castCourts, southAsia, cartoons, fashion, halfway] };
+    const note = "The Raphael Cartoons reopened this morning, so they're back in.";
+    agentCalls(
+      transcript,
+      "change_made_page",
+      { id: "va-guide", version: 1, summary: "4 rooms · 5 things to spot", content: second, note },
+      { made: "va-guide", version: 2 },
+    );
+    const changed = transcript.made("changed", { ...page, summary: "4 rooms · 5 things to spot", version: 2 }, note);
+    transcript.wait(6 * 60 * 60 * 1000 + 22 * 60 * 1000);
+    transcript.patchMade("va-guide", { ticks: { "trajans-column": "2026-11-22T14:32:00.000Z" } });
+    transcript.wait(6 * 60 * 1000);
+    const state = transcript.patchMade("va-guide", { ticks: { "fig-leaf": "2026-11-22T14:38:00.000Z" } });
+    transcript.wait(1000);
+    memoryCall(transcript, "/v0/made/va-guide", {
+      made: changed.made,
+      content: second,
+      state,
+      changes: [changed.change, made.change],
+    });
+    transcript.wait(60 * 60 * 1000);
+    memoryCall(transcript, "/v0/made", { made: [changed.made] });
     return transcript;
   },
 ];

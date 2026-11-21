@@ -1,0 +1,116 @@
+{"transcript":"90-a-reply-that-shows","start":"2026-11-21T12:40:00.000Z","scenario":90,"title":"A reply that shows","summary":"You ask what to order at a restaurant. Kumo answers with shape: a phone-sized table of the menu with its verdict on each dish as a chip, its picks in order with a picture, a price and a line each, the total for two, and a question with choices. A friend's name links to her page in memory.","guarantees":["G31"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-21T12:40:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"aae801b4-c77f-4368-9058-7389b3918e35","text":"What should we get at Hearth? Two of us, not too heavy."}}}
+{"at":2000,"event":{"id":"e_0001_30531","type":"message.accepted","at":"2026-11-21T12:40:02.000Z","message":{"id":"aae801b4-c77f-4368-9058-7389b3918e35","role":"user","text":"What should we get at Hearth? Two of us, not too heavy.","at":"2026-11-21T12:40:02.000Z","position":1}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"aae801b4-c77f-4368-9058-7389b3918e35","role":"user","text":"What should we get at Hearth? Two of us, not too heavy.","at":"2026-11-21T12:40:02.000Z","position":1}}}}
+{"at":2000,"event":{"id":"e_0002_83848","type":"turn.started","at":"2026-11-21T12:40:02.000Z","turn":"t_0001_08948","inputs":["aae801b4-c77f-4368-9058-7389b3918e35"]}}
+{"at":2600,"world":"web_has","url":"https://photos.example.org/hearth-noodles.jpg","file":"riverside.jpg"}
+{"at":2600,"world":"agent_calls","tool":"keep_image","input":{"url":"https://photos.example.org/hearth-noodles.jpg"},"returns":{"attachment":"f_0001_38803"}}
+{"at":2900,"world":"web_has","url":"https://photos.example.org/hearth-laab.jpg","file":"riverside.jpg"}
+{"at":2900,"world":"agent_calls","tool":"keep_image","input":{"url":"https://photos.example.org/hearth-laab.jpg"},"returns":{"attachment":"f_0002_82829"}}
+{"at":3200,"world":"web_has","url":"https://photos.example.org/hearth-skewers.jpg","file":"riverside.jpg"}
+{"at":3200,"world":"agent_calls","tool":"keep_image","input":{"url":"https://photos.example.org/hearth-skewers.jpg"},"returns":{"attachment":"f_0003_41565"}}
+{"at":3500,"world":"web_has","url":"https://photos.example.org/hearth-greens.jpg","file":"riverside.jpg"}
+{"at":3500,"world":"agent_calls","tool":"keep_image","input":{"url":"https://photos.example.org/hearth-greens.jpg"},"returns":{"attachment":"f_0004_86034"}}
+{"at":3800,"world":"web_has","url":"https://photos.example.org/hearth-rice.jpg","file":"riverside.jpg"}
+{"at":3800,"world":"agent_calls","tool":"keep_image","input":{"url":"https://photos.example.org/hearth-rice.jpg"},"returns":{"attachment":"f_0005_55917"}}
+{"at":4100,"event":{"id":"e_0003_54896","type":"turn.status","at":"2026-11-21T12:40:04.100Z","turn":"t_0001_08948","kind":"writing","label":"Writing"}}
+{"at":4100,"event":{"id":"e_0004_16086","type":"message.started","at":"2026-11-21T12:40:04.100Z","message":{"id":"m_0001_30856","role":"agent","kind":"reply","turn":"t_0001_08948","text":"","at":"2026-11-21T12:40:04.100Z","position":4}}}
+{"at":4100,"event":{"id":"e_0005_87686","type":"message.delta","at":"2026-11-21T12:40:04.100Z","message":"m_0001_30856","offset":0,"text":"Good menu. It's northern "}}
+{"at":4220,"event":{"id":"e_0006_02686","type":"message.delta","at":"2026-11-21T12:40:04.220Z","message":"m_0001_30856","offset":25,"text":"Thai, cooked over wood, all "}}
+{"at":4340,"event":{"id":"e_0007_03533","type":"message.delta","at":"2026-11-21T12:40:04.340Z","message":"m_0001_30856","offset":53,"text":"small plates to share: four "}}
+{"at":4460,"event":{"id":"e_0008_64577","type":"message.delta","at":"2026-11-21T12:40:04.460Z","message":"m_0001_30856","offset":81,"text":"or five between two, plus "}}
+{"at":4580,"event":{"id":"e_0009_09754","type":"message.delta","at":"2026-11-21T12:40:04.580Z","message":"m_0001_30856","offset":107,"text":"rice.\n\n```ari:table\n{\"columns\":[\"Dish\",\"My "}}
+{"at":4700,"event":{"id":"e_0010_34044","type":"message.delta","at":"2026-11-21T12:40:04.700Z","message":"m_0001_30856","offset":150,"text":"take\"],\"rows\":[{\"name\":\"Clay "}}
+{"at":4820,"event":{"id":"e_0011_70990","type":"message.delta","at":"2026-11-21T12:40:04.820Z","message":"m_0001_30856","offset":179,"text":"pot glass "}}
+{"at":4940,"event":{"id":"e_0012_33550","type":"message.delta","at":"2026-11-21T12:40:04.940Z","message":"m_0001_30856","offset":189,"text":"noodles\",\"detail\":\"Pork "}}
+{"at":5060,"event":{"id":"e_0013_93924","type":"message.delta","at":"2026-11-21T12:40:05.060Z","message":"m_0001_30856","offset":213,"text":"belly, brown crab, white "}}
+{"at":5180,"event":{"id":"e_0014_21635","type":"message.delta","at":"2026-11-21T12:40:05.180Z","message":"m_0001_30856","offset":238,"text":"pepper\",\"verdict\":{\"label\":\"Must "}}
+{"at":5300,"event":{"id":"e_0015_56140","type":"message.delta","at":"2026-11-21T12:40:05.300Z","message":"m_0001_30856","offset":271,"text":"try\",\"tone\":\"strong\"}},{\"name\":\"Langoustine "}}
+{"at":5420,"event":{"id":"e_0016_93446","type":"message.delta","at":"2026-11-21T12:40:05.420Z","message":"m_0001_30856","offset":315,"text":"laab\",\"detail\":\"Minced, "}}
+{"at":5540,"event":{"id":"e_0017_23623","type":"message.delta","at":"2026-11-21T12:40:05.540Z","message":"m_0001_30856","offset":339,"text":"toasted rice, herbs, "}}
+{"at":5660,"event":{"id":"e_0018_54309","type":"message.delta","at":"2026-11-21T12:40:05.660Z","message":"m_0001_30856","offset":360,"text":"lime\",\"verdict\":{\"label\":\"Must "}}
+{"at":5780,"event":{"id":"e_0019_79401","type":"message.delta","at":"2026-11-21T12:40:05.780Z","message":"m_0001_30856","offset":391,"text":"try\",\"tone\":\"strong\"}},{\"name\":\"Lamb "}}
+{"at":5900,"event":{"id":"e_0020_00419","type":"message.delta","at":"2026-11-21T12:40:05.900Z","message":"m_0001_30856","offset":428,"text":"& cumin "}}
+{"at":6020,"event":{"id":"e_0021_93730","type":"message.delta","at":"2026-11-21T12:40:06.020Z","message":"m_0001_30856","offset":436,"text":"skewers\",\"detail\":\"Aged "}}
+{"at":6140,"event":{"id":"e_0022_00322","type":"message.delta","at":"2026-11-21T12:40:06.140Z","message":"m_0001_30856","offset":460,"text":"lamb, charred over "}}
+{"at":6260,"event":{"id":"e_0023_87933","type":"message.delta","at":"2026-11-21T12:40:06.260Z","message":"m_0001_30856","offset":479,"text":"wood\",\"verdict\":{\"label\":\"Recommended\",\"tone\":\"good\"}},{\"name\":\"Jungle "}}
+{"at":6380,"event":{"id":"e_0024_62800","type":"message.delta","at":"2026-11-21T12:40:06.380Z","message":"m_0001_30856","offset":550,"text":"curry\",\"detail\":\"Pork, "}}
+{"at":6500,"event":{"id":"e_0025_74521","type":"message.delta","at":"2026-11-21T12:40:06.500Z","message":"m_0001_30856","offset":573,"text":"fiery, no "}}
+{"at":6620,"event":{"id":"e_0026_95109","type":"message.delta","at":"2026-11-21T12:40:06.620Z","message":"m_0001_30856","offset":583,"text":"coconut\",\"verdict\":{\"label\":\"If "}}
+{"at":6740,"event":{"id":"e_0027_02646","type":"message.delta","at":"2026-11-21T12:40:06.740Z","message":"m_0001_30856","offset":615,"text":"you like "}}
+{"at":6860,"event":{"id":"e_0028_49070","type":"message.delta","at":"2026-11-21T12:40:06.860Z","message":"m_0001_30856","offset":624,"text":"heat\",\"tone\":\"quiet\"}},{\"name\":\"Isaan "}}
+{"at":6980,"event":{"id":"e_0029_36264","type":"message.delta","at":"2026-11-21T12:40:06.980Z","message":"m_0001_30856","offset":662,"text":"sausage\",\"detail\":\"Fermented "}}
+{"at":7100,"event":{"id":"e_0030_39212","type":"message.delta","at":"2026-11-21T12:40:07.100Z","message":"m_0001_30856","offset":691,"text":"pork, ginger, "}}
+{"at":7220,"event":{"id":"e_0031_34704","type":"message.delta","at":"2026-11-21T12:40:07.220Z","message":"m_0001_30856","offset":705,"text":"peanut\",\"verdict\":{\"label\":\"Skip "}}
+{"at":7340,"event":{"id":"e_0032_09857","type":"message.delta","at":"2026-11-21T12:40:07.340Z","message":"m_0001_30856","offset":738,"text":"today\",\"tone\":\"quiet\"}},{\"name\":\"Sticky "}}
+{"at":7460,"event":{"id":"e_0033_92529","type":"message.delta","at":"2026-11-21T12:40:07.460Z","message":"m_0001_30856","offset":778,"text":"rice\",\"detail\":\"Steamed in a "}}
+{"at":7580,"event":{"id":"e_0034_18060","type":"message.delta","at":"2026-11-21T12:40:07.580Z","message":"m_0001_30856","offset":807,"text":"basket\",\"verdict\":{\"label\":\"Best "}}
+{"at":7700,"event":{"id":"e_0035_06850","type":"message.delta","at":"2026-11-21T12:40:07.700Z","message":"m_0001_30856","offset":840,"text":"value\",\"tone\":\"neutral\"}}]}\n```\n\n```ari:picks\n{\"title\":\"What "}}
+{"at":7820,"event":{"id":"e_0036_42842","type":"message.delta","at":"2026-11-21T12:40:07.820Z","message":"m_0001_30856","offset":901,"text":"I'd "}}
+{"at":7940,"event":{"id":"e_0037_33456","type":"message.delta","at":"2026-11-21T12:40:07.940Z","message":"m_0001_30856","offset":905,"text":"order\",\"picks\":[{\"name\":\"Clay "}}
+{"at":8060,"event":{"id":"e_0038_18774","type":"message.delta","at":"2026-11-21T12:40:08.060Z","message":"m_0001_30856","offset":935,"text":"pot glass "}}
+{"at":8180,"event":{"id":"e_0039_11363","type":"message.delta","at":"2026-11-21T12:40:08.180Z","message":"m_0001_30856","offset":945,"text":"noodles\",\"detail\":\"£9.50\",\"why\":\"What "}}
+{"at":8300,"event":{"id":"e_0040_27314","type":"message.delta","at":"2026-11-21T12:40:08.300Z","message":"m_0001_30856","offset":983,"text":"people come for: smoky, "}}
+{"at":8420,"event":{"id":"e_0041_22395","type":"message.delta","at":"2026-11-21T12:40:08.420Z","message":"m_0001_30856","offset":1007,"text":"peppery, crab all through "}}
+{"at":8540,"event":{"id":"e_0042_15480","type":"message.delta","at":"2026-11-21T12:40:08.540Z","message":"m_0001_30856","offset":1033,"text":"it.\",\"image\":{\"attachment\":\"f_0001_38803\",\"alt\":\"Clay "}}
+{"at":8660,"event":{"id":"e_0043_80078","type":"message.delta","at":"2026-11-21T12:40:08.660Z","message":"m_0001_30856","offset":1087,"text":"pot glass "}}
+{"at":8780,"event":{"id":"e_0044_13038","type":"message.delta","at":"2026-11-21T12:40:08.780Z","message":"m_0001_30856","offset":1097,"text":"noodles\",\"source_url\":\"https://commons.example.org/wiki/File:noodles.jpg\",\"credit\":\"Photo "}}
+{"at":8900,"event":{"id":"e_0045_29898","type":"message.delta","at":"2026-11-21T12:40:08.900Z","message":"m_0001_30856","offset":1187,"text":"by J. Example, CC BY "}}
+{"at":9020,"event":{"id":"e_0046_41182","type":"message.delta","at":"2026-11-21T12:40:09.020Z","message":"m_0001_30856","offset":1208,"text":"4.0\"}},{\"name\":\"Langoustine "}}
+{"at":9140,"event":{"id":"e_0047_31840","type":"message.delta","at":"2026-11-21T12:40:09.140Z","message":"m_0001_30856","offset":1236,"text":"laab\",\"detail\":\"£11\",\"why\":\"Bright "}}
+{"at":9260,"event":{"id":"e_0048_67280","type":"message.delta","at":"2026-11-21T12:40:09.260Z","message":"m_0001_30856","offset":1271,"text":"and sharp, so it cuts the "}}
+{"at":9380,"event":{"id":"e_0049_17435","type":"message.delta","at":"2026-11-21T12:40:09.380Z","message":"m_0001_30856","offset":1297,"text":"richness of the "}}
+{"at":9500,"event":{"id":"e_0050_89152","type":"message.delta","at":"2026-11-21T12:40:09.500Z","message":"m_0001_30856","offset":1313,"text":"noodles.\",\"image\":{\"attachment\":\"f_0002_82829\",\"alt\":\"Langoustine "}}
+{"at":9620,"event":{"id":"e_0051_48436","type":"message.delta","at":"2026-11-21T12:40:09.620Z","message":"m_0001_30856","offset":1379,"text":"laab\",\"source_url\":\"https://commons.example.org/wiki/File:laab.jpg\",\"credit\":\"Photo "}}
+{"at":9740,"event":{"id":"e_0052_89929","type":"message.delta","at":"2026-11-21T12:40:09.740Z","message":"m_0001_30856","offset":1463,"text":"by J. Example, CC BY "}}
+{"at":9860,"event":{"id":"e_0053_68125","type":"message.delta","at":"2026-11-21T12:40:09.860Z","message":"m_0001_30856","offset":1484,"text":"4.0\"}},{\"name\":\"Lamb "}}
+{"at":9980,"event":{"id":"e_0054_48613","type":"message.delta","at":"2026-11-21T12:40:09.980Z","message":"m_0001_30856","offset":1505,"text":"skewers\",\"detail\":\"£8\",\"why\":\"Two "}}
+{"at":10100,"event":{"id":"e_0055_97458","type":"message.delta","at":"2026-11-21T12:40:10.100Z","message":"m_0001_30856","offset":1539,"text":"skewers, easy to split, "}}
+{"at":10220,"event":{"id":"e_0056_85318","type":"message.delta","at":"2026-11-21T12:40:10.220Z","message":"m_0001_30856","offset":1563,"text":"properly "}}
+{"at":10340,"event":{"id":"e_0057_28304","type":"message.delta","at":"2026-11-21T12:40:10.340Z","message":"m_0001_30856","offset":1572,"text":"charred.\",\"image\":{\"attachment\":\"f_0003_41565\",\"alt\":\"Lamb "}}
+{"at":10460,"event":{"id":"e_0058_00706","type":"message.delta","at":"2026-11-21T12:40:10.460Z","message":"m_0001_30856","offset":1631,"text":"skewers\",\"source_url\":\"https://commons.example.org/wiki/File:skewers.jpg\",\"credit\":\"Photo "}}
+{"at":10580,"event":{"id":"e_0059_96625","type":"message.delta","at":"2026-11-21T12:40:10.580Z","message":"m_0001_30856","offset":1721,"text":"by J. Example, CC BY "}}
+{"at":10700,"event":{"id":"e_0060_02861","type":"message.delta","at":"2026-11-21T12:40:10.700Z","message":"m_0001_30856","offset":1742,"text":"4.0\"}},{\"name\":\"Wild ginger "}}
+{"at":10820,"event":{"id":"e_0061_93547","type":"message.delta","at":"2026-11-21T12:40:10.820Z","message":"m_0001_30856","offset":1770,"text":"greens\",\"detail\":\"£6.50\",\"why\":\"Something "}}
+{"at":10940,"event":{"id":"e_0062_40352","type":"message.delta","at":"2026-11-21T12:40:10.940Z","message":"m_0001_30856","offset":1812,"text":"green, since you said not "}}
+{"at":11060,"event":{"id":"e_0063_12250","type":"message.delta","at":"2026-11-21T12:40:11.060Z","message":"m_0001_30856","offset":1838,"text":"too "}}
+{"at":11180,"event":{"id":"e_0064_15250","type":"message.delta","at":"2026-11-21T12:40:11.180Z","message":"m_0001_30856","offset":1842,"text":"heavy.\",\"image\":{\"attachment\":\"f_0004_86034\",\"alt\":\"Wild "}}
+{"at":11300,"event":{"id":"e_0065_20197","type":"message.delta","at":"2026-11-21T12:40:11.300Z","message":"m_0001_30856","offset":1899,"text":"ginger "}}
+{"at":11420,"event":{"id":"e_0066_81435","type":"message.delta","at":"2026-11-21T12:40:11.420Z","message":"m_0001_30856","offset":1906,"text":"greens\",\"source_url\":\"https://commons.example.org/wiki/File:greens.jpg\",\"credit\":\"Photo "}}
+{"at":11540,"event":{"id":"e_0067_24385","type":"message.delta","at":"2026-11-21T12:40:11.540Z","message":"m_0001_30856","offset":1994,"text":"by J. Example, CC BY "}}
+{"at":11660,"event":{"id":"e_0068_22492","type":"message.delta","at":"2026-11-21T12:40:11.660Z","message":"m_0001_30856","offset":2015,"text":"4.0\"}},{\"name\":\"Sticky rice "}}
+{"at":11780,"event":{"id":"e_0069_45234","type":"message.delta","at":"2026-11-21T12:40:11.780Z","message":"m_0001_30856","offset":2043,"text":"× "}}
+{"at":11900,"event":{"id":"e_0070_70458","type":"message.delta","at":"2026-11-21T12:40:11.900Z","message":"m_0001_30856","offset":2045,"text":"2\",\"detail\":\"£7\",\"why\":\"For "}}
+{"at":12020,"event":{"id":"e_0071_28626","type":"message.delta","at":"2026-11-21T12:40:12.020Z","message":"m_0001_30856","offset":2073,"text":"the laab's juices. You'll "}}
+{"at":12140,"event":{"id":"e_0072_94427","type":"message.delta","at":"2026-11-21T12:40:12.140Z","message":"m_0001_30856","offset":2099,"text":"want the "}}
+{"at":12260,"event":{"id":"e_0073_44191","type":"message.delta","at":"2026-11-21T12:40:12.260Z","message":"m_0001_30856","offset":2108,"text":"second.\",\"image\":{\"attachment\":\"f_0005_55917\",\"alt\":\"Sticky "}}
+{"at":12380,"event":{"id":"e_0074_87957","type":"message.delta","at":"2026-11-21T12:40:12.380Z","message":"m_0001_30856","offset":2168,"text":"rice\",\"source_url\":\"https://commons.example.org/wiki/File:rice.jpg\",\"credit\":\"Photo "}}
+{"at":12500,"event":{"id":"e_0075_17442","type":"message.delta","at":"2026-11-21T12:40:12.500Z","message":"m_0001_30856","offset":2252,"text":"by J. Example, CC BY "}}
+{"at":12620,"event":{"id":"e_0076_76500","type":"message.delta","at":"2026-11-21T12:40:12.620Z","message":"m_0001_30856","offset":2273,"text":"4.0\"}}]}\n```\n\n```ari:number\n{\"label\":\"Estimated "}}
+{"at":12740,"event":{"id":"e_0077_81632","type":"message.delta","at":"2026-11-21T12:40:12.740Z","message":"m_0001_30856","offset":2321,"text":"for "}}
+{"at":12860,"event":{"id":"e_0078_07842","type":"message.delta","at":"2026-11-21T12:40:12.860Z","message":"m_0001_30856","offset":2325,"text":"two\",\"value\":\"£47\",\"context\":\"Five "}}
+{"at":12980,"event":{"id":"e_0079_51776","type":"message.delta","at":"2026-11-21T12:40:12.980Z","message":"m_0001_30856","offset":2360,"text":"plates and rice. £53 with "}}
+{"at":13100,"event":{"id":"e_0080_44618","type":"message.delta","at":"2026-11-21T12:40:13.100Z","message":"m_0001_30856","offset":2386,"text":"the 12.5% "}}
+{"at":13220,"event":{"id":"e_0081_50474","type":"message.delta","at":"2026-11-21T12:40:13.220Z","message":"m_0001_30856","offset":2396,"text":"service.\"}\n```\n\nWant a drink "}}
+{"at":13340,"event":{"id":"e_0082_67840","type":"message.delta","at":"2026-11-21T12:40:13.340Z","message":"m_0001_30856","offset":2425,"text":"matched to it, or is that "}}
+{"at":13460,"event":{"id":"e_0083_61117","type":"message.delta","at":"2026-11-21T12:40:13.460Z","message":"m_0001_30856","offset":2451,"text":"the "}}
+{"at":13580,"event":{"id":"e_0084_32006","type":"message.delta","at":"2026-11-21T12:40:13.580Z","message":"m_0001_30856","offset":2455,"text":"lot?\n\n```ari:choices\n{\"options\":[\"Add "}}
+{"at":13700,"event":{"id":"e_0085_07752","type":"message.delta","at":"2026-11-21T12:40:13.700Z","message":"m_0001_30856","offset":2493,"text":"drinks\",\"Lighter "}}
+{"at":13820,"event":{"id":"e_0086_02441","type":"message.delta","at":"2026-11-21T12:40:13.820Z","message":"m_0001_30856","offset":2510,"text":"swap\",\"That's the lot\"]}\n```"}}
+{"at":13820,"event":{"id":"e_0087_82463","type":"message.ended","at":"2026-11-21T12:40:13.820Z","message":"m_0001_30856","outcome":"completed","length":2538}}
+{"at":13820,"event":{"id":"e_0088_52530","type":"turn.ended","at":"2026-11-21T12:40:13.820Z","turn":"t_0001_08948","outcome":"completed"}}
+{"at":15320,"app":{"method":"GET","path":"/v0/attachments/f_0001_38803"}}
+{"at":15320,"server":{"status":200,"headers":{"Content-Type":"image/jpeg","Content-Length":"1454"}}}
+{"at":45320,"app":{"method":"POST","path":"/v0/messages","body":{"id":"3dbaa5c5-007a-4552-b658-78a430ce2491","text":"That's the lot"}}}
+{"at":45320,"event":{"id":"e_0089_12884","type":"message.accepted","at":"2026-11-21T12:40:45.320Z","message":{"id":"3dbaa5c5-007a-4552-b658-78a430ce2491","role":"user","text":"That's the lot","at":"2026-11-21T12:40:45.320Z","position":89}}}
+{"at":45320,"server":{"status":201,"body":{"message":{"id":"3dbaa5c5-007a-4552-b658-78a430ce2491","role":"user","text":"That's the lot","at":"2026-11-21T12:40:45.320Z","position":89}}}}
+{"at":45320,"event":{"id":"e_0090_86732","type":"turn.started","at":"2026-11-21T12:40:45.320Z","turn":"t_0002_13105","inputs":["3dbaa5c5-007a-4552-b658-78a430ce2491"]}}
+{"at":46020,"event":{"id":"e_0091_54554","type":"turn.status","at":"2026-11-21T12:40:46.020Z","turn":"t_0002_13105","kind":"writing","label":"Writing"}}
+{"at":46020,"event":{"id":"e_0092_61343","type":"message.started","at":"2026-11-21T12:40:46.020Z","message":{"id":"m_0002_95048","role":"agent","kind":"reply","turn":"t_0002_13105","text":"","at":"2026-11-21T12:40:46.020Z","position":92}}}
+{"at":46020,"event":{"id":"e_0093_68575","type":"message.delta","at":"2026-11-21T12:40:46.020Z","message":"m_0002_95048","offset":0,"text":"Enjoy. Say hi to "}}
+{"at":46140,"event":{"id":"e_0094_68315","type":"message.delta","at":"2026-11-21T12:40:46.140Z","message":"m_0002_95048","offset":17,"text":"[Maya](memory:people/maya-lind)."}}
+{"at":46140,"event":{"id":"e_0095_96136","type":"message.ended","at":"2026-11-21T12:40:46.140Z","message":"m_0002_95048","outcome":"completed","length":49}}
+{"at":46140,"event":{"id":"e_0096_13243","type":"turn.ended","at":"2026-11-21T12:40:46.140Z","turn":"t_0002_13105","outcome":"completed"}}

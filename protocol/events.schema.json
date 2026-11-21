@@ -90,6 +90,18 @@
           "$ref": "#/$defs/MotionRemoved"
         },
         {
+          "$ref": "#/$defs/MadeCreated"
+        },
+        {
+          "$ref": "#/$defs/MadeChanged"
+        },
+        {
+          "$ref": "#/$defs/MadeStateChanged"
+        },
+        {
+          "$ref": "#/$defs/MadeRemoved"
+        },
+        {
           "$ref": "#/$defs/DeskChanged"
         },
         {
@@ -1676,6 +1688,215 @@
         },
         "motion": {
           "$ref": "#/$defs/MotionId"
+        }
+      }
+    },
+    "Picture": {
+      "description": "A picture Ari found on the web, kept on the server as an attachment so the app never contacts its host. Never generated.",
+      "type": "object",
+      "required": ["attachment", "alt", "source_url", "credit"],
+      "properties": {
+        "attachment": {
+          "description": "Fetch it with `GET /v0/attachments/{attachment}`.",
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "alt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_url": {
+          "description": "The page the picture came from.",
+          "type": "string",
+          "format": "uri"
+        },
+        "credit": {
+          "description": "Who made it, as its source asks.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "MadeItemId": {
+      "description": "Lowercase words and dashes, unique on the page, such as `trajans-column`.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "MadeState": {
+      "description": "Your ticks on a made page: when you ticked each item, by its id. `{}` until you tick something.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ticks": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/MadeItemId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Timestamp"
+          }
+        }
+      }
+    },
+    "MadeId": {
+      "description": "A made page's id: readable, chosen by Ari, unique on the server, such as `va-guide`.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "Made": {
+      "description": "A page Ari made: a rich, lasting answer, such as a gallery guide, that a reply shows as an `ari:made` card, and that sits on the Made shelf. Ari keeps it current. Its content and your ticks come from `GET /v0/made/{id}`.",
+      "type": "object",
+      "required": ["id", "title", "summary", "version", "made_at", "changed_at", "position"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/MadeId"
+        },
+        "title": {
+          "description": "Such as \"Your guide to the V&A\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "description": "What's in it, in one line, such as \"4 rooms · 9 things to spot\".",
+          "type": "string"
+        },
+        "cover": {
+          "$ref": "#/$defs/Picture",
+          "description": "The picture at its top and on its card. Absent when it has none."
+        },
+        "for_day": {
+          "description": "The day it's for, such as the visit, as `YYYY-MM-DD`: \"Made for Saturday\". Ari keeps it current until then. Absent when it isn't for a day.",
+          "type": "string",
+          "format": "date"
+        },
+        "version": {
+          "description": "How many times it has changed, counting its making as 1.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "made_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "changed_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When Ari last changed it: \"Updated 2h ago\", with the latest change's note."
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "The position of your message Ari was answering when it made the page: \"From your chat\" links back to it."
+        }
+      }
+    },
+    "MadeChange": {
+      "description": "One change to a made page.",
+      "type": "object",
+      "required": ["version", "at", "note", "position"],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "note": {
+          "description": "What changed, said to you, such as \"The Raphael Cartoons reopened this morning, so they're back in.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "The position of your message Ari was answering when it made the change."
+        }
+      }
+    },
+    "MadeCreated": {
+      "title": "made.created",
+      "description": "Ari made a page. It joins the Made shelf.",
+      "type": "object",
+      "required": ["id", "type", "at", "made", "change"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "made.created"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "made": {
+          "$ref": "#/$defs/Made"
+        },
+        "change": {
+          "$ref": "#/$defs/MadeChange"
+        }
+      }
+    },
+    "MadeChanged": {
+      "title": "made.changed",
+      "description": "Ari changed a page, such as when something on it changed in the world. Fetch its content again. It never notifies: when you need to know, Ari says so in a message.",
+      "type": "object",
+      "required": ["id", "type", "at", "made", "change"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "made.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "made": {
+          "$ref": "#/$defs/Made"
+        },
+        "change": {
+          "$ref": "#/$defs/MadeChange"
+        }
+      }
+    },
+    "MadeStateChanged": {
+      "title": "made.state",
+      "description": "Your ticks on a page changed, from a tap on any device, or because a change removed an item you'd ticked. It carries the whole state.",
+      "type": "object",
+      "required": ["id", "type", "at", "made", "state"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "made.state"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "made": {
+          "$ref": "#/$defs/MadeId"
+        },
+        "state": {
+          "$ref": "#/$defs/MadeState"
+        }
+      }
+    },
+    "MadeRemoved": {
+      "title": "made.removed",
+      "description": "You allowed Ari to forget a page, so it's gone from the shelf and its cards.",
+      "type": "object",
+      "required": ["id", "type", "at", "made"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "made.removed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "made": {
+          "$ref": "#/$defs/MadeId"
         }
       }
     },

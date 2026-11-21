@@ -83,6 +83,10 @@ tags:
     description: |
       Things in motion that Ari keeps for you, such as a trip being planned. Ari writes them; apps
       read them and tick their items.
+  - name: Made
+    description: |
+      Pages Ari made for you, such as a gallery guide, for the Made shelf and the cards in the chat.
+      Ari writes and keeps them current; apps read them and tick their items.
   - name: Model
     description: Choose the model the agent runs on.
   - name: Talk
@@ -1430,6 +1434,71 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/made:
+    get:
+      tags: [Made]
+      operationId: listMade
+      summary: The Made shelf
+      description: Every page Ari made, most recently changed first.
+      responses:
+        "200":
+          description: The pages.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MadeList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/made/{made}:
+    get:
+      tags: [Made]
+      operationId: getMade
+      summary: One page, with its content, your ticks and what changed
+      description: The content is as `MadeContent` in [the made schema](made.schema.json) describes.
+      parameters:
+        - $ref: "#/components/parameters/Made"
+      responses:
+        "200":
+          description: The page.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MadeDetail" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/made/{made}/state:
+    patch:
+      tags: [Made]
+      operationId: patchMadeState
+      summary: Tick items on a page, or take a tick back
+      description: |
+        A JSON Merge Patch (RFC 7386) on the state, such as
+        `{"ticks": {"trajans-column": "2026-11-22T14:32:00.000Z"}}` with when you ticked it, sent as
+        `application/merge-patch+json` or `application/json`; `null` takes a tick back. Only a page
+        with a `check` word ticks, and only its items. Every app hears `made.state`, and Ari reads
+        the ticks with the page. Sending the same patch twice changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/Made"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { type: object, additionalProperties: true }
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: The whole state, after the patch.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MadeStateResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/models:
     get:
       tags: [Model]
@@ -1681,6 +1750,12 @@ components:
       required: true
       description: The item's id, from its `CalendarItem` in Coming up.
       schema: { $ref: "events.schema.json#/$defs/CalendarItemId" }
+    Made:
+      name: made
+      in: path
+      required: true
+      description: The page's id, from its `Made`.
+      schema: { $ref: "events.schema.json#/$defs/MadeId" }
     Motion:
       name: motion
       in: path
@@ -2606,6 +2681,33 @@ components:
         has_more:
           description: Whether even older messages exist.
           type: boolean
+    MadeList:
+      type: object
+      required: [made]
+      properties:
+        made:
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Made" }
+    MadeDetail:
+      type: object
+      required: [made, content, state, changes]
+      properties:
+        made: { $ref: "events.schema.json#/$defs/Made" }
+        content:
+          description: The page under its title, as `MadeContent` in [the made schema](made.schema.json) describes.
+          type: object
+          additionalProperties: true
+        state: { $ref: "events.schema.json#/$defs/MadeState" }
+        changes:
+          description: The 20 newest changes, newest first.
+          type: array
+          maxItems: 20
+          items: { $ref: "events.schema.json#/$defs/MadeChange" }
+    MadeStateResult:
+      type: object
+      required: [state]
+      properties:
+        state: { $ref: "events.schema.json#/$defs/MadeState" }
     MotionList:
       type: object
       required: [motions]

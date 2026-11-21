@@ -7,7 +7,8 @@
 | [openapi.yaml](openapi.yaml) | The commands, as OpenAPI 3.1 |
 | [events.schema.json](events.schema.json) | Every event on the stream, as JSON Schema |
 | [push.schema.json](push.schema.json) | What a push notification carries, encrypted and decrypted |
-| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: places, choices, pictures and things in motion |
+| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: places, choices, pictures, picks, tables with verdicts, a key number, events, Desk cards, people, made pages and things in motion |
+| [made.schema.json](made.schema.json) | What a page Kumo made holds: its sections, items to tick and pictures |
 | [motion.schema.json](motion.schema.json) | What a thing in motion holds, for each kind, and the changes Ari makes to it |
 | [stream.schema.json](stream.schema.json) | The frames on a call's stream, both ways |
 | [guarantees.md](guarantees.md) | What the server and the protocol promise |
@@ -54,6 +55,8 @@ sequenceDiagram
 - **Say where you are:** the phone sends its time zone and, roughly, its place. Kumo lives by that
   time zone, and the Desk shows the weather there.
 - **Plan with Kumo:** list, move and cancel the wake-ups Kumo set, which the Desk shows as its plans.
+- **Open what Kumo made:** list the Made shelf, fetch a page with its content and your ticks, and
+  tick its items.
 
 ## Events
 
@@ -76,6 +79,9 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `message.delta` | Text appended to a message, at an offset |
 | `message.ended` | A message is finished: completed, stopped, interrupted or failed |
 | `turn.ended` | The turn is over, and its status is cleared |
+| `made.created`, `made.changed` | Kumo made a page, or kept one current, with a note of what changed |
+| `made.state` | Your ticks on a page changed, from any device |
+| `made.removed` | You let Kumo forget a page |
 
 ## Versioning
 

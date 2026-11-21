@@ -22,6 +22,9 @@ import type {
   Topic,
   Error as ErrorBody,
   LiveTurn,
+  Made,
+  MadeChange,
+  MadeState,
   Message,
   MessageKind,
   Motion,
@@ -209,6 +212,13 @@ export type Transcript = {
     note: string,
   ) => { readonly motion: Motion; readonly change: MotionChange };
   readonly patchMotion: (id: string, patch: Fields) => Fields;
+  // A page Kumo made or changed: its position stays the message it was made for.
+  readonly made: (
+    type: "created" | "changed",
+    made: Omit<Made, "position" | "made_at" | "changed_at">,
+    note: string,
+  ) => { readonly made: Made; readonly change: MadeChange };
+  readonly patchMade: (id: string, patch: Fields) => MadeState;
   readonly change: () => string;
   readonly restart: () => void;
   readonly restore: (to: string) => void;
@@ -890,6 +900,48 @@ export const createTranscript = (header: Header): Transcript => {
     if (JSON.stringify(after) !== JSON.stringify(before)) {
       motionStates.update((current) => new Map([...current, [id, after]]));
       emit("motion.state", { motion: id, state: after });
+    }
+    response(200, { state: after });
+    return after;
+  };
+
+  const madePages = createCell<ReadonlyMap<string, Made>>(new Map());
+  const madeStates = createCell<ReadonlyMap<string, MadeState>>(new Map());
+
+  const recordMade = (
+    type: "created" | "changed",
+    given: Omit<Made, "position" | "made_at" | "changed_at">,
+    note: string,
+  ): { readonly made: Made; readonly change: MadeChange } => {
+    const { order, byId } = project(log.get());
+    const position =
+      order.map((id) => byId.get(id)).findLast((message) => message?.role === "user")?.position ?? nextPosition();
+    const before = madePages.get().get(given.id);
+    const at = timestamp();
+    const made: Made = {
+      ...given,
+      made_at: before?.made_at ?? at,
+      changed_at: at,
+      position: before?.position ?? position,
+    };
+    madePages.update((current) => new Map([...current, [made.id, made]]));
+    const change: MadeChange = { version: made.version, at, note, position };
+    emit(`made.${type}`, { made, change });
+    return { made, change };
+  };
+
+  const patchMade = (id: string, patch: Fields): MadeState => {
+    request("PATCH", `/v0/made/${id}/state`, {
+      body: patch,
+      headers: { "Content-Type": "application/merge-patch+json" },
+    });
+    const before = madeStates.get().get(id) ?? {};
+    const merged = mergePatch(before, patch) as MadeState;
+    const after: MadeState =
+      merged.ticks === undefined || Object.keys(merged.ticks).length === 0 ? {} : { ticks: merged.ticks };
+    if (JSON.stringify(after) !== JSON.stringify(before)) {
+      madeStates.update((current) => new Map([...current, [id, after]]));
+      emit("made.state", { made: id, state: after });
     }
     response(200, { state: after });
     return after;
@@ -1646,6 +1698,8 @@ export const createTranscript = (header: Header): Transcript => {
     },
     motion: recordMotion,
     patchMotion,
+    made: recordMade,
+    patchMade,
     change: () => newId("c"),
     startCall,
     endCall,

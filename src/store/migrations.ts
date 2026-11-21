@@ -244,4 +244,27 @@ export const migrations: readonly string[] = [
     position INTEGER NOT NULL,
     body TEXT NOT NULL
   );`,
+  // Pages Kumo makes: the page as the shelf lists it, each version's content, what changed, and their ticks.
+  `CREATE TABLE made (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    changed_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE TABLE made_contents (
+    made TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    PRIMARY KEY (made, version)
+  );
+  CREATE TABLE made_changes (
+    made TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    PRIMARY KEY (made, version)
+  );
+  CREATE TABLE made_states (
+    made TEXT PRIMARY KEY,
+    state TEXT NOT NULL
+  );`,
 ];

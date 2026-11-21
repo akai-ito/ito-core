@@ -51,6 +51,10 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "motion.finished":
     case "motion.state":
     case "motion.removed":
+    case "made.created":
+    case "made.changed":
+    case "made.state":
+    case "made.removed":
     case "message.posted":
     case "desk.changed":
     case "onboarding.changed":
@@ -132,6 +136,10 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
     case "motion.finished":
     case "motion.state":
     case "motion.removed":
+    case "made.created":
+    case "made.changed":
+    case "made.state":
+    case "made.removed":
     case "message.posted":
     case "desk.changed":
     case "onboarding.changed":

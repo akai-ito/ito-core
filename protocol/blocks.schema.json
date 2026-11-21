@@ -2,19 +2,40 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://akai-ito.github.io/ito-core/protocol/v0/blocks.schema.json",
   "title": "Ari's reply blocks",
-  "description": "A reply is Markdown. Where its content has a shape, Ari writes it as a fenced block whose info string is `ari:` and a kind, holding one JSON object, and the app draws it natively. A block the app doesn't recognise, or whose JSON doesn't parse, shows as its fenced text. Blocks are never spoken on a call.",
+  "description": "A reply is Markdown. Where its content has a shape, Ari writes it as a fenced block whose info string is `ari:` and a kind, holding one JSON object, and the app draws it natively. A block the app doesn't recognise, or whose JSON doesn't parse, shows as its fenced text. Blocks are never spoken on a call. A name in the Markdown linked to what Ari keeps, `[Maya](memory:people/maya-lind)`, `[Lisbon weekend](motion:lisbon-weekend)` or `[the V&A guide](made:va-guide)`, is drawn with a dotted underline, and a tap opens a small card about it: who or what it is, a few facts, and its page. Ari links only what exists; a link to something that's gone reads as its words.",
   "$defs": {
+    "Picture": {
+      "title": "A picture",
+      "description": "A picture Ari found on the web and kept with `keep_image`, as the events schema describes.",
+      "$ref": "events.schema.json#/$defs/Picture"
+    },
+    "Verdict": {
+      "description": "Ari's take on one thing, drawn as a chip in bone and grey: `strong` filled, for the few best (\"Must try\"); `good` outlined in bone (\"Recommended\"); `neutral`, a plain fact in grey (\"Best value\"); `quiet`, a condition or a pass, in faint grey (\"If you like heat\", \"Skip today\"). Draw a tone you don't recognise as `neutral`.",
+      "type": "object",
+      "required": ["label", "tone"],
+      "properties": {
+        "label": {
+          "description": "A few words, in Ari's own voice.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "tone": { "enum": ["strong", "good", "neutral", "quiet"] }
+      }
+    },
     "Place": {
       "title": "ari:place",
-      "description": "A place you might go. The app opens it in Maps.",
+      "description": "A place you might go, as a card with Directions. The app opens it in Maps.",
       "type": "object",
       "required": ["name"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "address": { "type": "string" },
+        "note": { "description": "What's useful now, such as \"open till 17:45\".", "type": "string" },
         "lat": { "type": "number", "minimum": -90, "maximum": 90 },
         "lon": { "type": "number", "minimum": -180, "maximum": 180 },
-        "url": { "type": "string", "format": "uri" }
+        "url": { "type": "string", "format": "uri" },
+        "image": { "$ref": "#/$defs/Picture", "description": "A picture of it, drawn small beside its name." }
       }
     },
     "Choices": {
@@ -42,32 +63,118 @@
     },
     "Images": {
       "title": "ari:images",
-      "description": "Pictures Ari found on the web, kept on the server as attachments so the app never contacts their hosts. Never generated.",
+      "description": "Pictures that help, such as a dish, a place or a thing to look for, a page at a time.",
       "type": "object",
       "required": ["images"],
       "properties": {
-        "images": {
+        "images": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Picture" } }
+      }
+    },
+    "Picks": {
+      "title": "ari:picks",
+      "description": "Ari's decisive picks, in order, numbered from 1: each with a picture, a price or a time, and one line on why.",
+      "type": "object",
+      "required": ["picks"],
+      "properties": {
+        "title": { "description": "A heading over them, such as \"What I'd order\".", "type": "string" },
+        "picks": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 8,
           "items": {
             "type": "object",
-            "required": ["attachment", "alt", "source_url", "credit"],
+            "required": ["name", "why"],
             "properties": {
-              "attachment": {
-                "description": "Fetch it with `GET /v0/attachments/{attachment}`.",
-                "$ref": "events.schema.json#/$defs/AttachmentId"
-              },
-              "alt": { "type": "string", "minLength": 1 },
-              "source_url": {
-                "description": "The page the picture came from.",
-                "type": "string",
-                "format": "uri"
-              },
-              "credit": { "description": "Who made it, as its source asks.", "type": "string", "minLength": 1 }
+              "name": { "type": "string", "minLength": 1 },
+              "detail": { "description": "A price or a time, such as \"£9.50\" or \"25 min\".", "type": "string" },
+              "why": { "description": "One line, in Ari's voice.", "type": "string", "minLength": 1 },
+              "image": { "$ref": "#/$defs/Picture" }
             }
           }
         }
       }
+    },
+    "Table": {
+      "title": "ari:table",
+      "description": "A table that fits a phone: one row per thing, its name with a line under it, at most two short values, and Ari's verdict as a chip at the end. `columns` heads the name, then each value, then the verdict when rows carry one.",
+      "type": "object",
+      "required": ["columns", "rows"],
+      "properties": {
+        "columns": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "type": "string" } },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "detail": { "description": "A line under the name, such as what's in a dish.", "type": "string" },
+              "values": {
+                "description": "Short, such as \"£11\" or \"35 min\".",
+                "type": "array",
+                "maxItems": 2,
+                "items": { "type": "string" }
+              },
+              "verdict": { "$ref": "#/$defs/Verdict" }
+            }
+          }
+        }
+      }
+    },
+    "Number": {
+      "title": "ari:number",
+      "description": "A number that matters, large, with what it is and what it's made of, such as \"Estimated for two\", \"£47\".",
+      "type": "object",
+      "required": ["label", "value"],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "value": { "type": "string", "minLength": 1 },
+        "context": { "description": "What it's made of, in a line or two.", "type": "string" }
+      }
+    },
+    "CalendarEvent": {
+      "title": "ari:event",
+      "description": "An event Ari suggests, with Add: the app opens the phone's own event sheet, filled in, and you add it there.",
+      "type": "object",
+      "required": ["title", "start"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "start": {
+          "description": "RFC 3339 with its offset, such as `2026-11-27T19:30:00+00:00`.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": { "description": "As `start`.", "type": "string", "format": "date-time" },
+        "all_day": { "description": "On the start's day, with no time.", "type": "boolean" },
+        "place": { "type": "string" },
+        "notes": { "type": "string" },
+        "on_calendar": {
+          "description": "Ari already put it on your calendar: the card says so instead of offering Add.",
+          "type": "boolean"
+        }
+      }
+    },
+    "DeskItem": {
+      "title": "ari:desk",
+      "description": "A card waiting on the Desk, shown in the chat as the same card with its own buttons, marked as also on the Desk: a draft has Open in Mail, Change… and Drop (never Send), a question its options. One item, two views: answering it in either place answers it. Draw it from the Desk; once it's off the Desk, a quiet line says it's settled.",
+      "type": "object",
+      "required": ["card"],
+      "properties": { "card": { "$ref": "events.schema.json#/$defs/CardId" } }
+    },
+    "Person": {
+      "title": "ari:person",
+      "description": "Someone Ari keeps a page about, as a small card: their monogram, who they are, and their page.",
+      "type": "object",
+      "required": ["page"],
+      "properties": { "page": { "$ref": "events.schema.json#/$defs/MemoryAddress" } }
+    },
+    "Made": {
+      "title": "ari:made",
+      "description": "A page Ari made, as a card: its cover, title, summary, when it was made or last updated, and Open. Draw it from the `Made` with that id; once it's forgotten, a quiet line says so.",
+      "type": "object",
+      "required": ["made"],
+      "properties": { "made": { "$ref": "events.schema.json#/$defs/MadeId" } }
     }
   }
 }

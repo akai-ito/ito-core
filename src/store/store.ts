@@ -25,6 +25,9 @@ import type {
   Spoken,
   LiveTurn,
   Message,
+  Made,
+  MadeChange,
+  MadeState,
   Motion,
   MotionChange,
   Outcome,
@@ -184,6 +187,20 @@ export type Store = Settings & {
     readonly before: Readonly<Record<string, unknown>>;
     readonly after: Readonly<Record<string, unknown>>;
   }[];
+  // A page Kumo made, or changed, with its whole content at that version.
+  readonly recordMade: (
+    type: "made.created" | "made.changed",
+    made: Omit<Made, "position"> & { readonly position?: number },
+    note: string,
+    content: Readonly<Record<string, unknown>>,
+  ) => { readonly made: Made; readonly change: MadeChange };
+  readonly setMadeState: (made: string, state: MadeState) => void;
+  readonly removeMade: (made: string) => void;
+  readonly findMade: (made: string) => Made | undefined;
+  readonly listMade: () => readonly Made[];
+  readonly madeChanges: (made: string, limit: number) => readonly MadeChange[];
+  readonly madeState: (made: string) => MadeState;
+  readonly madeContent: (made: string, version: number) => Readonly<Record<string, unknown>> | undefined;
   readonly keepAttachment: (id: string) => void;
   readonly messageAttachments: (message: MessageId) => readonly Attachment[];
   readonly answeredAsk: (message: MessageId) => AskId | undefined;
@@ -822,6 +839,62 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     removeMotion: (motion) => {
       record((stamp) => ({ ...stamp, type: "motion.removed", motion }));
+    },
+
+    recordMade: (type, given, note, content) =>
+      transaction(() => {
+        const latest = database.prepare("SELECT MAX(position) AS position FROM messages WHERE role = 'user'").get() as {
+          readonly position: number | null;
+        };
+        const position = latest.position ?? nextSeq();
+        const made: Made = { ...given, position: given.position ?? position };
+        const change: MadeChange = { version: made.version, at: made.changed_at, note, position };
+        database
+          .prepare("INSERT OR REPLACE INTO made_contents (made, version, content) VALUES (?, ?, ?)")
+          .run(made.id, made.version, JSON.stringify(content));
+        append({ id: identifiers.event(), type, at: now(), made, change });
+        return { made, change };
+      }),
+
+    setMadeState: (made, state) => {
+      record((stamp) => ({ ...stamp, type: "made.state", made, state }));
+    },
+
+    removeMade: (made) => {
+      record((stamp) => ({ ...stamp, type: "made.removed", made }));
+    },
+
+    findMade: (made) => {
+      const row = database.prepare("SELECT body FROM made WHERE id = ?").get(made) as
+        { readonly body: string } | undefined;
+      return row ? (JSON.parse(row.body) as Made) : undefined;
+    },
+
+    listMade: () =>
+      (
+        database.prepare("SELECT body FROM made ORDER BY changed_at DESC, id").all() as unknown as readonly {
+          readonly body: string;
+        }[]
+      ).map((row) => JSON.parse(row.body) as Made),
+
+    madeChanges: (made, limit) =>
+      (
+        database
+          .prepare("SELECT body FROM made_changes WHERE made = ? ORDER BY version DESC LIMIT ?")
+          .all(made, limit) as unknown as readonly { readonly body: string }[]
+      ).map((row) => JSON.parse(row.body) as MadeChange),
+
+    madeState: (made) => {
+      const row = database.prepare("SELECT state FROM made_states WHERE made = ?").get(made) as
+        { readonly state: string } | undefined;
+      return row ? (JSON.parse(row.state) as MadeState) : {};
+    },
+
+    madeContent: (made, version) => {
+      const row = database
+        .prepare("SELECT content FROM made_contents WHERE made = ? AND version = ?")
+        .get(made, version) as { readonly content: string } | undefined;
+      return row ? (JSON.parse(row.content) as Readonly<Record<string, unknown>>) : undefined;
     },
 
     findMotion: (motion) => {

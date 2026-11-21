@@ -10,6 +10,7 @@ import type { EngineEvent, EngineFailureCode, StepFacts } from "#engine/engine.t
 import { toMessageId } from "#conversation/ids.ts";
 import { askToolName } from "#asks/tool.ts";
 import { memoryToolNames } from "#memory/tool-names.ts";
+import { madeToolNames } from "#made/made.ts";
 import { imageToolName } from "#replies/images.ts";
 import { toolServerName } from "#tools/mcp.ts";
 import { fieldOf } from "#tools/input.ts";
@@ -171,7 +172,8 @@ const closing = (state: TurnState): readonly EngineEvent[] => (state.openMessage
 const isAskCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
   item.server === toolServerName && item.tool === askToolName;
 
-const quietToolNames: ReadonlySet<string> = new Set([...memoryToolNames, imageToolName]);
+// A page Kumo makes shows as its card in the reply, so making one leaves no step of its own.
+const quietToolNames: ReadonlySet<string> = new Set([...memoryToolNames, imageToolName, ...madeToolNames]);
 
 const isQuietCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
   item.server === toolServerName && quietToolNames.has(item.tool);

@@ -1058,6 +1058,70 @@ export interface paths {
     patch: operations["patchMotionState"];
     trace?: never;
   };
+  "/v0/made": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The Made shelf
+     * @description Every page Ari made, most recently changed first.
+     */
+    get: operations["listMade"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/made/{made}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * One page, with its content, your ticks and what changed
+     * @description The content is as `MadeContent` in [the made schema](made.schema.json) describes.
+     */
+    get: operations["getMade"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/made/{made}/state": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Tick items on a page, or take a tick back
+     * @description A JSON Merge Patch (RFC 7386) on the state, such as
+     *     `{"ticks": {"trajans-column": "2026-11-22T14:32:00.000Z"}}` with when you ticked it, sent as
+     *     `application/merge-patch+json` or `application/json`; `null` takes a tick back. Only a page
+     *     with a `check` word ticks, and only its items. Every app hears `made.state`, and Ari reads
+     *     the ticks with the page. Sending the same patch twice changes nothing.
+     */
+    patch: operations["patchMadeState"];
+    trace?: never;
+  };
   "/v0/models": {
     parameters: {
       query?: never;
@@ -1686,6 +1750,10 @@ export interface components {
       | components["schemas"]["MotionFinished"]
       | components["schemas"]["MotionStateChanged"]
       | components["schemas"]["MotionRemoved"]
+      | components["schemas"]["MadeCreated"]
+      | components["schemas"]["MadeChanged"]
+      | components["schemas"]["MadeStateChanged"]
+      | components["schemas"]["MadeRemoved"]
       | components["schemas"]["DeskChanged"]
       | components["schemas"]["OnboardingChanged"]
       | components["schemas"]["ProblemsChanged"];
@@ -2318,6 +2386,22 @@ export interface components {
       /** @description Whether even older messages exist. */
       has_more: boolean;
     };
+    MadeList: {
+      made: components["schemas"]["Made"][];
+    };
+    MadeDetail: {
+      made: components["schemas"]["Made"];
+      /** @description The page under its title, as `MadeContent` in [the made schema](made.schema.json) describes. */
+      content: {
+        [key: string]: unknown;
+      };
+      state: components["schemas"]["MadeState"];
+      /** @description The 20 newest changes, newest first. */
+      changes: components["schemas"]["MadeChange"][];
+    };
+    MadeStateResult: {
+      state: components["schemas"]["MadeState"];
+    };
     MotionList: {
       motions: components["schemas"]["Motion"][];
     };
@@ -2907,6 +2991,60 @@ export interface components {
       /** @description The position of your message Ari was answering when it made the change: link back to it. */
       position: components["schemas"]["Position"];
     };
+    /** @description A made page's id: readable, chosen by Ari, unique on the server, such as `va-guide`. */
+    MadeId: string;
+    /** @description A picture Ari found on the web, kept on the server as an attachment so the app never contacts its host. Never generated. */
+    Picture: {
+      /** @description Fetch it with `GET /v0/attachments/{attachment}`. */
+      attachment: components["schemas"]["AttachmentId"];
+      alt: string;
+      /**
+       * Format: uri
+       * @description The page the picture came from.
+       */
+      source_url: string;
+      /** @description Who made it, as its source asks. */
+      credit: string;
+    };
+    /** @description A page Ari made: a rich, lasting answer, such as a gallery guide, that a reply shows as an `ari:made` card, and that sits on the Made shelf. Ari keeps it current. Its content and your ticks come from `GET /v0/made/{id}`. */
+    Made: {
+      id: components["schemas"]["MadeId"];
+      /** @description Such as "Your guide to the V&A". */
+      title: string;
+      /** @description What's in it, in one line, such as "4 rooms · 9 things to spot". */
+      summary: string;
+      /** @description The picture at its top and on its card. Absent when it has none. */
+      cover?: components["schemas"]["Picture"];
+      /**
+       * Format: date
+       * @description The day it's for, such as the visit, as `YYYY-MM-DD`: "Made for Saturday". Ari keeps it current until then. Absent when it isn't for a day.
+       */
+      for_day?: string;
+      /** @description How many times it has changed, counting its making as 1. */
+      version: number;
+      made_at: components["schemas"]["Timestamp"];
+      /** @description When Ari last changed it: "Updated 2h ago", with the latest change's note. */
+      changed_at: components["schemas"]["Timestamp"];
+      /** @description The position of your message Ari was answering when it made the page: "From your chat" links back to it. */
+      position: components["schemas"]["Position"];
+    };
+    /** @description Lowercase words and dashes, unique on the page, such as `trajans-column`. */
+    MadeItemId: string;
+    /** @description Your ticks on a made page: when you ticked each item, by its id. `{}` until you tick something. */
+    MadeState: {
+      ticks?: {
+        [key: string]: components["schemas"]["Timestamp"];
+      };
+    };
+    /** @description One change to a made page. */
+    MadeChange: {
+      version: number;
+      at: components["schemas"]["Timestamp"];
+      /** @description What changed, said to you, such as "The Raphael Cartoons reopened this morning, so they're back in." */
+      note: string;
+      /** @description The position of your message Ari was answering when it made the change. */
+      position: components["schemas"]["Position"];
+    };
     /**
      * @description Whether the server can hold a call: `ready` once it can both listen and speak, with memory's vocabulary loaded; `loading` while it starts; `failed` when it can't, until the server restarts.
      * @enum {unknown}
@@ -3079,6 +3217,53 @@ export interface components {
       motion: components["schemas"]["MotionId"];
     };
     /**
+     * made.created
+     * @description Ari made a page. It joins the Made shelf.
+     */
+    MadeCreated: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "made.created";
+      at: components["schemas"]["Timestamp"];
+      made: components["schemas"]["Made"];
+      change: components["schemas"]["MadeChange"];
+    };
+    /**
+     * made.changed
+     * @description Ari changed a page, such as when something on it changed in the world. Fetch its content again. It never notifies: when you need to know, Ari says so in a message.
+     */
+    MadeChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "made.changed";
+      at: components["schemas"]["Timestamp"];
+      made: components["schemas"]["Made"];
+      change: components["schemas"]["MadeChange"];
+    };
+    /**
+     * made.state
+     * @description Your ticks on a page changed, from a tap on any device, or because a change removed an item you'd ticked. It carries the whole state.
+     */
+    MadeStateChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "made.state";
+      at: components["schemas"]["Timestamp"];
+      made: components["schemas"]["MadeId"];
+      state: components["schemas"]["MadeState"];
+    };
+    /**
+     * made.removed
+     * @description You allowed Ari to forget a page, so it's gone from the shelf and its cards.
+     */
+    MadeRemoved: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "made.removed";
+      at: components["schemas"]["Timestamp"];
+      made: components["schemas"]["MadeId"];
+    };
+    /**
      * desk.changed
      * @description Something on the Desk changed. It carries the whole Desk, which is small: replace yours.
      */
@@ -3231,6 +3416,8 @@ export interface components {
   parameters: {
     /** @description The item's id, from its `CalendarItem` in Coming up. */
     CalendarItem: components["schemas"]["CalendarItemId"];
+    /** @description The page's id, from its `Made`. */
+    Made: components["schemas"]["MadeId"];
     /** @description The thing's id, from its `Motion`. */
     Motion: components["schemas"]["MotionId"];
     /** @description The turn's id, from `turn.started`. */
@@ -3333,6 +3520,9 @@ export type ServerInfo = components["schemas"]["ServerInfo"];
 export type SendMessage = components["schemas"]["SendMessage"];
 export type MessageResult = components["schemas"]["MessageResult"];
 export type MessagePage = components["schemas"]["MessagePage"];
+export type MadeList = components["schemas"]["MadeList"];
+export type MadeDetail = components["schemas"]["MadeDetail"];
+export type MadeStateResult = components["schemas"]["MadeStateResult"];
 export type MotionList = components["schemas"]["MotionList"];
 export type MotionDetail = components["schemas"]["MotionDetail"];
 export type MotionState = components["schemas"]["MotionState"];
@@ -3401,6 +3591,12 @@ export type TrackEvidence = components["schemas"]["TrackEvidence"];
 export type Track = components["schemas"]["Track"];
 export type Motion = components["schemas"]["Motion"];
 export type MotionChange = components["schemas"]["MotionChange"];
+export type MadeId = components["schemas"]["MadeId"];
+export type Picture = components["schemas"]["Picture"];
+export type Made = components["schemas"]["Made"];
+export type MadeItemId = components["schemas"]["MadeItemId"];
+export type MadeState = components["schemas"]["MadeState"];
+export type MadeChange = components["schemas"]["MadeChange"];
 export type VoiceState = components["schemas"]["VoiceState"];
 export type VoiceReason = components["schemas"]["VoiceReason"];
 export type StatusKind = components["schemas"]["StatusKind"];
@@ -3419,6 +3615,10 @@ export type MotionChanged = components["schemas"]["MotionChanged"];
 export type MotionFinished = components["schemas"]["MotionFinished"];
 export type MotionStateChanged = components["schemas"]["MotionStateChanged"];
 export type MotionRemoved = components["schemas"]["MotionRemoved"];
+export type MadeCreated = components["schemas"]["MadeCreated"];
+export type MadeChanged = components["schemas"]["MadeChanged"];
+export type MadeStateChanged = components["schemas"]["MadeStateChanged"];
+export type MadeRemoved = components["schemas"]["MadeRemoved"];
 export type DeskChanged = components["schemas"]["DeskChanged"];
 export type OnboardingChanged = components["schemas"]["OnboardingChanged"];
 export type ProblemsChanged = components["schemas"]["ProblemsChanged"];
@@ -3432,6 +3632,7 @@ export type ResponseTooLarge = components["responses"]["TooLarge"];
 export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
 export type ParameterCalendarItem = components["parameters"]["CalendarItem"];
+export type ParameterMade = components["parameters"]["Made"];
 export type ParameterMotion = components["parameters"]["Motion"];
 export type ParameterTurn = components["parameters"]["Turn"];
 export type ParameterUpload = components["parameters"]["Upload"];
@@ -5037,6 +5238,91 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MotionState"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  listMade: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The pages. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MadeList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getMade: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The page's id, from its `Made`. */
+        made: components["parameters"]["Made"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The page. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MadeDetail"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  patchMadeState: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The page's id, from its `Made`. */
+        made: components["parameters"]["Made"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/merge-patch+json": {
+          [key: string]: unknown;
+        };
+        "application/json": {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description The whole state, after the patch. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MadeStateResult"];
         };
       };
       400: components["responses"]["InvalidRequest"];
