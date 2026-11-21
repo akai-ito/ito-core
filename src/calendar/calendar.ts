@@ -249,7 +249,8 @@ export const createCalendar = ({
     onHealth({ ok: true });
     events.set(listed.value);
     for (const listener of refreshedListeners.get()) listener();
-    const invites = listed.value.filter((event) => isInvite(event) && !hasCard(event.uid));
+    // An invite whose event is already over can't be answered usefully, and its card has left the Desk.
+    const invites = listed.value.filter((event) => isInvite(event) && !hasCard(event.uid) && toMs(event.end) > now);
     for (const invite of invites) {
       await holdFor(calendar, invite);
       offerInvite(invite);

@@ -2745,7 +2745,7 @@ export interface components {
       /** @description Such as "WFH day". */
       note?: string;
     };
-    /** @description Something waiting on you on the Desk. It stays until it's done, whatever the date. Draw its buttons from `options`; `allows_text` offers a typed answer, which for a draft asks for a change, such as "a bit more casual". Its kind's payload sits under a field of the same name. Show a kind you don't recognise by its title and options. */
+    /** @description Something waiting on you on the Desk. It stays until it's done, or until it can no longer help: a card with `until`, or an invite once its event is over, leaves by itself then. Draw its buttons from `options`; `allows_text` offers a typed answer, which for a draft asks for a change, such as "a bit more casual". Its kind's payload sits under a field of the same name. Show a kind you don't recognise by its title and options. */
     Card: {
       id: components["schemas"]["CardId"];
       /**
@@ -2756,6 +2756,8 @@ export interface components {
       motion?: components["schemas"]["MotionId"];
       /** @description When it began waiting, for "since Wed". */
       at: components["schemas"]["Timestamp"];
+      /** @description When it stops mattering, such as the evening a question about where to meet is for: it leaves the Desk by itself then. Absent for a card that waits however long it takes. */
+      until?: components["schemas"]["Timestamp"];
       /** @description When Kumo last changed it while it waited, such as rewriting a draft or bringing it back after it couldn't act. Absent if it hasn't changed. Mark a card whose `changed_at`, or `at` for a new one, is later than your last look at the Desk. */
       changed_at?: components["schemas"]["Timestamp"];
       /** @description One line, such as "Draft to Tess". */

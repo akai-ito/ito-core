@@ -148,7 +148,8 @@ blocks:
   at each with the same memory pages and plans it has in the chat, and the end of your conversation,
   and decides; nothing is said by rule.
 - **It acts and records:** cards on the Desk, blocks on its own calendar, memory, and every action in
-  Kumo's work with an undo.
+  Kumo's work with an undo. The Desk's cards are the same in the chat: once you settle one there, Kumo
+  answers, changes or clears it, and a card that only mattered until a moment leaves by itself then.
 
 When Kumo's model can't act, nothing robotic goes out in its place: what was due waits, the Desk and
 Settings show the problem, and Kumo catches up once its model answers.
