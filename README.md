@@ -180,6 +180,17 @@ an old folder into one of yours, waits for one Apply on the Desk, and Done keeps
 an undo. Each mail step in the chat says what it did, such as "Binned “50% off”
 from a shop", and opens onto the mails it read.
 
+Ari reads the files mails carry too, so a booking's seats or an invoice's total don't have to be
+retyped: a mail lists its files, and Ari reads a PDF's words page by page (pages that are only a
+scan or a code are drawn for it to look at), looks at pictures, and reads an invitation's times,
+time zone, organiser, attendees, repeats, updates and cancellations. A file is data, never
+instructions, and it's kept in Ari's private workspace, so it can go into a draft. Reading never
+marks a mail read; Ari marks mail read, unread or flagged when you ask. It all runs inside Node,
+with [pdf.js](https://mozilla.github.io/pdf.js/) for PDFs and `@napi-rs/canvas` (its own bundled
+Skia) to draw pages, so the box needs no system packages for it. Mail you sent reads whole too,
+including rich mail written as HTML alone, and a mail with no words says so, apart from one whose
+words couldn't be read.
+
 Your iCloud Contacts come with the same iCloud connection, over CardDAV, with nothing more to set
 up. They're the source of truth for the facts about people (labelled emails and phones, addresses,
 birthdays, work, related names), and Kumo keeps them current on its own from what it reads, such as
@@ -201,6 +212,17 @@ the mail went to, aliases included, and a new mail from the one you last used wi
 Replies keep everyone on the thread, To and Cc, unless you ask for the sender alone or it's plainly
 a mail to a big list. The
 Desk's draft card shows the formatted words, the signature and what's attached.
+
+A draft is one thing, held together: changing its words keeps its recipients, its files, the mail it
+answers with the thread's whole References chain, and its quote, exactly as first written, and two
+drafts changed at once can't cross. Every save is read back from the server's Drafts and checked
+against what was meant (recipients, words, thread, each file and its size) before Kumo says it's
+ready; anything that didn't save is said plainly. A mail is only ever taken by its exact
+Message-ID, never one a server's search finds that only resembles it. Each try at the mail server
+has a time limit; reading is tried once more on a fresh connection, and a draft save that's cut
+short is looked for before it's made again, so it's never saved twice and Kumo can say whether
+anything changed. A draft's card leaves the Desk by itself once you send the draft, bin it, or delete
+it in your mail app, and Done says so.
 
 Kumo learns one area at a time, in the open. It opens a learning track for anything it's getting
 to know you in or learning to do well, such as sorting your mail, writing as you or planning your
