@@ -71,6 +71,7 @@ describe("Ito's tools over MCP", () => {
           { name: "ask" },
           { name: "keep_image" },
           { name: "recall" },
+          { name: "find_in_memory" },
           { name: "read_page" },
           { name: "edit_page" },
           { name: "write_page" },
