@@ -47,6 +47,9 @@ sequenceDiagram
 - **Attach** photos and files: upload each under an id the app makes, then name them in a message.
   Anything over 20 MB, such as a recording, goes up in chunks that resume after any drop; `GET
   /v0/uploads` says what the server takes, and how big, before anything is sent.
+- **Recordings:** an audio attachment you send is transcribed on the server, with times and, as a
+  best guess, who spoke; `recording.changed` follows it to `ready`. Kumo reads the transcript, and
+  the app can too, correct what it misheard, name its voices, and delete it.
 - **Pair** a new app with the short-lived code in the QR code `ito pair` shows, for a token of its
   own.
 - **Answer** what the agent asks by sending a message, or cancel the ask. Asking ends the agent's
@@ -78,6 +81,7 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `message.delta` | Text appended to a message, at an offset |
 | `message.ended` | A message is finished: completed, stopped, interrupted or failed |
 | `turn.ended` | The turn is over, and its status is cleared |
+| `recording.changed` | A recording you sent moved on: queued, transcribing, ready, failed or deleted |
 
 ## Versioning
 

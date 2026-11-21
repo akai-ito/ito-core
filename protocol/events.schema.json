@@ -97,6 +97,9 @@
         },
         {
           "$ref": "#/$defs/ProblemsChanged"
+        },
+        {
+          "$ref": "#/$defs/RecordingChanged"
         }
       ]
     },
@@ -305,7 +308,7 @@
       ]
     },
     "AttachmentKind": {
-      "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",
+      "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's or one you send, which the server transcribes for the agent; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",
       "enum": ["image", "audio", "file"]
     },
     "Attachment": {
@@ -2665,6 +2668,91 @@
         },
         "onboarding": {
           "$ref": "#/$defs/Onboarding"
+        }
+      }
+    },
+    "RecordingState": {
+      "description": "`queued` while it waits its turn, or for the server's voice to be ready, as `reason` says; `transcribing` while the server listens to it; `ready` once its transcript is; `failed` when it couldn't be transcribed, as `error` says, until it's tried again; `deleted` once its audio and transcript are gone.",
+      "enum": ["queued", "transcribing", "ready", "failed", "deleted"]
+    },
+    "Recording": {
+      "description": "A recording you sent in a message, and where its transcript stands. The server transcribes every audio attachment you send, on its own GPU, with times and, as a best guess, who spoke; nothing leaves the server. Fetch the transcript with `GET /v0/recordings/{attachment}/transcript` once it's `ready`.",
+      "type": "object",
+      "required": ["attachment", "message", "name", "state", "changed_at"],
+      "properties": {
+        "attachment": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "message": {
+          "$ref": "#/$defs/MessageId",
+          "description": "The message that carries it."
+        },
+        "name": {
+          "description": "The recording's file name, as uploaded.",
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "$ref": "#/$defs/RecordingState"
+        },
+        "reason": {
+          "description": "`queued` only: why it hasn't started, such as the voice still loading. Absent while it simply waits its turn.",
+          "type": "string",
+          "minLength": 1
+        },
+        "progress": {
+          "description": "`transcribing` only: how far through it the server is.",
+          "type": "object",
+          "required": ["done_seconds"],
+          "properties": {
+            "done_seconds": {
+              "description": "How much of it has been heard.",
+              "type": "number",
+              "minimum": 0
+            },
+            "total_seconds": {
+              "description": "How long it is, when the server could tell.",
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "duration_seconds": {
+          "description": "`ready` only: how long it is.",
+          "type": "number",
+          "minimum": 0
+        },
+        "speakers": {
+          "description": "`ready` only: how many voices the server told apart, which is a best guess.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "$ref": "#/$defs/Error",
+          "description": "`failed` only: why."
+        },
+        "changed_at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      }
+    },
+    "RecordingChanged": {
+      "title": "recording.changed",
+      "description": "A recording moved on: queued, transcribing (about every 5% of the way), ready, failed or deleted. It carries the whole recording. These events are compacted like the Desk's, so after a `snapshot`, fetch `GET /v0/recordings` for the recordings you show.",
+      "type": "object",
+      "required": ["id", "type", "at", "recording"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "recording.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "recording": {
+          "$ref": "#/$defs/Recording"
         }
       }
     }

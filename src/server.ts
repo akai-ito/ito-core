@@ -38,6 +38,8 @@ import { loadSchemas } from "#protocol/schemas.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { createAttachments, type Attachments } from "#attachments/attachments.ts";
 import { createUploads, type Limits as UploadLimits } from "#attachments/uploads.ts";
+import { createRecordings, type Recordings } from "#recordings/recordings.ts";
+import { createRecordingTools } from "#recordings/tools.ts";
 import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
 import { createNotifier } from "#notifications/notifier.ts";
 import { openDatabase } from "#store/database.ts";
@@ -135,6 +137,7 @@ export type Server = {
   readonly store: Store;
   readonly turns: Turns;
   readonly attachments: Attachments;
+  readonly recordings: Recordings;
   readonly host: Host;
   readonly memory: Memory;
   readonly backup: Backup;
@@ -323,6 +326,7 @@ export const createServer = (options: ServerOptions): Server => {
       tracks.inMindText(),
       deskLine.inMindText(),
       picture.inMindText(),
+      recordings.inMindText(),
       latelyText(),
     ]
       .filter(Boolean)
@@ -343,6 +347,7 @@ export const createServer = (options: ServerOptions): Server => {
         tracks.inMindText(),
         deskLine.inMindText(),
         picture.inMindText(),
+        recordings.inMindText(),
         gettingStarted.inMindText(),
         callContext(),
       ]
@@ -441,6 +446,17 @@ export const createServer = (options: ServerOptions): Server => {
     info,
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
+  const recordings = createRecordings({
+    database,
+    store,
+    attachments,
+    voice,
+    voiceprint: () => voiceprints.load(),
+    work: (prompt) => runWork(prompt),
+    workspace: path.join(options.dataDirectory, "workspace"),
+    clock,
+    info,
+  });
   const calls = createCalls({
     store,
     turns,
@@ -638,6 +654,7 @@ export const createServer = (options: ServerOptions): Server => {
     gate: createGate(() => [store.setting(tokenSetting) ?? "", ...store.pairedTokenHashes()].filter(Boolean), clock),
     attachments,
     uploads,
+    recordings,
     host,
     memory,
     backup,
@@ -698,6 +715,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...wakeUps.tools,
     ...mail.tools,
     ...gettingStarted.tools,
+    ...createRecordingTools(recordings),
     ...createDemoTools({ store, desk, post, gettingStarted, identifiers, clock, timeZone }),
   ];
   const noteRun = (tool: Tool): Tool => ({
@@ -760,6 +778,7 @@ export const createServer = (options: ServerOptions): Server => {
     await engine.close();
     await host.close();
     await calls.close();
+    await recordings.close();
     await voice.close();
     await memory.close();
     apns.close();
@@ -772,6 +791,7 @@ export const createServer = (options: ServerOptions): Server => {
     store,
     turns,
     attachments,
+    recordings,
     host,
     memory,
     backup,

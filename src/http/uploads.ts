@@ -4,10 +4,11 @@ import { describeAudioFormats, type UploadKind } from "#attachments/formats.ts";
 import type { ChunkFailure, FinishFailure, StartFailure, Uploads } from "#attachments/uploads.ts";
 import type { RouteSchema } from "#http/validation.ts";
 import { fieldOf } from "#tools/input.ts";
-import type { Error as ErrorBody, Upload } from "#protocol/types.ts";
+import type { Error as ErrorBody, Transcription, Upload } from "#protocol/types.ts";
 
 export type UploadRoutesOptions = {
   readonly uploads: Uploads;
+  readonly transcription: () => Transcription;
   readonly schemaFor: (operationId: string) => RouteSchema;
 };
 
@@ -137,9 +138,13 @@ const sendFinishFailure = (reply: FastifyReply, id: string, failure: FinishFailu
   }
 };
 
-export const registerUploads = (app: FastifyInstance, { uploads, schemaFor }: UploadRoutesOptions): void => {
+export const registerUploads = (
+  app: FastifyInstance,
+  { uploads, transcription, schemaFor }: UploadRoutesOptions,
+): void => {
   app.get("/v0/uploads", { schema: schemaFor("listUploads") }, () => ({
     limits: uploads.limits(),
+    transcription: transcription(),
     uploads: [...uploads.unfinished()],
   }));
 

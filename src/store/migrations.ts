@@ -244,4 +244,15 @@ export const migrations: readonly string[] = [
     position INTEGER NOT NULL,
     body TEXT NOT NULL
   );`,
+  // 0.19: the recordings they send, each with where its transcript stands, the transcript itself once it's made, and
+  // whether Kumo has read it or come back to it. Audio and transcripts stay on the server, never in memory.
+  `CREATE TABLE recordings (
+    attachment TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    transcript TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    read INTEGER NOT NULL DEFAULT 0,
+    followed_up INTEGER NOT NULL DEFAULT 0
+  );`,
 ];

@@ -705,6 +705,121 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/recordings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the recordings you sent
+     * @description Newest first, with where each one's transcript stands. Deleted recordings aren't listed.
+     */
+    get: operations["listRecordings"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/recordings/{attachment}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * See where a recording's transcript stands
+     * @description Every audio attachment you send in a message becomes a recording. `recording.changed` says
+     *     when it moves on; this is for a recording on screen after a snapshot.
+     */
+    get: operations["getRecording"];
+    put?: never;
+    post?: never;
+    /**
+     * Delete a recording's audio and transcript
+     * @description Deletes the audio, its transcript and any copy in Kumo's workspace, and stops a transcription
+     *     under way. The message stays, with the attachment's name, but its audio can't be fetched
+     *     again. What Kumo already wrote from it, such as a summary in the chat, stays; ask Kumo to
+     *     change what it remembers. Deleting again answers the deleted recording.
+     */
+    delete: operations["deleteRecording"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/recordings/{attachment}/retry": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Transcribe a failed recording again
+     * @description Puts a `failed` recording back in the queue, such as after installing ffmpeg on the server.
+     *     A recording that isn't failed is answered as it is.
+     */
+    post: operations["retryRecording"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/recordings/{attachment}/transcript": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read a recording's transcript
+     * @description What was said, piece by piece, with times from the start of the recording and, where the
+     *     server could tell voices apart, who said it, with your corrections applied. It's what the
+     *     model heard, not a summary: Kumo reads the same words and keeps its own reading separate.
+     *     Ask for `format=text` for plain text to share, one line per turn with its time.
+     */
+    get: operations["getTranscript"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/recordings/{attachment}/corrections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Correct what the transcript misheard, and name its voices
+     * @description Replace words the server misheard, such as a name or a term, everywhere they appear, and
+     *     give voices names, such as "Interviewer" for `S1`. The words as heard are kept underneath:
+     *     correcting the same words again replaces the earlier correction, and correcting them to
+     *     themselves undoes it. Kumo makes the same corrections when you tell it in the chat.
+     */
+    post: operations["correctTranscript"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/asks/{ask}/cancel": {
     parameters: {
       query?: never;
@@ -1780,7 +1895,8 @@ export interface components {
       | components["schemas"]["MotionRemoved"]
       | components["schemas"]["DeskChanged"]
       | components["schemas"]["OnboardingChanged"]
-      | components["schemas"]["ProblemsChanged"];
+      | components["schemas"]["ProblemsChanged"]
+      | components["schemas"]["RecordingChanged"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation and of the Desk with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -2497,6 +2613,21 @@ export interface components {
       /** @description `finished` only: the attachment it became. */
       attachment?: components["schemas"]["Attachment"];
     };
+    Transcription: {
+      /**
+       * @description Whether the server can transcribe a recording now: `ready`; `loading` while its voice
+       *     starts; `unavailable` when it has none or it failed, as `reason` says. A recording sent
+       *     while it can't waits, queued, until it can.
+       * @enum {unknown}
+       */
+      state: "ready" | "loading" | "unavailable";
+      /** @description Why it isn't ready. */
+      reason?: string;
+      /** @description The languages it transcribes well, such as `en`; speech in others comes out wrong. */
+      languages: string[];
+      /** @description A line to show before a recording is sent, about the other people in it. */
+      consent: string;
+    };
     UploadResult: {
       upload: components["schemas"]["Upload"];
     };
@@ -2506,8 +2637,70 @@ export interface components {
     };
     UploadList: {
       limits: components["schemas"]["UploadLimits"];
+      transcription: components["schemas"]["Transcription"];
       /** @description The big uploads that haven't finished, oldest first. */
       uploads: components["schemas"]["Upload"][];
+    };
+    RecordingList: {
+      recordings: components["schemas"]["Recording"][];
+    };
+    RecordingResult: {
+      recording: components["schemas"]["Recording"];
+    };
+    RecordingErrorResult: {
+      error: components["schemas"]["Error"];
+      recording: components["schemas"]["Recording"];
+    };
+    TranscriptSpeaker: {
+      /** @description `S1`, `S2`… in the order they first speak, or `you` for the voice that matches your voiceprint. */
+      id: string;
+      /** @description What to call them, such as "Speaker 1", "You", or the name you gave them. */
+      name: string;
+      /** @description How long they spoke, roughly. */
+      seconds: number;
+      /** @description Whether this voice matched yours. Without a voiceprint (it's learnt on calls), no voice is you. */
+      you: boolean;
+    };
+    TranscriptSegment: {
+      /** @description Seconds from the start of the recording. */
+      start: number;
+      end: number;
+      /** @description What was said, as the model heard it, with your corrections. */
+      text: string;
+      /** @description The `id` of who said it, when the server could tell. */
+      speaker?: string;
+    };
+    TranscriptCorrection: {
+      /** @description The words as the model heard them, matched whole and in any case. */
+      heard: string;
+      /** @description What was really said. */
+      meant: string;
+    };
+    SpeakerName: {
+      id: string;
+      name: string;
+    };
+    Transcript: {
+      attachment: components["schemas"]["AttachmentId"];
+      /** @description The recording's file name. */
+      name: string;
+      duration_seconds: number;
+      language: string;
+      /** @description The speech model that heard it, such as `nvidia/parakeet-tdt-0.6b-v2`. */
+      model: string;
+      /** @description The voices the server told apart, a best guess; empty when it couldn't tell. */
+      speakers: components["schemas"]["TranscriptSpeaker"][];
+      segments: components["schemas"]["TranscriptSegment"][];
+      /** @description The corrections applied, in order. */
+      corrections: components["schemas"]["TranscriptCorrection"][];
+      made_at: components["schemas"]["Timestamp"];
+    };
+    TranscriptResult: {
+      transcript: components["schemas"]["Transcript"];
+    };
+    CorrectTranscript: {
+      replace?: components["schemas"]["TranscriptCorrection"][];
+      speakers?: components["schemas"]["SpeakerName"][];
     };
     FinishUpload: {
       /** @description The whole file's SHA-256, in lowercase hex, for the server to check. */
@@ -2686,7 +2879,7 @@ export interface components {
     /** @description Opaque: the `UploadId` the app made for what it uploaded, or an id the server made for a recording it keeps, such as a spoken message's. */
     AttachmentId: string;
     /**
-     * @description `image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.
+     * @description `image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's or one you send, which the server transcribes for the agent; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.
      * @enum {unknown}
      */
     AttachmentKind: "image" | "audio" | "file";
@@ -3026,6 +3219,36 @@ export interface components {
       /** @description What it stands on, newest first, the latest ten. */
       evidence: components["schemas"]["TrackEvidence"][];
     };
+    /**
+     * @description `queued` while it waits its turn, or for the server's voice to be ready, as `reason` says; `transcribing` while the server listens to it; `ready` once its transcript is; `failed` when it couldn't be transcribed, as `error` says, until it's tried again; `deleted` once its audio and transcript are gone.
+     * @enum {unknown}
+     */
+    RecordingState: "queued" | "transcribing" | "ready" | "failed" | "deleted";
+    /** @description A recording you sent in a message, and where its transcript stands. The server transcribes every audio attachment you send, on its own GPU, with times and, as a best guess, who spoke; nothing leaves the server. Fetch the transcript with `GET /v0/recordings/{attachment}/transcript` once it's `ready`. */
+    Recording: {
+      attachment: components["schemas"]["AttachmentId"];
+      /** @description The message that carries it. */
+      message: components["schemas"]["MessageId"];
+      /** @description The recording's file name, as uploaded. */
+      name: string;
+      state: components["schemas"]["RecordingState"];
+      /** @description `queued` only: why it hasn't started, such as the voice still loading. Absent while it simply waits its turn. */
+      reason?: string;
+      /** @description `transcribing` only: how far through it the server is. */
+      progress?: {
+        /** @description How much of it has been heard. */
+        done_seconds: number;
+        /** @description How long it is, when the server could tell. */
+        total_seconds?: number;
+      };
+      /** @description `ready` only: how long it is. */
+      duration_seconds?: number;
+      /** @description `ready` only: how many voices the server told apart, which is a best guess. */
+      speakers?: number;
+      /** @description `failed` only: why. */
+      error?: components["schemas"]["Error"];
+      changed_at: components["schemas"]["Timestamp"];
+    };
     /** @description A thing in motion: something going on that Ari keeps for you, such as a trip being planned. Its content and state come from `GET /v0/motion/{id}`. */
     Motion: {
       id: components["schemas"]["MotionId"];
@@ -3267,6 +3490,17 @@ export interface components {
       problems: components["schemas"]["Problem"][];
     };
     /**
+     * recording.changed
+     * @description A recording moved on: queued, transcribing (about every 5% of the way), ready, failed or deleted. It carries the whole recording. These events are compacted like the Desk's, so after a `snapshot`, fetch `GET /v0/recordings` for the recordings you show.
+     */
+    RecordingChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "recording.changed";
+      at: components["schemas"]["Timestamp"];
+      recording: components["schemas"]["Recording"];
+    };
+    /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or Kumo sent a `post` outside a turn.
      * @enum {unknown}
      */
@@ -3380,6 +3614,16 @@ export interface components {
          *     }
          */
         "application/json": components["schemas"]["ErrorResult"];
+      };
+    };
+    /** @description The recording has no transcript yet, or any more (`not_transcribed`); `recording` says where it stands. */
+    NotTranscribed: {
+      headers: {
+        "Ito-Protocol": components["headers"]["ItoProtocol"];
+        [name: string]: unknown;
+      };
+      content: {
+        "application/json": components["schemas"]["RecordingErrorResult"];
       };
     };
     /** @description The server's disk hasn't room for the file (`server_disk_full`). */
@@ -3572,9 +3816,20 @@ export type UploadKindLimit = components["schemas"]["UploadKindLimit"];
 export type UploadLimits = components["schemas"]["UploadLimits"];
 export type CreateUpload = components["schemas"]["CreateUpload"];
 export type Upload = components["schemas"]["Upload"];
+export type Transcription = components["schemas"]["Transcription"];
 export type UploadResult = components["schemas"]["UploadResult"];
 export type UploadErrorResult = components["schemas"]["UploadErrorResult"];
 export type UploadList = components["schemas"]["UploadList"];
+export type RecordingList = components["schemas"]["RecordingList"];
+export type RecordingResult = components["schemas"]["RecordingResult"];
+export type RecordingErrorResult = components["schemas"]["RecordingErrorResult"];
+export type TranscriptSpeaker = components["schemas"]["TranscriptSpeaker"];
+export type TranscriptSegment = components["schemas"]["TranscriptSegment"];
+export type TranscriptCorrection = components["schemas"]["TranscriptCorrection"];
+export type SpeakerName = components["schemas"]["SpeakerName"];
+export type Transcript = components["schemas"]["Transcript"];
+export type TranscriptResult = components["schemas"]["TranscriptResult"];
+export type CorrectTranscript = components["schemas"]["CorrectTranscript"];
 export type FinishUpload = components["schemas"]["FinishUpload"];
 export type Pair = components["schemas"]["Pair"];
 export type PairResult = components["schemas"]["PairResult"];
@@ -3636,6 +3891,8 @@ export type Desk = components["schemas"]["Desk"];
 export type TrackStage = components["schemas"]["TrackStage"];
 export type TrackEvidence = components["schemas"]["TrackEvidence"];
 export type Track = components["schemas"]["Track"];
+export type RecordingState = components["schemas"]["RecordingState"];
+export type Recording = components["schemas"]["Recording"];
 export type Motion = components["schemas"]["Motion"];
 export type MotionChange = components["schemas"]["MotionChange"];
 export type VoiceState = components["schemas"]["VoiceState"];
@@ -3659,6 +3916,7 @@ export type MotionRemoved = components["schemas"]["MotionRemoved"];
 export type DeskChanged = components["schemas"]["DeskChanged"];
 export type OnboardingChanged = components["schemas"]["OnboardingChanged"];
 export type ProblemsChanged = components["schemas"]["ProblemsChanged"];
+export type RecordingChanged = components["schemas"]["RecordingChanged"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -3667,6 +3925,7 @@ export type ResponseNotFound = components["responses"]["NotFound"];
 export type ResponseIdConflict = components["responses"]["IdConflict"];
 export type ResponseTooLarge = components["responses"]["TooLarge"];
 export type ResponseUnsupportedType = components["responses"]["UnsupportedType"];
+export type ResponseNotTranscribed = components["responses"]["NotTranscribed"];
 export type ResponseServerDiskFull = components["responses"]["ServerDiskFull"];
 export type ResponseOffsetMismatch = components["responses"]["OffsetMismatch"];
 export type ResponseUploadIncomplete = components["responses"]["UploadIncomplete"];
@@ -4871,6 +5130,201 @@ export interface operations {
       409: components["responses"]["UploadIncomplete"];
       415: components["responses"]["UnsupportedType"];
       422: components["responses"]["ChecksumMismatch"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  listRecordings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The recordings. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RecordingList"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  getRecording: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The attachment's id, from its message. */
+        attachment: components["parameters"]["Attachment"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The recording. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RecordingResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  deleteRecording: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The attachment's id, from its message. */
+        attachment: components["parameters"]["Attachment"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deleted. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RecordingResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  retryRecording: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The attachment's id, from its message. */
+        attachment: components["parameters"]["Attachment"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description It wasn't failed; this is where it stands. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RecordingResult"];
+        };
+      };
+      /** @description Queued again. */
+      202: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RecordingResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  getTranscript: {
+    parameters: {
+      query?: {
+        /** @description `json`, the default, or `text`. */
+        format?: "json" | "text";
+      };
+      header?: never;
+      path: {
+        /** @description The attachment's id, from its message. */
+        attachment: components["parameters"]["Attachment"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The transcript. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TranscriptResult"];
+          "text/plain": string;
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["NotTranscribed"];
+      429: components["responses"]["SlowDown"];
+    };
+  };
+  correctTranscript: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The attachment's id, from its message. */
+        attachment: components["parameters"]["Attachment"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "replace": [
+         *         {
+         *           "heard": "Myra",
+         *           "meant": "Mira"
+         *         }
+         *       ],
+         *       "speakers": [
+         *         {
+         *           "id": "S1",
+         *           "name": "Interviewer"
+         *         }
+         *       ]
+         *     }
+         */
+        "application/json": components["schemas"]["CorrectTranscript"];
+      };
+    };
+    responses: {
+      /** @description The transcript, corrected. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TranscriptResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["NotTranscribed"];
       429: components["responses"]["SlowDown"];
     };
   };

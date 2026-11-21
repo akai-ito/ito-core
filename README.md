@@ -265,6 +265,16 @@ node bin/ito.ts logs --since 2026-10-31 --raw # the JSON lines themselves
 Each readable line has the local time, the level, the message and its details. Requests to the
 API only show with `--about requests`.
 
+A recording you send in the chat, such as an interview, is transcribed on your server by the same
+voice: ffmpeg reads any format your phone records in, Parakeet hears it in pieces, steered toward the
+names in memory, and TitaNet voiceprints tell the speakers apart, finding you by the voiceprint your
+calls taught it. No other model is downloaded for it, and nothing leaves the box. The app shows how
+far along it is, and once it's ready Kumo reads it and brings you what it heard (a debrief, for an
+interview) with the actions and memory updates it suggests, for you to choose. It hears English, and
+telling voices apart is a best guess: voices that overlap, or that sound alike, can be mixed up. You
+can correct a misheard name and delete a recording with its transcript. It needs ffmpeg on the box
+(`sudo apt install ffmpeg`); `ito voice check` times a two-person recording through it.
+
 Photos and files you attach in the chat stay on your server and never go into the Thread, unless
 Kumo keeps a photo with a story. Up to 20 MB goes in one request; anything bigger, such as an hour's
 recording, goes up in chunks that carry on after a dropped connection: recordings up to 1 GB,

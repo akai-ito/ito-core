@@ -19,6 +19,8 @@ info:
       token of its own.
     - **Attach** photos and files: upload each one, then name them in a message. Big files, such as
       a recording, go up in chunks that resume after any drop.
+    - **Recordings:** a recording you send is transcribed on the server, with times and who spoke,
+      for Kumo to read; follow it, read and correct its transcript, and delete it.
     - **Answer** what the agent asks by sending a message, or cancel the ask.
     - **Shaped replies:** a reply may hold [`ari:` blocks](blocks.schema.json) the app draws
       natively: places, choices, pictures and things in motion.
@@ -70,6 +72,10 @@ tags:
     description: Home, with Kumo's plans, Coming up, Waiting on you, Kumo's work and the calendar.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
+  - name: Recordings
+    description: |
+      The recordings you send, transcribed on the server for Kumo to read, with times and, as a best
+      guess, who spoke. Audio and transcript stay on the server until you delete them.
   - name: Turns
     description: Control the agent's work on a turn.
   - name: Asks
@@ -1117,6 +1123,163 @@ paths:
         "415": { $ref: "#/components/responses/UnsupportedType" }
         "422": { $ref: "#/components/responses/ChecksumMismatch" }
         "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings:
+    get:
+      tags: [Recordings]
+      operationId: listRecordings
+      summary: List the recordings you sent
+      description: Newest first, with where each one's transcript stands. Deleted recordings aren't listed.
+      responses:
+        "200":
+          description: The recordings.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}:
+    get:
+      tags: [Recordings]
+      operationId: getRecording
+      summary: See where a recording's transcript stands
+      description: |
+        Every audio attachment you send in a message becomes a recording. `recording.changed` says
+        when it moves on; this is for a recording on screen after a snapshot.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "200":
+          description: The recording.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    delete:
+      tags: [Recordings]
+      operationId: deleteRecording
+      summary: Delete a recording's audio and transcript
+      description: |
+        Deletes the audio, its transcript and any copy in Kumo's workspace, and stops a transcription
+        under way. The message stays, with the attachment's name, but its audio can't be fetched
+        again. What Kumo already wrote from it, such as a summary in the chat, stays; ask Kumo to
+        change what it remembers. Deleting again answers the deleted recording.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "200":
+          description: Deleted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}/retry:
+    post:
+      tags: [Recordings]
+      operationId: retryRecording
+      summary: Transcribe a failed recording again
+      description: |
+        Puts a `failed` recording back in the queue, such as after installing ffmpeg on the server.
+        A recording that isn't failed is answered as it is.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "202":
+          description: Queued again.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "200":
+          description: It wasn't failed; this is where it stands.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}/transcript:
+    get:
+      tags: [Recordings]
+      operationId: getTranscript
+      summary: Read a recording's transcript
+      description: |
+        What was said, piece by piece, with times from the start of the recording and, where the
+        server could tell voices apart, who said it, with your corrections applied. It's what the
+        model heard, not a summary: Kumo reads the same words and keeps its own reading separate.
+        Ask for `format=text` for plain text to share, one line per turn with its time.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+        - name: format
+          in: query
+          required: false
+          description: "`json`, the default, or `text`."
+          schema:
+            enum: [json, text]
+            default: json
+      responses:
+        "200":
+          description: The transcript.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranscriptResult" }
+            text/plain:
+              schema:
+                type: string
+                example: "[0:00] Speaker 1: Thanks for making the time today.\n[0:04] You: Of course.\n"
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotTranscribed" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}/corrections:
+    post:
+      tags: [Recordings]
+      operationId: correctTranscript
+      summary: Correct what the transcript misheard, and name its voices
+      description: |
+        Replace words the server misheard, such as a name or a term, everywhere they appear, and
+        give voices names, such as "Interviewer" for `S1`. The words as heard are kept underneath:
+        correcting the same words again replaces the earlier correction, and correcting them to
+        themselves undoes it. Kumo makes the same corrections when you tell it in the chat.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CorrectTranscript" }
+            example:
+              replace:
+                - { heard: Myra, meant: Mira }
+              speakers:
+                - { id: S1, name: Interviewer }
+      responses:
+        "200":
+          description: The transcript, corrected.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranscriptResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotTranscribed" }
+        "429": { $ref: "#/components/responses/SlowDown" }
   /v0/asks/{ask}/cancel:
     post:
       tags: [Asks]
@@ -2024,6 +2187,13 @@ components:
               code: unsupported_type
               message: "Ito takes recordings as M4A, MP3, WAV, AAC, Ogg/Opus, FLAC, WebM, AMR, Core Audio or AIFF."
               detail: video/quicktime isn't a media type big uploads take.
+    NotTranscribed:
+      description: The recording has no transcript yet, or any more (`not_transcribed`); `recording` says where it stands.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RecordingErrorResult" }
     ServerDiskFull:
       description: The server's disk hasn't room for the file (`server_disk_full`).
       headers:
@@ -3000,6 +3170,26 @@ components:
         attachment:
           $ref: "events.schema.json#/$defs/Attachment"
           description: "`finished` only: the attachment it became."
+    Transcription:
+      type: object
+      required: [state, languages, consent]
+      properties:
+        state:
+          description: |
+            Whether the server can transcribe a recording now: `ready`; `loading` while its voice
+            starts; `unavailable` when it has none or it failed, as `reason` says. A recording sent
+            while it can't waits, queued, until it can.
+          enum: [ready, loading, unavailable]
+        reason:
+          description: Why it isn't ready.
+          type: string
+        languages:
+          description: The languages it transcribes well, such as `en`; speech in others comes out wrong.
+          type: array
+          items: { type: string }
+        consent:
+          description: A line to show before a recording is sent, about the other people in it.
+          type: string
     UploadResult:
       type: object
       required: [upload]
@@ -3013,13 +3203,130 @@ components:
         upload: { $ref: "#/components/schemas/Upload" }
     UploadList:
       type: object
-      required: [limits, uploads]
+      required: [limits, transcription, uploads]
       properties:
         limits: { $ref: "#/components/schemas/UploadLimits" }
+        transcription: { $ref: "#/components/schemas/Transcription" }
         uploads:
           description: The big uploads that haven't finished, oldest first.
           type: array
           items: { $ref: "#/components/schemas/Upload" }
+    RecordingList:
+      type: object
+      required: [recordings]
+      properties:
+        recordings:
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Recording" }
+    RecordingResult:
+      type: object
+      required: [recording]
+      properties:
+        recording: { $ref: "events.schema.json#/$defs/Recording" }
+    RecordingErrorResult:
+      type: object
+      required: [error, recording]
+      properties:
+        error: { $ref: "events.schema.json#/$defs/Error" }
+        recording: { $ref: "events.schema.json#/$defs/Recording" }
+    TranscriptSpeaker:
+      type: object
+      required: [id, name, seconds, you]
+      properties:
+        id:
+          description: "`S1`, `S2`… in the order they first speak, or `you` for the voice that matches your voiceprint."
+          type: string
+          minLength: 1
+        name:
+          description: What to call them, such as "Speaker 1", "You", or the name you gave them.
+          type: string
+          minLength: 1
+        seconds:
+          description: How long they spoke, roughly.
+          type: number
+          minimum: 0
+        you:
+          description: Whether this voice matched yours. Without a voiceprint (it's learnt on calls), no voice is you.
+          type: boolean
+    TranscriptSegment:
+      type: object
+      required: [start, end, text]
+      properties:
+        start:
+          description: Seconds from the start of the recording.
+          type: number
+          minimum: 0
+        end:
+          type: number
+          minimum: 0
+        text:
+          description: What was said, as the model heard it, with your corrections.
+          type: string
+        speaker:
+          description: The `id` of who said it, when the server could tell.
+          type: string
+    TranscriptCorrection:
+      type: object
+      required: [heard, meant]
+      properties:
+        heard:
+          description: The words as the model heard them, matched whole and in any case.
+          type: string
+          minLength: 1
+          maxLength: 200
+        meant:
+          description: What was really said.
+          type: string
+          minLength: 1
+          maxLength: 200
+    SpeakerName:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 80 }
+    Transcript:
+      type: object
+      required: [attachment, name, duration_seconds, language, model, speakers, segments, corrections, made_at]
+      properties:
+        attachment: { $ref: "events.schema.json#/$defs/AttachmentId" }
+        name:
+          description: The recording's file name.
+          type: string
+        duration_seconds: { type: number, minimum: 0 }
+        language: { type: string }
+        model:
+          description: The speech model that heard it, such as `nvidia/parakeet-tdt-0.6b-v2`.
+          type: string
+        speakers:
+          description: The voices the server told apart, a best guess; empty when it couldn't tell.
+          type: array
+          items: { $ref: "#/components/schemas/TranscriptSpeaker" }
+        segments:
+          type: array
+          items: { $ref: "#/components/schemas/TranscriptSegment" }
+        corrections:
+          description: The corrections applied, in order.
+          type: array
+          items: { $ref: "#/components/schemas/TranscriptCorrection" }
+        made_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    TranscriptResult:
+      type: object
+      required: [transcript]
+      properties:
+        transcript: { $ref: "#/components/schemas/Transcript" }
+    CorrectTranscript:
+      type: object
+      minProperties: 1
+      properties:
+        replace:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/TranscriptCorrection" }
+        speakers:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/SpeakerName" }
     FinishUpload:
       type: object
       properties:

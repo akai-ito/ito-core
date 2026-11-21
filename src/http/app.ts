@@ -36,6 +36,8 @@ import { registerStream } from "#http/stream.ts";
 import { createEventStream } from "#http/events.ts";
 import { inlineDisposition, parseRange } from "#http/ranges.ts";
 import { registerUploads, tooLargeChunk } from "#http/uploads.ts";
+import { registerRecordings, toTranscription } from "#http/recordings.ts";
+import type { Recordings } from "#recordings/recordings.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
 import type { Error as ErrorBody, RegisterDevice, Whereabouts } from "#protocol/types.ts";
@@ -56,6 +58,7 @@ export type AppOptions = {
   readonly gate: Gate;
   readonly attachments: Attachments;
   readonly uploads: Uploads;
+  readonly recordings: Recordings;
   readonly host: Host;
   readonly memory: Memory;
   readonly backup: Backup;
@@ -114,6 +117,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     gate,
     attachments,
     uploads,
+    recordings,
     host,
     memory,
     backup,
@@ -376,7 +380,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     registered();
   });
 
-  registerUploads(app, { uploads, schemaFor });
+  registerUploads(app, { uploads, transcription: () => toTranscription(voice.readiness()), schemaFor });
+  registerRecordings(app, { recordings, schemaFor });
 
   app.get<{ Params: { readonly attachment: string } }>(
     "/v0/attachments/:attachment",

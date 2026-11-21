@@ -29,6 +29,7 @@ import type {
   MotionChange,
   Outcome,
   Problem,
+  Recording,
   Snapshot,
   Status,
   Step,
@@ -149,6 +150,8 @@ export type Store = Settings & {
   readonly endCall: (id: string, reason?: string) => Call | undefined;
   readonly deleteCallAudio: (id: string) => DeletedAudio | undefined;
   readonly recordVoiceStatus: (state: VoiceState, reason?: string) => void;
+  // Where a recording's transcript stands, for the app to follow.
+  readonly recordRecording: (recording: Recording) => void;
   readonly latestCall: () => Call | undefined;
   readonly exchanges: (through: TurnId | undefined, limit: number) => readonly Exchange[];
   readonly listTopics: () => readonly Topic[];
@@ -280,7 +283,8 @@ type StepRow = { readonly body: string };
 const snapshotSize = 50;
 const compactedSetting = "compacted_through_seq";
 
-const compactedTypes = "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed')";
+const compactedTypes =
+  "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed', 'recording.changed')";
 
 const parseIds = (json: string): readonly string[] => JSON.parse(json) as readonly string[];
 
@@ -717,6 +721,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     recordVoiceStatus: (state, reason) => {
       record((stamp) => ({ ...stamp, type: "voice.status", state, ...(reason !== undefined && { reason }) }));
+    },
+
+    recordRecording: (recording) => {
+      record((stamp) => ({ ...stamp, type: "recording.changed", recording }));
     },
 
     deleteCallAudio: (id) =>

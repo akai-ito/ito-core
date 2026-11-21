@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   closeSync,
   copyFileSync,
+  existsSync,
   fsyncSync,
   mkdirSync,
   openSync,
@@ -119,7 +120,8 @@ export const createAttachments = (store: Store, directory: string): Attachments 
       syncFolder();
       return store.saveAttachment(attachment, sha256);
     },
-    find: (id) => store.findAttachment(id)?.attachment,
+    // Only an attachment whose bytes are still here, so a deleted recording's audio can't be fetched.
+    find: (id) => (existsSync(pathOf(id)) ? store.findAttachment(id)?.attachment : undefined),
     pathOf,
     sweep: (before) => {
       for (const id of store.unattachedBefore(before)) {

@@ -18,6 +18,33 @@ export type Heard =
   | { readonly kind: "voiceprint"; readonly voiceprint: Voiceprint }
   | { readonly kind: "problem"; readonly reason: string };
 
+// A whole recording, as the voice heard it: pieces with their times in seconds and, where it could tell voices
+// apart, who said each (S1, S2… or "you", for the voice that matches their voiceprint).
+export type HeardSegment = {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly speaker?: string;
+};
+
+export type HeardSpeaker = { readonly id: string; readonly seconds: number; readonly you: boolean };
+
+export type HeardRecording = {
+  readonly seconds: number;
+  readonly segments: readonly HeardSegment[];
+  readonly speakers: readonly HeardSpeaker[];
+  readonly model: string;
+};
+
+// Why a recording wasn't transcribed: the voice isn't there now, so it waits; the file can't be read; it was
+// cancelled; or something else went wrong.
+export type TranscriptionFailure = {
+  readonly code: "unavailable" | "unreadable" | "cancelled" | "failed";
+  readonly detail: string;
+};
+
+export type Progress = (doneSeconds: number, totalSeconds: number | undefined) => void;
+
 export type Listening = {
   readonly hear: (pcm: Uint8Array) => void;
   readonly saying: (text: string | undefined) => void;
@@ -35,6 +62,13 @@ export type VoiceLoop = {
   ) => Promise<Result<Listening, string>>;
   readonly refreshVocabulary: () => Promise<void>;
   readonly forgetVoiceprint: () => Promise<void>;
+  readonly transcribe: (
+    job: string,
+    file: string,
+    voiceprint: Voiceprint | undefined,
+    onProgress: Progress,
+  ) => Promise<Result<HeardRecording, TranscriptionFailure>>;
+  readonly cancelTranscription: (job: string) => Promise<void>;
   readonly close: () => Promise<void>;
 };
 
@@ -79,5 +113,7 @@ export const noVoice = (reason: string): VoiceLoop => ({
   listen: () => Promise.resolve(fail(reason)),
   refreshVocabulary: () => Promise.resolve(),
   forgetVoiceprint: () => Promise.resolve(),
+  transcribe: () => Promise.resolve(fail({ code: "unavailable", detail: reason })),
+  cancelTranscription: () => Promise.resolve(),
   close: () => Promise.resolve(),
 });

@@ -61,6 +61,8 @@ export const createCannedVoice = (
     },
     refreshVocabulary: () => Promise.resolve(),
     forgetVoiceprint: () => Promise.resolve(),
+    transcribe: () => Promise.resolve(fail({ code: "unavailable", detail: "The canned voice doesn't transcribe." })),
+    cancelTranscription: () => Promise.resolve(),
     close: () => Promise.resolve(),
   };
 };
