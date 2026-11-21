@@ -214,18 +214,8 @@ there's no weather at all.
 
 ## Notifications
 
-Ari notifies you of every reply, failure, question and message from Kumo, at once and whatever the
-hour; your phone's Focus decides what makes a sound. To switch notifications on, create
-an APNs key in your Apple Developer account (Certificates, Identifiers & Profiles, then Keys, with
-Apple Push Notifications service), download its `.p8` file once, and run:
-
-```sh
-node bin/ito.ts push setup --key AuthKey_ABC123DEFG.p8 --key-id ABC123DEFG \
-  --team-id <your team id> --bundle-id <Ari's bundle id>
-```
-
-The box needs to reach `api.push.apple.com` on port 443. Notifications travel encrypted with a key
-each phone makes, so Apple only ever carries ciphertext.
+The steps to switch notifications on are in the
+[README, under Notifications](../README.md#notifications), where the app's own fix-it line points.
 
 ## Voice
 
