@@ -61,6 +61,9 @@ export type MotionOptions = {
 
 type Saved = { readonly kind: Kind; readonly card: Card; readonly status: "active" | "done"; readonly content: Fields };
 
+// A change saved, and what it means for how the thing shows them.
+type Changed = { readonly motion: Motion; readonly said: string };
+
 const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 const recentNotes = 5;
@@ -150,6 +153,108 @@ const toChoice = (status: unknown, name: string): string => {
       return `took back the choice for ${name}`;
     }
   }
+};
+
+// A tap of theirs that decides how an item shows: a tick on a list's item, or a choice for a place.
+type Override = {
+  readonly list: string;
+  readonly id: string;
+  readonly name: string;
+  readonly field: "done" | "status";
+  readonly theirs: unknown;
+  readonly yours: unknown;
+  readonly shows: unknown;
+};
+
+const shownAs = (field: Override["field"], value: unknown): string =>
+  field === "done" ? (value === true ? "done" : "not done") : String(value);
+
+// Every tap of theirs on an item still in the thing, with how the item shows for it: their tick wins, and so does
+// their choice for a place, unless Ari booked it.
+const overridesIn = (content: Fields, state: Fields): readonly Override[] => {
+  const lists = itemsByField(content);
+  return Object.entries(state).flatMap(([list, entries]) =>
+    Object.entries(isObject(entries) ? entries : {}).flatMap(([id, entry]): readonly Override[] => {
+      const item = lists.get(list)?.find((candidate) => candidate.id === id);
+      if (!item) return [];
+      const name = nameOfItem(item, id);
+      if (list === "places") {
+        const theirs = fieldOf(entry, "status");
+        if (typeof theirs !== "string") return [];
+        const shows = item.status === "booked" ? "booked" : theirs;
+        return [{ list, id, name, field: "status", theirs, yours: item.status, shows }];
+      }
+      const theirs = fieldOf(entry, "done");
+      return typeof theirs === "boolean"
+        ? [{ list, id, name, field: "done", theirs, yours: item.done, shows: theirs }]
+        : [];
+    }),
+  );
+};
+
+const overrideLine = ({ list, id, name, field, theirs, yours, shows }: Override): string => {
+  const head = `- ${id} “${name}” (${list}): shows ${shownAs(field, shows)}`;
+  if (shows !== theirs) return `${head}; your booking wins over their choice of ${String(theirs)}.`;
+  const by = field === "done" ? `their ${theirs === true ? "tick" : "untick"}` : "their choice";
+  return yours === theirs
+    ? `${head}, by ${by}, as your content says.`
+    : `${head}, by ${by}; your content says ${shownAs(field, yours)}.`;
+};
+
+// Items a change sets done on, against an earlier tap of theirs saying otherwise: the newer, explicit word wins.
+const supersededIn = (
+  thing: string,
+  changes: readonly Change[],
+  content: Fields,
+  state: Fields,
+): readonly { readonly list: string; readonly id: string; readonly done: boolean }[] => {
+  const lists = itemsByField(content);
+  return changes
+    .filter((change): change is Extract<Change, { readonly set: string }> => "set" in change && change.set !== thing)
+    .map(({ set: id, fields }) => ({
+      id,
+      done: fields.done,
+      list: [...lists].find(([, items]) => items.some((item) => item.id === id))?.[0] ?? "",
+    }))
+    .filter((set): set is { readonly id: string; readonly done: boolean; readonly list: string } => {
+      const theirs = doneIn(state, set.list, set.id);
+      return typeof set.done === "boolean" && typeof theirs === "boolean" && theirs !== set.done;
+    });
+};
+
+const withoutTaps = (state: Fields, taps: readonly { readonly list: string; readonly id: string }[]): Fields =>
+  Object.fromEntries(
+    Object.entries(state)
+      .map(([list, entries]) => {
+        const kept = Object.entries(isObject(entries) ? entries : {}).filter(([id]) =>
+          taps.every((tap) => tap.list !== list || tap.id !== id),
+        );
+        return [list, Object.fromEntries(kept)] as const;
+      })
+      .filter(([, entries]) => Object.keys(entries).length > 0),
+  );
+
+// A tap of theirs that still decides how an item a change set shows, said plainly, since what Kumo set is masked.
+const maskedNote = (thing: string, changes: readonly Change[], content: Fields, state: Fields): string => {
+  const touched = new Set(
+    changes
+      .filter(
+        (change): change is Extract<Change, { readonly set: string }> =>
+          "set" in change && change.set !== thing && ("done" in change.fields || "status" in change.fields),
+      )
+      .map(({ set }) => set),
+  );
+  return overridesIn(content, state)
+    .filter(
+      ({ id, field, shows, theirs, yours }) =>
+        field === "status" && touched.has(id) && shows === theirs && theirs !== yours,
+    )
+    .map(
+      ({ name, shows }) =>
+        `“${name}” still shows ${String(shows)}: their choice wins over yours for a place until it's ` +
+        "booked; ask them, or book it.",
+    )
+    .join(" ");
 };
 
 const tapsIn = (content: Fields, before: Fields, after: Fields): readonly string[] => {
@@ -395,7 +500,8 @@ export const createMotions = ({
       return written.ok ? ok(record("motion.started", id, thing, 1, note)) : written;
     });
 
-  const change = (input: unknown, isWhole = true): Promise<Result<Motion, string>> =>
+  // isWhole is Kumo's own change, made whole and from a newer word of theirs; otherwise it's keeping up with a tap.
+  const change = (input: unknown, isWhole = true): Promise<Result<Changed, string>> =>
     memory.withThread(async (thread) => {
       const id = lineOf(input, "id");
       const note = lineOf(input, "note");
@@ -430,7 +536,27 @@ export const createMotions = ({
       const missing = isWhole ? missingIn(current.kind, thing.card.title, thing.content) : [];
       if (missing.length > 0) return unfinished(current.kind, thing.card.title, missing);
       const written = await write(thread, id, thing, `${thing.card.title}: ${note}`);
-      return written.ok ? ok(record("motion.changed", id, thing, version + 1, note)) : written;
+      if (!written.ok) return written;
+      const changes = toChanges(given);
+      const state = store.motionState(id);
+      const superseded = isWhole ? supersededIn(id, changes, thing.content, state) : [];
+      if (superseded.length > 0) store.setMotionState(id, withoutTaps(state, superseded));
+      const motion = record("motion.changed", id, thing, version + 1, note);
+      const gaveWay = superseded.map(({ id: item, done }) => {
+        const name = nameOfItem(
+          itemsByField(thing.content)
+            .values()
+            .flatMap((items) => items)
+            .find((candidate) => candidate.id === item),
+          item,
+        );
+        return (
+          `Your ${done ? "done" : "not done"} on “${name}” is newer than their ${done ? "untick" : "tick"}, so it ` +
+          `shows ${done ? "done" : "not done"}.`
+        );
+      });
+      const masked = maskedNote(id, changes, thing.content, store.motionState(id));
+      return ok({ motion, said: [...gaveWay, ...(masked === "" ? [] : [masked])].join(" ") });
     });
 
   const finish = (input: unknown): Promise<Result<Motion, string>> =>
@@ -502,8 +628,12 @@ export const createMotions = ({
       `summary: ${thing.card.summary}`,
       "content:",
       JSON.stringify(thing.content, undefined, 2),
-      ...(Object.keys(state).length > 0
-        ? ["their ticks and choices, which win over the content's own, except a booked place:", JSON.stringify(state)]
+      ...(overridesIn(thing.content, state).length > 0
+        ? [
+            "as it shows them now, by their ticks and choices, which win over the content's own, except a booked " +
+              "place, until you set it again after them:",
+            ...overridesIn(thing.content, state).map((override) => overrideLine(override)),
+          ]
         : []),
       ...(isLatest && notes.length > 0 ? ["what changed lately:", ...notes] : []),
     ].join("\n");
@@ -572,7 +702,8 @@ export const createMotions = ({
       description:
         "Change a thing you've read, item by item, citing the version read_motion gave you. All of a change " +
         "applies, or none of it. Keep its summary current with every change. When the person tells you something " +
-        "that ticks an item, such as “booked the Uffizi”, change it here.",
+        "that ticks an item, such as “booked the Uffizi”, change it here: setting done is newer than a tick or " +
+        "untick of theirs, so it wins. It says how what you set shows them now.",
       inputSchema: {
         type: "object",
         properties: {
@@ -588,16 +719,19 @@ export const createMotions = ({
       call: async (input) => {
         const changed = await change(input);
         if (!changed.ok) return failed(changed.failure);
-        step("updated", changed.value, lineOf(input, "note"));
-        return { text: `Saved ${changed.value.title}, now at version ${String(changed.value.version)}.` };
+        const { motion, said } = changed.value;
+        step("updated", motion, lineOf(input, "note"));
+        return {
+          text: `Saved ${motion.title}, now at version ${String(motion.version)}.${said === "" ? "" : ` ${said}`}`,
+        };
       },
     },
     {
       name: "read_motion",
       title: "Read a thing in motion",
       description:
-        "Read a thing in motion: its content with every id, its version, the person's ticks and choices, what changed " +
-        "lately. Read it before you change it. Give a version to read it as it was then.",
+        "Read a thing in motion: its content with every id, its version, how their ticks and choices make it show " +
+        "them now, and what changed lately. Read it before you change it. Give a version to read it as it was then.",
       inputSchema: {
         type: "object",
         properties: { id: { type: "string" }, version: { type: "integer" } },

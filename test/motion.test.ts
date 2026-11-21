@@ -297,6 +297,63 @@ describe("things in motion", () => {
     expect(store.motionState(florenceId)).toEqual({});
   });
 
+  it("lets a newer done win over an older untick, and says how what it set shows them", async () => {
+    const { motions, store } = await openMotions();
+    await startFlorence(motions);
+    await call(motions, "change_motion", { ...bookUffizi, changes: [{ set: "book-duomo", fields: { done: true } }] });
+    motions.patchState(florenceId, {
+      todo: { "book-duomo": { done: false } },
+      places: { boboli: { status: "passed" } },
+    });
+    const masked = await call(motions, "read_motion", { id: florenceId });
+
+    const done = await call(motions, "change_motion", {
+      id: florenceId,
+      version: 2,
+      changes: [
+        { set: "book-duomo", fields: { done: true } },
+        { set: "boboli", fields: { status: "picked" } },
+      ],
+      note: "You booked the Duomo after all",
+    });
+    const shown = await call(motions, "read_motion", { id: florenceId });
+
+    expect(masked.text).toContain(
+      "- book-duomo “Book the Duomo climb” (todo): shows not done, by their untick; your content says done.",
+    );
+    expect(done.text).toBe(
+      "Saved Florence with Mira, now at version 3. Your done on “Book the Duomo climb” is newer than their " +
+        "untick, so it shows done. “Boboli Gardens” still shows passed: their choice wins over yours for a " +
+        "place until it's booked; ask them, or book it.",
+    );
+    expect(store.motionState(florenceId)).toEqual({ places: { boboli: { status: "passed" } } });
+    expect(shown.text).not.toContain("book-duomo “Book the Duomo climb” (todo)");
+    expect(shown.text).toContain(
+      "- boboli “Boboli Gardens” (places): shows passed, by their choice; your content says picked.",
+    );
+  });
+
+  it("keeps their tick when Ari keeps the thing up with it", async () => {
+    const { motions, store } = await openMotions();
+    await startFlorence(motions);
+    motions.patchState(florenceId, { todo: { "book-pisa": { done: true } } });
+
+    const kept = await call(motions, "change_motion", {
+      id: florenceId,
+      version: 1,
+      changes: [{ set: "book-pisa", fields: { text: "Pisa train tickets, 9:12" } }],
+      note: "Noted the train",
+    });
+
+    const read = await call(motions, "read_motion", { id: florenceId });
+
+    expect(kept.text).toBe("Saved Florence with Mira, now at version 2.");
+    expect(store.motionState(florenceId)).toEqual({ todo: { "book-pisa": { done: true } } });
+    expect(read.text).toContain(
+      "- book-pisa “Pisa train tickets, 9:12” (todo): shows done, by their tick; your content says not done.",
+    );
+  });
+
   it("tells Ari only of ticks since its last turn", async () => {
     const { motions, store } = await openMotions();
     await startFlorence(motions);
