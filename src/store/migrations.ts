@@ -172,7 +172,7 @@ export const migrations: readonly string[] = [
   UPDATE desk SET body = json_set(
     json_remove(body, '$.moment'),
     '$.waiting',
-    (SELECT json_group_array(json(json_remove(value, '$.quiet', '$.review'))) FROM json_each(desk.body, '$.waiting'))
+    json((SELECT json_group_array(json(json_remove(value, '$.quiet', '$.review'))) FROM json_each(desk.body, '$.waiting')))
   );
   UPDATE done SET body = json_remove(body, '$.work');
   ALTER TABLE asks DROP COLUMN reminded;
