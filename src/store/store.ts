@@ -455,7 +455,7 @@ type ThreadMessageRow = Pick<MessageRow, "id" | "role" | "kind" | "text" | "at" 
 
 const imagesBlock = /^```ari:images[^\n]*\n(?<body>[\s\S]*?)^```[ \t]*$/mu;
 
-const pageBlock = /^```ari:page\b/mu;
+const pageBlock = /^```ari:made\b/mu;
 
 const without = <Value extends object, Key extends keyof Value>(
   value: Value,

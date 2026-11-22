@@ -1119,7 +1119,7 @@ export const createTranscript = (header: Header): Transcript => {
         (message.text !== "" || (message.attachments?.length ?? 0) > 0),
     );
     const picture = rows.map((message) => pictureOf(message)).find((found) => found !== undefined);
-    const hasPage = shown.some((message) => message.role === "agent" && /^```ari:page\b/mu.test(message.text));
+    const hasPage = shown.some((message) => message.role === "agent" && /^```ari:made\b/mu.test(message.text));
     const after = patch({
       ...omit(before, "picture", "page"),
       replies: shown.length,

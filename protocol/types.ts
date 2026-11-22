@@ -3445,7 +3445,7 @@ export interface components {
       /** @description Its first picture, yours or one Kumo found, for a thumbnail: fetch it with `GET /v0/attachments/{attachment}`. */
       picture?: components["schemas"]["AttachmentId"];
       /**
-       * @description It holds a page Kumo made.
+       * @description It holds a page Kumo made: one of its replies or posts shows an `ari:made` card.
        * @constant
        */
       page?: true;
