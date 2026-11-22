@@ -232,7 +232,8 @@ const toUserInputs = (workspace: string, { text, attachments = [] }: Input, log:
     saved.length > 0 && `(Attached, and saved in your workspace: ${saved.join(", ")})`,
     unsaved.length > 0 && `(Attached, but it couldn't be saved in your workspace: ${unsaved.join(", ")})`,
     recordings.length > 0 &&
-      `(Recordings attached, kept on Ito rather than in your workspace: ${recordings.join(", ")})`,
+      `(Recordings attached, kept on Ito rather than in your workspace: ${recordings.join(", ")}. Ito transcribes ` +
+        "each one: read what was said with read_recording, which lists them when given no attachment.)",
   ];
   return [
     { type: "text", text: [text, ...notes].filter(Boolean).join("\n\n"), text_elements: [] },

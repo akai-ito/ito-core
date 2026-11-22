@@ -329,7 +329,8 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(await sendAttachments([recording])).toEqual({ type: "ended" });
     expect(existsSync(path.join(workspace, "uploads", "debrief.m4a"))).toBe(false);
     expect(currentModel().userTexts().at(-1)).toContain(
-      "(Recordings attached, kept on Ito rather than in your workspace: debrief.m4a)",
+      "(Recordings attached, kept on Ito rather than in your workspace: debrief.m4a. Ito transcribes each one: read " +
+        "what was said with read_recording, which lists them when given no attachment.)",
     );
   });
 
