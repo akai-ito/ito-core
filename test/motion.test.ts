@@ -845,3 +845,78 @@ describe("things in motion", () => {
     expect(found?.text).toContain("Florence with Mira (motion:florence-with-mira,");
   });
 });
+
+describe("a trip whose last day is over", () => {
+  // Every timer due by then, letting each one's work start before the next.
+  const runUntil = async (clock: VirtualClock, time: number): Promise<void> => {
+    if (!clock.runNext(time)) {
+      clock.moveTo(time);
+      return;
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+    await runUntil(clock, time);
+  };
+
+  // Midnight in Florence after its last day, 9 November.
+  const over = Date.parse("2026-11-09T23:00:00.000Z");
+
+  it("ends by itself once its last day is over where it happens, unpinned and waiting for its outcome", async () => {
+    const { motions, store, clock, thread } = await openMotions();
+    await startFlorence(motions);
+
+    await runUntil(clock, over - 60_000);
+    expect(store.findMotion(florenceId)).toMatchObject({ status: "active", pinned: true });
+
+    await runUntil(clock, over);
+    await vi.waitFor(() => {
+      expect(store.findMotion(florenceId)).toMatchObject({ status: "done", pinned: false, version: 2 });
+    });
+
+    expect(store.findMotion(florenceId)?.outcome).toBeUndefined();
+    expect(store.motionChanges(florenceId, 1)[0]?.note).toBe("Its last day is over");
+    expect(
+      JSON.parse(
+        execFileSync("git", ["show", "HEAD:motion/florence-with-mira/motion.json"], {
+          cwd: thread,
+          encoding: "utf8",
+        }),
+      ),
+    ).toMatchObject({ status: "done", pinned: false });
+    expect(motions.inMindText()).toContain(
+      "Florence with Mira (florence-with-mira) ended by itself when its last day was over, with no outcome yet",
+    );
+  });
+
+  it("takes its outcome and story from Kumo afterwards, and leaves the in-mind note", async () => {
+    const { motions, store, clock } = await openMotions();
+    await startFlorence(motions);
+    await runUntil(clock, over);
+    await vi.waitFor(() => {
+      expect(store.findMotion(florenceId)?.status).toBe("done");
+    });
+
+    const finished = await call(motions, "finish_motion", {
+      id: florenceId,
+      outcome: "achieved",
+      summary: "Home from Florence",
+      story: { happened: "Three days, the Uffizi at opening, and Pisa in the rain." },
+      note: "Home from Florence",
+    });
+
+    expect(finished.isError).toBeUndefined();
+    expect(store.findMotion(florenceId)).toMatchObject({ status: "done", outcome: "achieved", pinned: false });
+    expect(motions.inMindText()).toBe("");
+  });
+
+  it("starts a trip that's already over as it is, then ends it", async () => {
+    const { motions, store, clock } = await openMotions();
+    clock.moveTo(over + 60_000);
+
+    await startFlorence(motions);
+    await runUntil(clock, clock.now());
+
+    await vi.waitFor(() => {
+      expect(store.findMotion(florenceId)).toMatchObject({ status: "done", pinned: false });
+    });
+  });
+});

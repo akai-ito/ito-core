@@ -168,6 +168,20 @@ describe("what each conversation knows of the others", () => {
     expect(inMain).toContain(`- ${String(menu.thread)}, a thread not yet named, last Saturday`);
     expect(inMain).toContain(`- ${String(guide.thread)}, “V&A guide”`);
   });
+
+  it("asks Kumo to keep an open thread's line where it stands, and shows it the line it has", () => {
+    const store = openStore("lines");
+    const menu = talk(store, "1", "Menu photo", "Noodles and laab.", { isNewThread: true });
+    const guide = talk(store, "2", "V&A in two hours?", "Four rooms, nine things.", { isNewThread: true });
+    store.changeThread(guide.thread ?? toThreadId(""), { by: "kumo", result: "3 of 9 spotted" });
+    const threads = createThreads({ store, spoken: () => "Saturday", branched: () => false });
+
+    const inMenu = threads.inMindText(menu.thread);
+
+    expect(inMenu).toContain("Its line shows under its name in their list of threads");
+    expect(inMenu).toContain("It has no line yet: give it one once you've answered.");
+    expect(threads.inMindText(guide.thread)).toContain("Its line now: “3 of 9 spotted”.");
+  });
 });
 
 describe("naming a thread you started", () => {

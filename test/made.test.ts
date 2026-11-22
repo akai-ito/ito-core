@@ -140,10 +140,29 @@ describe("pages Kumo makes", () => {
     expect(shelf.made).toEqual([
       expect.objectContaining({ id: "va-guide", title: "Your guide to the V&A", version: 1, for_day: "2026-11-22" }),
     ]);
+    // Made in the main chat: "From your chat", with no thread.
+    expect(shelf.made[0]?.thread).toBeUndefined();
     expect(detail.content).toEqual(guide(cover));
     expect(detail.state).toEqual({});
     expect(detail.changes).toEqual([expect.objectContaining({ version: 1, note: "Made it" })]);
     expect(events().map(({ type }) => type)).toContain("made.created");
+  });
+
+  it("remembers the side thread it was made in, through every change, so the page links back to it", async () => {
+    const { server, read } = open();
+    const cover = await keep(server);
+
+    await server.callTool(
+      "make_made_page",
+      { id: "va-guide", title: "Your guide to the V&A", summary: "3 rooms", content: guide(cover) },
+      undefined,
+      "h_va_guide",
+    );
+    await server.callTool("change_made_page", { id: "va-guide", version: 1, summary: "4 rooms", note: "A room more" });
+    const shelf = (await read("/v0/made")) as MadeList;
+    await server.close();
+
+    expect(shelf.made).toEqual([expect.objectContaining({ id: "va-guide", version: 2, thread: "h_va_guide" })]);
   });
 
   it("refuses a page whose pictures, ids or blocks the phone couldn't show", async () => {

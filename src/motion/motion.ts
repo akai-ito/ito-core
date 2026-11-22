@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
+import { atLocal, dayMs, nextDay } from "#desk/day.ts";
 import type { AskFields, JsonSchema, StepFacts } from "#engine/engine.ts";
 import { reactionSchema, toReaction, toReactionPrompt } from "#motion/reactions.ts";
 import type { Memory } from "#memory/memory.ts";
@@ -119,6 +120,36 @@ const isObject = (value: unknown): value is Fields =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const folderOf = (id: string): string => `motion/${id}`;
+
+const dayPattern = /^\d{4}-\d{2}-\d{2}$/u;
+
+// What the change says when a trip's last day is over and it ends by itself.
+const overNote = "Its last day is over";
+
+// Whether a trip still going is over by `now`.
+const isOver = (thing: Saved | undefined, now: number): thing is Saved =>
+  thing !== undefined && (overAt(thing) ?? Infinity) <= now;
+
+// When a trip still going is over: the start of the day after its last, where it happens. Nothing else in motion
+// has an end of its own; a goal's date passing is for Kumo to judge.
+const overAt = (thing: Saved): number | undefined => {
+  const { dates, timezone } = thing.content;
+  if (
+    thing.status !== "active" ||
+    thing.kind !== "trip" ||
+    !isObject(dates) ||
+    typeof dates.end !== "string" ||
+    !dayPattern.test(dates.end)
+  ) {
+    return undefined;
+  }
+  const after = nextDay(dates.end);
+  try {
+    return atLocal(after, 0, typeof timezone === "string" ? timezone : "UTC");
+  } catch {
+    return atLocal(after, 0, "UTC");
+  }
+};
 
 const pictureFile = (id: string, attachment: string): string => `${folderOf(id)}/pictures/${attachment}`;
 
@@ -357,6 +388,8 @@ export const createMotions = ({
   const indexing = createCell<Promise<void>>(Promise.resolve());
   const waiting = createCell<ReadonlyMap<string, { readonly cancel: Cancel; readonly before: Fields }>>(new Map());
   const isClosed = createCell(false);
+  // The timer for the next trip whose last day ends.
+  const ending = createCell<Cancel | undefined>(undefined);
 
   const remember = (id: string, thing: Saved | undefined): void => {
     saved.update(
@@ -491,11 +524,55 @@ export const createMotions = ({
   ): Motion => {
     const { motion } = store.recordMotion(type, toMotion(id, thing, version, store.findMotion(id)), note);
     remember(id, thing);
+    watchEnds();
     const state = store.motionState(id);
     const pruned = pruneState(state, thing.content);
     if (JSON.stringify(pruned) !== JSON.stringify(state)) store.setMotionState(id, pruned);
     queueIndex(id, thing);
     return motion;
+  };
+
+  // A trip whose last day is over ends by itself, with no outcome yet: it stops being pinned above the chat and
+  // current in In motion, and moves to History until Kumo gives it its outcome and story.
+  const endOver = async (): Promise<void> => {
+    const over = [...saved.get()].filter(([, thing]) => isOver(thing, clock.now())).map(([id]) => id);
+    if (over.length > 0) {
+      await memory.withThread(async (thread) => {
+        for (const id of over) {
+          const current = readNow(thread, id);
+          if (!isOver(current, clock.now())) continue;
+          const thing: Saved = { ...current, status: "done", card: { ...current.card, pinned: false } };
+          const version = (await versionOf(thread, id)) + 1;
+          const written = await write(thread, id, thing, `${thing.card.title}: ${overNote}`);
+          if (written.ok) record("motion.finished", id, thing, version, overNote);
+          else info("A trip that's over couldn't be ended", { motion: id, error: written.failure });
+        }
+      });
+    }
+    watchEnds();
+  };
+
+  // Wakes when the next trip's last day is over, checking at least daily, so a long wait never overflows a timer.
+  const watchEnds = (): void => {
+    ending.get()?.();
+    ending.set(undefined);
+    if (isClosed.get()) return;
+    const soonest = Math.min(
+      ...saved
+        .get()
+        .values()
+        .map((thing) => overAt(thing) ?? Infinity),
+    );
+    if (soonest === Infinity) return;
+    const wait = Math.min(Math.max(0, soonest - clock.now()), dayMs);
+    ending.set(
+      clock.after(wait, () => {
+        ending.set(undefined);
+        void endOver().catch((error: unknown) => {
+          info("Trips that are over couldn't be ended", { error: String(error) });
+        });
+      }),
+    );
   };
 
   const step = (action: StepFacts["action"], motion: Motion, note?: string): void => {
@@ -1101,6 +1178,11 @@ export const createMotions = ({
       return;
     }
     for (const [id, thing] of saved.get()) queueIndex(id, thing);
+    try {
+      await endOver();
+    } catch (error) {
+      info("Trips that are over couldn't be ended as the server started", { error: String(error) });
+    }
   })();
 
   return {
@@ -1138,9 +1220,12 @@ export const createMotions = ({
       return ok(fields);
     },
     inMindText: () => {
-      const active = store.listMotions().filter(({ status }) => status === "active");
+      const listed = store.listMotions();
+      const active = listed.filter(({ status }) => status === "active");
       const legacy = active.filter(({ kind }) => !kinds.isNew(kind));
-      return active.length === 0
+      // Trips that ended by themselves when their last day was over, still waiting for how they went.
+      const untold = listed.filter(({ kind, status, outcome }) => kind === "trip" && status === "done" && !outcome);
+      return active.length === 0 && untold.length === 0
         ? ""
         : [
             "<in_motion>",
@@ -1155,11 +1240,20 @@ export const createMotions = ({
                   `${legacy.map(({ id }) => id).join(", ")} ${legacy.length === 1 ? "is" : "are"} in 0.18's kinds ` +
                     `(${legacyKindNames.join(", ")}): tidy them as the Things in motion skill says when you have a quiet moment.`,
                 ]),
+            ...(untold.length === 0
+              ? []
+              : [
+                  `${untold.map(({ title, id }) => `${title} (${id})`).join(", ")} ended by ` +
+                    `${untold.length === 1 ? "itself when its" : "themselves when their"} last day was over, with no ` +
+                    "outcome yet: give each its outcome and story with finish_motion when you have a quiet moment.",
+                ]),
             "</in_motion>",
           ].join("\n");
     },
     close: () => {
       isClosed.set(true);
+      ending.get()?.();
+      ending.set(undefined);
       for (const { cancel } of waiting.get().values()) cancel();
       waiting.set(new Map());
     },

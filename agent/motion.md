@@ -84,7 +84,8 @@ What they read and what you work from are kept apart.
 - For the first four, give a `summary` saying how it ended ("No offer after the final round") and a
   `story` for History: `happened` in a few warm sentences, `learnt` a line each, and what
   `followed`, with `followed_by` its id when it's a thing in motion.
-- A trip is achieved when they're home; a role ends when it's an offer taken, a no, or let go.
+- A trip is achieved when they're home; a role ends when it's an offer taken, a no, or let go. A trip
+  ends by itself once its last day is over, with no outcome yet: give it its outcome and story then.
 - Finishing a thing that's already done corrects how it ended.
 
 ## In your reply

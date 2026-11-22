@@ -4,6 +4,7 @@ import { createCell } from "#cell.ts";
 import type { AskFields, Complete, Engine, EngineEvent, Input, StepFacts } from "#engine/engine.ts";
 import { fail, ok } from "#result.ts";
 import type { Act, CallTool, ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
+import type { ToolResult } from "#tools/mcp.ts";
 import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "#protocol/tools/florence.ts";
 import {
   hybridContent,
@@ -217,6 +218,42 @@ export const withDemoPictures =
       ? Promise.resolve(new Response(readFileSync(demoPicture), { headers: { "Content-Type": "image/jpeg" } }))
       : fetcher(url, init);
 
+const weekMs = 7 * 24 * 60 * 60 * 1000;
+
+const florenceStarts = Date.parse("2026-11-06T00:00:00.000Z");
+
+// How far to move the trip so it starts one to two weeks from now, on the same weekdays: a trip whose last day is over
+// ends by itself, so the demo's would otherwise go straight to History.
+const tripShift = (now: number): number => Math.max(0, Math.ceil((now + weekMs - florenceStarts) / weekMs)) * weekMs;
+
+// `2026-11-06`, moved on by `shift`.
+const dayAfter = (day: string, shift: number): string =>
+  new Date(Date.parse(`${day}T00:00:00.000Z`) + shift).toISOString().slice(0, 10);
+
+// Every day and local time in it, moved on by `shift`.
+const movedOn = (value: unknown, shift: number): unknown => {
+  if (typeof value === "string") {
+    const dated = /^(?<day>\d{4}-\d{2}-\d{2})(?<rest>.*)$/su.exec(value)?.groups;
+    return dated?.day === undefined ? value : `${dayAfter(dated.day, shift)}${dated.rest ?? ""}`;
+  }
+  if (Array.isArray(value)) return value.map((item: unknown) => movedOn(item, shift));
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([field, item]) => [field, movedOn(item, shift)]));
+  }
+  return value;
+};
+
+// "6–9 Nov", or "30 Nov–3 Dec" across a month.
+const tripDates = (shift: number): string => {
+  const [start, end] = [florenceStarts + shift, florenceStarts + shift + 3 * 24 * 60 * 60 * 1000].map(
+    (time) => new Date(time),
+  ) as [Date, Date];
+  const month = (date: Date): string => date.toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
+  return month(start) === month(end)
+    ? `${String(start.getUTCDate())}–${String(end.getUTCDate())} ${month(end)}`
+    : `${String(start.getUTCDate())} ${month(start)}–${String(end.getUTCDate())} ${month(end)}`;
+};
+
 const startTrip: Act["act"] = async (callTool) => {
   const kept = await Promise.all(
     florencePictures.map(async (name) => {
@@ -224,13 +261,15 @@ const startTrip: Act["act"] = async (callTool) => {
       return [name, String(picture.structured?.attachment)];
     }),
   );
+  const shift = tripShift(Date.now());
+  const trip = florenceTrip(Object.fromEntries(kept) as FlorencePictures);
   await callTool("start_motion", {
     id: florenceId,
     kind: "trip",
     title: "Florence with Mira",
-    summary: "6–9 Nov · 4 to book",
+    summary: `${tripDates(shift)} · 4 to book`,
     salience: "loud",
-    content: florenceTrip(Object.fromEntries(kept) as FlorencePictures),
+    content: movedOn(trip, shift),
     note: "Started the trip",
   });
 };
@@ -309,6 +348,8 @@ const fillInMotion: Act["act"] = async (callTool) => {
 const bookUffizi: Act["act"] = async (callTool) => {
   const read = await callTool("read_motion", { id: florenceId });
   const version = Number(/version (?<version>\d+)/u.exec(read.text)?.groups?.version);
+  // The trip's first day, as the demo moved it.
+  const starts = /"start": "(?<start>\d{4}-\d{2}-\d{2})"/u.exec(read.text)?.groups?.start ?? "2026-11-06";
   const booking = { status: "booked", ref: "UF-2291" };
   await callTool("change_motion", {
     id: florenceId,
@@ -318,7 +359,7 @@ const bookUffizi: Act["act"] = async (callTool) => {
       { set: "uffizi", fields: { booking } },
       { set: "uffizi-place", fields: { status: "booked", booking } },
     ],
-    summary: "6–9 Nov · 3 to book",
+    summary: `${tripDates(Date.parse(`${starts}T00:00:00.000Z`) - florenceStarts)} · 3 to book`,
     note: "Booked the Uffizi, 8:15 Saturday",
   });
 };
@@ -448,6 +489,8 @@ const showMenu: Act["act"] = async (callTool) => {
     block("choices", { options: ["Add drinks", "Lighter swap", "That's the lot"] }),
   ].join("\n");
   await callTool("post", { text });
+  // In a thread, its line in their list of threads; in the main chat there's none to keep.
+  await callTool("update_thread", { result: "Noodles, laab, skewers · £47 for two" });
 };
 
 const guideRoom = (
@@ -472,7 +515,17 @@ const makeGuide: Act["act"] = async (callTool) => {
     summary: "3 rooms · 4 things to spot",
     cover,
     content: {
-      intro: "Two hours, three rooms, in walking order from the main door. Coffee halfway.",
+      intro: [
+        "Two hours, three rooms, in walking order from the main door. Coffee halfway.",
+        "",
+        block("place", {
+          name: "The gallery",
+          address: "Cromwell Road, London",
+          note: "open till 17:45",
+          lat: 51.4966,
+          lon: -0.1722,
+        }),
+      ].join("\n"),
       check: "Spotted",
       sections: [
         {
@@ -502,9 +555,14 @@ const makeGuide: Act["act"] = async (callTool) => {
       ],
     },
   });
+  await callTool("update_thread", { result: "3 rooms in walking order · 4 to spot" });
 };
 
-const cardIn = (text: string): string => /as (?<card>k_\S+?)\.?$/u.exec(text)?.groups?.card ?? "";
+// The Desk card a tool put up: its id from the result's data, or else from its words, which go on after it.
+const cardIn = ({ structured, text }: ToolResult): string => {
+  const card = structured?.card;
+  return typeof card === "string" ? card : (/\bas (?<card>k_[\w-]+)/u.exec(text)?.groups?.card ?? "");
+};
 
 // Action cards: a question on the Desk shown in the chat, an event to add, a place with Directions, and a person.
 const showCards: Act["act"] = async (callTool) => {
@@ -514,9 +572,9 @@ const showCards: Act["act"] = async (callTool) => {
     text: "The restaurant only books for six or more. Walk in and queue, or find somewhere that books?",
     options: [{ label: "Walk in", acts: true }, { label: "Find one that books" }],
   });
-  const card = cardIn(added.text);
+  const card = cardIn(added);
   const mailed = await callTool("show_mail", {});
-  const draft = cardIn(mailed.text);
+  const draft = cardIn(mailed);
   await callTool("post", {
     text: [
       "Thursday works: you're free after your 17:00 call. Here's the evening, and one question.",
@@ -545,6 +603,7 @@ const showCards: Act["act"] = async (callTool) => {
       block("desk", { card: draft }),
     ].join("\n"),
   });
+  await callTool("update_thread", { result: "Thursday 19:30 · one question left" });
 };
 
 const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {
@@ -668,6 +727,9 @@ export const demoScripts: ScriptSource = (_turn, inputs, now) => {
     events,
     ...(acts && { acts }),
     steer: (input, steeredAt) => {
+      // A word that does something, such as *trip*, waits to be its own turn, as a real model would act on it,
+      // rather than being taken into this one with only a "Got it".
+      if (scriptFor([input], steeredAt).acts !== undefined) return { outcome: "refused" };
       const replyAt = Math.max(steeredAt + 600, scheduledUntil.get() + pieceMs);
       const reply = writeMessage("reply", `Got it: ${input.text}`, replyAt);
       scheduledUntil.set(lastAt(reply));
