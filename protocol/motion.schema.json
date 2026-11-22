@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://akai-ito.github.io/ito-core/protocol/v0/motion.schema.json",
   "title": "Things in motion",
-  "description": "What a thing in motion holds, kind by kind: its content, which Ari writes, and its state, which your taps write. Every item in a list has an `id`, unique within the thing, and Ari changes a thing one item at a time with `Changes`. A list is named by its field, such as `todo`, or for a list inside an item, such as a day's stops, by that item's id. Your ticks and choices are keyed by the field their items sit in, such as `todo`, `places` or `sessions`, wherever in the thing they are. The server validates every start and change against its kind here.",
+  "description": "What a thing in motion holds, kind by kind: its content, which Kumo writes, and its state, which your taps write. The kinds are `career`, `body`, `trip`, `project`, `learning` and `other`; `training`, `pursuit`, `occasion` and `case` are 0.18's kinds, still readable, which Kumo reshapes into the new ones. Every item in a list has an `id`, unique within the thing, and Kumo changes a thing one item at a time with `Changes`. A list is named by its field, such as `todo`, or for a list inside an item, such as a day's stops, by that item's id. Every kind can hold Kumo's `notes`, why its plan changed (`reasons`) and, once it ends, its `story`: show the thing's summary as Kumo's line for you, and keep the notes folded, one tap away. Your ticks and choices are keyed by the field their items sit in, such as `todo`, `places` or `sessions`, wherever in the thing they are. The server validates every start and change against its kind here.",
   "$defs": {
     "ItemId": {
       "description": "Readable and unique within the thing, such as `book-uffizi` or `sat`.",
@@ -387,6 +387,24 @@
           "items": {
             "$ref": "#/$defs/Todo"
           }
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
         }
       }
     },
@@ -523,7 +541,7 @@
     },
     "Training": {
       "title": "training",
-      "description": "A training block towards a goal, such as a sub-20 5K: the goal, results so far, and every week's sessions.",
+      "description": "0.18's kind, still readable, for Kumo to reshape: a training block towards a goal, such as a sub-20 5K: the goal, results so far, and every week's sessions.",
       "type": "object",
       "required": ["goal", "weeks", "results"],
       "additionalProperties": false,
@@ -560,6 +578,24 @@
           "items": {
             "$ref": "#/$defs/Result"
           }
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
         }
       }
     },
@@ -579,12 +615,845 @@
         }
       }
     },
+    "Link": {
+      "description": "Something to open, such as the invite or the posting, behind a button with its label.",
+      "type": "object",
+      "required": ["label", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "description": "Such as `The invite`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "description": "Such as the posting's page, or the mail as a `message://` link with its Message-ID.",
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "Note": {
+      "description": "One of Kumo's working notes: where a fact came from, what it's unsure of or guessing, how the thing got here, or the ids it finds things by. The app keeps them folded at the bottom of the thing's page, never inline; raw ids, calendar UIDs and mail ids live only here.",
+      "type": "object",
+      "required": ["id", "tag", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "tag": {
+          "description": "`source`: where a fact came from. `unsure`: what Kumo isn't sure of. `guess`: a reading, not a fact. `history`: how it got here. `ids`: what Kumo finds things by. Show a tag you don't know as a plain note.",
+          "enum": ["source", "unsure", "guess", "history", "ids"]
+        },
+        "text": {
+          "description": "Such as `The pay range is from your notes on the recruiter's call. Nothing in writing yet.`",
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "description": "When Kumo learnt it.",
+          "$ref": "#/$defs/Day"
+        }
+      }
+    },
+    "Reason": {
+      "description": "Why the plan changed, for you: a change and its reason, such as moving a run after a short night.",
+      "type": "object",
+      "required": ["id", "date", "change"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "date": {
+          "$ref": "#/$defs/Day"
+        },
+        "change": {
+          "description": "Such as `Moved Thursday's run to Saturday`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "because": {
+          "description": "Such as `5h sleep on Wednesday`.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Story": {
+      "description": "How it ended, told short, for History: what happened, what was learnt, and what followed. Kumo writes it when it finishes the thing.",
+      "type": "object",
+      "required": ["happened"],
+      "additionalProperties": false,
+      "properties": {
+        "happened": {
+          "description": "A few sentences, such as `You trained five of the eight weeks.`",
+          "type": "string",
+          "minLength": 1
+        },
+        "learnt": {
+          "description": "What was learnt, a line each.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "followed": {
+          "description": "What came next, in a line, such as `A fresh hybrid plan`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "followed_by": {
+          "description": "The thing that came next, to open.",
+          "$ref": "events.schema.json#/$defs/MotionId"
+        }
+      }
+    },
+    "Stage": {
+      "description": "Where a role is in the pipeline: a `lead`, `talking` (a first call), `interviewing`, an `offer`, or `ended`. A role is in one stage only, so a live interview is never left among the leads.",
+      "enum": ["lead", "talking", "interviewing", "offer", "ended"]
+    },
+    "Round": {
+      "description": "One round of a role's process, such as the recruiter call or a technical.",
+      "type": "object",
+      "required": ["id", "title", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "title": {
+          "description": "Such as `Virtual 1`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "description": "`done`, `next`, `planned`, or `cancelled`.",
+          "enum": ["done", "next", "planned", "cancelled"]
+        },
+        "at": {
+          "$ref": "#/$defs/LocalDateTime"
+        }
+      }
+    },
+    "Fact": {
+      "description": "A key fact, as a label and a value, such as where the role is or what it pays.",
+      "type": "object",
+      "required": ["id", "label", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "label": {
+          "description": "Such as `Where`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "description": "Such as `London, three days in the office`.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Career": {
+      "title": "career",
+      "description": "One role in your career pipeline, such as a job you're interviewing for: every role is its own thing, so the pipeline is all of them together, each in one stage.",
+      "type": "object",
+      "required": ["org", "role", "stage", "stages"],
+      "additionalProperties": false,
+      "properties": {
+        "org": {
+          "description": "Such as `Northwind`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "description": "Such as `Software Engineer, Agents`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "where": {
+          "description": "Such as `London`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage"
+        },
+        "stages": {
+          "description": "The day it reached each stage it has reached. The server dates the current stage today when it's missing.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "lead": {
+              "$ref": "#/$defs/Day"
+            },
+            "talking": {
+              "$ref": "#/$defs/Day"
+            },
+            "interviewing": {
+              "$ref": "#/$defs/Day"
+            },
+            "offer": {
+              "$ref": "#/$defs/Day"
+            },
+            "ended": {
+              "$ref": "#/$defs/Day"
+            }
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Next"
+        },
+        "waiting_on": {
+          "$ref": "#/$defs/WaitingOn"
+        },
+        "rounds": {
+          "description": "The process, in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Round"
+          }
+        },
+        "facts": {
+          "description": "Key facts, such as how it came about, where, and the pay.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Fact"
+          }
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Person"
+          }
+        },
+        "url": {
+          "description": "The posting or the firm's page.",
+          "type": "string",
+          "format": "uri"
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
+        }
+      }
+    },
+    "CareerState": {
+      "description": "A role has nothing to tick.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "Planned": {
+      "description": "What a session asks for, in numbers where it has them, for planned against done.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minutes": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "distance_km": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pace": {
+          "description": "A pace range per km, such as 6:00 to 6:20.",
+          "type": "object",
+          "required": ["from", "to"],
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/Pace"
+            },
+            "to": {
+              "$ref": "#/$defs/Pace"
+            }
+          }
+        },
+        "heart_under": {
+          "description": "Keep the heart rate under this, in bpm.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "effort": {
+          "description": "Such as `easy`.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Pace": {
+      "description": "Minutes and seconds per km, such as `5:59`.",
+      "type": "string",
+      "pattern": "^\\d{1,2}:[0-5]\\d$"
+    },
+    "SetDone": {
+      "description": "Sets of one exercise, as recorded from what you said or a workout app.",
+      "type": "object",
+      "required": ["exercise"],
+      "additionalProperties": false,
+      "properties": {
+        "exercise": {
+          "description": "Such as `Squat`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sets": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "load_kg": {
+          "type": "number",
+          "minimum": 0
+        },
+        "note": {
+          "description": "Such as `last set stopped at 4`.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SessionResult": {
+      "description": "What happened in a session, structured: only what's known, from the Watch or from what you said. The app draws charts only from these, so a chart with no data doesn't show.",
+      "type": "object",
+      "required": ["source"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "description": "`watch`: a workout record from the Watch. `you`: what you told Kumo.",
+          "enum": ["watch", "you"]
+        },
+        "at": {
+          "description": "When it started, local.",
+          "$ref": "#/$defs/LocalTime"
+        },
+        "minutes": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "distance_km": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "pace": {
+          "$ref": "#/$defs/Pace"
+        },
+        "heart_avg": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "heart_max": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "zones": {
+          "description": "Minutes in each heart-rate zone, from the Watch.",
+          "type": "array",
+          "items": {
+            "description": "Minutes in one zone.",
+            "type": "object",
+            "required": ["zone", "minutes"],
+            "additionalProperties": false,
+            "properties": {
+              "zone": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "minutes": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "splits": {
+          "description": "Each km's pace, in order, from the Watch.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pace"
+          }
+        },
+        "felt": {
+          "description": "How it felt, in their words, such as `easy, heavy legs at first`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "effort": {
+          "description": "Effort out of 10, as they said.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "sets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SetDone"
+          }
+        }
+      }
+    },
+    "BodySession": {
+      "description": "One session: what's prescribed, what happened, and Kumo's notes on it, kept apart. Solid shows done, dotted planned, dashed moved or let go.",
+      "type": "object",
+      "required": ["id", "date", "kind", "title", "done"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "date": {
+          "$ref": "#/$defs/Day"
+        },
+        "kind": {
+          "description": "What it is, for its picture. `easy`, `intervals`, `tempo` and `long` are runs and `strength` a lift, from 0.18's training blocks.",
+          "enum": [
+            "run",
+            "lift",
+            "ride",
+            "swim",
+            "walk",
+            "climb",
+            "mobility",
+            "sport",
+            "race",
+            "rest",
+            "easy",
+            "intervals",
+            "tempo",
+            "long",
+            "strength"
+          ]
+        },
+        "title": {
+          "description": "Such as `Easy run`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "plan": {
+          "description": "The prescription, short, such as `30 min easy · heart under 150`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "planned": {
+          "$ref": "#/$defs/Planned"
+        },
+        "done": {
+          "description": "How Kumo wrote it; your tick, in the state, wins.",
+          "type": "boolean"
+        },
+        "moved_from": {
+          "description": "The day it was planned for before it moved.",
+          "$ref": "#/$defs/Day"
+        },
+        "let_go": {
+          "description": "Dropped from the plan, not done.",
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/$defs/SessionResult"
+        },
+        "line": {
+          "description": "Kumo's line on how it went, such as `Thirty easy minutes, on plan, and a touch quick.`",
+          "type": "string",
+          "minLength": 1
+        },
+        "changes_next": {
+          "description": "What it changes in the plan, such as `Next week's runs 35 → 40 min`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "detail": {
+          "description": "0.18's prescription and detail together.",
+          "type": "string"
+        },
+        "how": {
+          "description": "How it went, as you told Kumo, from 0.18.",
+          "type": "string"
+        },
+        "notes": {
+          "description": "Kumo's notes on the session, folded on its page. Its id names this list.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        }
+      }
+    },
+    "BodyWeek": {
+      "description": "One week of the block, its sessions in order. Its id names the list of its sessions.",
+      "type": "object",
+      "required": ["id", "start", "sessions"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "start": {
+          "description": "The week's first day.",
+          "$ref": "#/$defs/Day"
+        },
+        "focus": {
+          "description": "Such as `Base`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "note": {
+          "description": "A line from Kumo on the week.",
+          "type": "string"
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BodySession"
+          }
+        }
+      }
+    },
+    "Body": {
+      "title": "body",
+      "description": "A training block, as a coach keeps it: the plan, every week's sessions planned against done, results towards a goal, and why the plan changed.",
+      "type": "object",
+      "required": ["weeks"],
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "description": "The shape of a week, such as `2 lifts and 2 easy runs a week`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "hours_a_week": {
+          "description": "The most time a week the plan should take, in hours.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "goal": {
+          "type": "object",
+          "required": ["title"],
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "description": "Such as `Sub-20 5K`.",
+              "type": "string",
+              "minLength": 1
+            },
+            "target": {
+              "description": "Such as `19:59`.",
+              "type": "string",
+              "minLength": 1
+            },
+            "by": {
+              "$ref": "#/$defs/Day"
+            }
+          }
+        },
+        "weeks": {
+          "description": "Every week of the block, first to last.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BodyWeek"
+          }
+        },
+        "results": {
+          "description": "Timed efforts towards the goal, oldest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Result"
+          }
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
+        }
+      }
+    },
+    "BodyState": {
+      "description": "Your ticks on sessions, by session id, in any week.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessions": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ItemId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Tick"
+          }
+        }
+      }
+    },
+    "Part": {
+      "description": "One part of a project or a thing being learnt.",
+      "type": "object",
+      "required": ["id", "title", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "title": {
+          "description": "Such as `Design round 2 of 4`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "description": "`done`, `doing`, `planned`, or `dropped`.",
+          "enum": ["done", "doing", "planned", "dropped"]
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Project": {
+      "title": "project",
+      "description": "Something being made, in parts, such as a release or a renovation.",
+      "type": "object",
+      "required": ["aim", "parts"],
+      "additionalProperties": false,
+      "properties": {
+        "aim": {
+          "description": "What it's for, in a line.",
+          "type": "string",
+          "minLength": 1
+        },
+        "parts": {
+          "description": "In order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Part"
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Next"
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
+        }
+      }
+    },
+    "ProjectState": {
+      "description": "A project has nothing to tick.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "LogEntry": {
+      "description": "One stretch of practice.",
+      "type": "object",
+      "required": ["id", "date", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ItemId"
+        },
+        "date": {
+          "$ref": "#/$defs/Day"
+        },
+        "minutes": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "text": {
+          "description": "Such as `Two lessons, one podcast`.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Learning": {
+      "title": "learning",
+      "description": "Something being learnt, such as a language or an instrument.",
+      "type": "object",
+      "required": ["aim"],
+      "additionalProperties": false,
+      "properties": {
+        "aim": {
+          "description": "Such as `Order and chat in Spanish by the summer`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "habit": {
+          "description": "Such as `15 minutes a day`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "description": "In order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Part"
+          }
+        },
+        "log": {
+          "description": "Oldest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LogEntry"
+          }
+        },
+        "next": {
+          "$ref": "#/$defs/Next"
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
+        }
+      }
+    },
+    "LearningState": {
+      "description": "Learning has nothing to tick.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "Other": {
+      "title": "other",
+      "description": "Something unfolding over weeks that has no shape yet, such as a visa or a move. A one-off event isn't one; nor is small admin, which lives on the Desk and in Kumo's plans.",
+      "type": "object",
+      "required": ["about", "timeline"],
+      "additionalProperties": false,
+      "properties": {
+        "about": {
+          "description": "What it is, in a line.",
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "description": "Where it stands, in a line.",
+          "type": "string",
+          "minLength": 1
+        },
+        "waiting_on": {
+          "$ref": "#/$defs/WaitingOn"
+        },
+        "next": {
+          "$ref": "#/$defs/Next"
+        },
+        "timeline": {
+          "description": "Oldest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaseEntry"
+          }
+        },
+        "todo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Todo"
+          }
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
+        }
+      }
+    },
+    "OtherState": {
+      "description": "Your ticks on its to-dos, by item id.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "todo": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ItemId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Tick"
+          }
+        }
+      }
+    },
     "Change": {
       "description": "One change to one item, or to the thing itself by its own id.",
       "oneOf": [
         {
           "title": "set",
-          "description": "Set fields of one item; `null` removes a field. With the thing's own id, it sets `title`, `summary`, `pinned` or the content's own fields, such as `dates`. Lists change only by add, move and remove.",
+          "description": "Set fields of one item; `null` removes a field. With the thing's own id, it sets `title`, `summary`, `pinned`, `salience` or the content's own fields, such as `dates`. Lists change only by add, move and remove.",
           "type": "object",
           "required": ["set", "fields"],
           "additionalProperties": false,
@@ -694,6 +1563,18 @@
         },
         "at": {
           "$ref": "#/$defs/LocalDateTime"
+        },
+        "end": {
+          "description": "When it ends, if it has a time.",
+          "$ref": "#/$defs/LocalDateTime"
+        },
+        "detail": {
+          "description": "A line more, such as `With an engineer from the agents team`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "link": {
+          "$ref": "#/$defs/Link"
         }
       }
     },
@@ -762,7 +1643,7 @@
     },
     "Pursuit": {
       "title": "pursuit",
-      "description": "One outcome, several options moving through stages: a job search, a flat hunt, a raise, a hire. Kumo writes What you're after and How you play it from what you say, and asks when they don't cover a case.",
+      "description": "0.18's kind, still readable, for Kumo to reshape: one outcome, several options moving through stages: a job search, a flat hunt, a raise, a hire. Kumo writes What you're after and How you play it from what you say, and asks when they don't cover a case.",
       "type": "object",
       "required": ["after", "play", "options"],
       "additionalProperties": false,
@@ -786,6 +1667,24 @@
           "items": {
             "$ref": "#/$defs/PursuitOption"
           }
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
         }
       }
     },
@@ -797,7 +1696,7 @@
     },
     "Occasion": {
       "title": "occasion",
-      "description": "A dated event with people and prep: an appointment, a birthday, a dinner, a wedding.",
+      "description": "0.18's kind, still readable, for Kumo to reshape: a dated event with people and prep: an appointment, a birthday, a dinner, a wedding.",
       "type": "object",
       "required": ["start", "people", "prep"],
       "additionalProperties": false,
@@ -842,6 +1741,24 @@
         "all_day": {
           "description": "A day-long occasion, such as a birthday; its `start` and `end` times don't matter.",
           "type": "boolean"
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
         }
       }
     },
@@ -881,7 +1798,7 @@
     },
     "Case": {
       "title": "case",
-      "description": "A problem with back-and-forth until it's resolved: the boiler, a refund, a visa.",
+      "description": "0.18's kind, still readable, for Kumo to reshape: a problem with back-and-forth until it's resolved: the boiler, a refund, a visa.",
       "type": "object",
       "required": ["problem", "status", "timeline"],
       "additionalProperties": false,
@@ -907,6 +1824,24 @@
         },
         "next": {
           "$ref": "#/$defs/Next"
+        },
+        "notes": {
+          "description": "Kumo's working notes, folded on the thing's page.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Note"
+          }
+        },
+        "reasons": {
+          "description": "Why the plan changed, newest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reason"
+          }
+        },
+        "story": {
+          "description": "How it ended; written when it's finished.",
+          "$ref": "#/$defs/Story"
         }
       }
     },

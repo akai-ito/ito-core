@@ -13,12 +13,14 @@ import {
   listsOf,
   mergePatch,
   pruneState,
+  saliences,
   strayIds,
   type Card,
   type Change,
   type Fields,
+  type Salience,
 } from "#motion/changes.ts";
-import { kindNames, type Kind, type Kinds } from "#motion/kinds.ts";
+import { kindNames, legacyKindNames, type Kind, type Kinds } from "#motion/kinds.ts";
 import type { Motion, MotionChange } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
@@ -59,7 +61,20 @@ export type MotionOptions = {
   readonly reactAfterMs?: number;
 };
 
-type Saved = { readonly kind: Kind; readonly card: Card; readonly status: "active" | "done"; readonly content: Fields };
+export const outcomes = ["achieved", "not_met", "let_go", "merged", "duplicate", "test", "elsewhere"] as const;
+
+export type Outcome = (typeof outcomes)[number];
+
+// How a finished thing ended: tracking ended, with what came of it said apart.
+type Ending = { readonly outcome: Outcome; readonly merged_into?: string };
+
+type Saved = {
+  readonly kind: Kind;
+  readonly card: Card;
+  readonly status: "active" | "done";
+  readonly content: Fields;
+  readonly ending?: Ending;
+};
 
 // A change saved, and what it means for how the thing shows them.
 type Changed = { readonly motion: Motion; readonly said: string };
@@ -74,7 +89,29 @@ const longestTitle = 28;
 
 const kindList = `${kindNames.slice(0, -1).join(", ")} or ${kindNames.at(-1) ?? ""}`;
 
+// Outcomes that never show in History: a copy, a test, or small admin that lives elsewhere now.
+const unshown: ReadonlySet<Outcome> = new Set(["duplicate", "test", "elsewhere"]);
+
+const intoOutcomes: ReadonlySet<Outcome> = new Set(["merged", "duplicate"]);
+
+const isSalience = (value: unknown): value is Salience => saliences.some((salience) => salience === value);
+
+const isOutcome = (value: unknown): value is Outcome => outcomes.some((outcome) => outcome === value);
+
+const dayOf = (now: number): string => new Date(now).toISOString().slice(0, 10);
+
+// A role's current stage dated, today, when it isn't yet: the day it got there.
+const withStageDated = (kind: Kind, content: Fields, now: number): Fields => {
+  if (kind !== "career" || typeof content.stage !== "string") return content;
+  const stages = isObject(content.stages) ? content.stages : {};
+  return Object.hasOwn(stages, content.stage)
+    ? content
+    : { ...content, stages: { ...stages, [content.stage]: dayOf(now) } };
+};
+
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
+
+const nameOf = (value: unknown): string => String(value).trim().toLowerCase();
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
@@ -327,16 +364,24 @@ export const createMotions = ({
     );
   };
 
+  // A thing as it's kept, from before 0.19 too: no salience reads as normal, and no outcome as ended, untold.
   const readSaved = (text: { readonly card?: string; readonly content?: string }): Saved | undefined => {
     if (text.card === undefined || text.content === undefined) return undefined;
     const card = JSON.parse(text.card) as Fields;
     const kind = String(card.kind);
     if (!kinds.isKind(kind)) return undefined;
+    const { outcome, merged_into: into } = card;
     return {
       kind,
-      card: { title: String(card.title), summary: String(card.summary), pinned: card.pinned === true },
+      card: {
+        title: String(card.title),
+        summary: String(card.summary),
+        pinned: card.pinned === true,
+        salience: isSalience(card.salience) ? card.salience : "normal",
+      },
       status: card.status === "done" ? "done" : "active",
       content: JSON.parse(text.content) as Fields,
+      ...(isOutcome(outcome) && { ending: { outcome, ...(typeof into === "string" && { merged_into: into }) } }),
     };
   };
 
@@ -381,7 +426,7 @@ export const createMotions = ({
       .map((attachment) => ({ file: pictureFile(id, attachment), text: readFileSync(picturePath(attachment)) }));
     const before = readNow(thread, id);
     const dropped = before ? photosIn(before.content).filter((attachment) => !used.has(attachment)) : [];
-    const card = { kind: thing.kind, ...thing.card, status: thing.status };
+    const card = { kind: thing.kind, ...thing.card, status: thing.status, ...thing.ending };
     const written = await thread.writeFiles(
       [
         { file: `${folderOf(id)}/motion.json`, text: `${JSON.stringify(card, undefined, 2)}\n` },
@@ -410,11 +455,13 @@ export const createMotions = ({
       summary: thing.card.summary,
       status: thing.status,
       pinned: thing.card.pinned,
+      salience: thing.card.salience,
       ...(typeof cover === "string" && { cover }),
       version,
       started_at: existing?.started_at ?? at,
       changed_at: at,
       ...(doneAt !== undefined && { done_at: doneAt }),
+      ...(thing.status === "done" && thing.ending),
       ...(existing && { position: existing.position }),
     };
   };
@@ -472,27 +519,54 @@ export const createMotions = ({
       : fail(`It names ${dangling.join(", ")}, which isn't in this thing: add it, or name one that is.`);
   };
 
+  // A role already going in the pipeline, at the same firm under the same name.
+  const sameRole = (content: Fields): string | undefined => {
+    return [...saved.get()].find(
+      ([, other]) =>
+        other.kind === "career" &&
+        other.status === "active" &&
+        nameOf(other.content.org) === nameOf(content.org) &&
+        nameOf(other.content.role) === nameOf(content.role),
+    )?.[0];
+  };
+
   const start = (input: unknown): Promise<Result<Motion, string>> =>
     memory.withThread(async (thread) => {
       const id = lineOf(input, "id");
       if (!idPattern.test(id)) return fail("Give it an id of lowercase words joined by dashes, such as florence-trip.");
       const kind = lineOf(input, "kind");
-      if (!kinds.isKind(kind)) return fail(`${kind || "That"} isn't a kind of thing yet: use ${kindList}.`);
+      if (!kinds.isNew(kind)) {
+        return fail(
+          kinds.isKind(kind)
+            ? `${kind} is 0.18's kind, kept only to read: use ${kindList}.`
+            : `${kind || "That"} isn't a kind of thing yet: use ${kindList}.`,
+        );
+      }
       const title = lineOf(input, "title");
       const note = lineOf(input, "note");
       if (title === "" || note === "") return fail("Give it a title and a note.");
+      const salience = fieldOf(input, "salience");
+      if (!isSalience(salience)) return fail("Give it a salience: loud, normal or quiet, by how much it matters now.");
       if (store.findMotion(id) || readNow(thread, id)) {
         return fail(`${id} is already a thing in motion: read it with read_motion and change it, or pick another id.`);
       }
-      const content = fieldOf(input, "content");
-      if (!isObject(content)) return fail("Give the whole content, as its kind describes.");
+      const given = fieldOf(input, "content");
+      if (!isObject(given)) return fail("Give the whole content, as its kind describes.");
+      const content = withStageDated(kind, given, clock.now());
       const valid = checked(kind, id, content);
       if (!valid.ok) return valid;
       const missing = missingIn(kind, title, content);
       if (missing.length > 0) return unfinished(kind, title, missing);
+      const twin = kind === "career" ? sameRole(content) : undefined;
+      if (twin !== undefined) {
+        return fail(
+          `${String(content.role)} at ${String(content.org)} is already in the pipeline as ${twin}: move its stage ` +
+            "with change_motion, so a role is only ever in one place.",
+        );
+      }
       const thing: Saved = {
         kind,
-        card: { title, summary: lineOf(input, "summary"), pinned: true },
+        card: { title, summary: lineOf(input, "summary"), pinned: true, salience },
         status: "active",
         content,
       };
@@ -519,15 +593,16 @@ export const createMotions = ({
       if (!shape.ok) return shape;
       const applied = applyChanges(id, { card: current.card, content: current.content }, toChanges(given));
       if (!applied.ok) return applied;
-      const { title, summary: line, pinned } = applied.value.card as Readonly<Record<string, unknown>>;
+      const { title, summary: line, pinned, salience } = applied.value.card as Readonly<Record<string, unknown>>;
       if (typeof title !== "string" || title === "" || typeof line !== "string" || typeof pinned !== "boolean") {
         return fail("A thing's title and summary are text, and pinned is true or false.");
       }
+      if (!isSalience(salience)) return fail("A thing's salience is loud, normal or quiet.");
       const summary = lineOf(input, "summary");
       const thing: Saved = {
         ...current,
         card: summary === "" ? applied.value.card : { ...applied.value.card, summary },
-        content: applied.value.content,
+        content: withStageDated(current.kind, applied.value.content, clock.now()),
       };
       if (JSON.stringify(thing) === JSON.stringify(current))
         return fail(`${current.card.title} already says exactly that.`);
@@ -559,18 +634,98 @@ export const createMotions = ({
       return ok({ motion, said: [...gaveWay, ...(masked === "" ? [] : [masked])].join(" ") });
     });
 
-  const finish = (input: unknown): Promise<Result<Motion, string>> =>
+  // How it ended, checked: an outcome, the thing it went into for a merge or a copy, and its story when it shows.
+  const endingOf = (
+    id: string,
+    input: unknown,
+  ): Result<{ readonly ending: Ending; readonly story?: Fields }, string> => {
+    const outcome = fieldOf(input, "outcome");
+    if (!isOutcome(outcome)) return fail(`Give how it ended: ${outcomes.join(", ")}.`);
+    const into = lineOf(input, "merged_into");
+    if (intoOutcomes.has(outcome)) {
+      if (into === "" || into === id) return fail(`Give merged_into: the thing it went into, by its id.`);
+      if (!store.findMotion(into)) return fail(`There's no thing ${into} in motion to merge it into.`);
+    } else if (into !== "") {
+      return fail("merged_into is only for merged or duplicate.");
+    }
+    const story = fieldOf(input, "story");
+    if (!unshown.has(outcome) && !isObject(story)) {
+      return fail("Give its story, for History: what happened, what was learnt, and what followed.");
+    }
+    return ok({
+      ending: { outcome, ...(into !== "" && { merged_into: into }) },
+      ...(isObject(story) && !unshown.has(outcome) && { story }),
+    });
+  };
+
+  // Tracking ends, with how it ended said apart from it: finishing again corrects that.
+  const finish = (input: unknown): Promise<Result<{ readonly motion: Motion; readonly again: boolean }, string>> =>
     memory.withThread(async (thread) => {
       const id = lineOf(input, "id");
       const note = lineOf(input, "note");
       const current = readNow(thread, id);
       if (!current) return fail(`There's no thing ${id || "with that id"} in motion.`);
-      if (current.status === "done") return fail(`${current.card.title} is already done.`);
       if (note === "") return fail("Give a note, such as “Home from Florence”.");
-      const thing: Saved = { ...current, status: "done", card: { ...current.card, pinned: false } };
+      const ended = endingOf(id, input);
+      if (!ended.ok) return ended;
+      const { ending, story } = ended.value;
+      const summary = lineOf(input, "summary");
+      const stages = isObject(current.content.stages) ? current.content.stages : {};
+      const content = {
+        ...current.content,
+        ...(current.kind === "career" && {
+          stage: "ended",
+          stages: { ...stages, ended: stages.ended ?? dayOf(clock.now()) },
+        }),
+        ...(story && { story }),
+      };
+      const valid = checked(current.kind, id, content);
+      if (!valid.ok) return valid;
+      const thing: Saved = {
+        ...current,
+        status: "done",
+        card: { ...current.card, pinned: false, ...(summary !== "" && { summary }) },
+        content,
+        ending,
+      };
+      if (JSON.stringify(thing) === JSON.stringify(current)) return fail(`${current.card.title} already ended so.`);
+      const again = current.status === "done";
       const version = (await versionOf(thread, id)) + 1;
       const written = await write(thread, id, thing, `${thing.card.title}: ${note}`);
-      return written.ok ? ok(record("motion.finished", id, thing, version, note)) : written;
+      if (!written.ok) return written;
+      return ok({ motion: record(again ? "motion.changed" : "motion.finished", id, thing, version, note), again });
+    });
+
+  // A thing given a new kind and its whole content in that kind's shape, keeping its id, history and ticks that fit.
+  const reshape = (input: unknown): Promise<Result<Motion, string>> =>
+    memory.withThread(async (thread) => {
+      const id = lineOf(input, "id");
+      const note = lineOf(input, "note");
+      const current = readNow(thread, id);
+      if (!current) return fail(`There's no thing ${id || "with that id"} in motion.`);
+      if (note === "") return fail("Give a note: what the reshape does, in a few words.");
+      const version = await versionOf(thread, id);
+      if (fieldOf(input, "version") !== version) {
+        return fail(
+          `${current.card.title} has changed since you read it: it's at version ${String(version)} now. Read it again, then reshape it.`,
+        );
+      }
+      const kind = lineOf(input, "kind");
+      if (!kinds.isNew(kind)) return fail(`Reshape it into one of ${kindList}.`);
+      const given = fieldOf(input, "content");
+      if (!isObject(given)) return fail("Give the whole content, as its new kind describes.");
+      const content = withStageDated(kind, given, clock.now());
+      const valid = checked(kind, id, content);
+      if (!valid.ok) return valid;
+      const title = lineOf(input, "title") || current.card.title;
+      const summary = lineOf(input, "summary") || current.card.summary;
+      const salience = fieldOf(input, "salience") ?? current.card.salience;
+      if (!isSalience(salience)) return fail("A thing's salience is loud, normal or quiet.");
+      const missing = current.status === "active" ? missingIn(kind, title, content) : [];
+      if (missing.length > 0) return unfinished(kind, title, missing);
+      const thing: Saved = { ...current, kind, card: { ...current.card, title, summary, salience }, content };
+      const written = await write(thread, id, thing, `${title}: ${note}`);
+      return written.ok ? ok(record("motion.changed", id, thing, version + 1, note)) : written;
     });
 
   const restore = (input: unknown): Promise<Result<Motion, string>> =>
@@ -621,9 +776,17 @@ export const createMotions = ({
   const describe = (id: string, thing: Saved, version: number, isLatest: boolean): string => {
     const state = store.motionState(id);
     const notes = store.motionChanges(id, recentNotes).map(({ version: at, note }) => `- ${String(at)}: ${note}`);
+    const ended = thing.ending
+      ? `, ${thing.ending.outcome}${thing.ending.merged_into === undefined ? "" : ` into ${thing.ending.merged_into}`}`
+      : thing.status === "done"
+        ? ", with no outcome yet: give it one with finish_motion"
+        : "";
     return [
       `${id} (${thing.kind}), version ${String(version)}${isLatest ? "" : " (an earlier version)"}, ${thing.status}` +
-        (thing.card.pinned ? ", pinned" : ""),
+        ended +
+        (thing.card.pinned ? ", pinned" : "") +
+        `, ${thing.card.salience}`,
+      ...(kinds.isNew(thing.kind) ? [] : [`${thing.kind} is 0.18's kind: reshape it with reshape_motion.`]),
       `title: ${thing.card.title}`,
       `summary: ${thing.card.summary}`,
       "content:",
@@ -668,11 +831,12 @@ export const createMotions = ({
       name: "start_motion",
       title: "Start a thing in motion",
       description:
-        "Start something going on that the person will come back to, such as a trip being planned, a job search, a " +
-        "dinner or a refund: a plan with several steps that will outlast this conversation, or whenever they ask " +
-        "you to pin something. Give its whole content once, as the Things in motion skill describes for its kind, " +
-        "with an id on every item. A trip needs a cover, a photo for every place and a place for every stop. It's " +
-        "pinned above their chat until it's done.",
+        "Start something that unfolds over weeks and that the person will come back to: a role in their career " +
+        "pipeline (one thing per role), a training block, a trip, a project, something they're learning, or " +
+        "something without a shape yet. Not a one-off event, and not small admin, which goes on the Desk and in " +
+        "your plans. Give its whole content once, as the Things in motion skill describes for its kind, with an id " +
+        "on every item, and your notes (sources, guesses, ids) in its notes, never in the summary. A trip needs a " +
+        "cover, a photo for every place and a place for every stop. It's pinned above their chat until it's done.",
       inputSchema: {
         type: "object",
         properties: {
@@ -682,11 +846,21 @@ export const createMotions = ({
             type: "string",
             description: "Short, 28 characters at most, such as Florence with Mira; the rest goes in the summary.",
           },
-          summary: { type: "string", description: "Where it stands, in one line, such as “6–9 Nov · 4 to book”." },
+          summary: {
+            type: "string",
+            description: "Your line for them: where it stands, short, such as “Virtual 1 · Python PR review”.",
+          },
+          salience: {
+            type: "string",
+            enum: [...saliences],
+            description:
+              "How much it matters to them now, by your judgement of the stakes, the timing and what they've said: " +
+              "loud is the one big item of its section, quiet folds away. Never by its stage or date alone.",
+          },
           content: { type: "object", description: "The whole content, as its kind describes." },
           note: { type: "string", description: "What you did, in a few words, such as “Started the trip”." },
         },
-        required: ["id", "kind", "title", "summary", "content", "note"],
+        required: ["id", "kind", "title", "summary", "salience", "content", "note"],
         additionalProperties: false,
       },
       call: async (input) => {
@@ -703,7 +877,8 @@ export const createMotions = ({
         "Change a thing you've read, item by item, citing the version read_motion gave you. All of a change " +
         "applies, or none of it. Keep its summary current with every change. When the person tells you something " +
         "that ticks an item, such as “booked the Uffizi”, change it here: setting done is newer than a tick or " +
-        "untick of theirs, so it wins. It says how what you set shows them now.",
+        "untick of theirs, so it wins. It says how what you set shows them now. Set salience on the thing's own id " +
+        "when what matters to them changes, or when they tell you it does.",
       inputSchema: {
         type: "object",
         properties: {
@@ -743,18 +918,75 @@ export const createMotions = ({
     {
       name: "finish_motion",
       title: "Finish a thing in motion",
-      description: "Move a thing to Done once it's over, such as a trip they're home from. It stops being pinned.",
+      description:
+        "Stop keeping a thing, saying honestly how it ended: ending tracking isn't achieving it. It moves to " +
+        "History with its outcome and story, and stops being pinned. A copy of another thing, a test, or small " +
+        "admin now on the Desk never shows. Finishing a thing that's already done corrects how it ended.",
       inputSchema: {
         type: "object",
-        properties: { id: { type: "string" }, note: { type: "string" } },
-        required: ["id", "note"],
+        properties: {
+          id: { type: "string" },
+          outcome: {
+            type: "string",
+            enum: [...outcomes],
+            description:
+              "achieved; not_met, a goal they missed; let_go, stopped by choice; merged into another thing; " +
+              "duplicate, a copy of another; test; elsewhere, small admin that lives on the Desk or in your plans now.",
+          },
+          merged_into: { type: "string", description: "For merged and duplicate: the id of the thing it went into." },
+          summary: {
+            type: "string",
+            description: "How it ended, in a line, for History, such as “No offer after the final round”.",
+          },
+          story: {
+            type: "object",
+            description:
+              "Except for duplicate, test and elsewhere: {happened: a few sentences, learnt?: [a line each], " +
+              "followed?: what came next, followed_by?: its id}, in your words to them.",
+          },
+          note: { type: "string", description: "What you did, such as “Home from Florence”." },
+        },
+        required: ["id", "outcome", "note"],
         additionalProperties: false,
       },
       call: async (input) => {
         const finished = await finish(input);
         if (!finished.ok) return failed(finished.failure);
-        step("finished", finished.value);
-        return { text: `Finished ${finished.value.title}.` };
+        const { motion, again } = finished.value;
+        step(again ? "updated" : "finished", motion, again ? lineOf(input, "note") : undefined);
+        const how = (motion.outcome ?? "ended").replace("_", " ");
+        return { text: again ? `${motion.title} ended as ${how} now.` : `Finished ${motion.title}: ${how}.` };
+      },
+    },
+    {
+      name: "reshape_motion",
+      title: "Reshape a thing in motion",
+      description:
+        "Give a thing a new kind and its whole content in that kind's shape, citing the version you read: for a " +
+        "thing in 0.18's kinds (training, pursuit, occasion, case), or one started in the wrong kind. It keeps its " +
+        "id, its history and the ticks that still fit.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          version: { type: "integer", description: "The version you read." },
+          kind: { type: "string", enum: [...kindNames] },
+          content: { type: "object", description: "The whole content, as its new kind describes." },
+          title: { type: "string", description: "A new title, if it needs one." },
+          summary: { type: "string", description: "Your line for them, if it changes." },
+          salience: { type: "string", enum: [...saliences] },
+          note: { type: "string", description: "What you did, such as “Reshaped into a body block”." },
+        },
+        required: ["id", "version", "kind", "content", "note"],
+        additionalProperties: false,
+      },
+      call: async (input) => {
+        const reshaped = await reshape(input);
+        if (!reshaped.ok) return failed(reshaped.failure);
+        step("updated", reshaped.value, lineOf(input, "note"));
+        return {
+          text: `Reshaped ${reshaped.value.title} into a ${reshaped.value.kind}, now at version ${String(reshaped.value.version)}.`,
+        };
       },
     },
     {
@@ -907,12 +1139,22 @@ export const createMotions = ({
     },
     inMindText: () => {
       const active = store.listMotions().filter(({ status }) => status === "active");
+      const legacy = active.filter(({ kind }) => !kinds.isNew(kind));
       return active.length === 0
         ? ""
         : [
             "<in_motion>",
-            "Things in motion you keep for them. Read one with read_motion before you change it.",
-            ...active.map(({ id, title, kind, summary }) => `- ${title} (${id}, ${kind}): ${summary}`),
+            "Things in motion you keep for them, with how loud each is now. Read one with read_motion before you " +
+              "change it.",
+            ...active.map(
+              ({ id, title, kind, summary, salience }) => `- ${title} (${id}, ${kind}, ${salience}): ${summary}`,
+            ),
+            ...(legacy.length === 0
+              ? []
+              : [
+                  `${legacy.map(({ id }) => id).join(", ")} ${legacy.length === 1 ? "is" : "are"} in 0.18's kinds ` +
+                    `(${legacyKindNames.join(", ")}): tidy them as the Things in motion skill says when you have a quiet moment.`,
+                ]),
             "</in_motion>",
           ].join("\n");
     },

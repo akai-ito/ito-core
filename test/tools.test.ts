@@ -83,6 +83,7 @@ describe("Ito's tools over MCP", () => {
           { name: "change_motion" },
           { name: "read_motion" },
           { name: "finish_motion" },
+          { name: "reshape_motion" },
           { name: "restore_motion" },
           { name: "forget_motion" },
           { name: "change_card" },

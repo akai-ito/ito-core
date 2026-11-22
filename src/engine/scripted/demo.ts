@@ -5,6 +5,18 @@ import type { AskFields, Complete, Engine, EngineEvent, Input, StepFacts } from 
 import { fail, ok } from "#result.ts";
 import type { Act, CallTool, ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
 import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "#protocol/tools/florence.ts";
+import {
+  hybridContent,
+  hybridId,
+  projectContent,
+  projectId,
+  quietRoles,
+  roleContent,
+  roleId,
+  springContent,
+  springId,
+  springStory,
+} from "#protocol/tools/in-motion.ts";
 import { sub20Id, sub20Training } from "#protocol/tools/sub20.ts";
 
 const pieceMs = 70;
@@ -17,6 +29,7 @@ const shortReply = [
   "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, or *approve* for an approval.",
   "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
   "- *trip* starts Florence with Mira in In motion, *training* a sub-20 5K block, and *booked* books the trip's Uffizi.",
+  "- *motion* fills In motion with a role, a hybrid block, a project and a goal that ended unmet.",
   "- *plan* lays out a day with Kumo's plan and guesses.",
 ].join("\n");
 
@@ -214,6 +227,7 @@ const startTrip: Act["act"] = async (callTool) => {
     kind: "trip",
     title: "Florence with Mira",
     summary: "6–9 Nov · 4 to book",
+    salience: "loud",
     content: florenceTrip(Object.fromEntries(kept) as FlorencePictures),
     note: "Started the trip",
   });
@@ -222,11 +236,71 @@ const startTrip: Act["act"] = async (callTool) => {
 const startTraining: Act["act"] = async (callTool) => {
   await callTool("start_motion", {
     id: sub20Id,
-    kind: "training",
+    kind: "body",
     title: "Sub-20 5K",
     summary: "Week 6 of 10 · intervals today",
+    salience: "normal",
     content: sub20Training,
     note: "Started the block",
+  });
+};
+
+// Every 0.19 shape at once: three roles, loudest first, a hybrid block, a project, and a goal ended unmet.
+const fillInMotion: Act["act"] = async (callTool) => {
+  const now = Date.now();
+  await callTool("start_motion", {
+    id: roleId,
+    kind: "career",
+    title: "Northwind",
+    summary: "Virtual 1 · Python PR review",
+    salience: "loud",
+    content: roleContent(now),
+    note: "Added Northwind to the pipeline",
+  });
+  for (const [index, { id, content, summary }] of quietRoles.entries()) {
+    await callTool("start_motion", {
+      id,
+      kind: "career",
+      title: String(content.org),
+      summary,
+      salience: index === 0 ? "normal" : "quiet",
+      content,
+      note: "Added it to the pipeline",
+    });
+  }
+  await callTool("start_motion", {
+    id: hybridId,
+    kind: "body",
+    title: "Hybrid restart",
+    summary: "Three done this week. Saturday's easy run is the last.",
+    salience: "loud",
+    content: hybridContent(now),
+    note: "Started the block",
+  });
+  await callTool("start_motion", {
+    id: projectId,
+    kind: "project",
+    title: "Ito 0.19 · Lived-in",
+    summary: "Design round 2 of 4 · In motion",
+    salience: "normal",
+    content: projectContent,
+    note: "Started the release",
+  });
+  await callTool("start_motion", {
+    id: springId,
+    kind: "body",
+    title: "Sub-20 5K",
+    summary: "Training incomplete",
+    salience: "normal",
+    content: springContent,
+    note: "Kept the goal",
+  });
+  await callTool("finish_motion", {
+    id: springId,
+    outcome: "not_met",
+    summary: "Training incomplete, race not booked; a fresh hybrid plan followed.",
+    story: springStory,
+    note: "Ended the goal, unmet",
   });
 };
 
@@ -336,6 +410,7 @@ const motionScript = (text: string, start: readonly TimedEvent[]): Script | unde
     { pattern: /\btrip\b/u, act: startTrip, said: `I've started Florence with Mira.\n\n${motionLine(florenceId)}` },
     { pattern: /\btraining\b/u, act: startTraining, said: `All ten weeks are in.\n\n${motionLine(sub20Id)}` },
     { pattern: /\bbooked\b/u, act: bookUffizi, said: "Lovely: the Uffizi is booked for 8:15 on Saturday." },
+    { pattern: /\bmotion\b/u, act: fillInMotion, said: "In motion has a bit of everything now." },
   ].find(({ pattern }) => pattern.test(text));
   if (!chosen) return undefined;
   const actAt = lastAt(start) + 300;

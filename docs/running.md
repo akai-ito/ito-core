@@ -22,7 +22,8 @@ redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `
 another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
 in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a timeout,
 *ask* a question, *approve* an approval, *remember* writes a page and the journal in memory,
-*recall* looks it up, *trip* and *training* start things in motion, *booked* books the trip's
+*recall* looks it up, *trip* and *training* start things in motion, *motion* fills In motion with
+every kind (a role, a hybrid block, a project and a goal that ended unmet), *booked* books the trip's
 Uffizi, *mail* reads a sample mail, puts a draft on the Desk and messages you about it, and *plan*
 lays out a sample day of Kumo's plan and guesses in Coming up.
 

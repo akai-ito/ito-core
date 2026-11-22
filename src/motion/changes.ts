@@ -10,13 +10,22 @@ export type Change =
   | { readonly move: string; readonly to?: string; readonly after?: string }
   | { readonly remove: string };
 
-export type Card = { readonly title: string; readonly summary: string; readonly pinned: boolean };
+export const saliences = ["loud", "normal", "quiet"] as const;
+
+export type Salience = (typeof saliences)[number];
+
+export type Card = {
+  readonly title: string;
+  readonly summary: string;
+  readonly pinned: boolean;
+  readonly salience: Salience;
+};
 
 export type Applied = { readonly card: Card; readonly content: Fields };
 
 type Lists = (list: string, items: readonly Item[]) => readonly Item[];
 
-const cardFields: ReadonlySet<string> = new Set(["title", "summary", "pinned"]);
+const cardFields: ReadonlySet<string> = new Set(["title", "summary", "pinned", "salience"]);
 
 const isObject = (value: unknown): value is Fields =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -36,6 +45,13 @@ export const listFields: ReadonlySet<string> = new Set([
   "options",
   "prep",
   "timeline",
+  "rounds",
+  "facts",
+  "parts",
+  "steps",
+  "log",
+  "notes",
+  "reasons",
 ]);
 
 const isList = (value: unknown, field: string): value is readonly Item[] =>

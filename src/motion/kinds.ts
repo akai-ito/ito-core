@@ -5,12 +5,21 @@ import formats from "ajv-formats";
 import { protocolDirectory, type Schemas } from "#protocol/schemas.ts";
 import { fail, ok, type Result } from "#result.ts";
 
-export const kindNames = ["trip", "training", "pursuit", "occasion", "case"] as const;
+// The kinds Kumo starts things in, in In motion's order.
+export const kindNames = ["career", "body", "trip", "project", "learning", "other"] as const;
 
-export type Kind = (typeof kindNames)[number];
+// 0.18's kinds: still read and changed, so nothing is lost, but never started. Kumo reshapes them into the new ones.
+export const legacyKindNames = ["training", "pursuit", "occasion", "case"] as const;
+
+export type NewKind = (typeof kindNames)[number];
+
+export type Kind = NewKind | (typeof legacyKindNames)[number];
+
+const allKinds: readonly Kind[] = [...kindNames, ...legacyKindNames];
 
 export type Kinds = {
   readonly isKind: (kind: string) => kind is Kind;
+  readonly isNew: (kind: string) => kind is NewKind;
   readonly checkContent: (kind: Kind, content: unknown) => Result<undefined, string>;
   readonly checkState: (kind: Kind, state: unknown) => Result<undefined, string>;
   readonly checkChanges: (changes: unknown) => Result<undefined, string>;
@@ -19,7 +28,12 @@ export type Kinds = {
 const shown = 3;
 
 const definitions: Readonly<Record<Kind, { readonly content: string; readonly state: string }>> = {
+  career: { content: "Career", state: "CareerState" },
+  body: { content: "Body", state: "BodyState" },
   trip: { content: "Trip", state: "TripState" },
+  project: { content: "Project", state: "ProjectState" },
+  learning: { content: "Learning", state: "LearningState" },
+  other: { content: "Other", state: "OtherState" },
   training: { content: "Training", state: "TrainingState" },
   pursuit: { content: "Pursuit", state: "PursuitState" },
   occasion: { content: "Occasion", state: "OccasionState" },
@@ -56,14 +70,15 @@ export const createKinds = (schemas: Schemas, directory = protocolDirectory): Ki
     return validate;
   };
   const validators = Object.fromEntries(
-    kindNames.map((kind) => [
+    allKinds.map((kind) => [
       kind,
       { content: compiled(definitions[kind].content), state: compiled(definitions[kind].state) },
     ]),
   ) as Readonly<Record<Kind, { readonly content: ValidateFunction; readonly state: ValidateFunction }>>;
   const changes = compiled("Changes");
   return {
-    isKind: (kind): kind is Kind => (kindNames as readonly string[]).includes(kind),
+    isKind: (kind): kind is Kind => (allKinds as readonly string[]).includes(kind),
+    isNew: (kind): kind is NewKind => (kindNames as readonly string[]).includes(kind),
     checkContent: (kind, content) => toResult(validators[kind].content, content),
     checkState: (kind, state) => toResult(validators[kind].state, state),
     checkChanges: (given) => toResult(changes, given),

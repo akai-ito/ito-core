@@ -81,8 +81,11 @@ tags:
     description: Read what Ari remembers, and back it up. Ari writes it; apps only read.
   - name: Motion
     description: |
-      Things in motion that Ari keeps for you, such as a trip being planned. Ari writes them; apps
-      read them and tick their items.
+      Things in motion that Kumo keeps for you, such as a trip being planned or a role you're
+      interviewing for. Kumo writes them; apps read them and tick their items. In motion shows them
+      in fixed sections by kind (Career, Body, Trips, Projects, Learning, Other), loudest first by
+      the salience Kumo judges, and ended things in History by their outcome: never a `duplicate`,
+      a `test` or small admin kept `elsewhere`.
   - name: Model
     description: Choose the model the agent runs on.
   - name: Talk
@@ -1358,7 +1361,10 @@ paths:
       tags: [Motion]
       operationId: listMotion
       summary: Everything in motion, then what's done
-      description: Active things first, then done ones, each group newest first.
+      description: |
+        Active things first, then done ones, each group newest first. Done ones carry their
+        `outcome`; those that never show (`duplicate`, `test`, `elsewhere`) are listed too, so
+        nothing is lost, for apps to leave out.
       responses:
         "200":
           description: The things.

@@ -358,6 +358,7 @@ const florenceCard = {
   summary: "6–9 Nov · 4 to book",
   status: "active" as const,
   pinned: true,
+  salience: "loud" as const,
 };
 
 const motionStep = (
@@ -389,6 +390,7 @@ const startFlorence = (transcript: Transcript, pictures: FlorencePictures): Retu
     kind: florenceCard.kind,
     title: florenceCard.title,
     summary: florenceCard.summary,
+    salience: florenceCard.salience,
     content: florenceTrip(pictures),
     note: "Started the trip",
   });
@@ -406,11 +408,12 @@ const startFlorence = (transcript: Transcript, pictures: FlorencePictures): Retu
 
 const sub20Card = {
   id: sub20Id,
-  kind: "training",
+  kind: "body",
   title: "Sub-20 5K",
   summary: "Week 6 of 10 · intervals today",
   status: "active" as const,
   pinned: true,
+  salience: "loud" as const,
 };
 
 type TrainingWeek = { readonly id: string; readonly note?: string };
@@ -3213,8 +3216,8 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 64,
       title: "A training block",
       summary:
-        "You ask Ari to keep your sub-20 5K plan. Ari starts the whole block as a thing in motion, every week " +
-        "from the first to the last. That evening you tick today's intervals; a few seconds later Ari quietly " +
+        "You ask Ari to keep your sub-20 5K plan. Ari starts the whole block as a thing in motion in Body, loud, " +
+        "every week from the first to the last. That evening you tick today's intervals; a few seconds later Ari quietly " +
         "rewrites the week's note, with no chat message and no turn. On Saturday you tell Ari a parkrun time, " +
         "and Ari adds it to the results.",
       guarantees: ["G32"],
@@ -3232,6 +3235,7 @@ const scenarios: readonly (() => Transcript)[] = [
       kind: sub20Card.kind,
       title: sub20Card.title,
       summary: sub20Card.summary,
+      salience: sub20Card.salience,
       content: sub20Training,
       note: "Started the block",
     });
