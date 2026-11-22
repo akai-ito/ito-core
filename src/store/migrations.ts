@@ -316,4 +316,27 @@ export const migrations: readonly string[] = [
   );
   CREATE INDEX shown_files_by_path ON shown_files (path);
   CREATE INDEX shown_files_by_bytes ON shown_files (sha256);`,
+  // Pages Kumo makes: the page as the shelf lists it, each version's content, what changed, and their ticks.
+  `CREATE TABLE made (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    changed_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE TABLE made_contents (
+    made TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    PRIMARY KEY (made, version)
+  );
+  CREATE TABLE made_changes (
+    made TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    PRIMARY KEY (made, version)
+  );
+  CREATE TABLE made_states (
+    made TEXT PRIMARY KEY,
+    state TEXT NOT NULL
+  );`,
 ];

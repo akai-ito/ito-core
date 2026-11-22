@@ -71,6 +71,32 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       }
       return;
     }
+    case "made.created":
+    case "made.changed": {
+      const { made, change } = event;
+      database
+        .prepare(
+          `INSERT INTO made (id, position, changed_at, body) VALUES (?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET changed_at = excluded.changed_at, body = excluded.body`,
+        )
+        .run(made.id, made.position, made.changed_at, toJson(made));
+      database
+        .prepare("INSERT OR REPLACE INTO made_changes (made, version, body) VALUES (?, ?, ?)")
+        .run(made.id, change.version, toJson(change));
+      return;
+    }
+    case "made.state": {
+      database
+        .prepare("INSERT OR REPLACE INTO made_states (made, state) VALUES (?, ?)")
+        .run(event.made, toJson(event.state));
+      return;
+    }
+    case "made.removed": {
+      for (const table of ["made", "made_contents", "made_changes", "made_states"]) {
+        database.prepare(`DELETE FROM ${table} WHERE ${table === "made" ? "id" : "made"} = ?`).run(event.made);
+      }
+      return;
+    }
     case "message.started": {
       const { message } = event;
       database

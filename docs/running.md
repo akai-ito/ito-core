@@ -160,6 +160,14 @@ a correction, and Kumo sees what you changed when it next looks at your day. Kum
 short line and its mood at the top of the Desk, such as how something's going, and it changes them
 when the moment changes.
 
+Replies show what has a shape: a menu as a table that fits a phone, with Kumo's verdict on each
+dish as a chip, then its picks with pictures and the total; places, events, drafts and Desk
+questions as cards with their buttons (a draft opens in Mail, never sends); names you can tap for
+who someone is. A rich answer worth keeping, such as a gallery guide, becomes a page Kumo made: a
+card in the reply and a place on the Made shelf, with sections that fold and things to tick. Kumo
+keeps a page current and says what changed. Pages live in the box's database, not in memory: they
+are things Kumo made for you, not what it knows about you.
+
 In the conversation, Ari reaches the same mail through `ito mail` commands and a skill file, rather
 than more tools in every turn: ask it to go through the club members who wrote this month, and it
 searches, reads each thread, and drafts the replies you agree to. Ask it to tidy your inbox, and it

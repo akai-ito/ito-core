@@ -232,3 +232,29 @@ describe("the demo engine's things in motion", () => {
     }
   });
 });
+
+describe("the demo engine's replies that show", () => {
+  it("answers a menu with shape, makes a guide page, and shows action cards", async () => {
+    const { server, send, close } = await openDemo();
+
+    try {
+      await send("what's good on this menu?");
+      await send("make me a guide for the gallery");
+      await send("show me the cards");
+
+      const posts = server.store
+        .latestMessages(20)
+        .filter(({ role }) => role === "agent")
+        .map(({ text }) => text);
+      expect(posts.some((text) => text.includes("```ari:picks") && text.includes("```ari:table"))).toBe(true);
+      expect(posts.some((text) => text.includes('```ari:made\n{"made":"gallery-guide"}'))).toBe(true);
+      expect(posts.some((text) => text.includes('```ari:desk\n{"card":"k_'))).toBe(true);
+      expect(server.store.findMade("gallery-guide")).toMatchObject({
+        version: 1,
+        summary: "3 rooms · 4 things to spot",
+      });
+    } finally {
+      await close();
+    }
+  });
+});

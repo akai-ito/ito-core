@@ -37,7 +37,7 @@ where the protocol has to make it possible, marked *App*.
 | G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
 | G28 | **An app asks before it acts.** When an app's action, or a capability's such as filing a report, needs your approval, it waits inside the running turn, which carries on once you answer. An approval that would send your pictures out shows them. Your next message answers it: Allow, or a plain yes, lets it run; anything else doesn't, and your words reach the agent. Stop cancels it. | 17, 53, 54, 55 |
 | G29 | **Threads keep subjects apart.** A side thread is a conversation of its own beside the main chat, with its own turns: a message in one never steers or waits behind another, and turns in different threads run at once. Kumo starts one by moving the message that began it, which keeps its id and position; you start one by replying to a message in the main chat (it stays there, with the thread under it) or from Threads. Every message says which thread it's in, every turn and ask too, and every notification about one names it. A thread shows in the main chat as one line, moving to the end only when Kumo comes back to it with something new, which waits as its news until you've seen it. Done is quiet and replying reopens it. Earlier messages stay in the main chat as they were. | 58, 90, 91 |
-| G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
+| G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60, 90, 91 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Ari can't start or change a trip without a cover, a photo for every place and every stop at its place, or any thing with a title over 28 characters. A role is in the career pipeline once, in one stage. Finishing a thing says how it ended, apart from ending it, so a goal missed or let go never shows as achieved, and a copy, a test or small admin never shows at all. Forgetting a thing asks you first. | 62, 63, 64 |
 | G33 | **The Desk is home.** Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail come whole in the snapshot and in every change, so an app never pieces it together. | 65, 74, 78, 79, 84 |
 | G34 | **Waiting on you stays until it's done, or can't help.** A card waits until it's settled, shows when the box is acting on your answer, and leaves when that's done. One that only matters until a moment (its `until`), or an invite whose event is over, leaves by itself then, noted in Done. | 65, 67 |
@@ -59,6 +59,7 @@ where the protocol has to make it possible, marked *App*.
 | G56 | **A line and a face, by judgement.** Kumo may put a short line at the top of the Desk with its mood, and changes them when the moment changes. Neither ever notifies. | 84 |
 | G57 | **Paused at a usage limit, then caught up once.** When the model provider's usage limit is reached, Kumo's background work pauses until the limit resets, with nothing retried meanwhile, and the pause shows at once as a problem that says when it ends. Once the limit resets, or a turn in the chat goes through, Kumo catches up once on what it missed, each wake-up and kind of work counted once, and tells you in one message. Background work with nobody watching that shows no sign of life for 15 minutes is stopped and tried once more. | 86 |
 | G60 | **Chapters and what Kumo learnt come from memory.** A chapter is a page Kumo writes and keeps on its own shelf: a story with the day it began, the day it ended once it's over, and the day Kumo noticed it, which the server stamps; what it drew on is counted by the server, never said by Kumo. A line Kumo learnt about you comes only with a change that taught it, never with one that tidies or fixes records, is kept in the Thread with that change, and leaves the Library when Kumo takes it back or forgets its page. | 90 |
+| G57 | **Pages Kumo makes stay current, and your ticks are yours.** A rich, lasting answer can come as a page Kumo made: a card in the reply that opens it, and a place on the Made shelf. Kumo makes a page whole, with pictures it kept and blocks the app draws, then changes it only from the version it read, with a note that says what changed; a change never notifies. Your ticks carry when you ticked, every app hears them, and a change that drops an item lets its tick go. Forgetting a page asks you first. | 91 |
 
 ## How Kumo decides to speak
 
@@ -598,6 +599,7 @@ catches up once (G57).
 - Chapters are the Library's own row: the shelves leave them out. *App:* Now, then Chapters, then
   what Kumo learnt, then the shelves; a chapter opens as its story, what changed, its links and
   where it came from.
+
 ### 90 · [Reply in a thread](transcripts/90-reply-in-a-thread.jsonl)
 
 - Replying to a message in the main chat starts a thread under it (`anchor`), at that message's
@@ -618,6 +620,23 @@ catches up once (G57).
   (`position`) with the post as its `news`, and the notification carries the thread and its name.
   Seeing it clears the news on every app. (G29, G15)
 - Searching Threads matches a thread's name, result or any message in it.
+
+### 90 · [A reply that shows](transcripts/90-a-reply-that-shows.jsonl)
+
+- Where an answer has shape, Ari writes it as blocks: a table that fits a phone with its verdict on
+  each row as a chip, its picks in order each with a picture, a price and a line, the number that
+  matters, and choices to tap. Every picture is one it kept on the server. (G31)
+- A name linked to a page in memory, `[Maya](memory:people/maya-lind)`, opens a small card about her.
+
+### 91 · [A page Kumo made](transcripts/91-a-page-kumo-made.jsonl)
+
+- Ari makes a page with `make_made_page`, whole, and every app hears `made.created`; the reply shows
+  it as an `ari:made` card. (G57)
+- Opening it fetches its content, your ticks and what changed from `GET /v0/made/{made}`. (G57)
+- Ari changes it from the version it read, with a note, and every app hears `made.changed`; no
+  message comes with it. (G57)
+- A tick carries when you ticked, and every app hears the whole state in `made.state`. (G57)
+- The Made shelf comes from `GET /v0/made`, most recently changed first. (G57)
 
 ## Not in this version
 

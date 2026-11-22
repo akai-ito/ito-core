@@ -18,6 +18,7 @@ import { createMemory, type Memory } from "#memory/memory.ts";
 import { createBackup, type Backup } from "#memory/backup.ts";
 import type { GitHubHosts } from "#memory/github.ts";
 import { createImageTool } from "#replies/images.ts";
+import { createMadePages } from "#made/made.ts";
 import type { Fetch } from "#capabilities/connect.ts";
 import { createCapabilityApprovals } from "#capabilities/approvals.ts";
 import { createNaming } from "#threads/naming.ts";
@@ -335,6 +336,7 @@ export const createServer = (options: ServerOptions): Server => {
       nowText(),
       memory.inMindText(),
       motions.inMindText(),
+      made.inMindText(),
       wakeUps.inMindText(),
       tracks.inMindText(),
       deskLine.inMindText(),
@@ -359,6 +361,7 @@ export const createServer = (options: ServerOptions): Server => {
         nowText(),
         memory.inMindText(),
         motions.inMindText(),
+        made.inMindText(),
         wakeUps.inMindText(),
         tracks.inMindText(),
         deskLine.inMindText(),
@@ -423,6 +426,7 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     complete: (prompt, schema) => engine.complete(prompt, schema),
   });
+  const made = createMadePages({ store, schemas, clock, timeZone, approve: (fields) => turns.approve(fields) });
   const quickComplete: Engine["complete"] = async (prompt, schema, choice) => {
     await listening.get();
     return engine.complete(prompt, schema, choice);
@@ -728,6 +732,7 @@ export const createServer = (options: ServerOptions): Server => {
     memory,
     backup,
     motions,
+    made,
     voice,
     calls,
     voiceprints,
@@ -778,6 +783,7 @@ export const createServer = (options: ServerOptions): Server => {
     imageTool,
     ...memory.tools,
     ...motions.tools,
+    ...made.tools,
     ...createWorkTools({ post, desk, isTrack: (id) => tracks.find(id) !== undefined, clock }),
     ...threads.tools,
     ...tracks.tools,
