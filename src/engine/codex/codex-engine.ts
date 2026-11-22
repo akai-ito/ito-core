@@ -2,7 +2,7 @@ import { closeSync, constants, copyFileSync, lstatSync, mkdirSync, openSync, rea
 import path from "node:path";
 import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
-import type { TurnId } from "#conversation/ids.ts";
+import type { ThreadId, TurnId } from "#conversation/ids.ts";
 import type { ServerNotification } from "#engine/codex/bindings/ServerNotification.ts";
 import type { JsonValue } from "#engine/codex/bindings/serde_json/JsonValue.ts";
 import type { Account } from "#engine/codex/bindings/v2/Account.ts";
@@ -41,7 +41,8 @@ export type CodexEngineOptions = {
   readonly codexHome: string;
   readonly workspace: string;
   readonly instructions: () => string;
-  readonly context?: () => string;
+  // What a turn has in mind: the main chat's, or a side thread's with its digest.
+  readonly context?: (thread?: ThreadId) => string;
   readonly settings: Settings;
   readonly log: Log;
   readonly info: Info;
@@ -50,7 +51,7 @@ export type CodexEngineOptions = {
   readonly config?: Readonly<Record<string, JsonValue>>;
 };
 
-type Session = { readonly process: CodexProcess; readonly threadId: string };
+type Session = { readonly process: CodexProcess };
 
 type SessionModel = Pick<ThreadStartResponse, "model" | "reasoningEffort">;
 
@@ -58,15 +59,23 @@ type SessionFailure = { readonly code: EngineFailureCode; readonly detail: strin
 
 type Opening = Promise<Result<Session, SessionFailure>>;
 
+// Codex's thread and turn for one of ours, once it has started.
+type CodexTurn = { readonly threadId: string; readonly turnId: string };
+
+// Each conversation (the main chat, or a side thread) has its own Codex thread, and at most one turn at a time; turns
+// in different conversations run side by side in the one Codex process.
 type ActiveTurn = {
   readonly id: TurnId;
+  readonly conversation: string;
   readonly queue: AsyncQueue<EngineEvent>;
-  readonly codexTurn: Promise<string | undefined>;
+  readonly codexTurn: Promise<CodexTurn | undefined>;
   readonly hasStarted: boolean;
   readonly state: TurnState;
 };
 
 type Scope = Readonly<Partial<Record<"threadId" | "turnId", unknown>>>;
+
+type Approval = { readonly turn: TurnId; readonly respond: (isAllowed: boolean) => void };
 
 type SideJob = {
   readonly answer: string;
@@ -78,6 +87,14 @@ type SideJob = {
 type UsageWindows = { readonly primary?: RateLimitWindow; readonly secondary?: RateLimitWindow };
 
 export const threadSetting = "codex_thread_id";
+
+const mainConversation = "";
+
+const conversationOf = (thread: ThreadId | undefined): string => thread ?? mainConversation;
+
+// Where each conversation's Codex thread is kept, so it resumes after a restart.
+export const threadSettingFor = (thread: ThreadId | undefined): string =>
+  thread === undefined ? threadSetting : `${threadSetting}:${thread}`;
 
 const terminalTypes: ReadonlySet<EngineEvent["type"]> = new Set(["ended", "failed", "stopped"]);
 
@@ -286,16 +303,44 @@ export const createCodexEngine = ({
   modelProvider,
   config,
 }: CodexEngineOptions): Engine => {
-  const active = createCell<ActiveTurn | undefined>(undefined);
+  const actives = createCell<ReadonlyMap<string, ActiveTurn>>(new Map());
   const session = createCell<Opening | undefined>(undefined);
   const generation = createCell(0);
-  const openThreadId = createCell<string | undefined>(undefined);
+  // Each conversation's Codex thread in this session, and those being opened.
+  const codexThreads = createCell<ReadonlyMap<string, string>>(new Map());
+  const openingThreads = createCell<ReadonlyMap<string, Promise<Result<string, string>>>>(new Map());
   const isRefreshing = createCell(false);
-  const injected = createCell<string | undefined>(undefined);
-  const approvals = createCell<ReadonlyMap<string, (isAllowed: boolean) => void>>(new Map());
+  // Conversations let go of while others ran, whose Codex turn may not have stopped: the next turn there restarts
+  // Codex if nothing else runs by then.
+  const wedged = createCell<ReadonlySet<string>>(new Set());
+  const injected = createCell<ReadonlyMap<string, string>>(new Map());
+  const approvals = createCell<ReadonlyMap<string, Approval>>(new Map());
   const approvalCount = createCell(0);
   const sideJobs = createCell<ReadonlyMap<string, SideJob>>(new Map());
   const usage = createCell<UsageWindows>({});
+  const activeOf = (turn: TurnId): ActiveTurn | undefined =>
+    actives
+      .get()
+      .values()
+      .find(({ id }) => id === turn);
+
+  const setActive = (turn: ActiveTurn): void => {
+    actives.update((current) => new Map([...current, [turn.conversation, turn]]));
+  };
+
+  const dropActive = (conversation: string): void => {
+    actives.update((current) => new Map([...current].filter(([key]) => key !== conversation)));
+  };
+
+  const isOtherActive = (conversation: string): boolean =>
+    actives
+      .get()
+      .keys()
+      .some((key) => key !== conversation);
+
+  const conversationOfThread = (threadId: string | undefined): string | undefined =>
+    threadId === undefined ? undefined : [...codexThreads.get()].find(([, id]) => id === threadId)?.[0];
+
   const threadOptions = (server: ToolServer | undefined): ThreadStartParams => ({
     cwd: workspace,
     approvalPolicy: appApprovalsOnly,
@@ -365,12 +410,12 @@ export const createCodexEngine = ({
 
   const emit = (turn: TurnId, events: readonly EngineEvent[]): void => {
     for (const event of events) {
-      const current = active.get();
-      if (current?.id !== turn) return;
+      const current = activeOf(turn);
+      if (!current) return;
       current.queue.push(event);
       if (!terminalTypes.has(event.type)) continue;
       current.queue.end();
-      active.set(undefined);
+      dropActive(current.conversation);
     }
   };
 
@@ -385,14 +430,16 @@ export const createCodexEngine = ({
       routeSideJob(threadId, sideJob, notification);
       return;
     }
+    const conversation = conversationOfThread(threadId);
+    if (conversation === undefined) return;
     if (notification.method === "item/completed" && notification.params.item.type === "contextCompaction") {
-      injected.set(undefined);
+      injected.update((current) => new Map([...current].filter(([key]) => key !== conversation)));
     }
-    const current = active.get();
-    if (!current || fieldOf(notification, "threadId") !== openThreadId.get()) return;
+    const current = actives.get().get(conversation);
+    if (!current) return;
     const { state, events } = toEngineEvents(current.state, notification);
     const isTurnScoped = fieldOf(notification, "turnId") !== undefined;
-    active.set({ ...current, state, hasStarted: current.hasStarted || notification.method === "turn/started" });
+    setActive({ ...current, state, hasStarted: current.hasStarted || notification.method === "turn/started" });
     emit(current.id, isTurnScoped && events.length === 0 ? [{ type: "progress" }] : events);
   };
 
@@ -402,21 +449,45 @@ export const createCodexEngine = ({
     info(message, { model, reasoningEffort });
   };
 
-  const openThread = async (process: CodexProcess, server: ToolServer | undefined): Promise<Result<string, string>> => {
-    const stored = settings.setting(threadSetting);
+  // A side thread's tool calls carry its id, so they act in its conversation.
+  const serverFor = (thread: ThreadId | undefined): ToolServer | undefined => {
+    const server = tools?.();
+    return server && thread !== undefined ? { ...server, url: `${server.url}/thread/${thread}` } : server;
+  };
+
+  const openThread = async (process: CodexProcess, thread: ThreadId | undefined): Promise<Result<string, string>> => {
+    const setting = threadSettingFor(thread);
+    const options = threadOptions(serverFor(thread));
+    const stored = settings.setting(setting);
     if (stored) {
-      const resumed = await process.call("thread/resume", { ...threadOptions(server), threadId: stored });
+      const resumed = await process.call("thread/resume", { ...options, threadId: stored });
       if (resumed.ok) {
         announce("Codex resumed the conversation's session", resumed.value);
         return ok(resumed.value.thread.id);
       }
       log("Codex couldn't resume the conversation's session, so it starts a new one", resumed.failure.message);
     }
-    const started = await process.call("thread/start", threadOptions(server));
+    const started = await process.call("thread/start", options);
     if (!started.ok) return fail(`Codex couldn't start a thread: ${started.failure.message}`);
-    settings.setSetting(threadSetting, started.value.thread.id);
+    settings.setSetting(setting, started.value.thread.id);
     announce("Codex started a session for the conversation", started.value);
     return ok(started.value.thread.id);
+  };
+
+  const ensureThread = async (process: CodexProcess, thread: ThreadId | undefined): Promise<Result<string, string>> => {
+    const conversation = conversationOf(thread);
+    const known = codexThreads.get().get(conversation);
+    if (known !== undefined) return ok(known);
+    const pending = openingThreads.get().get(conversation);
+    if (pending) return pending;
+    const opened = generation.get();
+    const opening = openThread(process, thread);
+    openingThreads.update((current) => new Map([...current, [conversation, opening]]));
+    const threadId = await opening;
+    if (generation.get() !== opened) return fail(restartedDetail);
+    openingThreads.update((current) => new Map([...current].filter(([key]) => key !== conversation)));
+    if (threadId.ok) codexThreads.update((current) => new Map([...current, [conversation, threadId.value]]));
+    return threadId;
   };
 
   const openSession = async (): Opening => {
@@ -435,9 +506,12 @@ export const createCodexEngine = ({
       onExit: (description) => {
         if (!isCurrent() || isGivenUp.get()) return;
         session.set(undefined);
+        codexThreads.set(new Map());
+        openingThreads.set(new Map());
         failSideJobs(description);
-        const current = active.get();
-        if (current) emit(current.id, [{ type: "failed", code: "engine_failed", detail: description }]);
+        for (const current of actives.get().values()) {
+          emit(current.id, [{ type: "failed", code: "engine_failed", detail: description }]);
+        }
       },
     });
     if (!started.ok) return fail({ code: "engine_failed", detail: started.failure });
@@ -452,11 +526,8 @@ export const createCodexEngine = ({
       settings.setSetting(accountSetting, JSON.stringify(toAccount(account.value.account)));
     }
     if (account.ok && account.value.account === null && account.value.requiresOpenaiAuth) return giveUp(signedOut);
-    const threadId = await openThread(process, server);
-    if (!threadId.ok) return giveUp({ code: "engine_failed", detail: threadId.failure });
-    openThreadId.set(threadId.value);
-    injected.set(undefined);
-    return ok({ process, threadId: threadId.value });
+    injected.set(new Map());
+    return ok({ process });
   };
 
   const ensureSession = async (): Opening => {
@@ -474,47 +545,57 @@ export const createCodexEngine = ({
     failSideJobs(restartedDetail);
     const opening = session.get();
     session.set(undefined);
-    openThreadId.set(undefined);
+    codexThreads.set(new Map());
+    openingThreads.set(new Map());
+    wedged.set(new Set());
     return opening;
   };
 
   const beginTurn = async (
     turn: TurnId,
+    thread: ThreadId | undefined,
     inputs: readonly Input[],
     stale: Opening | undefined,
     isBusy: boolean,
-  ): Promise<string | undefined> => {
+  ): Promise<CodexTurn | undefined> => {
     await shutDown(stale, (process) => (isBusy ? process.kill() : process.stop()));
     const opened = await ensureSession();
     if (!opened.ok) {
       emit(turn, [{ type: "failed", ...opened.failure }]);
       return undefined;
     }
-    const inMind = context?.() ?? "";
-    if (inMind !== "" && inMind !== injected.get()) {
-      const injecting = await opened.value.process.call("thread/inject_items", {
-        threadId: opened.value.threadId,
+    const { process } = opened.value;
+    const threadId = await ensureThread(process, thread);
+    if (!threadId.ok) {
+      emit(turn, [{ type: "failed", code: "engine_failed", detail: threadId.failure }]);
+      return undefined;
+    }
+    const conversation = conversationOf(thread);
+    const inMind = context?.(thread) ?? "";
+    if (inMind !== "" && inMind !== injected.get().get(conversation)) {
+      const injecting = await process.call("thread/inject_items", {
+        threadId: threadId.value,
         items: [{ type: "message", role: "developer", content: [{ type: "input_text", text: inMind }] }],
       });
-      if (injecting.ok) injected.set(inMind);
+      if (injecting.ok) injected.update((current) => new Map([...current, [conversation, inMind]]));
       else log("Codex didn't take what's in Ari's mind", injecting.failure.message);
     }
-    const started = await opened.value.process.call("turn/start", {
-      threadId: opened.value.threadId,
+    const started = await process.call("turn/start", {
+      threadId: threadId.value,
       clientUserMessageId: inputs[0]?.messageId ?? null,
       input: inputs.flatMap((input) => toUserInputs(workspace, input, log)),
       summary: "auto",
       ...readChoice(settings.setting),
     });
-    if (started.ok) return started.value.turn.id;
+    if (started.ok) return { threadId: threadId.value, turnId: started.value.turn.id };
     emit(turn, [{ type: "failed", code: "engine_failed", detail: started.failure.message }]);
     return undefined;
   };
 
-  const declineWaiting = (): void => {
-    const waiting = approvals.get();
-    approvals.set(new Map());
-    for (const respond of waiting.values()) respond(false);
+  const declineWaiting = (turn?: TurnId): void => {
+    const waiting = [...approvals.get()].filter(([, approval]) => turn === undefined || approval.turn === turn);
+    approvals.update((current) => new Map([...current].filter(([key]) => waiting.every(([given]) => given !== key))));
+    for (const [, approval] of waiting) approval.respond(false);
   };
 
   const onElicitation = (
@@ -526,9 +607,10 @@ export const createCodexEngine = ({
       message: parameters.message,
       meta: parameters._meta,
     });
-    const current = active.get();
+    const conversation = conversationOfThread(parameters.threadId);
+    const current = conversation === undefined ? undefined : actives.get().get(conversation);
     const fields = toApprovalFields(parameters);
-    if (!current || !fields || parameters.threadId !== openThreadId.get()) return Promise.resolve(declined);
+    if (!current || !fields) return Promise.resolve(declined);
     approvalCount.set(approvalCount.get() + 1);
     const key = `approval-${String(approvalCount.get())}`;
     return new Promise((resolve) => {
@@ -538,8 +620,11 @@ export const createCodexEngine = ({
             ...waiting,
             [
               key,
-              (isAllowed: boolean) => {
-                resolve(toElicitationResponse(parameters, isAllowed));
+              {
+                turn: current.id,
+                respond: (isAllowed: boolean) => {
+                  resolve(toElicitationResponse(parameters, isAllowed));
+                },
               },
             ],
           ]),
@@ -548,24 +633,48 @@ export const createCodexEngine = ({
     });
   };
 
-  const endActiveTurn = (): void => {
-    const current = active.get();
-    active.set(undefined);
+  // Lets go of a conversation's turn at once: no more of its events, and its approvals declined.
+  const letGo = (conversation: string): ActiveTurn | undefined => {
+    const current = actives.get().get(conversation);
+    if (!current) return undefined;
+    dropActive(conversation);
+    declineWaiting(current.id);
+    current.queue.end();
+    return current;
+  };
+
+  const letGoOfAll = (): void => {
+    for (const conversation of actives.get().keys()) letGo(conversation);
     declineWaiting();
-    current?.queue.end();
+  };
+
+  // Asks Codex to stop a turn we let go of, as best it can.
+  const stopQuietly = (left: ActiveTurn): void => {
+    void (async () => {
+      const codexTurn = await left.codexTurn;
+      const opened = await session.get();
+      if (!codexTurn || !opened?.ok) return;
+      const stopped = await opened.value.process.call("turn/interrupt", codexTurn);
+      if (!stopped.ok) log("Codex didn't stop a turn it was let go of", stopped.failure.message);
+    })();
   };
 
   return {
-    start: (turn, inputs) => {
+    start: (turn, inputs, thread) => {
+      const conversation = conversationOf(thread);
       const queue = createAsyncQueue<EngineEvent>();
-      const isCodexStillBusy = active.get() !== undefined;
-      const stale = isCodexStillBusy || isRefreshing.get() ? detachSession() : undefined;
-      isRefreshing.set(false);
-      endActiveTurn();
-      active.set({
+      const isStuck = actives.get().has(conversation) || wedged.get().has(conversation);
+      // Restarting Codex would cut off every other conversation's turn, so it waits until nothing else runs.
+      const isRestarting = !isOtherActive(conversation) && (isStuck || isRefreshing.get());
+      const stale = isRestarting ? detachSession() : undefined;
+      if (isRestarting) isRefreshing.set(false);
+      const left = letGo(conversation);
+      if (left && !isRestarting) stopQuietly(left);
+      setActive({
         id: turn,
+        conversation,
         queue,
-        codexTurn: beginTurn(turn, inputs, stale, isCodexStillBusy),
+        codexTurn: beginTurn(turn, thread, inputs, stale, isRestarting && isStuck),
         hasStarted: false,
         state: initialTurnState,
       });
@@ -573,19 +682,19 @@ export const createCodexEngine = ({
     },
 
     steer: async (turn, input) => {
-      const current = active.get();
-      if (current?.id !== turn || current.state.isCompacting) return "refused";
+      const current = activeOf(turn);
+      if (!current || current.state.isCompacting) return "refused";
       const codexTurn = await current.codexTurn;
       const opened = await session.get();
-      const latest = active.get();
-      if (!codexTurn || !opened?.ok || latest?.id !== turn) return "refused";
-      active.set({
+      const latest = activeOf(turn);
+      if (!latest || !codexTurn || !opened?.ok) return "refused";
+      setActive({
         ...latest,
         state: { ...latest.state, steered: new Set([...latest.state.steered, input.messageId]) },
       });
       const steered = await opened.value.process.call("turn/steer", {
-        threadId: opened.value.threadId,
-        expectedTurnId: codexTurn,
+        threadId: codexTurn.threadId,
+        expectedTurnId: codexTurn.turnId,
         clientUserMessageId: input.messageId,
         input: [...toUserInputs(workspace, input, log)],
       });
@@ -595,9 +704,10 @@ export const createCodexEngine = ({
     },
 
     approve: (turn, key, isAllowed) => {
-      const respond = active.get()?.id === turn ? approvals.get().get(key) : undefined;
+      const approval = approvals.get().get(key);
+      if (approval?.turn !== turn) return;
       approvals.update((waiting) => new Map([...waiting].filter(([waitingKey]) => waitingKey !== key)));
-      respond?.(isAllowed);
+      approval.respond(isAllowed);
     },
 
     work: async (prompt, run, { choice, onActivity, signal } = {}) => {
@@ -664,23 +774,23 @@ export const createCodexEngine = ({
     },
 
     interrupt: async (turn) => {
-      const current = active.get();
-      if (current?.id !== turn) return;
-      declineWaiting();
+      const current = activeOf(turn);
+      if (!current) return;
+      declineWaiting(turn);
       const codexTurn = await current.codexTurn;
       const opened = await session.get();
       if (!codexTurn || !opened?.ok) return;
-      const hasStarted = active.get()?.hasStarted ?? true;
+      const hasStarted = activeOf(turn)?.hasStarted ?? true;
       const attempt = async ([turnId = "", ...rest]: readonly string[]): Promise<void> => {
         const interrupted = await opened.value.process.call("turn/interrupt", {
-          threadId: opened.value.threadId,
+          threadId: codexTurn.threadId,
           turnId,
         });
         if (interrupted.ok) return;
         if (rest.length === 0) throw new Error(`Codex didn't interrupt the turn: ${interrupted.failure.message}`);
         await attempt(rest);
       };
-      await attempt(hasStarted ? [codexTurn, ""] : ["", codexTurn]);
+      await attempt(hasStarted ? [codexTurn.turnId, ""] : ["", codexTurn.turnId]);
     },
 
     refresh: () => {
@@ -707,12 +817,26 @@ export const createCodexEngine = ({
     },
 
     restart: async () => {
-      endActiveTurn();
+      letGoOfAll();
       await shutDown(detachSession(), (process) => process.kill());
     },
 
+    // While other conversations run, a restart would cut them off: the conversation's turn is let go of at once,
+    // Codex is asked to stop it, and the next turn there restarts Codex if it's still stuck and nothing else runs.
+    reset: async (thread) => {
+      const conversation = conversationOf(thread);
+      if (!isOtherActive(conversation)) {
+        letGoOfAll();
+        await shutDown(detachSession(), (process) => process.kill());
+        return;
+      }
+      const left = letGo(conversation);
+      wedged.update((current) => new Set([...current, conversation]));
+      if (left) stopQuietly(left);
+    },
+
     close: async () => {
-      endActiveTurn();
+      letGoOfAll();
       await shutDown(detachSession(), (process) => process.stop());
     },
   };

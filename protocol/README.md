@@ -54,6 +54,9 @@ sequenceDiagram
 - **Say where you are:** the phone sends its time zone and, roughly, its place. Kumo lives by that
   time zone, and the Desk shows the weather there.
 - **Plan with Kumo:** list, move and cancel the wake-ups Kumo set, which the Desk shows as its plans.
+- **Talk in threads:** a side thread is a conversation of its own beside the main chat. Send into
+  one, reply to a message to start one, open one with its messages, rename it, mark it done or open,
+  and move a message between threads; list and search them for Threads by day.
 
 ## Events
 
@@ -76,6 +79,9 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `message.delta` | Text appended to a message, at an offset |
 | `message.ended` | A message is finished: completed, stopped, interrupted or failed |
 | `turn.ended` | The turn is over, and its status is cleared |
+| `thread.started` | A side thread starts: Kumo branched one, or you replied to a message or started one |
+| `thread.changed` | A thread's name, state, line, replies, result, picture or news changed |
+| `message.moved` | A message moved between the main chat and a thread, or between threads |
 
 ## Versioning
 

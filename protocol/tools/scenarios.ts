@@ -2867,47 +2867,6 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
-      name: "58-topics",
-      scenario: 58,
-      title: "Topics",
-      summary:
-        "Last night you planned Florence, then asked about Leo. After each turn, Ito marked each change of " +
-        "subject with a quiet label on the message that changed it, and none for a follow-up. In the morning the " +
-        "snapshot carries both labels, and when you come back to Florence, the label arrives just after the reply " +
-        "and is the same as before.",
-      guarantees: ["G29"],
-    });
-    transcript.time("2026-10-27T19:00:00.000Z");
-    transcript.exchange(
-      "Can you help me plan Florence with Mira?",
-      "Of course! Three days fits the Uffizi, the Duomo and a morning in Siena.",
-      [],
-      "Florence trip",
-    );
-    transcript.wait(60_000);
-    transcript.exchange(
-      "Different thing: what should I tell Leo about the Halcyon panel?",
-      "Tell him the design is ready for one more round, and ask which part worries him most.",
-      [],
-      "Halcyon panel",
-    );
-    transcript.wait(30_000);
-    transcript.exchange("And when should I send it?", "Before Friday, so he has the weekend to read it.");
-    transcript.begin("2026-10-28T08:00:00.000Z");
-    transcript.world("app_opened");
-    transcript.connect();
-    transcript.wait(3000);
-    const back = sendAndStart(transcript, "Back to Florence: which day should we do the Uffizi?");
-    transcript.world("topic_decided", { label: "Florence trip" });
-    transcript.wait(1000);
-    writeWhole(transcript, "The first morning, before it gets busy. Book the 8:15 slot.");
-    transcript.endTurn("completed");
-    transcript.topic("Florence trip", back.user);
-    return transcript;
-  },
-
-  () => {
-    const transcript = createTranscript({
       name: "59-blocks-in-a-reply",
       scenario: 59,
       title: "Blocks in a reply",
@@ -4401,6 +4360,73 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.addDone({ text: `Woke up late for “${what}”`, reason: "Caught up after Kumo's pause", quiet: true });
     transcript.plans([]);
     transcript.post(caughtUp);
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "90-reply-in-a-thread",
+      scenario: 90,
+      title: "Reply in a thread",
+      summary:
+        "Yesterday you replied to one of Kumo's messages, which started a thread under it, and Kumo named it. " +
+        "The snapshot carries the thread with the message it hangs from. In the thread, a reply quotes the " +
+        "message it answers. You move a message that belongs in the main chat, rename the thread and mark it " +
+        "done; replying opens it again.",
+      guarantees: ["G29"],
+    });
+    yesterday(transcript);
+    transcript.wait(60_000);
+    const morning = transcript.exchange(
+      "Lunch with Lena is at 12:30 on Saturday.",
+      "Then Saturday morning's yours. An easy 5k first?",
+    );
+    transcript.wait(30_000);
+    const pace = transcript.exchange(
+      "Yes, slow. What pace?",
+      "Slower than 6:30 a km, and stop at five even if you feel good.",
+      [],
+      { replyTo: morning.agent },
+    );
+    const thread = transcript.threadOf(pace.user) ?? "";
+    transcript.changeThread(thread, { title: "Easy 5k" });
+    transcript.begin(todayAt);
+    transcript.connect();
+    transcript.wait(2000);
+    transcript.world("thread_opened", { thread });
+    transcript.getThread(thread);
+    transcript.wait(3000);
+    const legs = transcript.send("Done. Legs were heavy but I did it", { thread, replyTo: pace.agent });
+    transcript.inThread(thread, () => {
+      transcript.startTurn([legs]);
+      transcript.wait(300);
+      transcript.step("thinking", thinking);
+      transcript.wait(900);
+      writeWhole(transcript, "Heavy legs after a long week are normal, and you went anyway. 5.1 km, logged.");
+      transcript.endTurn("completed");
+    });
+    transcript.wait(4000);
+    const aside = transcript.send("And remind me to call Mum tonight", { thread });
+    transcript.inThread(thread, () => {
+      transcript.startTurn([aside]);
+      transcript.wait(300);
+      writeWhole(transcript, "I'll nudge you at seven.");
+      transcript.endTurn("completed");
+    });
+    transcript.wait(5000);
+    transcript.moveMessage(aside);
+    transcript.wait(3000);
+    transcript.patchThread(thread, { title: "Saturday run" });
+    transcript.wait(1000);
+    transcript.patchThread(thread, { state: "done" });
+    transcript.wait(60_000);
+    const again = transcript.send("One more: should I stretch after?", { thread });
+    transcript.inThread(thread, () => {
+      transcript.startTurn([again]);
+      transcript.wait(300);
+      writeWhole(transcript, "Five minutes, gently: calves and hamstrings. Nothing that hurts.");
+      transcript.endTurn("completed");
+    });
     return transcript;
   },
 ];

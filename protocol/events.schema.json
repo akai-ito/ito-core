@@ -72,9 +72,6 @@
           "$ref": "#/$defs/VoiceStatus"
         },
         {
-          "$ref": "#/$defs/TopicStarted"
-        },
-        {
           "$ref": "#/$defs/MotionStarted"
         },
         {
@@ -97,6 +94,15 @@
         },
         {
           "$ref": "#/$defs/ProblemsChanged"
+        },
+        {
+          "$ref": "#/$defs/ThreadStarted"
+        },
+        {
+          "$ref": "#/$defs/ThreadChanged"
+        },
+        {
+          "$ref": "#/$defs/MessageMoved"
         }
       ]
     },
@@ -141,12 +147,6 @@
       "type": "string",
       "format": "uuid",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-    },
-    "TopicId": {
-      "description": "Opaque. The server makes it when Ari marks a topic.",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 64
     },
     "CallId": {
       "description": "A random UUID the app makes when you start a call.",
@@ -197,7 +197,7 @@
       "enum": ["reply", "note", "post"]
     },
     "Message": {
-      "description": "One message in the conversation. Messages are ordered by when they began.",
+      "description": "One message, in the main chat or in a side thread. Messages are ordered by when they began, wherever they are.",
       "type": "object",
       "required": ["id", "role", "text", "at", "position"],
       "properties": {
@@ -260,6 +260,14 @@
         "done": {
           "$ref": "#/$defs/DoneId",
           "description": "User messages only: the Done entry this message replies to, such as a correction to one of Kumo's calls."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread it's in. Absent in the main chat."
+        },
+        "quotes": {
+          "$ref": "#/$defs/Quote",
+          "description": "User messages only: inside a thread, the message you replied to."
         }
       },
       "if": {
@@ -664,7 +672,7 @@
       "enum": ["answered", "cancelled"]
     },
     "Ask": {
-      "description": "Something the agent asked you. Asking ends the agent's turn, and the ask waits as long as it takes: through the app closing, the phone going offline and the server restarting. The next message you send answers it, whether you tap an option, type your own answer or write about something else. At most one ask waits at a time.",
+      "description": "Something the agent asked you. Asking ends the agent's turn, and the ask waits as long as it takes: through the app closing, the phone going offline and the server restarting. The next message you send where it waits answers it, whether you tap an option, type your own answer or write about something else. At most one ask waits in each thread, and one in the main chat.",
       "type": "object",
       "required": ["id", "turn", "kind", "question", "options", "allows_text", "at", "position"],
       "properties": {
@@ -725,6 +733,10 @@
         "answer": {
           "$ref": "#/$defs/MessageId",
           "description": "Present when the outcome is `answered`: the message that answered it."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread it waits in; absent for the main chat."
         }
       }
     },
@@ -800,6 +812,10 @@
               "type": "null"
             }
           ]
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread it answers in; absent for the main chat."
         }
       }
     },
@@ -818,7 +834,7 @@
         "steps",
         "asks",
         "calls",
-        "topics",
+        "threads",
         "desk"
       ],
       "properties": {
@@ -836,7 +852,7 @@
           "enum": ["no_cursor", "cursor_unknown", "too_far_behind"]
         },
         "messages": {
-          "description": "The latest messages, oldest first, including a message still being written (with its text so far and no outcome). Page further back with `GET /v0/messages`.",
+          "description": "The main chat's latest messages, oldest first, including a message still being written (with its text so far and no outcome). A thread's messages come with `GET /v0/threads/{thread}`; page further back with `GET /v0/messages`.",
           "type": "array",
           "maxItems": 50,
           "items": {
@@ -848,21 +864,21 @@
           "type": "boolean"
         },
         "steps": {
-          "description": "Every step from the first of these messages on, including the running turn's steps, in position order.",
+          "description": "Every step in the main chat from the first of these messages on, including the running turn's steps, in position order.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Step"
           }
         },
         "asks": {
-          "description": "Every ask from the first of these messages on, in position order, including the one that waits for your answer (it has no outcome).",
+          "description": "Every ask in the main chat from the first of these messages on, in position order, including the one that waits for your answer (it has no outcome).",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Ask"
           }
         },
         "turn": {
-          "description": "The running turn, or null when the agent is idle.",
+          "description": "The main chat's running turn, or null when it's idle. A thread's running turn comes with the thread.",
           "oneOf": [
             {
               "$ref": "#/$defs/LiveTurn"
@@ -873,7 +889,7 @@
           ]
         },
         "next": {
-          "description": "Messages waiting as Next, in the order they will be answered.",
+          "description": "Messages waiting as Next in the main chat, in the order they will be answered.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/MessageId"
@@ -886,11 +902,11 @@
             "$ref": "#/$defs/Call"
           }
         },
-        "topics": {
-          "description": "The topics Ari marked on these messages, in position order.",
+        "threads": {
+          "description": "Every open thread, and every thread whose line sits among these messages, in position order.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Topic"
+            "$ref": "#/$defs/Thread"
           }
         },
         "desk": {
@@ -1026,6 +1042,10 @@
         "retry_of": {
           "$ref": "#/$defs/TurnId",
           "description": "Present when this is a new attempt at a failed turn."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread this turn answers in, with its own conversation. Absent for the main chat. Turns in different threads run at the same time."
         }
       }
     },
@@ -1164,6 +1184,10 @@
         "text": {
           "type": "string",
           "minLength": 1
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread its message is in; absent in the main chat."
         }
       }
     },
@@ -1196,6 +1220,10 @@
         "error": {
           "$ref": "#/$defs/Error",
           "description": "Present when the outcome is `failed`."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread its message is in; absent in the main chat."
         }
       }
     },
@@ -1324,45 +1352,183 @@
         }
       }
     },
-    "Topic": {
-      "description": "Where the subject changed: a quiet label Ari puts on the message that changed it. A label used again is the same subject, returned to.",
+    "ThreadId": {
+      "description": "Opaque. The server makes it when a side thread starts.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "Quote": {
+      "description": "The message you replied to inside a thread, and the words of it to show above yours.",
       "type": "object",
-      "required": ["id", "label", "position", "at"],
+      "required": ["message", "text"],
       "properties": {
-        "id": {
-          "$ref": "#/$defs/TopicId"
+        "message": {
+          "$ref": "#/$defs/MessageId"
         },
-        "label": {
-          "description": "One to four words, such as \"Florence trip\", safe to show as it is.",
+        "text": {
+          "description": "A line of the quoted message, at most 200 characters, safe to show as it is.",
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "ThreadNews": {
+      "description": "Something Kumo said in a thread that you haven't seen yet.",
+      "type": "object",
+      "required": ["message", "text", "at"],
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/MessageId"
         },
-        "position": {
-          "$ref": "#/$defs/Position",
-          "description": "The position of the message that changed the subject. Draw the label above it."
+        "text": {
+          "description": "Its first line, with Markdown stripped, at most 200 characters.",
+          "type": "string",
+          "minLength": 1
         },
         "at": {
           "$ref": "#/$defs/Timestamp"
         }
       }
     },
-    "TopicStarted": {
-      "title": "topic.started",
-      "description": "Ari marked where the subject changed, while answering the message that changed it.",
+    "ThreadDone": {
+      "description": "Who marked a thread done, and when.",
       "type": "object",
-      "required": ["id", "type", "at", "topic"],
+      "required": ["at", "by"],
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "`kumo` when Kumo closed it because its question was answered or its task finished; `you` when you marked it.",
+          "enum": ["kumo", "you"]
+        }
+      }
+    },
+    "Thread": {
+      "description": "A side thread: a subject of its own beside the main chat, with its own conversation, so talking in it never steers the main chat or another thread aside. Kumo starts one for a one-off, a new subject or long work, moving the message that started it in; you start one by replying to a message in the main chat, or from Threads. It shows in the main chat as one quiet line.",
+      "type": "object",
+      "required": ["id", "by", "state", "started_at", "position", "replies", "last_at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "title": {
+          "description": "One to five plain words, such as \"Kiln menu\", safe to show as it is. Absent until Kumo names a thread you started, just after its first answer.",
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "description": "Who started it: `kumo` or `you`.",
+          "enum": ["kumo", "you"]
+        },
+        "state": {
+          "description": "`open` while its question or task is still live; `done` once it's settled. Any message in a done thread opens it again.",
+          "enum": ["open", "done"]
+        },
+        "started_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "Where its line sits in the main chat: just after the main chat's message with the greatest position below it. It moves to the end when Kumo comes back to the thread with something new."
+        },
+        "anchor": {
+          "$ref": "#/$defs/MessageId",
+          "description": "A thread you started by replying to a message in the main chat: that message, which stays in the main chat with the thread's line under it while the line hasn't moved."
+        },
+        "replies": {
+          "description": "How many messages it holds, yours and Kumo's, notes aside.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When its latest message began."
+        },
+        "result": {
+          "description": "Kumo's one line on where it stands or how it ended, such as \"Noodles, laab, skewers · £47 for two\". Absent until Kumo writes one.",
+          "type": "string",
+          "minLength": 1
+        },
+        "news": {
+          "$ref": "#/$defs/ThreadNews"
+        },
+        "done": {
+          "$ref": "#/$defs/ThreadDone",
+          "description": "Present while it's done."
+        },
+        "picture": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "Its first picture, yours or one Kumo found, for a thumbnail: fetch it with `GET /v0/attachments/{attachment}`."
+        },
+        "page": {
+          "description": "It holds a page Kumo made.",
+          "const": true
+        }
+      }
+    },
+    "ThreadStarted": {
+      "title": "thread.started",
+      "description": "A side thread starts: Kumo branched one, you replied to a message in the main chat, or you started one from Threads. A thread Kumo branches arrives before the messages it moves in.",
+      "type": "object",
+      "required": ["id", "type", "at", "thread"],
       "properties": {
         "id": {
           "$ref": "#/$defs/EventId"
         },
         "type": {
-          "const": "topic.started"
+          "const": "thread.started"
         },
         "at": {
           "$ref": "#/$defs/Timestamp"
         },
-        "topic": {
-          "$ref": "#/$defs/Topic"
+        "thread": {
+          "$ref": "#/$defs/Thread"
+        }
+      }
+    },
+    "ThreadChanged": {
+      "title": "thread.changed",
+      "description": "Something about a thread changed: its name, whether it's open or done, its line's place in the main chat, how many replies it has, its result, its picture or its news. Replace your copy with this one.",
+      "type": "object",
+      "required": ["id", "type", "at", "thread"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "thread.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "thread": {
+          "$ref": "#/$defs/Thread"
+        }
+      }
+    },
+    "MessageMoved": {
+      "title": "message.moved",
+      "description": "A message moved between the main chat and a thread, or between threads: Kumo branched a thread from it, or you moved it. It keeps its id and its position; `message` is the whole message as it is now, so an app that hadn't loaded where it came from can show it where it went.",
+      "type": "object",
+      "required": ["id", "type", "at", "message"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.moved"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/Message"
+        },
+        "from": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The thread it left; absent when it left the main chat."
         }
       }
     },

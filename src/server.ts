@@ -20,7 +20,9 @@ import type { GitHubHosts } from "#memory/github.ts";
 import { createImageTool } from "#replies/images.ts";
 import type { Fetch } from "#capabilities/connect.ts";
 import { createCapabilityApprovals } from "#capabilities/approvals.ts";
-import { createTopics } from "#topics/topics.ts";
+import { createNaming } from "#threads/naming.ts";
+import { createLanes, type Lanes } from "#threads/lanes.ts";
+import type { ThreadId } from "#conversation/ids.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import { createGroups } from "#tools/groups.ts";
@@ -40,7 +42,7 @@ import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#no
 import { createNotifier } from "#notifications/notifier.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
-import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
+import { defaultLimits, type Info, type Limits, type Log } from "#turns/turns.ts";
 import { createBackground, whenWords, type Background } from "#turns/background.ts";
 import { packageVersion } from "#version.ts";
 import type { Message, ModelChoice } from "#protocol/types.ts";
@@ -89,7 +91,7 @@ import { createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
 import { createBlockStore } from "#day/blocks.ts";
 import { createDayPicture } from "#day/picture.ts";
 import { registerDay } from "#http/day.ts";
-import { contextRun, inToolContext } from "#tools/context.ts";
+import { contextRun, contextThread, inToolContext } from "#tools/context.ts";
 import { createDemoTools } from "#demo/tools.ts";
 
 export type ServerOptions = {
@@ -123,14 +125,15 @@ export type EngineContext = {
   readonly tools: () => ToolServer | undefined;
   readonly skills: () => string;
   readonly instructions: () => string;
-  readonly inMind: () => string;
-  readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
+  // What a turn has in mind, in the main chat or in a side thread.
+  readonly inMind: (thread?: ThreadId) => string;
+  readonly callTool: (name: string, input: unknown, run?: string, thread?: string) => Promise<ToolResult>;
 };
 
 export type Server = {
   readonly app: FastifyInstance;
   readonly store: Store;
-  readonly turns: Turns;
+  readonly turns: Lanes;
   readonly attachments: Attachments;
   readonly host: Host;
   readonly memory: Memory;
@@ -144,7 +147,7 @@ export type Server = {
   readonly mail: Mailbox;
   readonly problems: Problems;
   readonly background: Background;
-  readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
+  readonly callTool: (name: string, input: unknown, run?: string, thread?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
 
@@ -346,7 +349,7 @@ export const createServer = (options: ServerOptions): Server => {
       ]
         .filter(Boolean)
         .join("\n\n"),
-    callTool: (name, input, run) => callTool(name, input, run),
+    callTool: (name, input, run, thread) => callTool(name, input, run, thread),
   });
   host.subscribe(() => {
     void engine.refresh();
@@ -362,11 +365,18 @@ export const createServer = (options: ServerOptions): Server => {
       log,
     }) ?? noVoice("This server runs without a voice.");
   const attachments = createAttachments(store, path.join(options.dataDirectory, "attachments"));
-  const turns = createTurns(store, engine, clock, identifiers, log, {
-    limits: options.limits ?? defaultLimits,
-    attachmentPath: attachments.pathOf,
-    trail: createTrail(host, launcher, groups),
-    moreNotes: () => motions.tickNote(),
+  const turns = createLanes({
+    store,
+    engine,
+    clock,
+    identifiers,
+    log,
+    turns: {
+      limits: options.limits ?? defaultLimits,
+      attachmentPath: attachments.pathOf,
+      trail: createTrail(host, launcher, groups),
+      moreNotes: () => motions.tickNote(),
+    },
   });
   const schemas = loadSchemas();
   const motions = createMotions({
@@ -388,7 +398,7 @@ export const createServer = (options: ServerOptions): Server => {
     await listening.get();
     return engine.models();
   };
-  const topics = createTopics({ store, complete: quickComplete, models: listedModels, info });
+  const naming = createNaming({ store, complete: quickComplete, models: listedModels, info });
   // Kumo's work in the background: a backstop on silence, one retry, and a pause through a usage limit with one
   // catch-up after. When the model can't act, nothing stands in for it: the problem shows until work goes through.
   const background = createBackground({
@@ -673,6 +683,9 @@ export const createServer = (options: ServerOptions): Server => {
     onLeadRenamed: () => {
       void engine.refresh();
     },
+    moved: (message, from, to) => {
+      turns.moved(message, from, to);
+    },
     logger: options.logger ?? false,
   });
   listening.set(
@@ -692,7 +705,7 @@ export const createServer = (options: ServerOptions): Server => {
     if ("error" in details || "reason" in details) app.log.warn(details, message);
     else app.log.info(details, message);
   });
-  const doors = createDoors({ host, currentTurn: () => store.runningTurn()?.id, command: launcher });
+  const doors = createDoors({ host, currentTurn: () => store.runningTurn(contextThread())?.id, command: launcher });
   const imageTool = createImageTool({
     attachments,
     keep: (id) => {
@@ -727,10 +740,12 @@ export const createServer = (options: ServerOptions): Server => {
   });
   const allTools = (): readonly Tool[] =>
     [...coreTools, ...doors.tools()].map((tool) => groups.reporting(noteRun(withCheckedInput(tool))));
-  const callTool = async (name: string, input: unknown, run?: string): Promise<ToolResult> => {
+  const callTool = async (name: string, input: unknown, run?: string, thread?: string): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
     return tool
-      ? inToolContext(run === undefined ? {} : { run }, () => tool.call(input))
+      ? inToolContext({ ...(run !== undefined && { run }), ...(thread !== undefined && { thread }) }, () =>
+          tool.call(input),
+        )
       : { text: `Ito has no tool ${name}.`, isError: true };
   };
   store.subscribe(({ event }) => {
@@ -765,7 +780,7 @@ export const createServer = (options: ServerOptions): Server => {
     problems.close();
     await backup.close();
     motions.close();
-    topics.close();
+    naming.close();
     desk.close();
     background.close();
     wakeUps.close();

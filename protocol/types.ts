@@ -225,9 +225,10 @@ export interface paths {
     };
     /**
      * Read older messages
-     * @description The messages just before a given one, oldest first, with the agent's steps among them.
-     *     The newest messages come from the event stream's `snapshot`, so `before` is always
-     *     required. A `404` means the server doesn't know that message (it was restored from a
+     * @description The messages just before a given one, oldest first, with the agent's steps among them,
+     *     from the same place as that message: the main chat, or its thread. The newest messages come
+     *     from the event stream's `snapshot`, or from `GET /v0/threads/{thread}`, so `before` is
+     *     always required. A `404` means the server doesn't know that message (it was restored from a
      *     backup): reconnect to the event stream for a snapshot.
      */
     get: operations["listMessages"];
@@ -248,8 +249,16 @@ export interface paths {
      *     refused with `attachment_missing`: upload its attachments again under the same ids, then
      *     send the same message again.
      *
-     *     While an ask waits, the message answers it: `message.accepted` for the message comes first,
-     *     then `ask.ended`. To reply to an entry in the Done list, name it in `done`.
+     *     While an ask waits where the message goes, the message answers it: `message.accepted` for
+     *     the message comes first, then `ask.ended`. To reply to an entry in the Done list, name it in
+     *     `done`.
+     *
+     *     A message goes to the main chat unless it says otherwise. Name a `thread` to send it there;
+     *     a done thread opens again. Name a message in `reply_to` to reply to it: one in the main chat
+     *     gets a thread under it (`thread.started` comes first when it's the first reply), and Kumo
+     *     names that thread after its first answer; one in a thread is quoted there. Set `new_thread`
+     *     to start a thread of your own with this message. Each thread has its own turns, so a message
+     *     in one never steers or waits behind another.
      */
     post: operations["sendMessage"];
     delete?: never;
@@ -531,6 +540,98 @@ export interface paths {
      */
     put: operations["renameLead"];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/threads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the threads
+     * @description Every open thread, then done ones a page at a time, newest first: what Threads by day
+     *     shows. With `query`, only threads whose name, result or messages hold all its words.
+     */
+    get: operations["listThreads"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/threads/{thread}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Open a thread
+     * @description The thread with its latest messages, its steps and asks, and its running turn, as a
+     *     snapshot does for the main chat. Events for it keep arriving on the event stream: apply
+     *     the ones after this to it.
+     */
+    get: operations["getThread"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Rename a thread, or mark it done or open
+     * @description `thread.changed` follows on the event stream. Marking a done thread done, or an open one
+     *     open, changes nothing.
+     */
+    patch: operations["changeThread"];
+    trace?: never;
+  };
+  "/v0/threads/{thread}/seen": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Say you've seen a thread's news
+     * @description Clears its `news`, on every app, with `thread.changed`. Opening a thread, or a notification
+     *     about it, sends this; replying in it does the same on its own.
+     */
+    post: operations["seeThread"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/messages/{message}/move": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Move a message to another thread
+     * @description Moves one message, yours or Kumo's, into a thread or back to the main chat. It keeps its id
+     *     and its position; `message.moved` follows, and `thread.changed` for each thread it left or
+     *     joined. Kumo hears of the move in both places with its next turn there. A message a thread
+     *     hangs from stays in the main chat.
+     */
+    post: operations["moveMessage"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1680,7 +1781,6 @@ export interface components {
       | components["schemas"]["CallEnded"]
       | components["schemas"]["CallAudioDeleted"]
       | components["schemas"]["VoiceStatus"]
-      | components["schemas"]["TopicStarted"]
       | components["schemas"]["MotionStarted"]
       | components["schemas"]["MotionChanged"]
       | components["schemas"]["MotionFinished"]
@@ -1688,7 +1788,10 @@ export interface components {
       | components["schemas"]["MotionRemoved"]
       | components["schemas"]["DeskChanged"]
       | components["schemas"]["OnboardingChanged"]
-      | components["schemas"]["ProblemsChanged"];
+      | components["schemas"]["ProblemsChanged"]
+      | components["schemas"]["ThreadStarted"]
+      | components["schemas"]["ThreadChanged"]
+      | components["schemas"]["MessageMoved"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation and of the Desk with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -1703,22 +1806,22 @@ export interface components {
        * @enum {unknown}
        */
       reason: "no_cursor" | "cursor_unknown" | "too_far_behind";
-      /** @description The latest messages, oldest first, including a message still being written (with its text so far and no outcome). Page further back with `GET /v0/messages`. */
+      /** @description The main chat's latest messages, oldest first, including a message still being written (with its text so far and no outcome). A thread's messages come with `GET /v0/threads/{thread}`; page further back with `GET /v0/messages`. */
       messages: components["schemas"]["Message"][];
       /** @description Whether older messages exist. */
       has_more: boolean;
-      /** @description Every step from the first of these messages on, including the running turn's steps, in position order. */
+      /** @description Every step in the main chat from the first of these messages on, including the running turn's steps, in position order. */
       steps: components["schemas"]["Step"][];
-      /** @description Every ask from the first of these messages on, in position order, including the one that waits for your answer (it has no outcome). */
+      /** @description Every ask in the main chat from the first of these messages on, in position order, including the one that waits for your answer (it has no outcome). */
       asks: components["schemas"]["Ask"][];
-      /** @description The running turn, or null when the agent is idle. */
+      /** @description The main chat's running turn, or null when it's idle. A thread's running turn comes with the thread. */
       turn: components["schemas"]["LiveTurn"] | null;
-      /** @description Messages waiting as Next, in the order they will be answered. */
+      /** @description Messages waiting as Next in the main chat, in the order they will be answered. */
       next: components["schemas"]["MessageId"][];
       /** @description The calls that started within these messages, and one still on. */
       calls: components["schemas"]["Call"][];
-      /** @description The topics Ari marked on these messages, in position order. */
-      topics: components["schemas"]["Topic"][];
+      /** @description Every open thread, and every thread whose line sits among these messages, in position order. */
+      threads: components["schemas"]["Thread"][];
       desk: components["schemas"]["Desk"];
       /** @description Present until getting started is done. */
       onboarding?: components["schemas"]["Onboarding"];
@@ -1775,6 +1878,8 @@ export interface components {
       inputs: components["schemas"]["MessageId"][];
       /** @description Present when this is a new attempt at a failed turn. */
       retry_of?: components["schemas"]["TurnId"];
+      /** @description The side thread this turn answers in, with its own conversation. Absent for the main chat. Turns in different threads run at the same time. */
+      thread?: components["schemas"]["ThreadId"];
     };
     /**
      * turn.status
@@ -1847,6 +1952,8 @@ export interface components {
       /** @description Where this piece starts, in UTF-16 code units. */
       offset: number;
       text: string;
+      /** @description The side thread its message is in; absent in the main chat. */
+      thread?: components["schemas"]["ThreadId"];
     };
     /**
      * message.ended
@@ -1863,6 +1970,8 @@ export interface components {
       length: number;
       /** @description Present when the outcome is `failed`. */
       error?: components["schemas"]["Error"];
+      /** @description The side thread its message is in; absent in the main chat. */
+      thread?: components["schemas"]["ThreadId"];
     };
     /**
      * turn.ended
@@ -1900,7 +2009,7 @@ export interface components {
       at: components["schemas"]["Timestamp"];
       ask: components["schemas"]["Ask"];
     };
-    /** @description Something the agent asked you. Asking ends the agent's turn, and the ask waits as long as it takes: through the app closing, the phone going offline and the server restarting. The next message you send answers it, whether you tap an option, type your own answer or write about something else. At most one ask waits at a time. */
+    /** @description Something the agent asked you. Asking ends the agent's turn, and the ask waits as long as it takes: through the app closing, the phone going offline and the server restarting. The next message you send where it waits answers it, whether you tap an option, type your own answer or write about something else. At most one ask waits in each thread, and one in the main chat. */
     Ask: {
       id: components["schemas"]["AskId"];
       /** @description The turn that asked. */
@@ -1924,6 +2033,8 @@ export interface components {
       outcome?: components["schemas"]["AskOutcome"];
       /** @description Present when the outcome is `answered`: the message that answered it. */
       answer?: components["schemas"]["MessageId"];
+      /** @description The side thread it waits in; absent for the main chat. */
+      thread?: components["schemas"]["ThreadId"];
     };
     /** @description A photo or file you attached to a message. Its bytes never change: fetch them once with `GET /v0/attachments/{attachment}` and keep them. */
     Attachment: {
@@ -1947,7 +2058,7 @@ export interface components {
       text: string;
       /** @description `reply` and `failed`: the turn. */
       turn?: components["schemas"]["TurnId"];
-      /** @description `reply` and `post`: the message, so that a tap opens the conversation there. */
+      /** @description `reply` and `post`: the message, so that a tap opens the conversation there, or its thread. */
       message?: components["schemas"]["MessageId"];
       /** @description `ask`: what the device needs to answer from the notification. Answering is an ordinary send. */
       ask?: {
@@ -1956,8 +2067,12 @@ export interface components {
         options: string[];
         allows_text: boolean;
       };
+      /** @description When it happened in a side thread: the thread, so that a tap opens it there. */
+      thread?: components["schemas"]["ThreadId"];
+      /** @description With `thread`, when the thread has a name: the name, for the notification's subtitle. */
+      thread_title?: string;
     };
-    /** @description One message in the conversation. Messages are ordered by when they began. */
+    /** @description One message, in the main chat or in a side thread. Messages are ordered by when they began, wherever they are. */
     Message: {
       id: components["schemas"]["MessageId"];
       /**
@@ -1992,6 +2107,10 @@ export interface components {
       urgent?: true;
       /** @description User messages only: the Done entry this message replies to, such as a correction to one of Kumo's calls. */
       done?: components["schemas"]["DoneId"];
+      /** @description The side thread it's in. Absent in the main chat. */
+      thread?: components["schemas"]["ThreadId"];
+      /** @description User messages only: inside a thread, the message you replied to. */
+      quotes?: components["schemas"]["Quote"];
     } & unknown;
     /** @description One thing the agent did while working on a turn: thinking, a web search, a command, an edit, a tool, a plan, a wait. Its title is plain words written by the server, safe to show as it is. Its other fields carry the specifics exactly as the agent used them (commands, paths, queries, URLs, output); show what you choose. Fields beyond the common ones belong to particular kinds, and a step carries those its kind has. */
     Step: {
@@ -2294,6 +2413,15 @@ export interface components {
           attachments?: components["schemas"]["UploadId"][];
           /** @description The Done entry this message replies to, such as a correction to one of Kumo's calls. */
           done?: components["schemas"]["DoneId"];
+          /** @description The thread to send it into. Left out, it goes to the main chat, unless `reply_to` names a message in a thread. */
+          thread?: components["schemas"]["ThreadId"];
+          /** @description The message you're replying to. In the main chat, the message goes into the thread under it, started now if there's none yet; in a thread, it's quoted there. */
+          reply_to?: components["schemas"]["MessageId"];
+          /**
+           * @description Start a new thread of your own with this message, as Threads' New thread does.
+           * @constant
+           */
+          new_thread?: true;
         }
       | {
           text: string;
@@ -2313,10 +2441,51 @@ export interface components {
       asks: components["schemas"]["Ask"][];
       /** @description Every call that started in the same span, in position order. */
       calls: components["schemas"]["Call"][];
-      /** @description The topics Ari marked on these messages, in position order. */
-      topics: components["schemas"]["Topic"][];
+      /** @description In the main chat, the threads whose lines sit among these messages, in position order. Empty in a thread. */
+      threads: components["schemas"]["Thread"][];
       /** @description Whether even older messages exist. */
       has_more: boolean;
+    };
+    ThreadList: {
+      /** @description Every open thread, latest first, or those that match the query. */
+      open: components["schemas"]["Thread"][];
+      /** @description Done threads, newest first by when they started, a page at a time. */
+      threads: components["schemas"]["Thread"][];
+      /** @description Whether older done threads exist. */
+      has_more: boolean;
+    };
+    ThreadPage: {
+      thread: components["schemas"]["Thread"];
+      /** @description A thread you started by replying in the main chat has the message it replies to here, to show at its top. */
+      anchor?: components["schemas"]["Message"];
+      /** @description The thread's latest messages, oldest first, including one still being written. Page further back with `GET /v0/messages`. */
+      messages: components["schemas"]["Message"][];
+      /** @description Every step in the thread from the first of these messages on, in position order. */
+      steps: components["schemas"]["Step"][];
+      /** @description Every ask in the thread from the first of these messages on, in position order. */
+      asks: components["schemas"]["Ask"][];
+      /** @description The thread's running turn, or null when it's idle. */
+      turn: components["schemas"]["LiveTurn"] | null;
+      /** @description Messages waiting as Next in the thread. */
+      next: components["schemas"]["MessageId"][];
+      /** @description Whether older messages exist in the thread. */
+      has_more: boolean;
+    };
+    ThreadResult: {
+      thread: components["schemas"]["Thread"];
+    };
+    ThreadChange: {
+      /** @description Its new name, one to five words. */
+      title?: string;
+      /**
+       * @description Mark it `done`, or `open` again.
+       * @enum {unknown}
+       */
+      state?: "open" | "done";
+    };
+    MoveMessage: {
+      /** @description The thread to move it into. Left out, it moves to the main chat. */
+      thread?: components["schemas"]["ThreadId"];
     };
     MotionList: {
       motions: components["schemas"]["Motion"][];
@@ -2553,6 +2722,14 @@ export interface components {
     Outcome: "completed" | "stopped" | "interrupted" | "failed" | "discarded";
     /** @description Opaque. The server makes it for each entry. */
     DoneId: string;
+    /** @description Opaque. The server makes it when a side thread starts. */
+    ThreadId: string;
+    /** @description The message you replied to inside a thread, and the words of it to show above yours. */
+    Quote: {
+      message: components["schemas"]["MessageId"];
+      /** @description A line of the quoted message, at most 200 characters, safe to show as it is. */
+      text: string;
+    };
     /** @description Opaque. The server makes it when a step starts. */
     StepId: string;
     /**
@@ -2615,16 +2792,58 @@ export interface components {
       /** @description Why the server ended it, in a line to show, such as "The connection dropped." Absent when you ended it. */
       end_reason?: string;
     };
-    /** @description Opaque. The server makes it when Ari marks a topic. */
-    TopicId: string;
-    /** @description Where the subject changed: a quiet label Ari puts on the message that changed it. A label used again is the same subject, returned to. */
-    Topic: {
-      id: components["schemas"]["TopicId"];
-      /** @description One to four words, such as "Florence trip", safe to show as it is. */
-      label: string;
-      /** @description The position of the message that changed the subject. Draw the label above it. */
-      position: components["schemas"]["Position"];
+    /** @description Something Kumo said in a thread that you haven't seen yet. */
+    ThreadNews: {
+      message: components["schemas"]["MessageId"];
+      /** @description Its first line, with Markdown stripped, at most 200 characters. */
+      text: string;
       at: components["schemas"]["Timestamp"];
+    };
+    /** @description Who marked a thread done, and when. */
+    ThreadDone: {
+      at: components["schemas"]["Timestamp"];
+      /**
+       * @description `kumo` when Kumo closed it because its question was answered or its task finished; `you` when you marked it.
+       * @enum {unknown}
+       */
+      by: "kumo" | "you";
+    };
+    /** @description A side thread: a subject of its own beside the main chat, with its own conversation, so talking in it never steers the main chat or another thread aside. Kumo starts one for a one-off, a new subject or long work, moving the message that started it in; you start one by replying to a message in the main chat, or from Threads. It shows in the main chat as one quiet line. */
+    Thread: {
+      id: components["schemas"]["ThreadId"];
+      /** @description One to five plain words, such as "Kiln menu", safe to show as it is. Absent until Kumo names a thread you started, just after its first answer. */
+      title?: string;
+      /**
+       * @description Who started it: `kumo` or `you`.
+       * @enum {unknown}
+       */
+      by: "kumo" | "you";
+      /**
+       * @description `open` while its question or task is still live; `done` once it's settled. Any message in a done thread opens it again.
+       * @enum {unknown}
+       */
+      state: "open" | "done";
+      started_at: components["schemas"]["Timestamp"];
+      /** @description Where its line sits in the main chat: just after the main chat's message with the greatest position below it. It moves to the end when Kumo comes back to the thread with something new. */
+      position: components["schemas"]["Position"];
+      /** @description A thread you started by replying to a message in the main chat: that message, which stays in the main chat with the thread's line under it while the line hasn't moved. */
+      anchor?: components["schemas"]["MessageId"];
+      /** @description How many messages it holds, yours and Kumo's, notes aside. */
+      replies: number;
+      /** @description When its latest message began. */
+      last_at: components["schemas"]["Timestamp"];
+      /** @description Kumo's one line on where it stands or how it ended, such as "Noodles, laab, skewers · £47 for two". Absent until Kumo writes one. */
+      result?: string;
+      news?: components["schemas"]["ThreadNews"];
+      /** @description Present while it's done. */
+      done?: components["schemas"]["ThreadDone"];
+      /** @description Its first picture, yours or one Kumo found, for a thumbnail: fetch it with `GET /v0/attachments/{attachment}`. */
+      picture?: components["schemas"]["AttachmentId"];
+      /**
+       * @description It holds a page Kumo made.
+       * @constant
+       */
+      page?: true;
     };
     /**
      * Format: uuid
@@ -2871,6 +3090,31 @@ export interface components {
       /** @description What it stands on, newest first, the latest ten. */
       evidence: components["schemas"]["TrackEvidence"][];
     };
+    /**
+     * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
+     * @enum {unknown}
+     */
+    StatusKind: "thinking" | "working" | "writing" | "adjusting" | "waiting" | "stopping";
+    /** @description Plain words written by the server, safe to show as they are. While a step runs, its title. */
+    StatusLabel: string;
+    /** @description Optional plain-word specifics, such as a search query. */
+    StatusDetail: string;
+    /** @description The turn running when a snapshot was taken. */
+    LiveTurn: {
+      id: components["schemas"]["TurnId"];
+      /** @description The messages the turn started with. */
+      inputs: components["schemas"]["MessageId"][];
+      /** @description Messages sent while it was running that the agent has since taken in. */
+      read: components["schemas"]["MessageId"][];
+      /** @description Present when the turn is a new attempt at a failed one. */
+      retry_of?: components["schemas"]["TurnId"];
+      /** @description When the turn started, as in its `turn.started`, so an app can say how long the agent has been working. A turn is never failed for being quiet, so this is what tells you when it has gone on too long. Absent when the server no longer knows. */
+      started_at?: components["schemas"]["Timestamp"];
+      /** @description The current live status, if there is one yet. */
+      status: components["schemas"]["Status"] | null;
+      /** @description The side thread it answers in; absent for the main chat. */
+      thread?: components["schemas"]["ThreadId"];
+    };
     /** @description A thing in motion: something going on that Ari keeps for you, such as a trip being planned. Its content and state come from `GET /v0/motion/{id}`. */
     Motion: {
       id: components["schemas"]["MotionId"];
@@ -2914,29 +3158,6 @@ export interface components {
     VoiceState: "loading" | "ready" | "failed";
     /** @description Why the voice isn't `ready`, in a plain line to show, such as "The GPU ran out of memory loading the voice." */
     VoiceReason: string;
-    /**
-     * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
-     * @enum {unknown}
-     */
-    StatusKind: "thinking" | "working" | "writing" | "adjusting" | "waiting" | "stopping";
-    /** @description Plain words written by the server, safe to show as they are. While a step runs, its title. */
-    StatusLabel: string;
-    /** @description Optional plain-word specifics, such as a search query. */
-    StatusDetail: string;
-    /** @description The turn running when a snapshot was taken. */
-    LiveTurn: {
-      id: components["schemas"]["TurnId"];
-      /** @description The messages the turn started with. */
-      inputs: components["schemas"]["MessageId"][];
-      /** @description Messages sent while it was running that the agent has since taken in. */
-      read: components["schemas"]["MessageId"][];
-      /** @description Present when the turn is a new attempt at a failed one. */
-      retry_of?: components["schemas"]["TurnId"];
-      /** @description When the turn started, as in its `turn.started`, so an app can say how long the agent has been working. A turn is never failed for being quiet, so this is what tells you when it has gone on too long. Absent when the server no longer knows. */
-      started_at?: components["schemas"]["Timestamp"];
-      /** @description The current live status, if there is one yet. */
-      status: components["schemas"]["Status"] | null;
-    };
     /**
      * message.amended
      * @description On a call you carried on speaking before Ari began to answer, so your words joined the message you'd just spoken. It carries the whole message as it is now: the text with your new words, and one recording of both parts, in place of the earlier recording, which is gone. Replace the message you have with it.
@@ -3003,17 +3224,6 @@ export interface components {
       at: components["schemas"]["Timestamp"];
       state: components["schemas"]["VoiceState"];
       reason?: components["schemas"]["VoiceReason"];
-    };
-    /**
-     * topic.started
-     * @description Ari marked where the subject changed, while answering the message that changed it.
-     */
-    TopicStarted: {
-      id: components["schemas"]["EventId"];
-      /** @constant */
-      type: "topic.started";
-      at: components["schemas"]["Timestamp"];
-      topic: components["schemas"]["Topic"];
     };
     /**
      * motion.started
@@ -3112,6 +3322,41 @@ export interface components {
       type: "problems.changed";
       at: components["schemas"]["Timestamp"];
       problems: components["schemas"]["Problem"][];
+    };
+    /**
+     * thread.started
+     * @description A side thread starts: Kumo branched one, you replied to a message in the main chat, or you started one from Threads. A thread Kumo branches arrives before the messages it moves in.
+     */
+    ThreadStarted: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "thread.started";
+      at: components["schemas"]["Timestamp"];
+      thread: components["schemas"]["Thread"];
+    };
+    /**
+     * thread.changed
+     * @description Something about a thread changed: its name, whether it's open or done, its line's place in the main chat, how many replies it has, its result, its picture or its news. Replace your copy with this one.
+     */
+    ThreadChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "thread.changed";
+      at: components["schemas"]["Timestamp"];
+      thread: components["schemas"]["Thread"];
+    };
+    /**
+     * message.moved
+     * @description A message moved between the main chat and a thread, or between threads: Kumo branched a thread from it, or you moved it. It keeps its id and its position; `message` is the whole message as it is now, so an app that hadn't loaded where it came from can show it where it went.
+     */
+    MessageMoved: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "message.moved";
+      at: components["schemas"]["Timestamp"];
+      message: components["schemas"]["Message"];
+      /** @description The thread it left; absent when it left the main chat. */
+      from?: components["schemas"]["ThreadId"];
     };
     /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or Kumo sent a `post` outside a turn.
@@ -3235,6 +3480,10 @@ export interface components {
     CalendarItem: components["schemas"]["CalendarItemId"];
     /** @description The thing's id, from its `Motion`. */
     Motion: components["schemas"]["MotionId"];
+    /** @description The thread's id, from its `Thread`. */
+    Thread: components["schemas"]["ThreadId"];
+    /** @description The message's id. */
+    Message: components["schemas"]["MessageId"];
     /** @description The turn's id, from `turn.started`. */
     Turn: components["schemas"]["TurnId"];
     /** @description The id the app made for what it's uploading. */
@@ -3335,6 +3584,11 @@ export type ServerInfo = components["schemas"]["ServerInfo"];
 export type SendMessage = components["schemas"]["SendMessage"];
 export type MessageResult = components["schemas"]["MessageResult"];
 export type MessagePage = components["schemas"]["MessagePage"];
+export type ThreadList = components["schemas"]["ThreadList"];
+export type ThreadPage = components["schemas"]["ThreadPage"];
+export type ThreadResult = components["schemas"]["ThreadResult"];
+export type ThreadChange = components["schemas"]["ThreadChange"];
+export type MoveMessage = components["schemas"]["MoveMessage"];
 export type MotionList = components["schemas"]["MotionList"];
 export type MotionDetail = components["schemas"]["MotionDetail"];
 export type MotionState = components["schemas"]["MotionState"];
@@ -3374,6 +3628,8 @@ export type CallId = components["schemas"]["CallId"];
 export type Spoken = components["schemas"]["Spoken"];
 export type Outcome = components["schemas"]["Outcome"];
 export type DoneId = components["schemas"]["DoneId"];
+export type ThreadId = components["schemas"]["ThreadId"];
+export type Quote = components["schemas"]["Quote"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
 export type MemoryPageRef = components["schemas"]["MemoryPageRef"];
@@ -3382,8 +3638,9 @@ export type AskKind = components["schemas"]["AskKind"];
 export type AskOption = components["schemas"]["AskOption"];
 export type AskOutcome = components["schemas"]["AskOutcome"];
 export type Call = components["schemas"]["Call"];
-export type TopicId = components["schemas"]["TopicId"];
-export type Topic = components["schemas"]["Topic"];
+export type ThreadNews = components["schemas"]["ThreadNews"];
+export type ThreadDone = components["schemas"]["ThreadDone"];
+export type Thread = components["schemas"]["Thread"];
 export type UploadId = components["schemas"]["UploadId"];
 export type TrackId = components["schemas"]["TrackId"];
 export type DoneEntry = components["schemas"]["DoneEntry"];
@@ -3401,21 +3658,20 @@ export type Desk = components["schemas"]["Desk"];
 export type TrackStage = components["schemas"]["TrackStage"];
 export type TrackEvidence = components["schemas"]["TrackEvidence"];
 export type Track = components["schemas"]["Track"];
-export type Motion = components["schemas"]["Motion"];
-export type MotionChange = components["schemas"]["MotionChange"];
-export type VoiceState = components["schemas"]["VoiceState"];
-export type VoiceReason = components["schemas"]["VoiceReason"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
 export type StatusDetail = components["schemas"]["StatusDetail"];
 export type LiveTurn = components["schemas"]["LiveTurn"];
+export type Motion = components["schemas"]["Motion"];
+export type MotionChange = components["schemas"]["MotionChange"];
+export type VoiceState = components["schemas"]["VoiceState"];
+export type VoiceReason = components["schemas"]["VoiceReason"];
 export type MessageAmended = components["schemas"]["MessageAmended"];
 export type MessagePosted = components["schemas"]["MessagePosted"];
 export type CallStarted = components["schemas"]["CallStarted"];
 export type CallEnded = components["schemas"]["CallEnded"];
 export type CallAudioDeleted = components["schemas"]["CallAudioDeleted"];
 export type VoiceStatus = components["schemas"]["VoiceStatus"];
-export type TopicStarted = components["schemas"]["TopicStarted"];
 export type MotionStarted = components["schemas"]["MotionStarted"];
 export type MotionChanged = components["schemas"]["MotionChanged"];
 export type MotionFinished = components["schemas"]["MotionFinished"];
@@ -3424,6 +3680,9 @@ export type MotionRemoved = components["schemas"]["MotionRemoved"];
 export type DeskChanged = components["schemas"]["DeskChanged"];
 export type OnboardingChanged = components["schemas"]["OnboardingChanged"];
 export type ProblemsChanged = components["schemas"]["ProblemsChanged"];
+export type ThreadStarted = components["schemas"]["ThreadStarted"];
+export type ThreadChanged = components["schemas"]["ThreadChanged"];
+export type MessageMoved = components["schemas"]["MessageMoved"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -3435,6 +3694,8 @@ export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
 export type ParameterCalendarItem = components["parameters"]["CalendarItem"];
 export type ParameterMotion = components["parameters"]["Motion"];
+export type ParameterThread = components["parameters"]["Thread"];
+export type ParameterMessage = components["parameters"]["Message"];
 export type ParameterTurn = components["parameters"]["Turn"];
 export type ParameterUpload = components["parameters"]["Upload"];
 export type ParameterAttachment = components["parameters"]["Attachment"];
@@ -3722,7 +3983,7 @@ export interface operations {
   listMessages: {
     parameters: {
       query: {
-        /** @description Return messages older than this one. */
+        /** @description Return messages older than this one, from where it is. */
         before: components["schemas"]["MessageId"];
         /** @description How many messages to return. */
         limit?: number;
@@ -4229,6 +4490,161 @@ export interface operations {
       };
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
+    };
+  };
+  listThreads: {
+    parameters: {
+      query?: {
+        /** @description Words to look for, such as a dish, a place or a person. */
+        query?: string;
+        /** @description Return done threads older than this one. */
+        before?: components["schemas"]["ThreadId"];
+        /** @description How many done threads to return. */
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The threads. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadList"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  getThread: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The thread's id, from its `Thread`. */
+        thread: components["parameters"]["Thread"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The thread. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadPage"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  changeThread: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The thread's id, from its `Thread`. */
+        thread: components["parameters"]["Thread"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "title": "Kiln menu"
+         *     }
+         */
+        "application/json": components["schemas"]["ThreadChange"];
+      };
+    };
+    responses: {
+      /** @description The thread as it is now. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  seeThread: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The thread's id, from its `Thread`. */
+        thread: components["parameters"]["Thread"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The thread as it is now. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  moveMessage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The message's id. */
+        message: components["parameters"]["Message"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "thread": "h_0001"
+         *     }
+         */
+        "application/json": components["schemas"]["MoveMessage"];
+      };
+    };
+    responses: {
+      /** @description The message as it is now. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MessageResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
     };
   };
   stopTurn: {

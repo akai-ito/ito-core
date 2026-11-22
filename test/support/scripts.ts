@@ -46,7 +46,9 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "call.ended":
     case "call.audio_deleted":
     case "voice.status":
-    case "topic.started":
+    case "thread.started":
+    case "thread.changed":
+    case "message.moved":
     case "motion.started":
     case "motion.changed":
     case "motion.finished":
@@ -132,7 +134,9 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
     case "call.ended":
     case "call.audio_deleted":
     case "voice.status":
-    case "topic.started":
+    case "thread.started":
+    case "thread.changed":
+    case "message.moved":
     case "motion.started":
     case "motion.changed":
     case "motion.finished":
@@ -179,19 +183,22 @@ const isEndedByTheLoop = (event: LoggedEvent, turnEnd: LoggedEvent | undefined):
   return outcome === "stopped" || outcome === "interrupted" || isTurnsOwnEnd;
 };
 
+// A turn that handed its subject to a side thread ends when the server stops it, as a stopped one does.
 const toScript = (
   events: readonly LoggedEvent[],
   approvals: ReadonlySet<string>,
   choices: ReadonlySet<string>,
+  isHandedOff = false,
 ): TurnScript => {
   const reads = new Set(events.filter((event) => event.type === "message.read").map((event) => event.message));
-  const stopped = events.find((event) => event.type === "turn.ended" && event.outcome === "stopped");
+  const stopped = events.find((event) => event.type === "turn.ended" && (event.outcome === "stopped" || isHandedOff));
   const turnEnd = events.find((event) => event.type === "turn.ended");
   const standIns = standInsFor(events);
   return {
     events: events
       .filter((event) => !isAboutMessage(event, standIns) && !isEndedByTheLoop(event, turnEnd))
       .filter((event) => !(event.type === "message.read" && choices.has(event.message)))
+      .filter((event) => !(isHandedOff && event.type === "turn.ended"))
       .map((event) => toTimed(event, approvals))
       .filter((timed) => timed !== undefined),
     steer: (input) => ({ outcome: reads.has(input.messageId) ? "taken" : "refused" }),
@@ -241,14 +248,15 @@ export const deriveScripts = (transcript: Transcript): readonly TurnScript[] => 
       event.type === "message.started" ? [[event.message.id, event.message.turn ?? ""] as const] : [],
     ),
   );
+  const moved = new Set(events.flatMap((event) => (event.type === "message.moved" ? event.message.id : [])));
   return events
     .filter((event) => event.type === "turn.started")
-    .map((event) => event.turn)
-    .map((turn) =>
+    .map((event) =>
       toScript(
-        events.filter((event) => isPartOf(event, turn, messageTurns)),
+        events.filter((part) => isPartOf(part, event.turn, messageTurns)),
         approvals,
         choices,
+        event.thread === undefined && event.inputs.every((input) => moved.has(input)),
       ),
     );
 };

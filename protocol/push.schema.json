@@ -89,7 +89,7 @@
         },
         "message": {
           "$ref": "events.schema.json#/$defs/MessageId",
-          "description": "`reply` and `post`: the message, so that a tap opens the conversation there."
+          "description": "`reply` and `post`: the message, so that a tap opens the conversation there, or its thread."
         },
         "ask": {
           "description": "`ask`: what the device needs to answer from the notification. Answering is an ordinary send.",
@@ -110,6 +110,15 @@
               "type": "boolean"
             }
           }
+        },
+        "thread": {
+          "$ref": "events.schema.json#/$defs/ThreadId",
+          "description": "When it happened in a side thread: the thread, so that a tap opens it there."
+        },
+        "thread_title": {
+          "description": "With `thread`, when the thread has a name: the name, for the notification's subtitle.",
+          "type": "string",
+          "minLength": 1
         }
       }
     }

@@ -36,7 +36,7 @@ where the protocol has to make it possible, marked *App*.
 | G26 | **Ari's voice gives way to yours.** Ari speaks only what comes before a line holding `---`, a sentence at a time with its caption, and stops when you talk over it: your own voice, for more than half a second. Its echo never counts, and while it speaks nothing else becomes a turn. On a call, asks are said aloud with their choices. Silence while it works is covered by the phone's tone; Ari says what it's doing only after a long quiet, once. | 38, 45, 50, 51 |
 | G27 | **A call survives a blip, and ends with a reason.** A dropped stream can reconnect within 20 seconds and carry on; past that, or when the voice fails, the call ends with a plain reason and everything said is kept. | 46, 47, 49 |
 | G28 | **An app asks before it acts.** When an app's action, or a capability's such as filing a report, needs your approval, it waits inside the running turn, which carries on once you answer. An approval that would send your pictures out shows them. Your next message answers it: Allow, or a plain yes, lets it run; anything else doesn't, and your words reach the agent. Stop cancels it. | 17, 53, 54, 55 |
-| G29 | **Topics mark where the subject changed.** When you change the subject, Ito puts a label of a few plain words on the message that changed it, just after the turn, typed or spoken, at most one a turn. Every app gets the label live, and in snapshots and history with the messages it labels; a label used again is the same subject, returned to. | 58 |
+| G29 | **Threads keep subjects apart.** A side thread is a conversation of its own beside the main chat, with its own turns: a message in one never steers or waits behind another, and turns in different threads run at once. Kumo starts one by moving the message that began it, which keeps its id and position; you start one by replying to a message in the main chat (it stays there, with the thread under it) or from Threads. Every message says which thread it's in, every turn and ask too, and every notification about one names it. A thread shows in the main chat as one line, moving to the end only when Kumo comes back to it with something new, which waits as its news until you've seen it. Done is quiet and replying reopens it. Earlier messages stay in the main chat as they were. | 90 |
 | G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Ari can't start or change a trip without a cover, a photo for every place and every stop at its place, or any thing with a title over 28 characters. Forgetting a thing asks you first. | 62, 63, 64 |
 | G33 | **The Desk is home.** Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail come whole in the snapshot and in every change, so an app never pieces it together. | 65, 74, 78, 79, 84 |
@@ -443,13 +443,6 @@ catches up once (G57).
 - A page's links come with each linked page's title and other names; links to pages that don't
   exist are left out.
 
-### 58 · [Topics](transcripts/58-topics.jsonl)
-
-- A topic is a label on the message that changed the subject, arriving just after the turn ends; a
-  follow-up gets none. (G29)
-- Snapshots and history carry the topics on their messages, windowed as calls are. Coming back to a
-  subject reuses its label. (G29)
-
 ### 59 · [Blocks in a reply](transcripts/59-blocks-in-a-reply.jsonl)
 
 - A reply's `ari:` blocks travel in its Markdown text; the app draws them, and shows a block it
@@ -580,6 +573,18 @@ catches up once (G57).
   saying what it missed and what it did; the wake-ups show in Done, quietly. A turn in the chat that
   goes through ends the pause early. (G57)
 
+### 90 · [Reply in a thread](transcripts/90-reply-in-a-thread.jsonl)
+
+- Replying to a message in the main chat starts a thread under it (`anchor`), at that message's
+  position, and the first reply goes in; Kumo names it after its first answer. A snapshot carries
+  every open thread and every thread whose line sits among its messages, while the main chat's
+  messages leave out the thread's. (G29)
+- `GET /v0/threads/{thread}` opens it with the message it hangs from. In a thread, replying to a
+  message quotes a line of it (`quotes`). (G29)
+- Moving a message keeps its id and position; the threads it left and joined change their counts.
+  Renaming and marking done are yours too (`done.by: you`), and any message in a done thread opens
+  it again. (G29)
+
 ## Not in this version
 
-Editing or deleting messages, more than one conversation, and reactions.
+Editing or deleting messages, threads inside threads, and reactions.

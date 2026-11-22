@@ -5,12 +5,14 @@ import {
   toEventId,
   toMessageId,
   toStepId,
+  toThreadId,
   toTurnId,
   type AskId,
   type ChangeId,
   type EventId,
   type MessageId,
   type StepId,
+  type ThreadId,
   type TurnId,
 } from "#conversation/ids.ts";
 
@@ -22,7 +24,7 @@ export type Identifiers = {
   readonly ask: () => AskId;
   readonly change: () => ChangeId;
   readonly attachment: () => string;
-  readonly topic: () => string;
+  readonly thread: () => ThreadId;
   readonly card: () => string;
   readonly done: () => string;
   readonly wakeUp: () => string;
@@ -45,7 +47,7 @@ export const randomIdentifiers: Identifiers = {
   ask: () => toAskId(`a_${randomText()}`),
   change: () => toChangeId(`c_${randomText()}`),
   attachment: () => `f_${randomText()}`,
-  topic: () => `p_${randomText()}`,
+  thread: () => toThreadId(`h_${randomText()}`),
   card: () => `k_${randomText()}`,
   done: () => `d_${randomText()}`,
   wakeUp: () => `w_${randomText()}`,

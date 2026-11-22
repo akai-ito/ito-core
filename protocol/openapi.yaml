@@ -69,6 +69,10 @@ tags:
     description: Home, with Kumo's plans, Coming up, Waiting on you, Kumo's work and the calendar.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
+  - name: Threads
+    description: |
+      Side threads beside the main chat, each with its own conversation: list and search them, open
+      one, rename it, mark it done or open, and move a message between them.
   - name: Turns
     description: Control the agent's work on a turn.
   - name: Asks
@@ -341,8 +345,16 @@ paths:
         refused with `attachment_missing`: upload its attachments again under the same ids, then
         send the same message again.
 
-        While an ask waits, the message answers it: `message.accepted` for the message comes first,
-        then `ask.ended`. To reply to an entry in the Done list, name it in `done`.
+        While an ask waits where the message goes, the message answers it: `message.accepted` for
+        the message comes first, then `ask.ended`. To reply to an entry in the Done list, name it in
+        `done`.
+
+        A message goes to the main chat unless it says otherwise. Name a `thread` to send it there;
+        a done thread opens again. Name a message in `reply_to` to reply to it: one in the main chat
+        gets a thread under it (`thread.started` comes first when it's the first reply), and Kumo
+        names that thread after its first answer; one in a thread is quoted there. Set `new_thread`
+        to start a thread of your own with this message. Each thread has its own turns, so a message
+        in one never steers or waits behind another.
       requestBody:
         required: true
         content:
@@ -390,15 +402,16 @@ paths:
       operationId: listMessages
       summary: Read older messages
       description: |
-        The messages just before a given one, oldest first, with the agent's steps among them.
-        The newest messages come from the event stream's `snapshot`, so `before` is always
-        required. A `404` means the server doesn't know that message (it was restored from a
+        The messages just before a given one, oldest first, with the agent's steps among them,
+        from the same place as that message: the main chat, or its thread. The newest messages come
+        from the event stream's `snapshot`, or from `GET /v0/threads/{thread}`, so `before` is
+        always required. A `404` means the server doesn't know that message (it was restored from a
         backup): reconnect to the event stream for a snapshot.
       parameters:
         - name: before
           in: query
           required: true
-          description: Return messages older than this one.
+          description: Return messages older than this one, from where it is.
           schema: { $ref: "events.schema.json#/$defs/MessageId" }
         - name: limit
           in: query
@@ -774,6 +787,141 @@ paths:
               schema: { $ref: "#/components/schemas/Lead" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/threads:
+    get:
+      tags: [Threads]
+      operationId: listThreads
+      summary: List the threads
+      description: |
+        Every open thread, then done ones a page at a time, newest first: what Threads by day
+        shows. With `query`, only threads whose name, result or messages hold all its words.
+      parameters:
+        - name: query
+          in: query
+          required: false
+          description: Words to look for, such as a dish, a place or a person.
+          schema: { type: string, maxLength: 200 }
+        - name: before
+          in: query
+          required: false
+          description: Return done threads older than this one.
+          schema: { $ref: "events.schema.json#/$defs/ThreadId" }
+        - name: limit
+          in: query
+          required: false
+          description: How many done threads to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: The threads.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadList" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/threads/{thread}:
+    get:
+      tags: [Threads]
+      operationId: getThread
+      summary: Open a thread
+      description: |
+        The thread with its latest messages, its steps and asks, and its running turn, as a
+        snapshot does for the main chat. Events for it keep arriving on the event stream: apply
+        the ones after this to it.
+      parameters:
+        - $ref: "#/components/parameters/Thread"
+      responses:
+        "200":
+          description: The thread.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadPage" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Threads]
+      operationId: changeThread
+      summary: Rename a thread, or mark it done or open
+      description: |
+        `thread.changed` follows on the event stream. Marking a done thread done, or an open one
+        open, changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/Thread"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThreadChange" }
+            example: { title: Kiln menu }
+      responses:
+        "200":
+          description: The thread as it is now.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/threads/{thread}/seen:
+    post:
+      tags: [Threads]
+      operationId: seeThread
+      summary: Say you've seen a thread's news
+      description: |
+        Clears its `news`, on every app, with `thread.changed`. Opening a thread, or a notification
+        about it, sends this; replying in it does the same on its own.
+      parameters:
+        - $ref: "#/components/parameters/Thread"
+      responses:
+        "200":
+          description: The thread as it is now.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/messages/{message}/move:
+    post:
+      tags: [Threads]
+      operationId: moveMessage
+      summary: Move a message to another thread
+      description: |
+        Moves one message, yours or Kumo's, into a thread or back to the main chat. It keeps its id
+        and its position; `message.moved` follows, and `thread.changed` for each thread it left or
+        joined. Kumo hears of the move in both places with its next turn there. A message a thread
+        hangs from stays in the main chat.
+      parameters:
+        - $ref: "#/components/parameters/Message"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MoveMessage" }
+            example: { thread: h_0001 }
+      responses:
+        "200":
+          description: The message as it is now.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/turns/{turn}/stop:
     post:
       tags: [Turns]
@@ -1687,6 +1835,18 @@ components:
       required: true
       description: The thing's id, from its `Motion`.
       schema: { $ref: "events.schema.json#/$defs/MotionId" }
+    Thread:
+      name: thread
+      in: path
+      required: true
+      description: The thread's id, from its `Thread`.
+      schema: { $ref: "events.schema.json#/$defs/ThreadId" }
+    Message:
+      name: message
+      in: path
+      required: true
+      description: The message's id.
+      schema: { $ref: "events.schema.json#/$defs/MessageId" }
     Turn:
       name: turn
       in: path
@@ -2574,6 +2734,15 @@ components:
         done:
           description: The Done entry this message replies to, such as a correction to one of Kumo's calls.
           $ref: "events.schema.json#/$defs/DoneId"
+        thread:
+          description: The thread to send it into. Left out, it goes to the main chat, unless `reply_to` names a message in a thread.
+          $ref: "events.schema.json#/$defs/ThreadId"
+        reply_to:
+          description: The message you're replying to. In the main chat, the message goes into the thread under it, started now if there's none yet; in a thread, it's quoted there.
+          $ref: "events.schema.json#/$defs/MessageId"
+        new_thread:
+          description: Start a new thread of your own with this message, as Threads' New thread does.
+          const: true
     MessageResult:
       type: object
       required: [message]
@@ -2581,7 +2750,7 @@ components:
         message: { $ref: "events.schema.json#/$defs/Message" }
     MessagePage:
       type: object
-      required: [messages, steps, asks, calls, topics, has_more]
+      required: [messages, steps, asks, calls, threads, has_more]
       properties:
         messages:
           description: Oldest first.
@@ -2599,13 +2768,85 @@ components:
           description: Every call that started in the same span, in position order.
           type: array
           items: { $ref: "events.schema.json#/$defs/Call" }
-        topics:
-          description: The topics Ari marked on these messages, in position order.
+        threads:
+          description: In the main chat, the threads whose lines sit among these messages, in position order. Empty in a thread.
           type: array
-          items: { $ref: "events.schema.json#/$defs/Topic" }
+          items: { $ref: "events.schema.json#/$defs/Thread" }
         has_more:
           description: Whether even older messages exist.
           type: boolean
+    ThreadList:
+      type: object
+      required: [open, threads, has_more]
+      properties:
+        open:
+          description: Every open thread, latest first, or those that match the query.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Thread" }
+        threads:
+          description: Done threads, newest first by when they started, a page at a time.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Thread" }
+        has_more:
+          description: Whether older done threads exist.
+          type: boolean
+    ThreadPage:
+      type: object
+      required: [thread, messages, steps, asks, turn, next, has_more]
+      properties:
+        thread: { $ref: "events.schema.json#/$defs/Thread" }
+        anchor:
+          description: A thread you started by replying in the main chat has the message it replies to here, to show at its top.
+          $ref: "events.schema.json#/$defs/Message"
+        messages:
+          description: The thread's latest messages, oldest first, including one still being written. Page further back with `GET /v0/messages`.
+          type: array
+          maxItems: 50
+          items: { $ref: "events.schema.json#/$defs/Message" }
+        steps:
+          description: Every step in the thread from the first of these messages on, in position order.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Step" }
+        asks:
+          description: Every ask in the thread from the first of these messages on, in position order.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Ask" }
+        turn:
+          description: The thread's running turn, or null when it's idle.
+          oneOf:
+            - $ref: "events.schema.json#/$defs/LiveTurn"
+            - type: "null"
+        next:
+          description: Messages waiting as Next in the thread.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/MessageId" }
+        has_more:
+          description: Whether older messages exist in the thread.
+          type: boolean
+    ThreadResult:
+      type: object
+      required: [thread]
+      properties:
+        thread: { $ref: "events.schema.json#/$defs/Thread" }
+    ThreadChange:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          description: Its new name, one to five words.
+          type: string
+          pattern: \S
+          maxLength: 60
+        state:
+          description: Mark it `done`, or `open` again.
+          enum: [open, done]
+    MoveMessage:
+      type: object
+      properties:
+        thread:
+          description: The thread to move it into. Left out, it moves to the main chat.
+          $ref: "events.schema.json#/$defs/ThreadId"
+
     MotionList:
       type: object
       required: [motions]

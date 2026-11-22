@@ -2,7 +2,7 @@
 {"at":0,"world":"capability_on","capability":"icloud","values":{"apple_id":"divy@icloud.com","app_password":"abcd-efgh-ijkl-mnop"}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-11-15T07:20:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-15T07:20:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"threads":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
 {"at":1000,"world":"agent_calls","tool":"plan_block","input":{"kind":"plan","title":"Easy run, week 1 of 6","start":"2026-11-15T10:30:00.000Z","end":"2026-11-15T11:00:00.000Z","activity":"training","why":"Week 1 of the sub-20 block: easy miles"}}
 {"at":1000,"world":"agent_calls","tool":"plan_block","input":{"kind":"plan","title":"Groceries","start":"2026-11-15T12:00:00.000Z","end":"2026-11-15T12:45:00.000Z","activity":"errands","why":"So there's food in for proper meals this week"}}
 {"at":1000,"world":"agent_calls","tool":"plan_block","input":{"kind":"plan","title":"Interview prep, 2h","start":"2026-11-15T15:00:00.000Z","end":"2026-11-15T17:00:00.000Z","activity":"studying","why":"The Northwind interview is on Thursday"}}

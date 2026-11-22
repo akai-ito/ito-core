@@ -2,7 +2,7 @@
 {"at":0,"world":"capability_on","capability":"outlook","values":{"address":"sam@outlook.example","token":"replay-token"}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-11-11T10:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-11T10:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"threads":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
 {"at":1000,"world":"attention_decides","decision":"promotion","stakes":"low","folder":"","reason":"Acme selling something","confidence":0.86}
 {"at":1000,"world":"mail_arrives","account":"outlook","message_id":"order-5531@acme.com","from":"Acme <hello@acme.com>","to":["sam@outlook.example"],"subject":"Your Acme order is on its way","text":"Good news! Your desk lamp ships today. Fancy 20% off your next order?"}
 {"at":1000,"event":{"id":"e_0001_26422","type":"desk.changed","at":"2026-11-11T10:00:01.000Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0,"last_mail_at":"2026-11-11T10:00:01.000Z"}}}
