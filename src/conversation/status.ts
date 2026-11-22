@@ -41,6 +41,9 @@ export const adjustingStatus: Status = { kind: "adjusting", label: "Adjusting to
 
 export const stoppingStatus: Status = { kind: "stopping", label: "Stopping" };
 
+// The engine lost the model's stream and is trying again.
+export const reconnectingStatus: Status = { kind: "waiting", label: "Reconnecting to the model" };
+
 export const approvalStatus: Status = { kind: "waiting", label: "Waiting for your approval" };
 
 export const approvedStatus: Status = { kind: "working", label: "Going ahead" };

@@ -1,6 +1,6 @@
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
-import { toCommandError, toTurnError, toWatchdogError } from "#conversation/failures.ts";
+import { toCommandError, toTurnError } from "#conversation/failures.ts";
 import { toAskId, type AskId, type MessageId, type TurnId } from "#conversation/ids.ts";
 import { isAdjustingAfterRead, route, type Conversation } from "#conversation/routing.ts";
 import {
@@ -8,6 +8,7 @@ import {
   approvalStatus,
   approvedStatus,
   declinedStatus,
+  reconnectingStatus,
   stoppingStatus,
   toStepStatus,
   writingStatus,
@@ -23,10 +24,10 @@ export type StopState = { readonly state: "stopping" } | { readonly state: "ende
 
 export type RetryStarted = { readonly turn: TurnId; readonly isNew: boolean };
 
+// A turn in the chat has no timer on its silence: someone is there, and Stop is theirs. Codex shows nothing while
+// a tool call's arguments stream, such as a long document written in one call, so silence isn't a failure.
 export type Limits = {
-  readonly watchdogMs: number;
-  // Compacting a long conversation can take minutes with nothing to show for it, so it gets longer.
-  readonly compactingMs: number;
+  // How long Stop waits for the engine to stop before restarting it.
   readonly forcedStopMs: number;
   readonly coalesceMs: number;
 };
@@ -63,11 +64,12 @@ type Running = {
   readonly phase: "running" | "stopping" | "asking";
   readonly writing: Writing | undefined;
   readonly hasStartedReply: boolean;
+  // A reply finished in this turn, which a later one taken back leaves standing.
+  readonly hasFinishedReply: boolean;
   readonly awaitingRead: readonly MessageId[];
   readonly buffered: string;
   readonly lastFlushAt: number | undefined;
   readonly cancelFlush: Cancel | undefined;
-  readonly cancelWatchdog: Cancel;
   readonly cancelForcedStop: Cancel | undefined;
   readonly steps: ReadonlyMap<string, Step>;
   readonly approvals: ReadonlyMap<AskId, (isAllowed: boolean) => void>;
@@ -95,8 +97,6 @@ const isOption = (answer: string, ask: Ask): boolean =>
 export const isApprovalChoice = (answer: string, ask: Ask): boolean => isAllowing(answer, ask) || isOption(answer, ask);
 
 export const defaultLimits: Limits = {
-  watchdogMs: 60_000,
-  compactingMs: 10 * 60_000,
   forcedStopMs: 5000,
   coalesceMs: 100,
 };
@@ -166,7 +166,6 @@ export const createTurns = (
   };
 
   const clearTimers = (state: Running): void => {
-    state.cancelWatchdog();
     state.cancelFlush?.();
     state.cancelForcedStop?.();
   };
@@ -206,7 +205,30 @@ export const createTurns = (
     const state = current(turn);
     if (!state?.writing) return;
     store.endMessage(state.writing.message, "completed", sentLength(state));
-    running.set({ ...state, writing: undefined });
+    running.set({
+      ...state,
+      writing: undefined,
+      hasFinishedReply: state.hasFinishedReply || state.writing.kind === "reply",
+    });
+  };
+
+  // The engine writes what it hadn't finished again from the start, so the unfinished message is taken back whole
+  // rather than left as half a reply above the whole one, and unfinished thinking ends.
+  const discardUnfinished = (turn: TurnId): void => {
+    const state = current(turn);
+    if (!state) return;
+    state.cancelFlush?.();
+    if (state.writing) store.endMessage(state.writing.message, "discarded", sentLength(state));
+    running.set({
+      ...state,
+      writing: undefined,
+      buffered: "",
+      cancelFlush: undefined,
+      hasStartedReply: state.hasFinishedReply,
+    });
+    for (const [key, step] of state.steps) {
+      if (step.kind === "thinking") endStep(turn, { type: "step.ended", key, outcome: "completed", facts: {} });
+    }
   };
 
   const cancelApprovals = (state: Running): void => {
@@ -300,36 +322,20 @@ export const createTurns = (
     }
   };
 
-  const forceStop = async (turn: TurnId): Promise<void> => {
-    if (current(turn)?.phase !== "stopping") return;
-    try {
-      await engine.restart();
-    } finally {
-      finishStop(turn);
-    }
+  // The engine lets go of the turn as soon as a restart begins, so the turn ends at once, even while an engine that
+  // stopped answering is still being shut down: Stop always works.
+  const restartAndEnd = (end: () => void): void => {
+    const restarting = engine.restart();
+    end();
+    void restarting.catch((error: unknown) => {
+      log("Restarting the engine failed", error);
+    });
   };
 
-  const isCompacting = (state: Running): boolean => state.steps.values().some(({ kind }) => kind === "compacting");
-
-  // A compaction gets the rest of its longer wait once the usual one runs out.
-  const armWatchdog = (turn: TurnId, isExtended = false): Cancel =>
-    clock.after(isExtended ? Math.max(0, limits.compactingMs - limits.watchdogMs) : limits.watchdogMs, () => {
-      const state = current(turn);
-      if (state?.phase !== "running" || state.approvals.size > 0) return;
-      const isCompactingNow = isCompacting(state);
-      if (isCompactingNow && !isExtended) {
-        change(turn, (latest) => ({ ...latest, cancelWatchdog: armWatchdog(turn, true) }));
-        return;
-      }
-      const silenceMs = isExtended ? Math.max(limits.compactingMs, limits.watchdogMs) : limits.watchdogMs;
-      failTurn(turn, toWatchdogError(silenceMs, state.writing !== undefined, isCompactingNow));
-      void interruptEngine(turn, () => engine.restart());
-    });
-
-  const resetWatchdog = (turn: TurnId): void => {
-    change(turn, (state) => {
-      state.cancelWatchdog();
-      return { ...state, cancelWatchdog: armWatchdog(turn) };
+  const forceStop = (turn: TurnId): void => {
+    if (current(turn)?.phase !== "stopping") return;
+    restartAndEnd(() => {
+      finishStop(turn);
     });
   };
 
@@ -342,13 +348,11 @@ export const createTurns = (
     return ok(asked);
   };
 
-  const finishAsking = async (turn: TurnId): Promise<void> => {
+  const finishAsking = (turn: TurnId): void => {
     if (current(turn)?.phase !== "asking") return;
-    try {
-      await engine.restart();
-    } finally {
+    restartAndEnd(() => {
       completeTurn(turn);
-    }
+    });
   };
 
   const endAfterAsking = (turn: TurnId): void => {
@@ -357,10 +361,12 @@ export const createTurns = (
       cancelForcedStop:
         latest.cancelForcedStop ??
         clock.after(limits.forcedStopMs, () => {
-          void finishAsking(turn);
+          finishAsking(turn);
         }),
     }));
-    void interruptEngine(turn, () => finishAsking(turn));
+    void interruptEngine(turn, () => {
+      finishAsking(turn);
+    });
   };
 
   const handle = (turn: TurnId, event: EngineEvent): void => {
@@ -443,6 +449,12 @@ export const createTurns = (
       case "progress": {
         return;
       }
+      case "reconnecting": {
+        if (isQuiet) return;
+        discardUnfinished(turn);
+        store.setStatus(turn, reconnectingStatus);
+        return;
+      }
       case "stopped": {
         if (isAsking) completeTurn(turn);
         else finishStop(turn);
@@ -467,7 +479,6 @@ export const createTurns = (
     try {
       for await (const event of events) {
         if (!current(turn)) return;
-        resetWatchdog(turn);
         handle(turn, event);
       }
       endUnfinished(turn, "The engine ended the turn without a result.");
@@ -478,7 +489,7 @@ export const createTurns = (
 
   const inputOf = (message: MessageId): Input => {
     const attached = store.messageAttachments(message).map((attachment) => ({
-      kind: attachment.kind === "image" ? ("image" as const) : ("file" as const),
+      kind: attachment.kind === "image" || attachment.kind === "audio" ? attachment.kind : ("file" as const),
       name: attachment.name,
       source: attachmentPath(attachment.id),
     }));
@@ -509,11 +520,11 @@ export const createTurns = (
       phase: "running",
       writing: undefined,
       hasStartedReply: false,
+      hasFinishedReply: false,
       awaitingRead: [],
       buffered: "",
       lastFlushAt: undefined,
       cancelFlush: undefined,
-      cancelWatchdog: armWatchdog(turn),
       cancelForcedStop: undefined,
       steps: new Map(),
       approvals: new Map(),
@@ -563,7 +574,6 @@ export const createTurns = (
       ...latest,
       approvals: new Map([...latest.approvals].filter(([waiting]) => waiting !== ask)),
     }));
-    resetWatchdog(state.id);
     decide(isAllowed);
     return isChoice;
   };
@@ -650,7 +660,6 @@ export const createTurns = (
           approvals: new Map([...latest.approvals].filter(([waiting]) => waiting !== ask)),
         }));
         store.setStatus(state.id, declinedStatus);
-        resetWatchdog(state.id);
         decide(false);
         return cancelled;
       }
@@ -672,12 +681,14 @@ export const createTurns = (
             phase: "stopping",
             buffered: "",
             cancelForcedStop: clock.after(limits.forcedStopMs, () => {
-              void forceStop(turn);
+              forceStop(turn);
             }),
           });
           state.cancelFlush?.();
           store.setStatus(turn, stoppingStatus);
-          void interruptEngine(turn, () => forceStop(turn));
+          void interruptEngine(turn, () => {
+            forceStop(turn);
+          });
         }
         return { state: "stopping" };
       }

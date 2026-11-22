@@ -2222,12 +2222,12 @@ export interface components {
     Error: {
       /**
        * @description Stable and snake_case.
-       * @example model_timeout
+       * @example model_unavailable
        */
       code: string;
       /**
        * @description A plain sentence for the person using the app, written by the server.
-       * @example The model didn't respond for 60 seconds.
+       * @example The model service isn't responding right now.
        */
       message: string;
       /** @description The technical cause, for a Details view. */
@@ -2526,7 +2526,7 @@ export interface components {
     Problem: {
       /** @description Stable while it lasts, such as `push` or `mail:outlook`. */
       id: string;
-      /** @description What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities`, `memory`, or `kumo` when its own work in the background can't go on. Show an area you don't know plainly. */
+      /** @description What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities`, `memory`, or `kumo` when its own work in the background can't go on, such as `kumo:paused` while its model's usage limit holds it until a reset. Show an area you don't know plainly. */
       area: string;
       /** @description One plain line, such as "Notifications can't be sent". */
       title: string;
@@ -2650,10 +2650,10 @@ export interface components {
       audio?: components["schemas"]["Attachment"];
     };
     /**
-     * @description How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.
+     * @description How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. A message alone may end `discarded`: the agent took it back unfinished, such as a reply whose model stream dropped and that the model writes again from the start, so hide it; snapshots and history leave it out. Treat an outcome you don't recognise as ended.
      * @enum {unknown}
      */
-    Outcome: "completed" | "stopped" | "interrupted" | "failed";
+    Outcome: "completed" | "stopped" | "interrupted" | "failed" | "discarded";
     /** @description Opaque. The server makes it for each entry. */
     DoneId: string;
     /** @description Opaque. The server makes it when a step starts. */
@@ -3052,6 +3052,8 @@ export interface components {
       read: components["schemas"]["MessageId"][];
       /** @description Present when the turn is a new attempt at a failed one. */
       retry_of?: components["schemas"]["TurnId"];
+      /** @description When the turn started, as in its `turn.started`, so an app can say how long the agent has been working. A turn is never failed for being quiet, so this is what tells you when it has gone on too long. Absent when the server no longer knows. */
+      started_at?: components["schemas"]["Timestamp"];
       /** @description The current live status, if there is one yet. */
       status: components["schemas"]["Status"] | null;
     };

@@ -340,6 +340,7 @@ const updatePlan = (state: TurnState, explanation: string | null, plan: readonly
 };
 
 const handledMethods = [
+  "error",
   "item/started",
   "item/completed",
   "item/agentMessage/delta",
@@ -378,6 +379,15 @@ const toTurnEnd = ({
 export const toEngineEvents = (state: TurnState, notification: ServerNotification): Mapped => {
   if (!isHandled(notification)) return { state, events: [] };
   switch (notification.method) {
+    // Codex lost the model's stream and tries again: the only sign of life it gives through a long wait. It keeps
+    // what the model finished and writes an unfinished message again from the start, under a new id, so the open one
+    // is over. An error it won't retry ends the turn with turn/completed.
+    case "error": {
+      const { error, willRetry } = notification.params;
+      return willRetry
+        ? { state: { ...state, openMessage: undefined }, events: [{ type: "reconnecting", detail: error.message }] }
+        : { state, events: [] };
+    }
     case "item/started": {
       return startItem(state, notification.params.item);
     }

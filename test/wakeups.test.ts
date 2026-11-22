@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { createCalendarSource } from "#calendar/caldav.ts";
 import { createCell } from "#cell.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
+import { pausedDetail, type WorkFailure } from "#engine/engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
 import type { Repeat, WakeUp, WakeUpList } from "#protocol/types.ts";
@@ -31,7 +32,11 @@ afterAll(() => {
 });
 
 // What Kumo does in the background when it wakes: given each prompt and its run, it may call tools and answers.
-type Act = (prompt: string, run: string, server: Server) => Promise<Result<string, string>>;
+// A failure in words is the model not answering; one with a code is as the engine reports it, such as a usage limit.
+type Act = (prompt: string, run: string, server: Server) => Promise<Result<string, string | WorkFailure>>;
+
+const toWorkFailure = (failure: string | WorkFailure): WorkFailure =>
+  typeof failure === "string" ? { code: "model_unavailable", detail: failure } : failure;
 
 const settle = async (rounds = 10): Promise<void> => {
   if (rounds === 0) return;
@@ -46,6 +51,8 @@ const setUp = (start = "2026-11-02T10:00:00.000Z", dav?: Dav) => {
   const clock = createVirtualClock(Date.parse(start));
   const prompts = createCell<readonly string[]>([]);
   const acts = createCell<readonly Act[]>([]);
+  // When the provider says its usage limit resets.
+  const resetsAt = createCell<number | undefined>(undefined);
   const live = createCell<Server | undefined>(undefined);
   const open = async (): Promise<Server> => {
     const server = createServer({
@@ -83,8 +90,10 @@ const setUp = (start = "2026-11-02T10:00:00.000Z", dav?: Dav) => {
             const [act] = acts.get();
             acts.update((current) => current.slice(1));
             const running = live.get();
-            return act && running ? act(prompt, run, running) : fail("The test has Kumo do nothing here.");
+            const done = act && running ? await act(prompt, run, running) : fail("The test has Kumo do nothing here.");
+            return done.ok ? done : fail(toWorkFailure(done.failure));
           },
+          () => resetsAt.get(),
         ),
     });
     server.store.setSetting(tokenSetting, hashToken(token));
@@ -104,7 +113,7 @@ const setUp = (start = "2026-11-02T10:00:00.000Z", dav?: Dav) => {
   const plan = (...given: readonly Act[]): void => {
     acts.update((current) => [...current, ...given]);
   };
-  return { open, runUntil, plan, prompts, clock };
+  return { open, runUntil, plan, prompts, clock, resetsAt };
 };
 
 const request = async (server: Server, method: "GET" | "PATCH" | "DELETE", url: string, payload?: unknown) => {
@@ -296,6 +305,84 @@ describe("wake-ups", () => {
       expect(server.store.desk().plans[0]?.repeat).toBeUndefined();
     } finally {
       await server.close();
+    }
+  });
+
+  it("wait through a usage limit without retrying, then catch up once, in one message", async () => {
+    const { open, runUntil, plan, prompts, resetsAt } = setUp();
+    const evening = {
+      what: "Ask what's left for tomorrow",
+      why: "They like the evening to close the day's loose ends.",
+      repeat: { days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], time: "16:00" },
+      asked: true,
+      source: { kind: "chat", title: "“Check in with me at four”" },
+    };
+    const mailLine = "Mail they got or sent: look through their inboxes and Sent";
+    const caughtUp =
+      "While I was paused by your plan's usage limit I missed the Halcyon debrief and today's check-in. " +
+      "How did the technical go?";
+    const first = await open();
+    await first.callTool("set_wake_up", interview);
+    await first.callTool("set_wake_up", evening);
+    plan(() => {
+      resetsAt.set(Date.parse("2026-11-02T18:00:00.000Z"));
+      return Promise.resolve(fail({ code: "usage_limit", detail: "You've hit your usage limit." }));
+    });
+
+    await runUntil("2026-11-02T15:31:00.000Z");
+
+    expect(first.store.problems()).toMatchObject([
+      { id: "kumo:paused", area: "kumo", title: "Kumo's paused until 18:00" },
+    ]);
+    expect(posts(first)).toEqual([]);
+    const waiting = await listed(first);
+    expect(waiting.map(({ at }) => at)).toEqual(["2026-11-02T15:30:00.000Z", "2026-11-02T16:00:00.000Z"]);
+    expect(await first.background.work("Look at a new mail", { missed: mailLine })).toEqual({
+      ok: false,
+      failure: pausedDetail,
+    });
+
+    // The repeating one comes due and waits too, and a restart keeps the pause.
+    await runUntil("2026-11-02T16:30:00.000Z");
+    await first.close();
+    const server = await open();
+    try {
+      expect(server.store.problems()).toMatchObject([{ id: "kumo:paused", title: "Kumo's paused until 18:00" }]);
+      await runUntil("2026-11-02T17:59:00.000Z");
+      expect(prompts.get()).toHaveLength(1);
+
+      const asked = createCell("");
+      plan((prompt) => {
+        asked.set(prompt);
+        return Promise.resolve(ok(caughtUp));
+      });
+      await runUntil("2026-11-02T18:01:00.000Z");
+
+      expect(prompts.get()).toHaveLength(2);
+      expect(asked.get()).toContain(interview.what);
+      expect(asked.get()).toContain(evening.what);
+      expect(asked.get()).toContain(`- ${mailLine}`);
+      expect(asked.get()).toContain("Don't message them with post as you go");
+      expect(posts(server)).toEqual([caughtUp]);
+      expect(server.store.problems()).toEqual([]);
+      expect(await listed(server)).toMatchObject([{ what: evening.what, at: "2026-11-03T16:00:00.000Z" }]);
+      expect(done(server)).toEqual(
+        expect.arrayContaining([
+          [`Woke up late for “${interview.what}”`, "Caught up after Kumo's pause", true],
+          [`Woke up late for “${evening.what}”`, "Caught up after Kumo's pause", true],
+        ]),
+      );
+    } finally {
+      await server.close();
+    }
+    // Over is over, across a restart too.
+    const after = await open();
+    try {
+      expect(after.background.paused()).toBeUndefined();
+      expect(after.background.isHolding()).toBe(false);
+      expect(after.store.problems()).toEqual([]);
+    } finally {
+      await after.close();
     }
   });
 

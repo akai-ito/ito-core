@@ -5,7 +5,7 @@ import { valuesSetting, type CheckResult, type Host } from "#capabilities/host.t
 import type { Values } from "#capabilities/manifest.ts";
 import type { AddressUse, Contacts, Recipient } from "#contacts/contacts.ts";
 import type { CardAnswer, DeskKeeper, NewCard } from "#desk/desk.ts";
-import type { Complete } from "#engine/engine.ts";
+import { pausedDetail, type Complete } from "#engine/engine.ts";
 import type { QuickChoice, StakesChoice } from "#engine/quick-model.ts";
 import {
   createMailSource,
@@ -1014,7 +1014,8 @@ export const createMailbox = ({
     const sender = await contacts?.known(mail.from.address);
     const prompt = workPrompt(account, mail, judged, folders.note(), sender);
     const done = await work(prompt, await stakesChoice(judged.stakes));
-    if (done.ok) return;
+    // While Kumo's paused by a usage limit, the catch-up after looks at it.
+    if (done.ok || done.failure === pausedDetail) return;
     desk.addDone({
       text: `Couldn't look at "${mail.subject}" from ${senderOf(mail)}; it's still in your inbox`,
       reason: done.failure,
@@ -1095,7 +1096,7 @@ export const createMailbox = ({
     const cards = desk.cards().filter(({ kind }) => kind !== "draft" && kind !== "invite");
     const blocks = comingUp().filter(({ calendar }) => calendar.kumo);
     const done = await work(sentPrompt(sent, cards, blocks));
-    if (done.ok) return;
+    if (done.ok || done.failure === pausedDetail) return;
     for (const { account, mail } of sent) {
       desk.addDone({
         text: `Couldn't bring things up to date with your mail "${mail.subject}"`,

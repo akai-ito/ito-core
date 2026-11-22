@@ -318,11 +318,15 @@ const toStoredTurn = (row: TurnRow): StoredTurn => ({
   outcome: row.outcome ?? undefined,
 });
 
-const toLiveTurn = (row: TurnRow): LiveTurn => ({
+// A message the agent took back unfinished, ended discarded, is out of everything read from the conversation.
+const kept = "outcome IS NOT 'discarded'";
+
+const toLiveTurn = (row: TurnRow, startedAt: string | undefined): LiveTurn => ({
   id: row.id,
   inputs: [...parseIds(row.inputs)],
   read: [...parseIds(row.read)],
   ...(row.retry_of && { retry_of: row.retry_of }),
+  ...(startedAt !== undefined && { started_at: startedAt }),
   status: row.status ? (JSON.parse(row.status) as Status) : null,
 });
 
@@ -393,6 +397,16 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       append(build({ id: identifiers.event(), at: now() }, nextSeq()));
     });
   };
+
+  // When a turn started, from its turn.started in the log, unless that's been compacted away.
+  const turnStartedAt = (turn: string): string | undefined =>
+    (
+      database
+        .prepare(
+          "SELECT at FROM events WHERE type = 'turn.started' AND json_extract(body, '$.turn') = ? ORDER BY seq DESC LIMIT 1",
+        )
+        .get(turn) as { readonly at: string } | undefined
+    )?.at;
 
   const stepsFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Step[] =>
     (
@@ -519,7 +533,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       const latest = database.prepare("SELECT seq, id FROM events ORDER BY seq DESC LIMIT 1").get() as
         { readonly seq: number; readonly id: string } | undefined;
       const rows = database
-        .prepare("SELECT * FROM messages ORDER BY position DESC LIMIT ?")
+        .prepare(`SELECT * FROM messages WHERE ${kept} ORDER BY position DESC LIMIT ?`)
         .all(snapshotSize + 1) as unknown as readonly MessageRow[];
       const turn = database
         .prepare("SELECT * FROM turns WHERE outcome IS NULL ORDER BY position DESC LIMIT 1")
@@ -541,7 +555,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           asks: window[0] ? [...asksFrom(window[0].position)] : [],
           calls: [...callsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
           topics: [...topicsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
-          turn: turn ? toLiveTurn(turn) : null,
+          turn: turn ? toLiveTurn(turn, turnStartedAt(turn.id)) : null,
           next: next.map((row) => row.message),
           desk: currentDesk(),
           ...(currentOnboarding().state !== "done" && { onboarding: currentOnboarding() }),
@@ -747,7 +761,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       return rows.toReversed().map((row) => {
         const inputs = parseIds(row.inputs).flatMap((id) => messageRow(id) ?? []);
         const replies = database
-          .prepare("SELECT text FROM messages WHERE turn = ? AND kind = 'reply' ORDER BY position")
+          .prepare(`SELECT text FROM messages WHERE turn = ? AND kind = 'reply' AND ${kept} ORDER BY position`)
           .all(row.id) as unknown as readonly { readonly text: string }[];
         return {
           turn: toTurnId(row.id),
@@ -780,7 +794,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         { readonly position: number } | undefined;
       if (!anchor) return fail("not_found");
       const rows = database
-        .prepare("SELECT * FROM messages WHERE position < ? ORDER BY position DESC LIMIT ?")
+        .prepare(`SELECT * FROM messages WHERE position < ? AND ${kept} ORDER BY position DESC LIMIT ?`)
         .all(anchor.position, limit + 1) as unknown as readonly MessageRow[];
       const page = rows.slice(0, limit).toReversed();
       return ok({
@@ -798,7 +812,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     latestMessages: (limit) =>
       (
         database
-          .prepare("SELECT * FROM messages WHERE text != '' ORDER BY position DESC LIMIT ?")
+          .prepare(`SELECT * FROM messages WHERE text != '' AND ${kept} ORDER BY position DESC LIMIT ?`)
           .all(limit) as unknown as readonly MessageRow[]
       )
         .toReversed()
@@ -1071,7 +1085,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     lastReply: (turn) => {
       const row = database
         .prepare(
-          "SELECT id, text FROM messages WHERE turn = ? AND kind = 'reply' AND text != '' ORDER BY position DESC LIMIT 1",
+          `SELECT id, text FROM messages WHERE turn = ? AND kind = 'reply' AND text != '' AND ${kept} ORDER BY position DESC LIMIT 1`,
         )
         .get(turn) as { readonly id: string; readonly text: string } | undefined;
       return row ? { id: toMessageId(row.id), text: row.text } : undefined;
