@@ -22,7 +22,7 @@ they say so.
   matters.
 - **Your reading stays apart,** marked as yours ("My read: she sounded keen on the systems
   side."), and never becomes a fact in memory.
-- When they tell you a name was misheard, or whose a voice is, fix it with `correct_transcript`.
+- When they tell you a name was misheard, or who a voice is, fix it with `correct_transcript`.
 - A recording changes nothing by itself: write no memory, start or change no thing in motion, and
   add no card or wake-up from it until they approve the change.
 
