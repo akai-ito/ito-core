@@ -169,6 +169,7 @@ describe("recordings", () => {
     const [prompt = ""] = prompts();
     expect(prompt).toContain(`A recording they sent is transcribed: Interview.m4a (${id}), 62 seconds long`);
     expect(prompt).toContain('sent with the words: "How did my interview go?"');
+    expect(prompt).toContain("post in a new one (new_thread)");
     expect(prompt).toContain("Propose, don't do");
     expect(prompt).toContain("as one ari:proposals block");
     expect(prompt).toContain(`[18:42](recording:${id}?t=18:42)`);

@@ -22,7 +22,7 @@ export type RecordingsOptions = {
   readonly database: DatabaseSync;
   readonly store: Pick<
     Store,
-    "subscribe" | "recordRecording" | "messageText" | "runningTurn" | "pendingWork" | "findAttachment"
+    "subscribe" | "recordRecording" | "messageText" | "findMessage" | "runningTurn" | "pendingWork" | "findAttachment"
   >;
   readonly attachments: Pick<Attachments, "pathOf" | "remove">;
   readonly voice: Pick<VoiceLoop, "readiness" | "transcribe" | "cancelTranscription">;
@@ -187,12 +187,17 @@ export const createRecordings = (options: RecordingsOptions): Recordings => {
 
   const followUpPrompt = (recording: Recording, heard: HeardRecording): string => {
     const said = store.messageText(toMessageId(recording.message))?.trim() ?? "";
+    const thread = store.findMessage(toMessageId(recording.message))?.thread;
     const voices = heard.speakers.length;
     return [
       `A recording they sent is transcribed: ${recording.name} (${recording.attachment}), ` +
         `${minutes(heard.seconds)} long, ${voices > 1 ? `${String(voices)} voices told apart` : "one voice heard"}` +
         `${said === "" ? "" : `, sent with the words: "${said}"`}.`,
       "Read it with read_recording before you say anything about it: use from to read on, and find for a topic.",
+      thread === undefined
+        ? "A recording starts its own thread: post in a new one (new_thread), titled for what it was, such as " +
+          '"Interview debrief".'
+        : `It was sent in a thread, ${thread}: post there (thread).`,
       "Then message them once with post; longer than usual is right here. Say what it was in a line, then what",
       "they'd want from it: for an interview or a meeting, a debrief of how it went, what landed, what to improve and",
       "the follow-ups it implies. Your take comes first. Quote the transcript with its times for what was said, each",
