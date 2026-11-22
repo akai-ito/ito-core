@@ -9,7 +9,7 @@ import type { Message, Recording, Transcript, TranscriptCorrection } from "#prot
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
 import type { Info } from "#turns/turns.ts";
-import { toMessageId } from "#conversation/ids.ts";
+import { toMessageId, toThreadId } from "#conversation/ids.ts";
 import type { HeardRecording, TranscriptionFailure, VoiceLoop, Voiceprint } from "#voice/loop.ts";
 import { toTranscript, withCorrection, type StoredTranscript } from "#recordings/transcripts.ts";
 
@@ -181,9 +181,15 @@ export const createRecordings = (options: RecordingsOptions): Recordings => {
       .get() as Row | undefined;
 
   // Whether a turn in the chat may still read it: its message waits for one, or one is running now.
-  const isTaken = (message: string): boolean =>
-    store.runningTurn() !== undefined ||
-    store.pendingWork().some((pending) => pending.kind === "message" && pending.message === message);
+  // A turn in the conversation the message is in, the main chat or its thread, is running or about to take it.
+  const isTaken = (message: string): boolean => {
+    const place = store.findMessage(toMessageId(message))?.thread;
+    const thread = place === undefined ? undefined : toThreadId(place);
+    return (
+      store.runningTurn(thread) !== undefined ||
+      store.pendingWork(thread).some((pending) => pending.kind === "message" && pending.message === message)
+    );
+  };
 
   const followUpPrompt = (recording: Recording, heard: HeardRecording): string => {
     const said = store.messageText(toMessageId(recording.message))?.trim() ?? "";
