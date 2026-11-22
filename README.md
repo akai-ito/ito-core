@@ -248,7 +248,9 @@ building blocks the server holds it to ([guarantees](protocol/guarantees.md#how-
    messages you, moves it or drops it ([wakeups.ts](src/wakeups/wakeups.ts)).
 3. **It wakes on what happens:** a new mail over IMAP IDLE, a change on your calendars (polled over
    CalDAV), or a move to another time zone.
-4. **It acts and records**, as above.
+4. **It acts and records**, as above. The Desk's cards are the same in the chat: once you settle
+   one there, Kumo answers, changes or clears it, and a card that only mattered until a moment
+   leaves by itself then.
 
 When Kumo's model can't act, nothing templated goes out in its place: what was due waits, the
 problem shows in the app, and Kumo catches up once the model answers.

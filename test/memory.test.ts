@@ -88,23 +88,122 @@ afterAll(() => {
 });
 
 describe("memory", () => {
-  it("keeps the pages in mind short, and says where the detail goes", async () => {
+  it("never squeezes the pages in mind to a limit, and nudges a long one to move its detail out", async () => {
     const { memory } = await openMemory();
 
-    const refused = await write(memory, { address: "memory:now", body: "a".repeat(2001) });
     const saved = await write(memory, {
       address: "memory:now",
       body: "Training for Valencia (as of 22 Oct).",
     });
+    const long = `As of 22 Oct, you're training for Valencia. ${"Easy miles by the river most mornings. ".repeat(80)}`;
+    const edited = await edit(memory, {
+      address: "memory:now",
+      old_text: "Training for Valencia (as of 22 Oct).",
+      new_text: long,
+    });
 
-    expect(refused).toEqual({
-      text:
-        "Now is 2002 characters, over the 2000 it can hold. Keep it to what matters on every turn, and move " +
-        "the detail to a page on a shelf.",
+    expect(saved.text).toMatch(/^Saved Now, at version \w{10}\.$/u);
+    expect(edited.isError).toBeUndefined();
+    expect(edited.text).toMatch(
+      /^Saved Now, now at version \w{10}\. Now runs to 568 words, and it's in your mind on every turn\. When you're next in it, move what isn't needed every turn to a shelf page or ## Earlier, in whole sentences; never shorten words or drop spaces to make it fit\.$/u,
+    );
+    expect(memory.inMindText()).toContain(
+      "## Now (memory:now)\n\nAs of 22 Oct, you're training for Valencia. Easy miles",
+    );
+  });
+
+  it("keeps their words, Kumo's account and Kumo's reading apart, and keeps a reading off the pages", async () => {
+    const { memory, directory } = await openMemory();
+    await write(memory, { address: "memory:people/sam", title: "Sam", body: "A friend from running (as of 1 Nov)." });
+
+    await call(memory, "journal", {
+      text: "I'm tired of the commute.",
+      yours: true,
+      gist: "A long day",
+      note: "Theirs",
+    });
+    await call(memory, "journal", { text: "You talked about moving.", gist: "A long day", note: "Talked" });
+    const read = await call(memory, "journal", {
+      text: "You seemed flat\nafter the call.",
+      reading: true,
+      gist: "A long day",
+      note: "How you seemed",
+    });
+    const both = await call(memory, "journal", { text: "Hm.", yours: true, reading: true, gist: "A", note: "B" });
+    const onPage = await edit(memory, {
+      address: "memory:people/sam",
+      old_text: "A friend from running",
+      new_text: "A friend from running. My reading: you're drifting apart",
+    });
+    const newPage = await write(memory, {
+      address: "memory:topics/moving",
+      title: "Moving",
+      body: "_My reading:_ you want out of London.",
+    });
+    const day = await call(memory, "read_page", { address: "memory:journal/2026-10-26" });
+
+    expect(read.text).toBe("Added to today's journal.");
+    expect(day.text).toContain("> I'm tired of the commute.");
+    expect(day.text).toContain("You talked about moving.");
+    expect(day.text).toContain("_My reading:_ You seemed flat after the call.");
+    expect(both).toEqual({
+      text: "Their own words aren't your reading: give yours or reading, not both.",
       isError: true,
     });
-    expect(saved.text).toMatch(/^Saved Now, at version \w{10}\.$/u);
-    expect(memory.inMindText()).toContain("## Now (memory:now)\n\nTraining for Valencia (as of 22 Oct).");
+    expect(onPage).toEqual({
+      text:
+        "That's your reading of them, and a page keeps what they told you and what happened. A reading stays in " +
+        "the journal, marked as yours; ask them before anything like it becomes part of a page.",
+      isError: true,
+    });
+    expect(newPage).toMatchObject({ isError: true });
+    expect(git(path.join(directory, "thread"), "log", "--format=%s")).not.toContain("Add Moving");
+  });
+
+  it("finds every copy of a claim, gists and journal days included, and lists what a correction left", async () => {
+    const { memory } = await openMemory();
+    await write(memory, {
+      address: "memory:people/sam",
+      title: "Sam",
+      body: "A friend from running (as of 1 Nov).\nYou're worried Sam is pulling away.",
+    });
+    await write(memory, { address: "memory:now", body: "As of 26 Oct, you're settling into the new flat." });
+    await call(memory, "journal", {
+      text: "Ran with Sam; you seemed worried Sam is pulling away.",
+      gist: "Sam pulling away?",
+      note: "Ran with Sam",
+    });
+
+    const found = await call(memory, "find_in_memory", { words: ["pulling away"] });
+    const tooShort = await call(memory, "find_in_memory", { words: ["a"] });
+    const corrected = await edit(memory, {
+      address: "memory:people/sam",
+      old_text: "\nYou're worried Sam is pulling away.",
+      new_text: "",
+      corrects: ["pulling away"],
+    });
+    const fixedDay = await edit(memory, {
+      address: "memory:journal/2026-10-26",
+      old_text: "; you seemed worried Sam is pulling away",
+      new_text: ", an easy 8 km by the river together",
+      gist: "Ran with Sam",
+    });
+    const settled = await edit(memory, {
+      address: "memory:people/sam",
+      old_text: "A friend",
+      new_text: "A good friend",
+      corrects: ["pulling away"],
+    });
+
+    expect(found.text).toMatch(
+      /^memory:journal\/2026-10-26 \(26 October 2026, version \w{10}\)\n {2}gist: Sam pulling away\?\n {2}3 {2}Ran with Sam; you seemed worried Sam is pulling away\.\nmemory:people\/sam \(Sam, version \w{10}\)\n {2}2 {2}You're worried Sam is pulling away\.$/u,
+    );
+    expect(tooShort).toEqual({ text: "Give a word or phrase of three letters or more to find.", isError: true });
+    expect(corrected.text).toMatch(
+      /^Saved Sam, now at version \w{10}\. Still said elsewhere, so put each right too:\nmemory:journal\/2026-10-26 \(26 October 2026, version \w{10}\)\n {2}gist: Sam pulling away\?\n {2}3 {2}Ran with Sam; you seemed worried Sam is pulling away\.$/u,
+    );
+    expect(fixedDay.text).toMatch(/^Saved 26 October 2026/u);
+    expect(settled.text).toMatch(/^Saved Sam, now at version \w{10}\. No other page says it\.$/u);
   });
 
   it("links a People page to the person's card in Contacts, and only a People page", async () => {

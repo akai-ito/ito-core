@@ -97,6 +97,8 @@ Ari remembers you in the Thread, a git repository of Markdown pages in `~/.ito/t
 read without Ito: your portrait, what's going on now, how you like to be helped, pages on people,
 goals, projects, places and topics, and a journal. Ari writes it as you talk, and finds things in it
 and in past conversations with a small embedding model it downloads once and runs on the CPU.
+Your own words stay apart from Kumo's reading of you: a reading lives only in the journal, marked as
+Kumo's, and when you correct something, Kumo finds every copy, journal previews included.
 A photo you share in the chat can stay with the story: Kumo puts it where it belongs in the journal
 or on a page, and the Thread keeps a copy in its `media` folder, scaled down to at most 2,000 pixels
 on the long edge as JPEG, without its location or camera details, so it goes to the backup too.

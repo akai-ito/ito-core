@@ -12,9 +12,11 @@ import {
   appendEntry,
   dayTitle,
   formatPage,
-  inMindLimit,
   inMindPages,
   inMindTitles,
+  inMindWords,
+  isReading,
+  linesWith,
   parsePage,
   shelves,
   toAddress,
@@ -23,6 +25,7 @@ import {
   toLocation,
   toMarkdown,
   toTimeOfDay,
+  wordsIn,
   type InMindPage,
   type Location,
   type Page,
@@ -45,7 +48,7 @@ import { withoutBlocks } from "#replies/blocks.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { MemoryStore } from "#store/memory.ts";
 import type { Settings } from "#store/store.ts";
-import { createMemoryTools, type Saved } from "#memory/tools.ts";
+import { createMemoryTools, type Copy, type Saved } from "#memory/tools.ts";
 import { fieldOf, stringsOf, textOf } from "#tools/input.ts";
 import type { Tool } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
@@ -192,9 +195,23 @@ const onlyPeople = "Only a page about one person has a circle.";
 
 const onlyPeopleContact = "Only a page about one person links to a contact.";
 
-const tooLong = (title: string, length: number): string =>
-  `${title} is ${String(length)} characters, over the ${String(inMindLimit)} it can hold. Keep it to what matters ` +
-  "on every turn, and move the detail to a page on a shelf.";
+// A page in mind that's grown long: a nudge for next time, never a refusal, so nothing is squeezed to fit.
+const longNote = (title: string, markdown: string): string | undefined => {
+  const words = wordsIn(markdown);
+  return words <= inMindWords
+    ? undefined
+    : `${title} runs to ${String(words)} words, and it's in your mind on every turn. When you're next in it, move ` +
+        "what isn't needed every turn to a shelf page or ## Earlier, in whole sentences; never shorten words or " +
+        "drop spaces to make it fit.";
+};
+
+const readingOnPage =
+  "That's your reading of them, and a page keeps what they told you and what happened. A reading stays in the " +
+  "journal, marked as yours; ask them before anything like it becomes part of a page.";
+
+const minimumWord = 3;
+
+const mostCopies = 20;
 
 const fallbackTitle = (location: Location): string =>
   isInMindPage(location.shelf)
@@ -423,6 +440,48 @@ export const createMemory = ({
     return ok(id);
   };
 
+  // Every page that still says any of the words, in its body, title or gist (a journal day's gist is its preview),
+  // journal days and the pages in mind included, so a correction can reach every copy.
+  const findCopies = async (given: readonly string[], except?: string): Promise<readonly Copy[]> => {
+    const words = given.map((word) => word.trim().toLowerCase()).filter((word) => word.length >= minimumWord);
+    if (words.length === 0) return [];
+    const says = (text: string | undefined): boolean =>
+      text !== undefined && words.some((word) => text.toLowerCase().includes(word));
+    const found = opened()
+      .files()
+      .map((file) => toLocation(toAddress(file)))
+      .filter((location) => location.ok)
+      .map(({ value: location }) => ({ location, page: readParsed(location) }))
+      .filter(
+        (entry): entry is { readonly location: Location; readonly page: Page } =>
+          entry.page !== undefined && entry.location.address !== except,
+      )
+      .map(({ location, page }) => ({
+        location,
+        page,
+        lines: linesWith(page.markdown, words),
+        inGist: says(page.gist),
+        inTitle: says(page.title),
+      }))
+      .filter(({ lines, inGist, inTitle }) => lines.length > 0 || inGist || inTitle)
+      .toSorted((left, right) => left.location.address.localeCompare(right.location.address))
+      .slice(0, mostCopies);
+    return Promise.all(
+      found.map(async ({ location, page, lines, inGist, inTitle }) => ({
+        address: location.address,
+        title: page.title,
+        version: (await currentVersion(location)) ?? "",
+        lines,
+        ...(inGist && page.gist !== undefined && { gist: page.gist }),
+        ...(inTitle && { inTitle }),
+      })),
+    );
+  };
+
+  // After a correction, the copies it hasn't reached yet; undefined when nothing was being corrected.
+  const copiesOf = async (words: readonly string[], except: string): Promise<readonly Copy[] | undefined> =>
+    words.some((word) => word.trim().length >= minimumWord) ? findCopies(words, except) : undefined;
+
   const writePage = (input: unknown): Promise<Result<{ readonly title: string; readonly change: string }, string>> =>
     serially(async () => {
       const location = toLocation(textOf(input, "address").trim());
@@ -433,7 +492,6 @@ export const createMemory = ({
         ? fallbackTitle(location.value)
         : textOf(input, "title").trim() || (existing?.title ?? fallbackTitle(location.value));
       const markdown = toMarkdown(textOf(input, "body"));
-      if (isFixed && markdown.length > inMindLimit) return fail(tooLong(title, markdown.length));
       const gist = toOneLine(textOf(input, "gist")) || existing?.gist;
       const note = toOneLine(textOf(input, "note")) || undefined;
       const circle = toOneLine(textOf(input, "circle")) || existing?.circle;
@@ -468,9 +526,13 @@ export const createMemory = ({
       if (!words.ok) return words;
       const title = dayTitle(day);
       const existing = readPage(location.value);
+      const isYours = fieldOf(input, "yours") === true;
+      const isTheirReading = fieldOf(input, "reading") === true;
+      if (isYours && isTheirReading)
+        return fail("Their own words aren't your reading: give yours or reading, not both.");
       const entry = toJournalEntry(
         words.value.markdown,
-        fieldOf(input, "yours") === true,
+        isYours ? "yours" : isTheirReading ? "reading" : "account",
         toTimeOfDay(clock.now(), timeZone()),
       );
       const text = formatPage({
@@ -524,6 +586,7 @@ export const createMemory = ({
           `${existing.title} has changed since you read it: it's at version ${version} now. Read it again, then edit.`,
         );
       }
+      if (location.value.shelf !== "journal" && isReading(textOf(input, "new_text"))) return fail(readingOnPage);
       const replacement = await keep(textOf(input, "new_text"), location.value);
       if (!replacement.ok) return replacement;
       const bodyEdit = toBodyEdit(input, replacement.value.markdown);
@@ -538,7 +601,6 @@ export const createMemory = ({
       }
       const isFixed = isInMindPage(location.value.shelf);
       const title = isFixed ? existing.title : textOf(input, "title").trim() || existing.title;
-      if (isFixed && markdown.value.length > inMindLimit) return fail(tooLong(title, markdown.value.length));
       const gist = toOneLine(textOf(input, "gist")) || existing.gist;
       const circle = toOneLine(textOf(input, "circle"));
       if (circle !== "" && location.value.shelf !== "people") return fail(onlyPeople);
@@ -565,14 +627,17 @@ export const createMemory = ({
         toOneLine(textOf(input, "note")),
         replacement.value.files,
       );
-      return committed.ok
-        ? ok({
-            title,
-            change: committed.value,
-            version: (await currentVersion(location.value)) ?? "",
-            photos: replacement.value.count,
-          })
-        : committed;
+      if (!committed.ok) return committed;
+      const copies = await copiesOf(stringsOf(input, "corrects"), location.value.address);
+      const long = isFixed ? longNote(title, markdown.value) : undefined;
+      return ok({
+        title,
+        change: committed.value,
+        version: (await currentVersion(location.value)) ?? "",
+        photos: replacement.value.count,
+        ...(long !== undefined && { note: long }),
+        ...(copies && { copies }),
+      });
     });
 
   const writeNewPage = (input: unknown): Promise<Result<Saved, string>> =>
@@ -584,15 +649,13 @@ export const createMemory = ({
         return fail(`${existing.title} is already a page. Read it with read_page, then change it with edit_page.`);
       }
       if (toMarkdown(textOf(input, "body")) === "") return fail("A new page needs a body.");
+      if (location.value.shelf !== "journal" && isReading(textOf(input, "body"))) return fail(readingOnPage);
       const body = await keep(textOf(input, "body"), location.value);
       if (!body.ok) return body;
       const markdown = toMarkdown(body.value.markdown);
       const title = isInMindPage(location.value.shelf)
         ? fallbackTitle(location.value)
         : textOf(input, "title").trim() || fallbackTitle(location.value);
-      if (isInMindPage(location.value.shelf) && markdown.length > inMindLimit) {
-        return fail(tooLong(title, markdown.length));
-      }
       const circle = toOneLine(textOf(input, "circle"));
       if (circle !== "" && location.value.shelf !== "people") return fail(onlyPeople);
       const contact = toOneLine(textOf(input, "contact"));
@@ -614,12 +677,14 @@ export const createMemory = ({
         toOneLine(textOf(input, "note")),
         body.value.files,
       );
+      const long = isInMindPage(location.value.shelf) ? longNote(title, markdown) : undefined;
       return committed.ok
         ? ok({
             title,
             change: committed.value,
             version: (await currentVersion(location.value)) ?? "",
             photos: body.value.count,
+            ...(long !== undefined && { note: long }),
           })
         : committed;
     });
@@ -746,6 +811,7 @@ export const createMemory = ({
     forget: forgetPage,
     restore: restorePage,
     journal: writeJournal,
+    findCopies,
     recordStep,
     approve,
   });

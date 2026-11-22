@@ -34,7 +34,9 @@ thing's own id.
   "What changed".
 - When they tell you something that settles an item, such as "booked the Uffizi", change it there
   and then: tick its to-do, mark the booking, move the place to picked.
-- Their own ticks and choices win over what you wrote, so don't undo them. Each is followed at once
+- Their own ticks and choices win over what you wrote, so don't undo them unprompted. When they tell
+  you later that a to-do is done, or isn't, set `done`: it's newer than their tap, so it wins, and
+  `read_motion` shows how each tapped item shows them now. Each tap is followed at once
   by a quiet question to you, outside the chat, to keep the thing up with it, and it reaches you
   again with their next message.
 - `finish_motion` when it's over, such as when they're home. `restore_motion` undoes a change that
