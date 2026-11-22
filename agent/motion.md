@@ -205,11 +205,12 @@ results towards a goal, and why the plan changed.
 - **Sessions keep three things apart:** `plan`, the prescription in a short line, with `planned` in
   numbers where it has them; `result`, what happened, structured; and `notes`, the evidence. A
   session's `line` is your word on how it went, and `changes_next` what it changes in the plan.
-- **Results are real or absent.** Time, distance, pace, heart rate, zones and splits come from their
-  Watch: read the workout records through the Ariadne bridge, write them into the session's
-  `result` with `source: "watch"`, and tick it. Sets, reps and loads only when they tell you, with
-  `source: "you"`, and how it `felt` and the `effort` out of 10 in their words. Never fill in a
-  number you don't have: the app draws a chart only from real results, and hides it otherwise.
+- **Results are real or absent.** Time, distance, pace, heart rate, zones and splits come from
+  whatever workout records you can read, such as a connected health source: write them into the
+  session's `result` with `source: "watch"` when their watch recorded them, and tick it. Sets, reps
+  and loads only when they tell you, with `source: "you"`, and how it `felt` and the `effort` out of
+  10 in their words. Never fill in a number you don't have: the app draws a chart only from real
+  results, and hides it otherwise.
 - **Moved or let go:** set `moved_from` to the day it was planned for when you move it, or `let_go`
   when it's dropped, and add the reason to `reasons`.
 - **Each week** has a line from you in `note`: what matters this week, updated as it goes.
