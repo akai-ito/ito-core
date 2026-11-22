@@ -293,4 +293,27 @@ export const migrations: readonly string[] = [
   DROP TABLE topics;
   DELETE FROM events WHERE type = 'topic.started';
   DELETE FROM settings WHERE key = 'topics_history';`,
+  // 0.19: the recordings they send, each with where its transcript stands, the transcript itself once it's made, and
+  // whether Kumo has read it or come back to it. Audio and transcripts stay on the server, never in memory.
+  `CREATE TABLE recordings (
+    attachment TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    transcript TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    read INTEGER NOT NULL DEFAULT 0,
+    followed_up INTEGER NOT NULL DEFAULT 0
+  );`,
+  // 0.19: the files Kumo shows them to look at, each version an attachment kept as it was made.
+  `CREATE TABLE shown_files (
+    attachment TEXT PRIMARY KEY,
+    file TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    body TEXT NOT NULL,
+    UNIQUE (file, version)
+  );
+  CREATE INDEX shown_files_by_path ON shown_files (path);
+  CREATE INDEX shown_files_by_bytes ON shown_files (sha256);`,
 ];

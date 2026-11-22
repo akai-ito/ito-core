@@ -68,6 +68,91 @@
           }
         }
       }
+    },
+    "File": {
+      "title": "ari:file",
+      "description": "A file Ari made or changed for you to look at before it goes anywhere, such as a PDF, at one version. Draw it as a card with its name, kind, size and version that opens a preview (a PDF's pages) and shares it. `GET /v0/files/{file}` gives its versions and their attachments; fetch the bytes, exactly as made, with `GET /v0/attachments/{attachment}`. When a newer version exists, say so on the card. Feedback on a card is about its version.",
+      "type": "object",
+      "required": ["file", "version"],
+      "properties": {
+        "file": { "$ref": "events.schema.json#/$defs/FileId" },
+        "version": { "description": "Which version this card shows.", "type": "integer", "minimum": 1 }
+      }
+    },
+    "Proposals": {
+      "title": "ari:proposals",
+      "description": "Changes Ari proposes and hasn't made, such as after reading a recording: each row one change, with Skip and its own verb. Nothing is applied until you tap the verb, and there's no accepting them all. A tapped verb sends your message with an `ari:decision` block, and Ari then makes that change and says so; the row shows its `done` line with Undo, which sends `undo`. Skip stays on your phone and never reaches Ari. Show how many are done, such as \"1 of 3 done\".",
+      "type": "object",
+      "required": ["items"],
+      "properties": {
+        "title": {
+          "description": "A heading over them, such as \"What I'd change\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["id", "title", "verb", "done"],
+            "properties": {
+              "id": {
+                "description": "The row's id, unique in the block, which its decision names.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "kind": {
+                "description": "What it changes, for its symbol: `calendar`, `draft` (a mail draft, never sent), `memory`, `desk`, `motion`, `wakeup` or `other`. Draw a kind you don't know as `other`.",
+                "type": "string"
+              },
+              "title": {
+                "description": "The change, such as \"Hold Thursday 15:00 for the CTO round\".",
+                "type": "string",
+                "minLength": 1
+              },
+              "detail": { "description": "One line on why or how.", "type": "string" },
+              "verb": {
+                "description": "Its button, a word or two, such as \"Add\", \"Draft it\" or \"Keep\".",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20
+              },
+              "done": {
+                "description": "What the row says once accepted, such as \"Added to your calendar\".",
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "Decision": {
+      "title": "ari:decision",
+      "description": "In your message, not Ari's: the row of an `ari:proposals` block you tapped. `accept` asks Ari to make exactly that change now; `undo` to take back what it made for it. The message's first line says the same in words, which is what the chat shows; the app leaves the block out of your bubble.",
+      "type": "object",
+      "required": ["message", "item", "choice"],
+      "properties": {
+        "message": {
+          "description": "Ari's message that holds the block.",
+          "$ref": "events.schema.json#/$defs/MessageId"
+        },
+        "item": { "description": "The row's `id`.", "type": "string", "minLength": 1 },
+        "choice": { "enum": ["accept", "undo"] }
+      }
+    },
+    "Attach": {
+      "title": "ari:attach",
+      "description": "In your message, not Ari's: \"Use in draft\" on a file Ari showed. Ari attaches exactly that version, which waits in its workspace at `shown/<file>/v<version>/<name>`, to the mail draft it's for, and never sends it. The message's first line says the same in words; the app leaves the block out of your bubble.",
+      "type": "object",
+      "required": ["file", "version"],
+      "properties": {
+        "file": { "$ref": "events.schema.json#/$defs/FileId" },
+        "version": { "type": "integer", "minimum": 1 }
+      }
     }
   }
 }

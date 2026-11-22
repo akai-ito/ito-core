@@ -39,6 +39,14 @@ import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { createAttachments, type Attachments } from "#attachments/attachments.ts";
+import {
+  createUploads,
+  defaultLimits as defaultUploadLimits,
+  type Limits as UploadLimits,
+} from "#attachments/uploads.ts";
+import { createRecordings, type Recordings } from "#recordings/recordings.ts";
+import { createRecordingTools } from "#recordings/tools.ts";
+import { createShownFiles, type ShownFiles } from "#files/files.ts";
 import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
 import { createNotifier } from "#notifications/notifier.ts";
 import { openDatabase } from "#store/database.ts";
@@ -116,6 +124,9 @@ export type ServerOptions = {
   readonly createMailSource?: CreateMailSource;
   readonly github?: GitHubHosts;
   readonly backupCheckMs?: number;
+  // The largest big upload of each kind, and the largest chunk; ITO_MAX_RECORDING_MB and ITO_MAX_FILE_MB set them.
+  readonly uploadLimits?: Partial<UploadLimits>;
+  readonly freeBytes?: (directory: string) => number;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts };
@@ -137,6 +148,8 @@ export type Server = {
   readonly store: Store;
   readonly turns: Lanes;
   readonly attachments: Attachments;
+  readonly recordings: Recordings;
+  readonly files: ShownFiles;
   readonly host: Host;
   readonly memory: Memory;
   readonly backup: Backup;
@@ -327,6 +340,7 @@ export const createServer = (options: ServerOptions): Server => {
       deskLine.inMindText(),
       desk.inMindText(),
       picture.inMindText(),
+      recordings.inMindText(),
       latelyText(),
       threads.backgroundText(),
     ]
@@ -350,6 +364,7 @@ export const createServer = (options: ServerOptions): Server => {
         deskLine.inMindText(),
         desk.inMindText(),
         picture.inMindText(),
+        recordings.inMindText(),
         gettingStarted.inMindText(),
         callContext(),
       ]
@@ -376,6 +391,13 @@ export const createServer = (options: ServerOptions): Server => {
       log,
     }) ?? noVoice("This server runs without a voice.");
   const attachments = createAttachments(store, path.join(options.dataDirectory, "attachments"));
+  const uploads = createUploads({
+    directory: path.join(options.dataDirectory, "uploads"),
+    attachments,
+    clock,
+    ...(options.uploadLimits && { limits: options.uploadLimits }),
+    ...(options.freeBytes && { freeBytes: options.freeBytes }),
+  });
   const turns = createLanes({
     store,
     engine,
@@ -469,6 +491,26 @@ export const createServer = (options: ServerOptions): Server => {
     isHolding: () => background.isHolding(),
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
+  const files = createShownFiles({
+    database,
+    attachments,
+    store,
+    newAttachment: () => identifiers.attachment(),
+    workspace: path.join(options.dataDirectory, "workspace"),
+    maxBytes: options.uploadLimits?.fileBytes ?? defaultUploadLimits.fileBytes,
+    clock,
+  });
+  const recordings = createRecordings({
+    database,
+    store,
+    attachments,
+    voice,
+    voiceprint: () => voiceprints.load(),
+    work: (prompt) => runWork(prompt),
+    workspace: path.join(options.dataDirectory, "workspace"),
+    clock,
+    info,
+  });
   const calls = createCalls({
     store,
     turns,
@@ -679,6 +721,9 @@ export const createServer = (options: ServerOptions): Server => {
     info: { name: options.name, version: packageVersion() },
     gate: createGate(() => [store.setting(tokenSetting) ?? "", ...store.pairedTokenHashes()].filter(Boolean), clock),
     attachments,
+    uploads,
+    recordings,
+    files,
     host,
     memory,
     backup,
@@ -743,6 +788,8 @@ export const createServer = (options: ServerOptions): Server => {
     ...wakeUps.tools,
     ...mail.tools,
     ...gettingStarted.tools,
+    ...createRecordingTools(recordings),
+    files.tool,
     ...createDemoTools({
       store,
       desk,
@@ -791,6 +838,7 @@ export const createServer = (options: ServerOptions): Server => {
   const compact = (): void => {
     store.compact(toTimestamp(clock.now() - textRetentionMs));
     attachments.sweep(toTimestamp(clock.now() - dayMs));
+    uploads.sweep();
     compaction.set(clock.after(dayMs, compact));
   };
   compact();
@@ -819,6 +867,7 @@ export const createServer = (options: ServerOptions): Server => {
     await engine.close();
     await host.close();
     await calls.close();
+    await recordings.close();
     await voice.close();
     await memory.close();
     apns.close();
@@ -831,6 +880,8 @@ export const createServer = (options: ServerOptions): Server => {
     store,
     turns,
     attachments,
+    recordings,
+    files,
     host,
     memory,
     backup,

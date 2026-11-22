@@ -7,7 +7,7 @@
 | [openapi.yaml](openapi.yaml) | The commands, as OpenAPI 3.1 |
 | [events.schema.json](events.schema.json) | Every event on the stream, as JSON Schema |
 | [push.schema.json](push.schema.json) | What a push notification carries, encrypted and decrypted |
-| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: places, choices, pictures and things in motion |
+| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: places, choices, pictures, things in motion, files to look at and changes to approve, and what your taps on them send |
 | [motion.schema.json](motion.schema.json) | What a thing in motion holds, for each kind, and the changes Ari makes to it |
 | [stream.schema.json](stream.schema.json) | The frames on a call's stream, both ways |
 | [guarantees.md](guarantees.md) | What the server and the protocol promise |
@@ -45,6 +45,11 @@ sequenceDiagram
   once the message is on disk; what it does next arrives on the stream.
 - **Stop** a turn, or **try again** after one failed, with commands addressed to the turn.
 - **Attach** photos and files: upload each under an id the app makes, then name them in a message.
+  Anything over 20 MB, such as a recording, goes up in chunks that resume after any drop; `GET
+  /v0/uploads` says what the server takes, and how big, before anything is sent.
+- **Recordings:** an audio attachment you send is transcribed on the server, with times and, as a
+  best guess, who spoke; `recording.changed` follows it to `ready`. Kumo reads the transcript, and
+  the app can too, correct what it misheard, name its voices, and delete it.
 - **Pair** a new app with the short-lived code in the QR code `ito pair` shows, for a token of its
   own.
 - **Answer** what the agent asks by sending a message, or cancel the ask. Asking ends the agent's
@@ -82,6 +87,7 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `thread.started` | A side thread starts: Kumo branched one, or you replied to a message or started one |
 | `thread.changed` | A thread's name, state, line, replies, result, picture or news changed |
 | `message.moved` | A message moved between the main chat and a thread, or between threads |
+| `recording.changed` | A recording you sent moved on: queued, transcribing, ready, failed or deleted |
 
 ## Versioning
 

@@ -7,9 +7,19 @@ import { passedEnvironment, startChild, type Child } from "#child.ts";
 import type { Cancel } from "#clock.ts";
 import type { Connection, RpcFailure } from "#json-rpc.ts";
 import { fail, ok } from "#result.ts";
-import type { Heard, Readiness, SpeechFailure, VoiceContext, VoiceLoop, Voiceprint } from "#voice/loop.ts";
+import type {
+  Heard,
+  HeardRecording,
+  Progress,
+  Readiness,
+  SpeechFailure,
+  TranscriptionFailure,
+  VoiceContext,
+  VoiceLoop,
+  Voiceprint,
+} from "#voice/loop.ts";
 
-export const voiceProtocol = "0.2";
+export const voiceProtocol = "0.3";
 
 export const voiceDirectory = fileURLToPath(new URL("../../voice", import.meta.url));
 
@@ -20,6 +30,10 @@ export const voiceModels = (home: string): string => path.join(home, "models", "
 export type SidecarOptions = VoiceContext & { readonly directory: string; readonly models: string };
 
 const unavailableCodes: ReadonlySet<number> = new Set([-32_001, -32_002, -32_099]);
+
+const unreadableCode = -32_003;
+
+const cancelledCode = -32_004;
 
 export const toVoiceEnvironment = (
   environment: NodeJS.ProcessEnv,
@@ -96,6 +110,36 @@ const toHeard = (method: string, notice: Notice): Heard | undefined => {
   }
 };
 
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null;
+
+const isSegment = (value: unknown): boolean =>
+  isRecord(value) &&
+  typeof value.start === "number" &&
+  typeof value.end === "number" &&
+  typeof value.text === "string" &&
+  (value.speaker === undefined || typeof value.speaker === "string");
+
+const isSpeaker = (value: unknown): boolean =>
+  isRecord(value) && typeof value.id === "string" && typeof value.seconds === "number" && typeof value.you === "boolean";
+
+const toHeardRecording = (value: unknown): HeardRecording | undefined =>
+  isRecord(value) &&
+  typeof value.seconds === "number" &&
+  typeof value.model === "string" &&
+  Array.isArray(value.segments) &&
+  value.segments.every((segment) => isSegment(segment)) &&
+  Array.isArray(value.speakers) &&
+  value.speakers.every((speaker) => isSpeaker(speaker))
+    ? (value as HeardRecording)
+    : undefined;
+
+const toTranscriptionFailure = ({ code, message }: RpcFailure): TranscriptionFailure => {
+  if (unavailableCodes.has(code)) return { code: "unavailable", detail: message };
+  if (code === unreadableCode) return { code: "unreadable", detail: message };
+  return { code: code === cancelledCode ? "cancelled" : "failed", detail: message };
+};
+
 const toSpeechFailure = ({ code, message }: RpcFailure): SpeechFailure => ({
   code: unavailableCodes.has(code) ? "unavailable" : "failed",
   detail: message,
@@ -116,6 +160,7 @@ export const createSidecarVoice = ({
   const restart = createCell<Cancel | undefined>(undefined);
   const isClosed = createCell(false);
   const sessions = createCell<ReadonlyMap<string, (heard: Heard) => void>>(new Map());
+  const transcriptions = createCell<ReadonlyMap<string, Progress>>(new Map());
 
   const forget = (session: string): void => {
     sessions.update((current) => new Map([...current].filter(([name]) => name !== session)));
@@ -124,6 +169,12 @@ export const createSidecarVoice = ({
   const route = (method: string, parameters: unknown): void => {
     if (typeof parameters !== "object" || parameters === null) return;
     const notice = parameters as Notice;
+    if (method === "transcribing") {
+      const { job, done, total } = notice;
+      const onProgress = typeof job === "string" ? transcriptions.get().get(job) : undefined;
+      if (onProgress && typeof done === "number") onProgress(done, typeof total === "number" ? total : undefined);
+      return;
+    }
     const onHeard = typeof notice.session === "string" ? sessions.get().get(notice.session) : undefined;
     const heard = toHeard(method, notice);
     if (onHeard && heard) onHeard(heard);
@@ -251,6 +302,24 @@ export const createSidecarVoice = ({
     forgetVoiceprint: async () => {
       const current = running.get();
       if (current) await current.connection.request("forget", {});
+    },
+    transcribe: async (job, file, voiceprint, onProgress) => {
+      const current = running.get();
+      if (!current) return fail({ code: "unavailable", detail: readiness.get().reason ?? "The voice isn't running." });
+      transcriptions.update((existing) => new Map([...existing, [job, onProgress]]));
+      const heard = await current.connection.request("transcribe", {
+        job,
+        path: file,
+        ...(voiceprint && { voiceprint }),
+      });
+      transcriptions.update((existing) => new Map([...existing].filter(([name]) => name !== job)));
+      if (!heard.ok) return fail(toTranscriptionFailure(heard.failure));
+      const recording = toHeardRecording(heard.value);
+      return recording ? ok(recording) : fail({ code: "failed", detail: "The voice sent a transcript Ito can't read." });
+    },
+    cancelTranscription: async (job) => {
+      const current = running.get();
+      if (current) await current.connection.request("cancel_transcription", { job });
     },
     close: async () => {
       isClosed.set(true);

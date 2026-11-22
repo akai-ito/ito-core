@@ -189,7 +189,8 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       }
       return;
     }
-    case "voice.status": {
+    case "voice.status":
+    case "recording.changed": {
       return;
     }
     case "thread.started":

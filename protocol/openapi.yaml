@@ -17,10 +17,15 @@ info:
     - **Stop** a turn, or **try again** after one failed, with commands on the turn.
     - **Pair** a new app by exchanging the short-lived code in the QR code `ito pair` shows for a
       token of its own.
-    - **Attach** photos and files: upload each one, then name them in a message.
+    - **Attach** photos and files: upload each one, then name them in a message. Big files, such as
+      a recording, go up in chunks that resume after any drop.
+    - **Recordings:** a recording you send is transcribed on the server, with times and who spoke,
+      for Kumo to read; follow it, read and correct its transcript, and delete it.
     - **Answer** what the agent asks by sending a message, or cancel the ask.
     - **Shaped replies:** a reply may hold [`ari:` blocks](blocks.schema.json) the app draws
-      natively: places, choices, pictures and things in motion.
+      natively: places, choices, pictures, things in motion, files to look at and changes to approve.
+    - **Files to review:** a file Kumo made or changed, such as a PDF, shown in the chat at one
+      version, with its bytes exactly as made; every version stays until you delete the file.
     - **Notify** a device: register it, and every reply, ask and message from Kumo reaches it at
       once. [The push schema](push.schema.json) describes what it receives.
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
@@ -73,6 +78,16 @@ tags:
     description: |
       Side threads beside the main chat, each with its own conversation: list and search them, open
       one, rename it, mark it done or open, and move a message between them.
+  - name: Recordings
+    description: |
+      The recordings you send, transcribed on the server for Kumo to read, with times and, as a best
+      guess, who spoke. Audio and transcript stay on the server until you delete them. Kumo quotes a
+      moment as a Markdown link, such as `[18:42](recording:<attachment>?t=18:42)`, with `t` as
+      `m:ss`, `h:mm:ss` or seconds; the app opens the transcript there.
+  - name: Files
+    description: |
+      Files Kumo showed you in the chat to look at, such as a PDF it made, with every version. Each
+      version is an attachment whose bytes never change.
   - name: Turns
     description: Control the agent's work on a turn.
   - name: Asks
@@ -1042,21 +1057,442 @@ paths:
       tags: [Attachments]
       operationId: getAttachment
       summary: Fetch an attachment's bytes
-      description: The bytes, with the media type they were uploaded with. They never change, so keep them once fetched.
+      description: |
+        The bytes, exactly as they were uploaded or made, with their media type and their name in
+        `Content-Disposition`. They never change, so keep them once fetched. Ask for part of a big
+        file with one `Range: bytes=…` range, such as to play a recording as it downloads or to
+        resume a download; the answer is a `206` with `Content-Range`.
       parameters:
         - $ref: "#/components/parameters/Attachment"
+        - name: Range
+          in: header
+          required: false
+          description: One byte range, such as `bytes=0-1048575` or `bytes=1048576-`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+            Accept-Ranges:
+              description: Always `bytes`.
+              schema: { type: string }
+          content:
+            "*/*":
+              schema:
+                description: The file's bytes.
+        "206":
+          description: The part of the file the range asked for.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+            Content-Range:
+              description: Which bytes these are, such as `bytes 0-1048575/52428800`.
+              schema: { type: string }
+          content:
+            "*/*":
+              schema:
+                description: Those bytes.
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "416":
+          description: The range is past the end of the file; `Content-Range` gives its size as `bytes */size`.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+            Content-Range:
+              description: The file's size, such as `bytes */52428800`.
+              schema: { type: string }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/uploads:
+    get:
+      tags: [Attachments]
+      operationId: listUploads
+      summary: See the limits, and the big uploads still going
+      description: |
+        What the server takes, to show before anything is uploaded: the media types and the largest
+        size of each kind, the largest chunk, and what happens to a recording. Then the big uploads
+        that haven't finished, so an app that was closed mid-upload can carry on from `received`.
+      responses:
+        "200":
+          description: The limits and the unfinished uploads.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    post:
+      tags: [Attachments]
+      operationId: createUpload
+      summary: Start a big upload
+      description: |
+        For a file too big for `PUT /v0/attachments/{attachment}` (over 20 MB), such as a recorded
+        conversation. Say what's coming: the id the app made, which becomes the attachment's id, the
+        file's name, media type and size in bytes. Then send it in chunks with
+        `PUT /v0/uploads/{upload}`, in order, and finish with `POST /v0/uploads/{upload}/finish`.
+        The finished upload is an attachment like any other: name it in a message.
+
+        Starting the same upload again changes nothing and answers where it stands, so it's also how
+        an app resumes. Only the media types `GET /v0/uploads` lists are taken, each kind up to its
+        size. An upload no chunk reaches for two days is deleted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUpload" }
+            example:
+              id: 6f1c1f4e-9b7a-4c52-8f0e-2b6d1f0a9c31
+              name: Interview with Northwind.m4a
+              media_type: audio/mp4
+              size: 96468992
+      responses:
+        "201":
+          description: Started; send the first chunk at offset 0.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "200":
+          description: Already started, or finished; this is where it stands.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedType" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+        "507": { $ref: "#/components/responses/ServerDiskFull" }
+  /v0/uploads/{upload}:
+    get:
+      tags: [Attachments]
+      operationId: getUpload
+      summary: See where a big upload stands
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+      responses:
+        "200":
+          description: How much the server has, or the attachment it became.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    put:
+      tags: [Attachments]
+      operationId: sendUploadChunk
+      summary: Send a chunk of a big upload
+      description: |
+        The body is the next bytes of the file, at most `chunk_bytes` (about 8 MB is a good size),
+        and `offset` says where they start. The server answers once they're on its disk, with how
+        much it now has: show that as the upload's progress, and send the next chunk from there.
+
+        Sending a chunk again is safe: bytes the server already has are skipped. A chunk that starts
+        past what the server has is refused with `offset_mismatch` and the upload as it stands, so
+        the app carries on from its `received`.
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+        - name: offset
+          in: query
+          required: true
+          description: Where in the file this chunk starts, in bytes.
+          schema:
+            type: integer
+            minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              description: The chunk's bytes.
+      responses:
+        "200":
+          description: On disk.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/OffsetMismatch" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+        "507": { $ref: "#/components/responses/ServerDiskFull" }
+    delete:
+      tags: [Attachments]
+      operationId: cancelUpload
+      summary: Give up a big upload
+      description: Deletes what the server has of an unfinished upload. Cancelling one that isn't there changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+      responses:
+        "204":
+          description: Gone.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/uploads/{upload}/finish:
+    post:
+      tags: [Attachments]
+      operationId: finishUpload
+      summary: Finish a big upload
+      description: |
+        Once the server has every byte, this makes the upload an attachment, after checking that its
+        first bytes fit its media type (a recording must be audio, a PDF a PDF). Give the file's
+        SHA-256 to have the server check it arrived whole; when it doesn't match, the server starts
+        the upload over from offset 0 and says so with `checksum_mismatch`. Finishing again answers
+        the same attachment.
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FinishUpload" }
+      responses:
+        "201":
+          description: The attachment it became.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachmentResult" }
+        "200":
+          description: Already finished; this is its attachment.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachmentResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/UploadIncomplete" }
+        "415": { $ref: "#/components/responses/UnsupportedType" }
+        "422": { $ref: "#/components/responses/ChecksumMismatch" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings:
+    get:
+      tags: [Recordings]
+      operationId: listRecordings
+      summary: List the recordings you sent
+      description: Newest first, with where each one's transcript stands. Deleted recordings aren't listed.
+      responses:
+        "200":
+          description: The recordings.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}:
+    get:
+      tags: [Recordings]
+      operationId: getRecording
+      summary: See where a recording's transcript stands
+      description: |
+        Every audio attachment you send in a message becomes a recording. `recording.changed` says
+        when it moves on; this is for a recording on screen after a snapshot.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "200":
+          description: The recording.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    delete:
+      tags: [Recordings]
+      operationId: deleteRecording
+      summary: Delete a recording's audio and transcript
+      description: |
+        Deletes the audio, its transcript and any copy in Kumo's workspace, and stops a transcription
+        under way. The message stays, with the attachment's name, but its audio can't be fetched
+        again. What Kumo already wrote from it, such as a summary in the chat, stays; ask Kumo to
+        change what it remembers. Deleting again answers the deleted recording.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "200":
+          description: Deleted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}/retry:
+    post:
+      tags: [Recordings]
+      operationId: retryRecording
+      summary: Transcribe a failed recording again
+      description: |
+        Puts a `failed` recording back in the queue, such as after installing ffmpeg on the server.
+        A recording that isn't failed is answered as it is.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "202":
+          description: Queued again.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "200":
+          description: It wasn't failed; this is where it stands.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}/transcript:
+    get:
+      tags: [Recordings]
+      operationId: getTranscript
+      summary: Read a recording's transcript
+      description: |
+        What was said, piece by piece, with times from the start of the recording and, where the
+        server could tell voices apart, who said it, with your corrections applied. It's what the
+        model heard, not a summary: Kumo reads the same words and keeps its own reading separate.
+        Ask for `format=text` for plain text to share, one line per turn with its time.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+        - name: format
+          in: query
+          required: false
+          description: "`json`, the default, or `text`."
+          schema:
+            enum: [json, text]
+            default: json
+      responses:
+        "200":
+          description: The transcript.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranscriptResult" }
+            text/plain:
+              schema:
+                type: string
+                example: "[0:00] Speaker 1: Thanks for making the time today.\n[0:04] You: Of course.\n"
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotTranscribed" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}/corrections:
+    post:
+      tags: [Recordings]
+      operationId: correctTranscript
+      summary: Correct what the transcript misheard, and name its voices
+      description: |
+        Replace words the server misheard, such as a name or a term, everywhere they appear, and
+        give voices names, such as "Interviewer" for `S1`. The words as heard are kept underneath:
+        correcting the same words again replaces the earlier correction, and correcting them to
+        themselves undoes it. Kumo makes the same corrections when you tell it in the chat.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CorrectTranscript" }
+            example:
+              replace:
+                - { heard: Myra, meant: Mira }
+              speakers:
+                - { id: S1, name: Interviewer }
+      responses:
+        "200":
+          description: The transcript, corrected.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranscriptResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotTranscribed" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/files:
+    get:
+      tags: [Files]
+      operationId: listFiles
+      summary: List the files Kumo showed you
+      description: Newest change first, each with all its versions, for a shelf of what Kumo made.
+      responses:
+        "200":
+          description: The files.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/files/{file}:
+    get:
+      tags: [Files]
+      operationId: getFile
+      summary: See a file Kumo showed you, with its versions
+      description: |
+        What an `ari:file` card needs: the file's versions, oldest first, each with its attachment
+        (name, media type and size) and what changed. Fetch a version's bytes with
+        `GET /v0/attachments/{attachment}`; they are exactly what Kumo made, and never change.
+      parameters:
+        - $ref: "#/components/parameters/File"
       responses:
         "200":
           description: The file.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
           content:
-            "*/*":
-              schema:
-                description: The file's bytes.
-        "400": { $ref: "#/components/responses/InvalidRequest" }
+            application/json:
+              schema: { $ref: "#/components/schemas/FileResult" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    delete:
+      tags: [Files]
+      operationId: deleteFile
+      summary: Delete a file Kumo showed you, every version
+      description: |
+        Deletes every version's bytes from the server, and the copies kept for mail drafts; the
+        file Kumo works on in its workspace stays. Cards for it then say it's gone. Deleting one
+        that isn't there changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/File"
+      responses:
+        "204":
+          description: Gone.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/asks/{ask}/cancel:
     post:
@@ -1906,6 +2342,18 @@ components:
       required: true
       description: The id the app made for what it's uploading.
       schema: { $ref: "events.schema.json#/$defs/UploadId" }
+    File:
+      name: file
+      in: path
+      required: true
+      description: The file's id, from an `ari:file` block.
+      schema: { $ref: "events.schema.json#/$defs/FileId" }
+    BigUpload:
+      name: upload
+      in: path
+      required: true
+      description: The id the app made for the big upload, which becomes its attachment's id.
+      schema: { $ref: "events.schema.json#/$defs/UploadId" }
     Attachment:
       name: attachment
       in: path
@@ -2001,6 +2449,61 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
+    UnsupportedType:
+      description: |
+        The server doesn't take this media type in a big upload, or the file's first bytes don't fit
+        the type it was given (`unsupported_type`). The message names what it takes.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+          example:
+            error:
+              code: unsupported_type
+              message: "Ito takes recordings as M4A, MP3, WAV, AAC, Ogg/Opus, FLAC, WebM, AMR, Core Audio or AIFF."
+              detail: video/quicktime isn't a media type big uploads take.
+    NotTranscribed:
+      description: The recording has no transcript yet, or any more (`not_transcribed`); `recording` says where it stands.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RecordingErrorResult" }
+    ServerDiskFull:
+      description: The server's disk hasn't room for the file (`server_disk_full`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+    OffsetMismatch:
+      description: |
+        The chunk starts past what the server has (`offset_mismatch`). Send again from the upload's
+        `received`.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadErrorResult" }
+    UploadIncomplete:
+      description: |
+        The server hasn't every byte yet (`upload_incomplete`). Send the rest from the upload's
+        `received`, then finish again.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadErrorResult" }
+    ChecksumMismatch:
+      description: |
+        The bytes that arrived don't have the SHA-256 the app gave (`checksum_mismatch`). The server
+        has started the upload over: send it again from offset 0.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadErrorResult" }
     SlowDown:
       description: Too many requests, or too many wrong tokens (`slow_down`).
       headers:
@@ -3024,6 +3527,285 @@ components:
       required: [attachment]
       properties:
         attachment: { $ref: "events.schema.json#/$defs/Attachment" }
+    UploadKind:
+      description: "`audio` for a recording, `image` for a photo, `file` for a document."
+      enum: [audio, image, file]
+    UploadKindLimit:
+      type: object
+      required: [kind, max_bytes, media_types]
+      properties:
+        kind: { $ref: "#/components/schemas/UploadKind" }
+        max_bytes:
+          description: The largest file of this kind, in bytes.
+          type: integer
+          minimum: 1
+        media_types:
+          description: The media types of this kind that big uploads take.
+          type: array
+          items: { type: string }
+    UploadLimits:
+      type: object
+      required: [simple_bytes, chunk_bytes, kinds]
+      properties:
+        simple_bytes:
+          description: The largest file `PUT /v0/attachments/{attachment}` takes in one go; anything bigger goes in chunks.
+          type: integer
+          minimum: 1
+        chunk_bytes:
+          description: The most one chunk may hold.
+          type: integer
+          minimum: 1
+        kinds:
+          type: array
+          items: { $ref: "#/components/schemas/UploadKindLimit" }
+    CreateUpload:
+      type: object
+      required: [id, name, media_type, size]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/UploadId" }
+        name:
+          description: The file's name, shown with the message and used in the agent's workspace.
+          type: string
+          minLength: 1
+          maxLength: 255
+        media_type:
+          description: Its media type, such as `audio/mp4` for a Voice Memos recording.
+          type: string
+          minLength: 1
+          maxLength: 255
+        size:
+          description: Its whole size, in bytes.
+          type: integer
+          minimum: 1
+    Upload:
+      type: object
+      required: [id, name, media_type, kind, size, received, state]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/UploadId" }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        media_type: { type: string, minLength: 1 }
+        kind: { $ref: "#/components/schemas/UploadKind" }
+        size:
+          description: Its whole size, in bytes, as the app said.
+          type: integer
+          minimum: 1
+        received:
+          description: How many bytes from the start the server has on disk. The next chunk starts here.
+          type: integer
+          minimum: 0
+        state:
+          description: "`receiving` until it's finished; `finished` once it's an attachment."
+          enum: [receiving, finished]
+        expires_at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: "`receiving` only: when the server deletes it if no more arrives."
+        attachment:
+          $ref: "events.schema.json#/$defs/Attachment"
+          description: "`finished` only: the attachment it became."
+    Transcription:
+      type: object
+      required: [state, languages, consent]
+      properties:
+        state:
+          description: |
+            Whether the server can transcribe a recording now: `ready`; `loading` while its voice
+            starts; `unavailable` when it has none or it failed, as `reason` says. A recording sent
+            while it can't waits, queued, until it can.
+          enum: [ready, loading, unavailable]
+        reason:
+          description: Why it isn't ready.
+          type: string
+        languages:
+          description: The languages it transcribes well, such as `en`; speech in others comes out wrong.
+          type: array
+          items: { type: string }
+        consent:
+          description: A line to show before a recording is sent, about the other people in it.
+          type: string
+    UploadResult:
+      type: object
+      required: [upload]
+      properties:
+        upload: { $ref: "#/components/schemas/Upload" }
+    UploadErrorResult:
+      type: object
+      required: [error, upload]
+      properties:
+        error: { $ref: "events.schema.json#/$defs/Error" }
+        upload: { $ref: "#/components/schemas/Upload" }
+    UploadList:
+      type: object
+      required: [limits, transcription, uploads]
+      properties:
+        limits: { $ref: "#/components/schemas/UploadLimits" }
+        transcription: { $ref: "#/components/schemas/Transcription" }
+        uploads:
+          description: The big uploads that haven't finished, oldest first.
+          type: array
+          items: { $ref: "#/components/schemas/Upload" }
+    RecordingList:
+      type: object
+      required: [recordings]
+      properties:
+        recordings:
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Recording" }
+    RecordingResult:
+      type: object
+      required: [recording]
+      properties:
+        recording: { $ref: "events.schema.json#/$defs/Recording" }
+    RecordingErrorResult:
+      type: object
+      required: [error, recording]
+      properties:
+        error: { $ref: "events.schema.json#/$defs/Error" }
+        recording: { $ref: "events.schema.json#/$defs/Recording" }
+    TranscriptSpeaker:
+      type: object
+      required: [id, name, seconds, you]
+      properties:
+        id:
+          description: "`S1`, `S2`… in the order they first speak, or `you` for the voice that matches your voiceprint."
+          type: string
+          minLength: 1
+        name:
+          description: What to call them, such as "Speaker 1", "You", or the name you gave them.
+          type: string
+          minLength: 1
+        seconds:
+          description: How long they spoke, roughly.
+          type: number
+          minimum: 0
+        you:
+          description: Whether this voice matched yours. Without a voiceprint (it's learnt on calls), no voice is you.
+          type: boolean
+    TranscriptSegment:
+      type: object
+      required: [start, end, text]
+      properties:
+        start:
+          description: Seconds from the start of the recording.
+          type: number
+          minimum: 0
+        end:
+          type: number
+          minimum: 0
+        text:
+          description: What was said, as the model heard it, with your corrections.
+          type: string
+        speaker:
+          description: The `id` of who said it, when the server could tell.
+          type: string
+    TranscriptCorrection:
+      type: object
+      required: [heard, meant]
+      properties:
+        heard:
+          description: The words as the model heard them, matched whole and in any case.
+          type: string
+          minLength: 1
+          maxLength: 200
+        meant:
+          description: What was really said.
+          type: string
+          minLength: 1
+          maxLength: 200
+    SpeakerName:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 80 }
+    Transcript:
+      type: object
+      required: [attachment, name, duration_seconds, language, model, speakers, segments, corrections, made_at]
+      properties:
+        attachment: { $ref: "events.schema.json#/$defs/AttachmentId" }
+        name:
+          description: The recording's file name.
+          type: string
+        duration_seconds: { type: number, minimum: 0 }
+        language: { type: string }
+        model:
+          description: The speech model that heard it, such as `nvidia/parakeet-tdt-0.6b-v2`.
+          type: string
+        speakers:
+          description: The voices the server told apart, a best guess; empty when it couldn't tell.
+          type: array
+          items: { $ref: "#/components/schemas/TranscriptSpeaker" }
+        segments:
+          type: array
+          items: { $ref: "#/components/schemas/TranscriptSegment" }
+        corrections:
+          description: The corrections applied, in order.
+          type: array
+          items: { $ref: "#/components/schemas/TranscriptCorrection" }
+        made_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    TranscriptResult:
+      type: object
+      required: [transcript]
+      properties:
+        transcript: { $ref: "#/components/schemas/Transcript" }
+    CorrectTranscript:
+      type: object
+      minProperties: 1
+      properties:
+        replace:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/TranscriptCorrection" }
+        speakers:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/SpeakerName" }
+    FileVersion:
+      type: object
+      required: [version, attachment, made_at]
+      properties:
+        version:
+          description: 1 for the first one Kumo showed, then one more each time it showed a change.
+          type: integer
+          minimum: 1
+        attachment:
+          $ref: "events.schema.json#/$defs/Attachment"
+          description: This version's bytes, name, media type and size.
+        note:
+          description: What changed since the version before, in Kumo's words.
+          type: string
+        made_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    ShownFile:
+      type: object
+      required: [id, name, versions]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/FileId" }
+        name:
+          description: The latest version's name.
+          type: string
+        versions:
+          description: Oldest first; the last is the latest.
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/FileVersion" }
+    FileList:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/ShownFile" }
+    FileResult:
+      type: object
+      required: [file]
+      properties:
+        file: { $ref: "#/components/schemas/ShownFile" }
+    FinishUpload:
+      type: object
+      properties:
+        sha256:
+          description: The whole file's SHA-256, in lowercase hex, for the server to check.
+          type: string
+          pattern: ^[0-9a-f]{64}$
     Pair:
       type: object
       required: [code, device_name]

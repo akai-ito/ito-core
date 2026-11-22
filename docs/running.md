@@ -305,9 +305,34 @@ node bin/ito.ts logs --since 2026-10-31 --raw # the JSON lines themselves
 Each readable line has the local time, the level, the message and its details. Requests to the
 API only show with `--about requests`.
 
+## Recordings and files
+
+A recording you send in the chat, such as an interview, is transcribed on your server by the same
+voice: ffmpeg reads any format your phone records in, Parakeet hears it in pieces, steered toward the
+names in memory, and TitaNet voiceprints tell the speakers apart, finding you by the voiceprint your
+calls taught it. No other model is downloaded for it, and nothing leaves the box. The app shows how
+far along it is, and once it's ready Kumo reads it and brings you what it heard (a debrief, for an
+interview) with the actions and memory updates it suggests, for you to choose. It hears English, and
+telling voices apart is a best guess: voices that overlap, or that sound alike, can be mixed up. You
+can correct a misheard name and delete a recording with its transcript. It needs ffmpeg on the box
+(`sudo apt install ffmpeg`); `ito voice check` times a two-person recording through it.
+
+When Kumo makes or changes a file for you, such as a PDF, it shows it in the chat at one version,
+so what you say about it is about that version. Every version stays on the server exactly as made,
+until you delete the file, and a mail draft can attach exactly the version you looked at.
+
+Photos and files you attach in the chat stay on your server and never go into the Thread, unless
+Kumo keeps a photo with a story. Up to 20 MB goes in one request; anything bigger, such as an hour's
+recording, goes up in chunks that carry on after a dropped connection: recordings up to 1 GB,
+documents such as PDFs up to 100 MB and photos up to 50 MB. To change the first two, set
+`ITO_MAX_RECORDING_MB` or `ITO_MAX_FILE_MB` for the server, such as
+`Environment=ITO_MAX_RECORDING_MB=2048` in its systemd unit. An upload nothing reaches for two days
+is deleted, and so is a finished one no message names after a day.
+
 ## Where Ito keeps its data
 
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, the agent's working directory in `workspace`, its memory in
-`thread`, the embedding and voice models in `models`, each capability's own folder in
-`capabilities`, and the log in `logs`.
+`thread`, what you attach in `attachments` (and big uploads on their way in `uploads`), the
+embedding and voice models in `models`, each capability's own folder in `capabilities`, and the log
+in `logs`.

@@ -106,6 +106,10 @@ describe("Ito's tools over MCP", () => {
           { name: "set_wake_up" },
           { name: "move_wake_up" },
           { name: "drop_wake_up" },
+          { name: "read_recording" },
+          { name: "correct_transcript" },
+          { name: "delete_recording" },
+          { name: "show_file" },
         ],
       },
     });
