@@ -12,6 +12,7 @@ import { ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Store } from "#store/store.ts";
 import { createNaming, toTitle } from "#threads/naming.ts";
+import { createThreads } from "#threads/threads.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-threads-"));
 
@@ -145,6 +146,27 @@ describe("side threads in the store", () => {
     expect(store.listThreads("heavy", undefined, 50).open.map(({ id }) => id)).toEqual([branched.value.id]);
     expect(store.listThreads("£14", undefined, 50).done.map(({ id }) => id)).toEqual([done.thread]);
     expect(store.listThreads("noodles", undefined, 50)).toEqual({ open: [], done: [], hasMore: false });
+  });
+});
+
+describe("what each conversation knows of the others", () => {
+  it("gives a side thread a digest of the main chat and the other open threads, and the main chat the open threads", () => {
+    const store = openStore("digest");
+    talk(store, "1", "Lunch with Lena at 12:30.", "Then the morning's yours.");
+    const menu = talk(store, "2", "Menu photo", "Noodles and laab.", { isNewThread: true });
+    const guide = talk(store, "3", "V&A in two hours?", "Four rooms, nine things.", { isNewThread: true });
+    store.changeThread(guide.thread ?? toThreadId(""), { by: "kumo", title: "V&A guide", result: "3 of 9 spotted" });
+    const threads = createThreads({ store, spoken: () => "Saturday", branched: () => false });
+
+    const inMenu = threads.inMindText(menu.thread);
+    const inMain = threads.inMindText(undefined);
+
+    expect(inMenu).toContain("<thread>");
+    expect(inMenu).toContain("- Saturday, they: Lunch with Lena at 12:30.");
+    expect(inMenu).toContain(`- ${String(guide.thread)}, “V&A guide”, last Saturday: 3 of 9 spotted`);
+    expect(inMenu).not.toContain(`- ${String(menu.thread)},`);
+    expect(inMain).toContain(`- ${String(menu.thread)}, a thread not yet named, last Saturday`);
+    expect(inMain).toContain(`- ${String(guide.thread)}, “V&A guide”`);
   });
 });
 

@@ -2867,6 +2867,68 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
+      name: "58-side-threads",
+      scenario: 58,
+      title: "Side threads",
+      summary:
+        "You send Kumo a photo with a one-off question. Kumo moves it into a side thread of its own, so the main " +
+        "chat keeps only the thread's line, and the thread's own turn answers there. While it works, what you say " +
+        "in the main chat starts a turn of its own instead of steering the thread aside. Kumo marks the thread " +
+        "done with a result; the notification opens the thread, and Threads lists it.",
+      guarantees: ["G29", "G15"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(2000);
+    const photo = transcript.upload("riverside.jpg");
+    transcript.wait(200);
+    const question = transcript.send("Where's this, and is the walk worth it?", { attachments: [photo] });
+    transcript.startTurn([question]);
+    transcript.wait(900);
+    transcript.world("agent_calls", { tool: "start_thread", input: { title: "Riverside walk" } });
+    const thread = transcript.branch("Riverside walk", [question]);
+    transcript.inThread(thread, () => {
+      transcript.startTurn([question]);
+    });
+    transcript.endTurn("completed");
+    transcript.inThread(thread, () => {
+      transcript.wait(300);
+      transcript.step("thinking", thinking);
+    });
+    transcript.wait(1200);
+    const aside = transcript.send("Also, will it rain this afternoon?");
+    transcript.startTurn([aside]);
+    transcript.wait(300);
+    transcript.step("thinking", thinking);
+    transcript.wait(900);
+    writeWhole(transcript, "Dry until about six, then showers. Take a light jacket if you'll be out late.");
+    transcript.endTurn("completed");
+    transcript.inThread(thread, () => {
+      transcript.wait(600);
+      writeWhole(
+        transcript,
+        "That's the Thames Path on the Surrey bank, just upstream of Hampton Court. Worth it: flat, quiet, and " +
+          "the palace gardens are ten minutes on.",
+      );
+      const result = "Thames Path by Hampton Court: worth it";
+      transcript.world("agent_calls", { tool: "update_thread", input: { state: "done", result }, thread });
+      transcript.changeThread(thread, { state: "done", result });
+      transcript.wait(200);
+      transcript.endTurn("completed");
+    });
+    transcript.wait(4000);
+    transcript.world("notification_tapped", { thread });
+    transcript.getThread(thread);
+    transcript.seeThread(thread);
+    transcript.wait(2000);
+    transcript.listThreads();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
       name: "59-blocks-in-a-reply",
       scenario: 59,
       title: "Blocks in a reply",
@@ -4427,6 +4489,63 @@ const scenarios: readonly (() => Transcript)[] = [
       writeWhole(transcript, "Five minutes, gently: calves and hamstrings. Nothing that hurts.");
       transcript.endTurn("completed");
     });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "91-kumo-comes-back-to-a-thread",
+      scenario: 91,
+      title: "Kumo comes back to a thread",
+      summary:
+        "You start a thread of your own from Threads, and Kumo names it after answering. Later its background work " +
+        "posts the news there: the thread's line moves to the end of the main chat with a dot and the news, and the " +
+        "notification says which thread. Opening it clears the dot; once you're sorted, Kumo marks it done, and " +
+        "searching Threads finds it by a word in it.",
+      guarantees: ["G29", "G15"],
+    });
+    yesterday(transcript);
+    transcript.begin(todayAt, { cursor: "latest" });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(2000);
+    const ask = transcript.send("Can you get me a haircut on Saturday morning, near home?", { newThread: true });
+    const thread = transcript.threadOf(ask) ?? "";
+    transcript.inThread(thread, () => {
+      transcript.startTurn([ask]);
+      transcript.world("thread_named", { title: "Haircut" });
+      transcript.wait(300);
+      transcript.step("thinking", thinking);
+      transcript.wait(1500);
+      writeWhole(
+        transcript,
+        "I've asked Theo on the high street for 11:00 or 11:30. I'll tell you here when he answers.",
+      );
+      transcript.endTurn("completed");
+    });
+    transcript.changeThread(thread, { title: "Haircut" });
+    transcript.wait(2 * 60 * 60 * 1000);
+    const news = "Theo confirmed you for 11:30 on Saturday. It's in your calendar.";
+    transcript.world("agent_calls", { tool: "post", input: { text: news, thread } });
+    transcript.post(news, { thread });
+    transcript.wait(30_000);
+    transcript.world("notification_tapped", { thread });
+    transcript.getThread(thread);
+    transcript.seeThread(thread);
+    transcript.wait(5000);
+    const thanks = transcript.send("Perfect, thanks", { thread });
+    transcript.inThread(thread, () => {
+      transcript.startTurn([thanks]);
+      transcript.wait(300);
+      writeWhole(transcript, "Enjoy. Bring the photo you showed me last time.");
+      const result = "Theo, Saturday 11:30";
+      transcript.world("agent_calls", { tool: "update_thread", input: { state: "done", result }, thread });
+      transcript.changeThread(thread, { state: "done", result });
+      transcript.wait(200);
+      transcript.endTurn("completed");
+    });
+    transcript.wait(60_000);
+    transcript.listThreads("theo");
     return transcript;
   },
 ];

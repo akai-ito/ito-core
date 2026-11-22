@@ -21,8 +21,9 @@ import { createImageTool } from "#replies/images.ts";
 import type { Fetch } from "#capabilities/connect.ts";
 import { createCapabilityApprovals } from "#capabilities/approvals.ts";
 import { createNaming } from "#threads/naming.ts";
+import { createThreads } from "#threads/threads.ts";
 import { createLanes, type Lanes } from "#threads/lanes.ts";
-import type { ThreadId } from "#conversation/ids.ts";
+import { toThreadId, type ThreadId } from "#conversation/ids.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import { createGroups } from "#tools/groups.ts";
@@ -49,7 +50,7 @@ import type { Message, ModelChoice } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 import { toSpoken } from "#desk/day.ts";
 import { createDesk } from "#desk/desk.ts";
-import { createWorkTools } from "#work/tools.ts";
+import { createWorkTools, type PostPlace } from "#work/tools.ts";
 import { createCorrections } from "#work/corrections.ts";
 import { createWakeUps, type WakeUps } from "#wakeups/wakeups.ts";
 import { registerWakeUps } from "#http/wakeups.ts";
@@ -325,6 +326,7 @@ export const createServer = (options: ServerOptions): Server => {
       deskLine.inMindText(),
       picture.inMindText(),
       latelyText(),
+      threads.backgroundText(),
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -335,8 +337,9 @@ export const createServer = (options: ServerOptions): Server => {
     tools: toolServer,
     skills,
     instructions: () => voiceText.replaceAll("{lead}", () => leadOf(store)) + skills(),
-    inMind: () =>
+    inMind: (thread) =>
       [
+        threads.inMindText(thread),
         nowText(),
         memory.inMindText(),
         motions.inMindText(),
@@ -350,6 +353,11 @@ export const createServer = (options: ServerOptions): Server => {
         .filter(Boolean)
         .join("\n\n"),
     callTool: (name, input, run, thread) => callTool(name, input, run, thread),
+  });
+  const threads = createThreads({
+    store,
+    spoken: (at) => toSpoken(Date.parse(at), timeZone()),
+    branched: (thread, moved, brief) => turns.branched(thread, moved, brief),
   });
   host.subscribe(() => {
     void engine.refresh();
@@ -651,10 +659,13 @@ export const createServer = (options: ServerOptions): Server => {
       { missed: `A move from ${from} to ${to}` },
     );
   });
-  const post = (text: string, isUrgent: boolean): Message => {
+  const post = (text: string, isUrgent: boolean, place: PostPlace = {}): Message | undefined => {
+    const existing = place.thread === undefined ? undefined : store.findThread(toThreadId(place.thread));
+    if (!existing && place.thread !== undefined) return undefined;
+    const thread = place.newThread === undefined ? existing : store.startThread("kumo", place.newThread);
     const run = contextRun();
     if (run !== undefined) postedRuns.update((runs) => new Set([...runs, run]));
-    return store.postMessage(text, { isUrgent });
+    return store.postMessage(text, { isUrgent, ...(thread && { thread: toThreadId(thread.id) }) });
   };
 
   const app = createApp({
@@ -720,6 +731,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...memory.tools,
     ...motions.tools,
     ...createWorkTools({ post, desk, isTrack: (id) => tracks.find(id) !== undefined }),
+    ...threads.tools,
     ...tracks.tools,
     deskLine.tool,
     ...calendar.tools,
@@ -728,7 +740,15 @@ export const createServer = (options: ServerOptions): Server => {
     ...wakeUps.tools,
     ...mail.tools,
     ...gettingStarted.tools,
-    ...createDemoTools({ store, desk, post, gettingStarted, identifiers, clock, timeZone }),
+    ...createDemoTools({
+      store,
+      desk,
+      post: (text, isUrgent) => store.postMessage(text, { isUrgent }),
+      gettingStarted,
+      identifiers,
+      clock,
+      timeZone,
+    }),
   ];
   const noteRun = (tool: Tool): Tool => ({
     ...tool,

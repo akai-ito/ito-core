@@ -283,6 +283,17 @@ sign-in and sessions in `codex`, the agent's working directory in `workspace`, i
 `thread`, the embedding and voice models in `models`, each capability's own folder in
 `capabilities`, and the log in `logs`.
 
+## Side threads
+
+The main chat is your life with Kumo; a subject of its own goes in a side thread beside it. Each
+thread is a conversation of its own on Codex, with its own turns, so talking in one never steers
+another aside, and threads run at the same time. A thread sees the in-mind pages plus a short digest
+of the main chat and the other open threads, written from the store, never by a model. Kumo branches
+one with a tool when a message is a clear one-off, a new subject or long work, moving the message
+in; replying to a message in the main chat starts one under it, and the app can start one too. Kumo
+marks a thread done when it's settled, and its background work comes back to an open one by posting
+there. Threads replace the old topic labels; earlier messages stay in the main chat as they were.
+
 ## What it will do
 
 - Hold one continuous conversation with your agent and stream it live: replies as they are
