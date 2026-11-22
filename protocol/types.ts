@@ -996,7 +996,9 @@ export interface paths {
     };
     /**
      * Everything in motion, then what's done
-     * @description Active things first, then done ones, each group newest first.
+     * @description Active things first, then done ones, each group newest first. Done ones carry their
+     *     `outcome`; those that never show (`duplicate`, `test`, `elsewhere`) are listed too, so
+     *     nothing is lost, for apps to leave out.
      */
     get: operations["listMotion"];
     put?: never;
