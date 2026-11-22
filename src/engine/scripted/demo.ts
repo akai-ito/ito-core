@@ -619,9 +619,13 @@ const memoryScript = (text: string, start: readonly TimedEvent[], now: number): 
   };
 };
 
+// A conversation hears of the posts it didn't see, such as the demo's own, before the person's words. Those aren't
+// theirs, so the demo never answers a word in them.
+const postNote = /\(Meanwhile, your background work posted this here: “[\s\S]*?”\)/gu;
+
 const scriptFor = (inputs: readonly Input[], now: number): Script => {
   const text = inputs
-    .map((input) => input.text)
+    .map((input) => input.text.replaceAll(postNote, ""))
     .join("\n")
     .toLowerCase();
   const opened = opening(text, now);
