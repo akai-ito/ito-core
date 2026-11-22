@@ -200,4 +200,35 @@ describe("the demo engine's things in motion", () => {
       await close();
     }
   });
+
+  it("fills In motion with every kind, loudest first, and a goal that ended unmet", async () => {
+    const { server, send, close } = await openDemo();
+
+    try {
+      await send("show me motion");
+      // The act outlasts the reply: seven tool calls, each a commit.
+      await vi.waitFor(
+        () => {
+          expect(server.store.findMotion("spring-5k")?.status).toBe("done");
+        },
+        { timeout: 20_000, interval: 100 },
+      );
+
+      expect(
+        server.store
+          .listMotions()
+          .map(({ id, kind, status, salience, outcome }) => ({ id, kind, status, salience, outcome }))
+          .toSorted((a, b) => a.id.localeCompare(b.id)),
+      ).toEqual([
+        { id: "halcyon-labs", kind: "career", status: "active", salience: "quiet", outcome: undefined },
+        { id: "hybrid-restart", kind: "body", status: "active", salience: "loud", outcome: undefined },
+        { id: "ito-lived-in", kind: "project", status: "active", salience: "normal", outcome: undefined },
+        { id: "northwind", kind: "career", status: "active", salience: "loud", outcome: undefined },
+        { id: "quillmoor", kind: "career", status: "active", salience: "normal", outcome: undefined },
+        { id: "spring-5k", kind: "body", status: "done", salience: "normal", outcome: "not_met" },
+      ]);
+    } finally {
+      await close();
+    }
+  });
 });
