@@ -20,6 +20,7 @@ import {
   type Mail,
   type MailMeta,
 } from "#mail/message.ts";
+import { describe as describeMail } from "#mail/prompts.ts";
 import { providers } from "#mail/providers.ts";
 import type { Health } from "#problems/problems.ts";
 import { postOneClick, toLetter, unsubscribeFrom, type Fetch } from "#mail/unsubscribe.ts";
@@ -256,6 +257,88 @@ describe("reading a mail", () => {
     });
     expect(mail.messageId).toBe("42.Sent%20Messages@icloud.invalid");
     expect(mail.date).toBe("2026-10-30T08:00:00.000Z");
+  });
+});
+
+const sentMeta: MailMeta = { ...meta, folder: "Sent Messages" };
+const headed = (contentType: string, body: string): string =>
+  wire(
+    [
+      "From: Sam Rivera <sam@example.com>",
+      "To: Tess Harlow <tess.harlow@halcyon.example>",
+      "Subject: Thursday",
+      "Message-ID: <words-1@example.com>",
+      "MIME-Version: 1.0",
+      `Content-Type: ${contentType}`,
+      "",
+      body,
+      "",
+    ].join("\n"),
+  );
+
+describe("a mail's words", () => {
+  it("reads rich mail they sent as HTML alone inside multipart/related, and says the words came from the HTML", async () => {
+    const mail = await parseMail(signedInHtml, sentMeta);
+
+    expect(mail.text).toBe("Thursday works for me.\n\nSam Rivera\n[image]");
+    expect(mail.body).toEqual({ from: "html" });
+    expect(mail.attachments).toEqual([
+      { id: "2", filename: "logo.png", contentType: "image/png", size: 8, inline: true },
+    ]);
+  });
+
+  it("reads the HTML when the plain-text part beside it is empty", async () => {
+    const mail = await parseMail(
+      headed(
+        'multipart/alternative; boundary="alt"',
+        [
+          "--alt",
+          "Content-Type: text/plain",
+          "",
+          "",
+          "--alt",
+          "Content-Type: text/html",
+          "",
+          "<p>See you <b>Thursday</b>.</p>",
+          "--alt--",
+        ].join("\n"),
+      ),
+      sentMeta,
+    );
+
+    expect(mail.text).toBe("See you Thursday.");
+    expect(mail.body).toEqual({ from: "html" });
+  });
+
+  it("tells a mail with no words apart from one whose words couldn't be read", async () => {
+    const empty = await parseMail(headed("text/plain", ""), sentMeta);
+    const onlyFile = await parseMail(
+      headed(
+        'multipart/mixed; boundary="mix"',
+        [
+          "--mix",
+          'Content-Type: application/pdf; name="cv.pdf"',
+          "Content-Transfer-Encoding: base64",
+          "",
+          "JVBERi0=",
+          "--mix--",
+        ].join("\n"),
+      ),
+      sentMeta,
+    );
+    const headersOnly = await parseMail(headed("text/plain", "Thursday works."), { ...sentMeta, isHeaders: true });
+
+    expect(empty.body).toEqual({ from: "none" });
+    expect(describeMail("icloud", empty)).toMatch(/\n\n\(It has no words at all\.\)$/u);
+    expect(describeMail("icloud", onlyFile)).toContain("(It has no words of its own, only the files below.)");
+    expect(describeMail("icloud", onlyFile)).toContain("- 1: cv.pdf (application/pdf, 1 KB)");
+    expect(headersOnly.body).toBeUndefined();
+    expect(
+      describeMail("icloud", {
+        ...empty,
+        body: { from: "none", problem: "Its contents couldn't be parsed: bad MIME" },
+      }),
+    ).toContain("(Its words couldn't be read: Its contents couldn't be parsed: bad MIME)");
   });
 });
 
@@ -792,10 +875,10 @@ describe("over IMAP", () => {
     const replaced = await source.read(second.value.messageId);
     expect(replaced.ok && replaced.value.text).toBe("Thursday at 10:30 instead.");
 
-    expect(await source.removeDraft(second.value.messageId)).toEqual({ ok: true, value: undefined });
+    expect(await source.removeDraft(second.value.messageId)).toEqual({ ok: true, value: "removed" });
     expect(await source.read(second.value.messageId)).toEqual(gone);
     // A mail that isn't a draft is never touched; one gone from Drafts already counts as removed.
-    expect(await source.removeDraft(ids.booking)).toEqual({ ok: true, value: undefined });
+    expect(await source.removeDraft(ids.booking)).toEqual({ ok: true, value: "gone" });
     expect(await source.read(ids.booking)).toMatchObject({ ok: true, value: { folder: "INBOX" } });
   });
 

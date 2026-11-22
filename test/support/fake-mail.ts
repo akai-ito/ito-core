@@ -1,6 +1,17 @@
 import { createCell } from "#cell.ts";
-import type { Destination, Draft, Mail, MailQuery, MailSource, SentBody, SourceOptions, UidGroup } from "#mail/imap.ts";
-import { isSameAddress, rankSenders } from "#mail/message.ts";
+import type {
+  AttachmentContent,
+  Destination,
+  Draft,
+  Mail,
+  Marking,
+  MailQuery,
+  MailSource,
+  SentBody,
+  SourceOptions,
+  UidGroup,
+} from "#mail/imap.ts";
+import { attachedName, isSameAddress, rankSenders } from "#mail/message.ts";
 import { toLetter } from "#mail/unsubscribe.ts";
 import type { Health } from "#problems/problems.ts";
 import { fail, ok } from "#result.ts";
@@ -22,7 +33,17 @@ export type ArrivingMail = {
   // A one-click unsubscribe link, and a mailto: one, for a list that takes mail to leave.
   readonly unsubscribe?: string;
   readonly unsubscribe_mailto?: string;
+  // Files it carries, each by its id, as a mail read whole lists them.
+  readonly files?: readonly {
+    readonly id: string;
+    readonly filename?: string;
+    readonly contentType: string;
+    readonly content: Buffer;
+  }[];
 };
+
+// A change Kumo made to how a mail is marked.
+export type Mark = Marking & { readonly account: string; readonly messageId: string };
 
 // Where a mail was moved: a filing such as bin, or a folder of theirs by name.
 export type Moved = { readonly account: string; readonly messageId: string; readonly to: string };
@@ -37,7 +58,10 @@ export type FakeMail = {
   readonly expectDrafts: (ids: readonly string[]) => void;
   readonly drafts: () => readonly Draft[];
   readonly removedDrafts: () => readonly string[];
+  // A draft deleted in their mail app, out of Drafts without Kumo.
+  readonly deleteInMail: (messageId: string) => void;
   readonly moved: () => readonly Moved[];
+  readonly marks: () => readonly Mark[];
   readonly unsubscribed: () => readonly string[];
   readonly send: (account: string, mail: Mail) => void;
   // A mail they sent, whole, as the signature is learned from: the newest last.
@@ -55,7 +79,45 @@ export type FakeMail = {
   readonly health: (account: string, health: Health) => void;
 };
 
-type Box = { readonly inbox: readonly Mail[]; readonly watchers: ReadonlySet<(mail: Mail) => void> };
+type Box = {
+  readonly inbox: readonly Mail[];
+  readonly watchers: ReadonlySet<(mail: Mail) => void>;
+  readonly files: ReadonlyMap<string, readonly AttachmentContent[]>;
+};
+
+// A draft as it reads back from Drafts.
+const savedMail = (account: string, messageId: string, draft: Draft, date: string): Mail => ({
+  account,
+  folder: "Drafts",
+  uid: 1,
+  messageId,
+  ...(draft.inReplyTo !== undefined && { inReplyTo: draft.inReplyTo }),
+  references: [...new Set([...(draft.references ?? []), ...(draft.inReplyTo === undefined ? [] : [draft.inReplyTo])])],
+  from: draft.from,
+  to: draft.to,
+  cc: draft.cc ?? [],
+  subject: draft.subject,
+  date,
+  text: draft.body,
+  flags: ["\\Draft", "\\Seen"],
+  body: { from: "text" },
+  attachments: [
+    ...(draft.inline ?? []).map(({ filename, contentType, content }, index) => ({
+      id: `1.${String(index + 2)}`,
+      filename,
+      contentType,
+      size: content.length,
+      inline: true,
+    })),
+    ...(draft.attachments ?? []).map(({ filename, contentType, content }, index) => ({
+      id: String(index + 2),
+      filename: attachedName(filename),
+      contentType,
+      size: content.length,
+      inline: false,
+    })),
+  ],
+});
 
 const toAddress = (text: string): Mail["from"] => {
   const named = /^(?<name>.*?)\s*<(?<address>[^>]+)>$/u.exec(text)?.groups;
@@ -88,7 +150,9 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const draftIds = createCell<readonly string[]>([]);
   const saved = createCell<readonly Draft[]>([]);
   const removed = createCell<readonly string[]>([]);
+  const deleted = createCell<readonly string[]>([]);
   const moves = createCell<readonly Moved[]>([]);
+  const marked = createCell<readonly Mark[]>([]);
   const unsubscribes = createCell<readonly string[]>([]);
   const sentMail = createCell<ReadonlyMap<string, readonly Mail[]>>(new Map());
   const isBroken = createCell(false);
@@ -101,7 +165,8 @@ export const createFakeMail = (now: () => string): FakeMail => {
   const isRemovalRefused = createCell(false);
   const healthListeners = createCell<ReadonlyMap<string, (health: Health) => void>>(new Map());
 
-  const boxOf = (account: string): Box => boxes.get().get(account) ?? { inbox: [], watchers: new Set() };
+  const boxOf = (account: string): Box =>
+    boxes.get().get(account) ?? { inbox: [], watchers: new Set(), files: new Map() };
 
   const change = (account: string, update: (box: Box) => Box): void => {
     boxes.update((all) => new Map([...all, [account, update(boxOf(account))]]));
@@ -129,7 +194,29 @@ export const createFakeMail = (now: () => string): FakeMail => {
       },
     }),
     flags: [],
+    ...(mail.files !== undefined &&
+      mail.files.length > 0 && {
+        attachments: mail.files.map(({ id, filename, contentType, content }) => ({
+          id,
+          ...(filename !== undefined && { filename }),
+          contentType,
+          size: content.length,
+          inline: false,
+        })),
+      }),
   });
+
+  const keepFiles = (account: string, mail: Omit<ArrivingMail, "account">): void => {
+    const files = (mail.files ?? []).map(({ id, filename, contentType, content }) => ({
+      id,
+      ...(filename !== undefined && { filename }),
+      contentType,
+      size: content.length,
+      inline: false,
+      content,
+    }));
+    change(account, (box) => ({ ...box, files: new Map([...box.files, [mail.message_id, files]]) }));
+  };
 
   // Records the move and puts the mail there, a filing by its folder, as the server would: flags leave it in place.
   const move = (account: string, messageId: string, to: string): string => {
@@ -250,14 +337,39 @@ export const createFakeMail = (now: () => string): FakeMail => {
       const [next = `draft-${String(saved.get().length + 1)}@ito.local`, ...rest] = draftIds.get();
       draftIds.set(rest);
       saved.update((all) => [...all, draft]);
-      return Promise.resolve(ok({ messageId: next }));
+      const { replaces } = draft;
+      const isRefused = replaces !== undefined && isRemovalRefused.get();
+      if (replaces !== undefined && !isRefused) removed.update((all) => [...all, replaces]);
+      const refused = { failure: "Mail couldn't finish removing the draft: Connection not available" };
+      const replaced = isRefused ? refused : ("removed" as const);
+      const answer = {
+        messageId: next,
+        saved: savedMail(account, next, draft, now()),
+        ...(replaces !== undefined && { replaced }),
+      };
+      return Promise.resolve(ok(answer));
     },
     removeDraft: (messageId) => {
       if (isRemovalRefused.get()) {
         return Promise.resolve(fail("Mail couldn't finish removing the draft: Connection not available"));
       }
       removed.update((all) => [...all, messageId]);
-      return Promise.resolve(ok(undefined));
+      return Promise.resolve(ok("removed" as const));
+    },
+    // Every draft is there but the ones taken out, by Kumo or in their mail app.
+    hasDraft: (messageId) =>
+      Promise.resolve(ok(!removed.get().includes(messageId) && !deleted.get().includes(messageId))),
+    mark: (messageIds, marking) => {
+      const known = new Set(boxOf(account).inbox.map(({ messageId }) => messageId));
+      const changed = messageIds.filter((id) => known.has(id));
+      marked.update((all) => [...all, ...changed.map((messageId) => ({ account, messageId, ...marking }))]);
+      return Promise.resolve(ok({ changed, missing: messageIds.filter((id) => !known.has(id)) }));
+    },
+    attachment: (messageId, id) => {
+      const file = boxOf(account)
+        .files.get(messageId)
+        ?.find((candidate) => candidate.id === id);
+      return Promise.resolve(file ? ok(file) : fail(`That mail has no attachment ${id}.`));
     },
     file: (messageId, filing) => {
       move(account, messageId, filing);
@@ -296,11 +408,13 @@ export const createFakeMail = (now: () => string): FakeMail => {
   return {
     create,
     keep: (folder, { account, ...mail }) => {
+      keepFiles(account, mail);
       const kept = { ...toMail(account, mail, boxOf(account).inbox.length + 1), folder };
       change(account, (box) => ({ ...box, inbox: [...box.inbox, kept] }));
     },
     folderOf: (account, messageId) => boxOf(account).inbox.find((mail) => mail.messageId === messageId)?.folder,
     arrive: ({ account, ...mail }) => {
+      keepFiles(account, mail);
       const arrived = toMail(account, mail, boxOf(account).inbox.length + 1);
       change(account, (box) => ({ ...box, inbox: [...box.inbox, arrived] }));
       for (const watcher of boxOf(account).watchers) watcher(arrived);
@@ -326,7 +440,11 @@ export const createFakeMail = (now: () => string): FakeMail => {
     },
     drafts: () => saved.get(),
     removedDrafts: () => removed.get(),
+    deleteInMail: (messageId) => {
+      deleted.update((all) => [...all, messageId]);
+    },
     moved: () => moves.get(),
+    marks: () => marked.get(),
     unsubscribed: () => unsubscribes.get(),
     send: (account, mail) => {
       sentMail.update((all) => new Map([...all, [account, [...(all.get(account) ?? []), mail]]]));

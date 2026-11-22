@@ -11,6 +11,7 @@ import { createCell } from "#cell.ts";
 import { systemClock, type Cancel } from "#clock.ts";
 import {
   addressKey,
+  attachmentIn,
   fromSyntheticMessageId,
   parseMail,
   parseSentBody,
@@ -18,8 +19,10 @@ import {
   threadIds,
   threadOf,
   toDraftMime,
+  toMessageIds,
   uniqueByMessageId,
   type Address,
+  type AttachmentContent,
   type Draft,
   type Mail,
   type SentBody,
@@ -29,7 +32,7 @@ import { unsubscribeFrom, type Unsubscribed } from "#mail/unsubscribe.ts";
 import type { Health } from "#problems/problems.ts";
 import { fail, ok, type Result } from "#result.ts";
 
-export type { Address, Draft, Mail, SentBody, Unsubscribe } from "#mail/message.ts";
+export type { Address, AttachmentContent, Draft, Mail, MailAttachment, SentBody, Unsubscribe } from "#mail/message.ts";
 export type { Unsubscribed, UnsubscribeLetter } from "#mail/unsubscribe.ts";
 export { providers } from "#mail/providers.ts";
 
@@ -87,6 +90,24 @@ export type MovedBatch = {
 
 export type MoveProgress = (moved: number, total: number) => void;
 
+// What became of the draft a new one replaced: taken out of Drafts, already gone from it, or still there, and why.
+export type Replaced = "removed" | "gone" | { readonly failure: string };
+
+// A draft as saved: its Message-ID, the draft as it reads back from Drafts, or why it couldn't be read back, and
+// what became of the one it replaced.
+export type SavedDraft = {
+  readonly messageId: string;
+  readonly saved?: Mail;
+  readonly unread?: string;
+  readonly replaced?: Replaced;
+};
+
+// A change to how a mail is marked: read or unread, flagged or not.
+export type Marking = { readonly seen?: boolean; readonly flagged?: boolean };
+
+// What marking did, for each Message-ID asked: changed, or not found.
+export type Marked = { readonly changed: readonly string[]; readonly missing: readonly string[] };
+
 export type MailSource = {
   readonly account: string;
   readonly check: () => Promise<Result<{ readonly senders: readonly Address[]; readonly folders: number }, string>>;
@@ -97,9 +118,17 @@ export type MailSource = {
   readonly read: (messageId: string) => Promise<Result<Mail, string>>;
   readonly search: (query: MailQuery) => Promise<Result<MailPage, string>>;
   readonly thread: (messageId: string) => Promise<Result<readonly Mail[], string>>;
-  readonly draft: (draft: Draft) => Promise<Result<{ readonly messageId: string }, string>>;
-  readonly removeDraft: (messageId: string) => Promise<Result<undefined, string>>;
+  // Saves a draft, reads it back from Drafts, and only then takes out the draft it replaces. A save the server
+  // didn't answer in time is looked for before it's tried again, so it's never saved twice.
+  readonly draft: (draft: Draft) => Promise<Result<SavedDraft, string>>;
+  readonly removeDraft: (messageId: string) => Promise<Result<"removed" | "gone", string>>;
+  // Whether the draft with exactly this Message-ID is still in Drafts.
+  readonly hasDraft: (messageId: string) => Promise<Result<boolean, string>>;
   readonly file: (messageId: string, filing: Filing) => Promise<Result<undefined, string>>;
+  // Marks mails read or unread, flagged or not, by Message-ID, without moving them.
+  readonly mark: (messageIds: readonly string[], marking: Marking) => Promise<Result<Marked, string>>;
+  // One file a mail carries, by the id its listing gave, read without marking the mail read.
+  readonly attachment: (messageId: string, id: string) => Promise<Result<AttachmentContent, string>>;
   // Moves a mail into the folder of that name, making the folder first when the account hasn't one, and gives the
   // folder it was in, so an undo can put it back there.
   readonly fileInto: (messageId: string, folder: string) => Promise<Result<{ readonly origin: string }, string>>;
@@ -141,6 +170,8 @@ export type SourceOptions = {
   readonly watermark?: SavedWatermark;
   readonly onWatermark?: (watermark: SavedWatermark) => void;
   readonly onHealth?: (health: Health) => void;
+  // How long one try at reading or changing mail may take before the server counts as not answering.
+  readonly attemptMs?: number;
 };
 
 export type SavedWatermark = { readonly uidValidity: string; readonly next: number };
@@ -197,6 +228,18 @@ const notReceived: ReadonlySet<string> = new Set([
 // Folders some servers list that never hold received mail, such as Outlook's Outbox and Exchange's own.
 const notMail = /^(?:notes|outbox|conversation history|sync issues|rss feeds|rss subscriptions)$/iu;
 const gone = "That mail isn't in this account any more.";
+// One try at reading or changing one mail gets this long, a search or a thread a little longer, and work over many
+// mails, such as a catch-up or a batch move, longer still; a slow server is tried once more on a fresh connection.
+const attemptLimitMs = 40_000;
+const searchLimitMs = 90_000;
+const bulkLimitMs = 4 * 60_000;
+const connectLimitMs = 30_000;
+// How many candidates a Message-ID search may give before they're checked, and how many of a folder's newest mails
+// are looked through by their envelopes when the server's search hasn't caught up, as Exchange's can lag.
+const mostCandidates = 50;
+const scanDepth = 200;
+// Where a mail was last seen, by Message-ID, so a mail a search found is read from where it was, checked first.
+const mostPlaces = 2000;
 
 export const backoffMs = (attempt: number): number =>
   Math.min(firstRetryMs * 2 ** Math.max(0, attempt - 1), lastRetryMs);
@@ -220,6 +263,41 @@ export const fromUidSet = (text: string): readonly number[] =>
   });
 
 const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+type Late = { readonly isLate: true };
+
+const late: Late = { isLate: true };
+
+const isLate = (value: unknown): value is Late => value === late;
+
+// The work, or Late once it has taken longer than it may.
+const inTime = async <Value>(work: Promise<Value>, limitMs: number): Promise<Value | Late> => {
+  const timer = createCell<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const expiry = new Promise<Late>((resolve) => {
+    timer.set(
+      setTimeout(() => {
+        resolve(late);
+      }, limitMs),
+    );
+  });
+  try {
+    return await Promise.race([work, expiry]);
+  } finally {
+    clearTimeout(timer.get());
+  }
+};
+
+// Said when a save was cut short and Drafts couldn't be asked whether it was kept.
+const unknown = (reason: string): string =>
+  `Mail couldn't finish saving the draft: ${reason} It couldn't be checked whether the draft was kept, and the ` +
+  "earlier draft is untouched. Look in Drafts before trying again.";
+
+// How one try went: done, with its result, or cut short, as the server didn't answer in time or the connection
+// dropped, so whatever it was doing may or may not have happened.
+type Tried<Value> = { readonly done: Result<Value, string> } | { readonly cut: string };
+
+// Whether an envelope's Message-ID is exactly this one.
+const isSameId = (header: string | undefined, messageId: string): boolean => toMessageIds(header)[0] === messageId;
 
 const specialPath = (list: readonly ListResponse[], use: string): string | undefined =>
   list.find((entry) => entry.specialUse === use)?.path;
@@ -359,6 +437,21 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   const imap = options.imap ?? providers[account].imap;
   const sessions = createCell<Promise<Result<Session, string>> | undefined>(undefined);
   const watchers = createCell<ReadonlySet<() => void>>(new Set());
+  const places = createCell<ReadonlyMap<string, Place>>(new Map());
+  const limitOf = (limitMs: number): number => options.attemptMs ?? limitMs;
+  const lateText = `${imap.host} didn't answer in time.`;
+
+  // Where a mail was seen, by its Message-ID, the newest kept.
+  const rememberAll = (seen: readonly (readonly [string, Place])[]): void => {
+    const real = seen.filter(([messageId]) => fromSyntheticMessageId(messageId) === undefined);
+    if (real.length === 0) return;
+    const fresh = new Set(real.map(([messageId]) => messageId));
+    places.update((all) => new Map([...[...all].filter(([id]) => !fresh.has(id)), ...real].slice(-mostPlaces)));
+  };
+
+  const remember = (messageId: string, place: Place): void => {
+    rememberAll([[messageId, place]]);
+  };
 
   const log = (message: string, details: Readonly<Record<string, unknown>>): void => {
     options.logger?.(message, { account, ...details });
@@ -397,7 +490,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       case "GREETING_TIMEOUT":
       case "ETIMEDOUT":
       case "ETIMEOUT": {
-        return `${imap.host} didn't answer in time.`;
+        return lateText;
       }
       default: {
         return details?.responseText ?? describe(error);
@@ -428,6 +521,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       auth: signIn.value,
       logger: imapLogger,
       clientInfo: { name: "Ito" },
+      connectionTimeout: connectLimitMs,
       disableAutoIdle: watching,
       maxIdleTime: idleRestartMs,
     });
@@ -466,43 +560,74 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     return next;
   };
 
+  // One try at some work, bounded in time. A try the server didn't answer in time closes the connection, so the
+  // next starts on a fresh one rather than queueing behind it.
+  const attempt = async <Value>(
+    doing: string,
+    work: (opened: Session) => Promise<Result<Value, string>>,
+    limitMs = attemptLimitMs,
+  ): Promise<Tried<Value>> => {
+    const opened = await session();
+    if (!opened.ok) return opened.failure === lateText ? { cut: lateText } : { done: opened };
+    const { client } = opened.value;
+    try {
+      const answered = await inTime(work(opened.value), limitOf(limitMs));
+      if (!isLate(answered)) return { done: answered };
+      log("The mail server didn't answer in time, so the connection is closed", { doing, limitMs: limitOf(limitMs) });
+      client.close();
+      return { cut: lateText };
+    } catch (error) {
+      const reason = explain(error);
+      if (reason === lateText || isDropped(client, error)) {
+        client.close();
+        return { cut: reason };
+      }
+      log("Mail work failed", { doing, reason });
+      return { done: fail(`Mail couldn't finish ${doing}: ${reason}`) };
+    }
+  };
+
+  // Work that's safe to do twice, such as reading, or a change that finds its mail again each time, gets a second try
+  // on a fresh connection when the first is cut short; other work says it may or may not have happened.
   const run = async <Value>(
     doing: string,
     work: (opened: Session) => Promise<Result<Value, string>>,
-    isReading = false,
+    isRepeatable = false,
+    limitMs = attemptLimitMs,
   ): Promise<Result<Value, string>> => {
-    const opened = await session();
-    if (!opened.ok) return opened;
-    try {
-      return await work(opened.value);
-    } catch (error) {
-      const reason = explain(error);
-      if (isReading && isDropped(opened.value.client, error)) {
-        log("The mail session dropped, so it reads again on a fresh one", { doing, reason });
-        opened.value.client.close();
-        return run(doing, work);
-      }
-      log("Mail work failed", { doing, reason });
-      return fail(`Mail couldn't finish ${doing}: ${reason}`);
+    const first = await attempt(doing, work, limitMs);
+    if ("done" in first) return first.done;
+    if (!isRepeatable) {
+      return fail(
+        `Mail couldn't finish ${doing}: ${first.cut} It may or may not have happened, so look before trying again.`,
+      );
     }
+    log("The mail server didn't finish, so it's tried again on a fresh connection", { doing, reason: first.cut });
+    const second = await attempt(doing, work, limitMs);
+    return "done" in second
+      ? second.done
+      : fail(`Mail couldn't finish ${doing}, tried twice: ${second.cut} Trying again later is safe.`);
   };
 
   const runReading = <Value>(
     doing: string,
     work: (opened: Session) => Promise<Result<Value, string>>,
-  ): Promise<Result<Value, string>> => run(doing, work, true);
+    limitMs = attemptLimitMs,
+  ): Promise<Result<Value, string>> => run(doing, work, true, limitMs);
 
   const toMailFrom = async (message: FetchMessageObject, folder: string): Promise<Mail | undefined> => {
     const raw = message.source ?? message.headers;
     if (raw === undefined) return undefined;
     const receivedAt = toIso(message.internalDate);
-    return parseMail(raw, {
+    const mail = await parseMail(raw, {
       account,
       folder,
       uid: message.uid,
       flags: [...(message.flags ?? [])],
       ...(receivedAt !== undefined && { receivedAt }),
+      ...(message.source === undefined && { isHeaders: true }),
     });
+    return mail;
   };
 
   const fetchMails = async (
@@ -519,6 +644,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
       const mail = await toMailFrom(message, folder);
       if (mail !== undefined) mails.update((current) => [...current, mail]);
     }
+    rememberAll(mails.get().map(({ messageId, uid }) => [messageId, { folder, uid }] as const));
     return mails.get();
   };
 
@@ -545,18 +671,76 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     return ok(uniqueByMessageId(collected.get()));
   };
 
+  // Of these UIDs in the open folder, the ones whose Message-ID is exactly this one, newest first. A server's search
+  // can match more loosely than that: IMAP's is a substring match, and Exchange answers from its search index.
+  const exactly = async (client: ImapFlow, uids: readonly number[], messageId: string): Promise<readonly number[]> => {
+    if (uids.length === 0) return [];
+    const picked = newestFirst(uids).slice(0, mostCandidates);
+    const messages = await client.fetchAll(toUidSet(picked), { uid: true, envelope: true }, { uid: true });
+    return newestFirst(
+      messages.filter(({ envelope }) => isSameId(envelope?.messageId, messageId)).map(({ uid }) => uid),
+    );
+  };
+
+  // The newest of the open folder's last mails with this Message-ID, read from their envelopes, for a mail the
+  // server's search hasn't caught up with yet, such as a draft just saved or a mail just sent.
+  const scanned = async (client: ImapFlow, messageId: string): Promise<number | undefined> => {
+    const exists = client.mailbox === false ? 0 : client.mailbox.exists;
+    if (exists === 0) return undefined;
+    const range = `${String(Math.max(1, exists - scanDepth + 1))}:*`;
+    const messages = await client.fetchAll(range, { uid: true, envelope: true });
+    const [uid] = newestFirst(
+      messages.filter(({ envelope }) => isSameId(envelope?.messageId, messageId)).map((message) => message.uid),
+    );
+    return uid;
+  };
+
+  // Whether the mail is still where it was seen. Where it was may be gone, such as a folder since deleted; then it's
+  // looked for afresh.
+  const isStillAt = async (client: ImapFlow, { folder, uid }: Place, messageId: string): Promise<boolean> => {
+    try {
+      const found = await inFolder(client, folder, () => exactly(client, [uid], messageId));
+      return found.length > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  // Where a mail with exactly this Message-ID is, in the first of these folders that has it: where it was last seen,
+  // when it's still there, or else as the server's search finds it, every match checked, or failing that, among the
+  // newest mails of the inbox, Drafts and Sent. A mail is never taken for another that only resembles it.
   const locate = async (
-    client: ImapFlow,
+    opened: Session,
     folders: readonly string[],
     messageId: string,
   ): Promise<Result<Place | undefined, string>> => {
+    const { client } = opened;
     const synthetic = fromSyntheticMessageId(messageId);
     if (synthetic !== undefined) return ok(synthetic);
+    const seen = places.get().get(messageId);
+    if (seen !== undefined && folders.includes(seen.folder) && (await isStillAt(client, seen, messageId)))
+      return ok(seen);
     for (const folder of folders) {
-      const uids = await inFolder(client, folder, () => searchUids(client, byIdHeader("message-id", messageId)));
-      if (!uids.ok) return uids;
-      const [uid] = uids.value.toSorted((left, right) => right - left);
-      if (uid !== undefined) return ok({ folder, uid });
+      const found = await inFolder(client, folder, async (): Promise<Result<number | undefined, string>> => {
+        const uids = await searchUids(client, byIdHeader("message-id", messageId));
+        if (!uids.ok) return uids;
+        const [uid] = await exactly(client, uids.value, messageId);
+        return ok(uid);
+      });
+      if (!found.ok) return found;
+      if (found.value !== undefined) {
+        remember(messageId, { folder, uid: found.value });
+        return ok({ folder, uid: found.value });
+      }
+    }
+    const { inbox, drafts, sent } = opened.folders;
+    const recent = present([drafts, sent, inbox]).filter((candidate) => folders.includes(candidate));
+    for (const folder of recent) {
+      const uid = await inFolder(client, folder, () => scanned(client, messageId));
+      if (uid !== undefined) {
+        remember(messageId, { folder, uid });
+        return ok({ folder, uid });
+      }
     }
     return ok(undefined);
   };
@@ -570,7 +754,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     present([...folders.received, folders.archive, folders.sent]);
 
   const findMail = async (opened: Session, messageId: string): Promise<Result<Found, string>> => {
-    const place = await locate(opened.client, everywhere(opened), messageId);
+    const place = await locate(opened, everywhere(opened), messageId);
     if (!place.ok) return place;
     if (place.value === undefined) return fail(gone);
     const { folder, uid } = place.value;
@@ -594,13 +778,14 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   const deleteDraft = async (opened: Session, messageId: string): Promise<Result<boolean, string>> => {
     const { drafts } = opened.folders;
     if (drafts === undefined) return fail("This account has no Drafts folder.");
-    const place = await locate(opened.client, [drafts], messageId);
+    const place = await locate(opened, [drafts], messageId);
     if (!place.ok) return place;
     if (place.value?.folder !== drafts) return ok(false);
     const { uid } = place.value;
     const deleted = await inFolder(opened.client, drafts, () =>
       opened.client.messageDelete(String(uid), { uid: true }),
     );
+    if (deleted) places.update((all) => new Map([...all].filter(([id]) => id !== messageId)));
     return deleted ? ok(true) : fail("The mail server didn't delete the draft.");
   };
 
@@ -618,14 +803,25 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     return moved === false ? fail(`The mail server didn't move the mail to ${name}.`) : ok(undefined);
   };
 
-  const flag = async (opened: Session, place: Place, isOn: boolean): Promise<Result<undefined, string>> => {
-    const changed = await inFolder(opened.client, place.folder, () =>
-      isOn
-        ? opened.client.messageFlagsAdd(String(place.uid), ["\\Flagged"], { uid: true })
-        : opened.client.messageFlagsRemove(String(place.uid), ["\\Flagged"], { uid: true }),
-    );
-    return changed ? ok(undefined) : fail("The mail server didn't change the flag.");
+  // Sets or clears the mail's flags, such as \\Seen for read and \\Flagged for Mail's flag, where it is.
+  const setMarks = async (opened: Session, place: Place, marking: Marking): Promise<Result<undefined, string>> => {
+    const wanted = [
+      ...(marking.seen === undefined ? [] : [["\\Seen", marking.seen] as const]),
+      ...(marking.flagged === undefined ? [] : [["\\Flagged", marking.flagged] as const]),
+    ];
+    const added = wanted.filter(([, isOn]) => isOn).map(([name]) => name);
+    const removed = wanted.filter(([, isOn]) => !isOn).map(([name]) => name);
+    const range = String(place.uid);
+    const changed = await inFolder(opened.client, place.folder, async () => {
+      const isAdded = added.length === 0 || (await opened.client.messageFlagsAdd(range, added, { uid: true }));
+      const isRemoved = removed.length === 0 || (await opened.client.messageFlagsRemove(range, removed, { uid: true }));
+      return isAdded && isRemoved;
+    });
+    return changed ? ok(undefined) : fail("The mail server didn't change how the mail is marked.");
   };
+
+  const flag = (opened: Session, place: Place, isOn: boolean): Promise<Result<undefined, string>> =>
+    setMarks(opened, place, { flagged: isOn });
 
   const fileAt = (opened: Session, place: Place, filing: Filing): Promise<Result<undefined, string>> => {
     switch (filing) {
@@ -669,8 +865,11 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     const previous = await sessions.get();
     if (previous?.ok === true) previous.value.client.close();
     sessions.set(openSession());
-    return run("checking the account", async (opened) =>
-      ok({ senders: await sendersIn(opened), folders: opened.folders.count }),
+    return run(
+      "checking the account",
+      async (opened) => ok({ senders: await sendersIn(opened), folders: opened.folders.count }),
+      false,
+      bulkLimitMs,
     );
   };
 
@@ -814,13 +1013,17 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   };
 
   const recent: MailSource["recent"] = (since) =>
-    runReading("reading recent mail", async (opened) => {
-      const query = sinceQuery(since);
-      if (!query.ok) return query;
-      const { received, archive } = opened.folders;
-      const mails = await mailsIn(opened.client, present([...received, archive]), query.value, true);
-      return mails.ok ? ok(mails.value.filter((mail) => !mail.flags.includes("\\Draft")).toSorted(byDate)) : mails;
-    });
+    runReading(
+      "reading recent mail",
+      async (opened) => {
+        const query = sinceQuery(since);
+        if (!query.ok) return query;
+        const { received, archive } = opened.folders;
+        const mails = await mailsIn(opened.client, present([...received, archive]), query.value, true);
+        return mails.ok ? ok(mails.value.filter((mail) => !mail.flags.includes("\\Draft")).toSorted(byDate)) : mails;
+      },
+      bulkLimitMs,
+    );
 
   const read: MailSource["read"] = (messageId) =>
     runReading("reading the mail", async (opened) => {
@@ -890,97 +1093,172 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   };
 
   const search: MailSource["search"] = (query) =>
-    runReading("searching mail", async (opened) => {
-      const criteria = lookFor(query);
-      if (!criteria.ok) return criteria;
-      const scope = scopeOf(opened, query.folder, kept(opened));
-      if (!scope.ok) return scope;
-      const cursor = fromCursor(query.more);
-      if (!cursor.ok) return cursor;
-      const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? pageSize)), mostPerPage);
-      const found = createCell<
-        readonly {
-          readonly folder: string;
-          readonly matches: number;
-          readonly older: readonly number[];
-          readonly mails: readonly Mail[];
-        }[]
-      >([]);
-      for (const folder of scope.value) {
-        const read = await inFolder(opened.client, folder, async (): Promise<Result<undefined, string>> => {
-          const uids = await searchUids(opened.client, criteria.value);
-          if (!uids.ok) return uids;
-          const below = cursor.value[folder];
-          const older = newestFirst(uids.value.filter((uid) => below === undefined || uid < below));
-          const mails = await fetchMails(opened.client, folder, toUidSet(older.slice(0, limit)), true);
-          found.update((current) => [...current, { folder, matches: uids.value.length, older, mails }]);
-          return ok(undefined);
+    runReading(
+      "searching mail",
+      async (opened) => {
+        const criteria = lookFor(query);
+        if (!criteria.ok) return criteria;
+        const scope = scopeOf(opened, query.folder, kept(opened));
+        if (!scope.ok) return scope;
+        const cursor = fromCursor(query.more);
+        if (!cursor.ok) return cursor;
+        const limit = Math.min(Math.max(1, Math.trunc(query.limit ?? pageSize)), mostPerPage);
+        const found = createCell<
+          readonly {
+            readonly folder: string;
+            readonly matches: number;
+            readonly older: readonly number[];
+            readonly mails: readonly Mail[];
+          }[]
+        >([]);
+        for (const folder of scope.value) {
+          const read = await inFolder(opened.client, folder, async (): Promise<Result<undefined, string>> => {
+            const uids = await searchUids(opened.client, criteria.value);
+            if (!uids.ok) return uids;
+            const below = cursor.value[folder];
+            const older = newestFirst(uids.value.filter((uid) => below === undefined || uid < below));
+            const mails = await fetchMails(opened.client, folder, toUidSet(older.slice(0, limit)), true);
+            found.update((current) => [...current, { folder, matches: uids.value.length, older, mails }]);
+            return ok(undefined);
+          });
+          if (!read.ok) return read;
+        }
+        const page = takePage(
+          found.get().map(({ mails }) => mails),
+          limit,
+        );
+        const next = found.get().map(({ folder, older }) => {
+          const from = page.taken.filter((mail) => mail.folder === folder).map(({ uid }) => uid);
+          const oldest = from.length === 0 ? cursor.value[folder] : Math.min(...from);
+          return { folder, oldest, left: older.filter((uid) => oldest === undefined || uid < oldest).length };
         });
-        if (!read.ok) return read;
-      }
-      const page = takePage(
-        found.get().map(({ mails }) => mails),
-        limit,
-      );
-      const next = found.get().map(({ folder, older }) => {
-        const from = page.taken.filter((mail) => mail.folder === folder).map(({ uid }) => uid);
-        const oldest = from.length === 0 ? cursor.value[folder] : Math.min(...from);
-        return { folder, oldest, left: older.filter((uid) => oldest === undefined || uid < oldest).length };
-      });
-      const after = next.reduce((sum, { left }) => sum + left, 0);
-      const more = Object.fromEntries(
-        next.flatMap(({ folder, oldest }) => (oldest === undefined ? [] : [[folder, oldest]])),
-      );
-      return ok({
-        mails: page.shown.toSorted(byDate).toReversed(),
-        total: found.get().reduce((sum, { matches }) => sum + matches, 0),
-        after,
-        searched: scope.value,
-        ...(after > 0 && { more: toCursor(more) }),
-      });
-    });
+        const after = next.reduce((sum, { left }) => sum + left, 0);
+        const more = Object.fromEntries(
+          next.flatMap(({ folder, oldest }) => (oldest === undefined ? [] : [[folder, oldest]])),
+        );
+        return ok({
+          mails: page.shown.toSorted(byDate).toReversed(),
+          total: found.get().reduce((sum, { matches }) => sum + matches, 0),
+          after,
+          searched: scope.value,
+          ...(after > 0 && { more: toCursor(more) }),
+        });
+      },
+      searchLimitMs,
+    );
 
   const thread: MailSource["thread"] = (messageId) =>
-    runReading("reading the conversation", async (opened) => {
-      const found = await findMail(opened, messageId);
-      if (!found.ok) return found;
-      const { mail, place } = found.value;
-      const threadId = await threadIdAt(opened, place);
-      const query: SearchObject = {
-        or: [
-          ...[...threadIds(mail)].flatMap((id) => [
-            byIdHeader("message-id", id),
-            byIdHeader("references", id),
-            byIdHeader("in-reply-to", id),
-          ]),
-          ...(threadId === undefined ? [] : [{ threadId }]),
-        ],
-      };
-      const mails = await mailsIn(opened.client, kept(opened), query);
-      return mails.ok ? ok(threadOf(mail.messageId, [mail, ...mails.value])) : mails;
+    runReading(
+      "reading the conversation",
+      async (opened) => {
+        const found = await findMail(opened, messageId);
+        if (!found.ok) return found;
+        const { mail, place } = found.value;
+        const threadId = await threadIdAt(opened, place);
+        const query: SearchObject = {
+          or: [
+            ...[...threadIds(mail)].flatMap((id) => [
+              byIdHeader("message-id", id),
+              byIdHeader("references", id),
+              byIdHeader("in-reply-to", id),
+            ]),
+            ...(threadId === undefined ? [] : [{ threadId }]),
+          ],
+        };
+        const mails = await mailsIn(opened.client, kept(opened), query);
+        return mails.ok ? ok(threadOf(mail.messageId, [mail, ...mails.value])) : mails;
+      },
+      searchLimitMs,
+    );
+
+  // Where in Drafts the draft with this Message-ID is now, if it's there.
+  const draftPlace = (opened: Session, messageId: string): Promise<Result<Place | undefined, string>> => {
+    const { drafts } = opened.folders;
+    return drafts === undefined
+      ? Promise.resolve(fail("This account has no Drafts folder."))
+      : locate(opened, [drafts], messageId);
+  };
+
+  const appendDraft = async (opened: Session, messageId: string, mime: Buffer): Promise<Result<undefined, string>> => {
+    const { drafts } = opened.folders;
+    if (drafts === undefined) return fail("This account has no Drafts folder.");
+    const appended = await opened.client.append(drafts, mime, ["\\Draft", "\\Seen"]);
+    if (appended === false) return fail("The mail server didn't keep the draft.");
+    if (appended.uid !== undefined) remember(messageId, { folder: appended.destination, uid: appended.uid });
+    return ok(undefined);
+  };
+
+  // Whether a save cut short was kept after all, looked for by its own Message-ID: so a save is never made twice.
+  const wasKept = async (messageId: string): Promise<boolean | undefined> => {
+    const looked = await attempt("looking for the draft in Drafts", (opened) => draftPlace(opened, messageId));
+    return "done" in looked && looked.done.ok ? looked.done.value !== undefined : undefined;
+  };
+
+  // Puts the draft into Drafts once. A save the server didn't answer in time is looked for, and made again only when
+  // it isn't there; what's said after that is what's known: kept, not kept, or unknown.
+  const keepDraft = async (messageId: string, mime: Buffer): Promise<Result<undefined, string>> => {
+    const first = await attempt("saving the draft", (opened) => appendDraft(opened, messageId, mime));
+    if ("done" in first) return first.done;
+    log("A draft's save was cut short, so it's looked for before trying again", { reason: first.cut });
+    const kept = await wasKept(messageId);
+    if (kept === undefined) return fail(unknown(first.cut));
+    if (kept) return ok(undefined);
+    const second = await attempt("saving the draft", (opened) => appendDraft(opened, messageId, mime));
+    if ("done" in second) return second.done;
+    const keptLate = await wasKept(messageId);
+    if (keptLate === undefined) return fail(unknown(second.cut));
+    return keptLate
+      ? ok(undefined)
+      : fail(
+          `Mail couldn't save the draft: ${second.cut} Tried twice, and nothing changed: the new draft isn't in ` +
+            "Drafts and the earlier one is untouched, so trying again is safe.",
+        );
+  };
+
+  // The draft as it reads back from Drafts.
+  const readDraft = (messageId: string): Promise<Result<Mail, string>> =>
+    runReading("reading the draft back", async (opened) => {
+      const place = await draftPlace(opened, messageId);
+      if (!place.ok) return place;
+      if (place.value === undefined) return fail("The draft isn't in Drafts.");
+      const { folder, uid } = place.value;
+      const [mail] = await inFolder(opened.client, folder, () => fetchMails(opened.client, folder, String(uid)));
+      return mail === undefined ? fail("The draft isn't in Drafts.") : ok(mail);
     });
 
-  const draft: MailSource["draft"] = (letter) =>
-    run("saving the draft", async (opened) => {
-      const { drafts } = opened.folders;
-      if (drafts === undefined) return fail("This account has no Drafts folder.");
-      const messageId = `${randomUUID()}@${domainOf(letter.from.address)}`;
-      const mime = await toDraftMime(letter, messageId, new Date());
-      const appended = await opened.client.append(drafts, mime, ["\\Draft", "\\Seen"]);
-      if (appended === false) return fail("The mail server didn't keep the draft.");
-      if (letter.replaces !== undefined) {
-        const removed = await deleteDraft(opened, letter.replaces);
-        if (!removed.ok) log("The draft it replaces couldn't be removed", { reason: removed.failure });
-      }
-      return ok({ messageId });
-    });
-
-  // One already gone from Drafts, such as sent or deleted in their mail app, counts as removed.
+  // One already gone from Drafts, such as sent or deleted in their mail app, is gone; only a draft with exactly that
+  // Message-ID is ever taken out.
   const removeDraft: MailSource["removeDraft"] = (messageId) =>
-    run("removing the draft", async (opened) => {
-      const removed = await deleteDraft(opened, messageId);
-      return removed.ok ? ok(undefined) : removed;
+    run(
+      "removing the draft",
+      async (opened) => {
+        const removed = await deleteDraft(opened, messageId);
+        return removed.ok ? ok(removed.value ? ("removed" as const) : ("gone" as const)) : removed;
+      },
+      true,
+    );
+
+  const hasDraft: MailSource["hasDraft"] = (messageId) =>
+    runReading("looking in Drafts", async (opened) => {
+      const place = await draftPlace(opened, messageId);
+      return place.ok ? ok(place.value !== undefined) : place;
     });
+
+  const draft: MailSource["draft"] = async (letter) => {
+    const messageId = `${randomUUID()}@${domainOf(letter.from.address)}`;
+    const mime = await toDraftMime(letter, messageId, new Date());
+    const kept = await keepDraft(messageId, mime);
+    if (!kept.ok) return kept;
+    const back = await readDraft(messageId);
+    const removed = letter.replaces === undefined ? undefined : await removeDraft(letter.replaces);
+    const replaced: Replaced | undefined =
+      removed === undefined ? undefined : removed.ok ? removed.value : { failure: removed.failure };
+    return ok({
+      messageId,
+      ...(back.ok ? { saved: back.value } : { unread: back.failure }),
+      ...(replaced !== undefined && { replaced }),
+    });
+  };
 
   // The session with the account's folders as they are now.
   const relist = async ({ client }: Session): Promise<Session> => {
@@ -1007,41 +1285,93 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     return made === undefined ? fail(`The mail server didn't make the folder ${wanted}.`) : ok(made);
   };
 
+  // Found again each time, so a second try after one cut short only finishes what the first didn't.
   const file: MailSource["file"] = (messageId, filing) =>
-    run("filing the mail", async (opened) => {
-      const place = await locate(opened.client, everywhere(opened), messageId);
+    run(
+      "filing the mail",
+      async (opened) => {
+        const place = await locate(opened, everywhere(opened), messageId);
+        if (!place.ok) return place;
+        return place.value === undefined ? fail(gone) : fileAt(opened, place.value, filing);
+      },
+      true,
+    );
+
+  const mark: MailSource["mark"] = (messageIds, marking) =>
+    run(
+      "marking mail",
+      async (opened): Promise<Result<Marked, string>> => {
+        const changed = createCell<readonly string[]>([]);
+        const missing = createCell<readonly string[]>([]);
+        const unique = new Set(messageIds);
+        for (const messageId of unique) {
+          const place = await locate(opened, everywhere(opened), messageId);
+          if (!place.ok) return place;
+          if (place.value === undefined) {
+            missing.update((current) => [...current, messageId]);
+            continue;
+          }
+          const done = await setMarks(opened, place.value, marking);
+          if (!done.ok) return done;
+          changed.update((current) => [...current, messageId]);
+        }
+        return ok({ changed: changed.get(), missing: missing.get() });
+      },
+      true,
+    );
+
+  const attachment: MailSource["attachment"] = (messageId, id) =>
+    runReading("reading the attachment", async (opened) => {
+      const place = await locate(opened, everywhere(opened), messageId);
       if (!place.ok) return place;
-      return place.value === undefined ? fail(gone) : fileAt(opened, place.value, filing);
+      if (place.value === undefined) return fail(gone);
+      const { folder, uid } = place.value;
+      const message = await inFolder(opened.client, folder, () =>
+        opened.client.fetchOne(String(uid), { uid: true, source: true }, { uid: true }),
+      );
+      if (message === false || message.source === undefined) return fail(gone);
+      const found = await attachmentIn(message.source, id);
+      return found === undefined
+        ? fail(`That mail has no attachment ${id}. Read the mail for the ids of the files it carries.`)
+        : ok(found);
     });
 
   const unsubscribe: MailSource["unsubscribe"] = (mail) => unsubscribeFrom(mail, options.fetch ?? fetch);
 
   const fileInto: MailSource["fileInto"] = (messageId, folder) =>
-    run("filing the mail", async (opened) => {
-      const place = await locate(opened.client, everywhere(opened), messageId);
-      if (!place.ok) return place;
-      if (place.value === undefined) return fail(gone);
-      const target = await ensureFolder(opened, folder);
-      if (!target.ok) return target;
-      const moved = await moveOne(opened, place.value, target.value, folder);
-      return moved.ok ? ok({ origin: place.value.folder }) : moved;
-    });
+    run(
+      "filing the mail",
+      async (opened) => {
+        const place = await locate(opened, everywhere(opened), messageId);
+        if (!place.ok) return place;
+        if (place.value === undefined) return fail(gone);
+        const target = await ensureFolder(opened, folder);
+        if (!target.ok) return target;
+        const moved = await moveOne(opened, place.value, target.value, folder);
+        return moved.ok ? ok({ origin: place.value.folder }) : moved;
+      },
+      true,
+    );
 
   const folders: MailSource["folders"] = () =>
-    runReading("listing the folders", async (opened) => {
-      const listed = await opened.client.list({ statusQuery: { messages: true, unseen: true } });
-      return ok(
-        listed.filter(isSelectable).map((entry) => {
-          const use = entry.path === opened.folders.inbox ? "inbox" : uses[entry.specialUse ?? ""];
-          return {
-            name: entry.path,
-            ...(use !== undefined && { use }),
-            messages: entry.status?.messages ?? 0,
-            unseen: entry.status?.unseen ?? 0,
-          };
-        }),
-      );
-    });
+    runReading(
+      "listing the folders",
+      async (opened) => {
+        const listed = await opened.client.list({ statusQuery: { messages: true, unseen: true } });
+        return ok(
+          listed.filter(isSelectable).map((entry) => {
+            const use = entry.path === opened.folders.inbox ? "inbox" : uses[entry.specialUse ?? ""];
+            return {
+              name: entry.path,
+              ...(use !== undefined && { use }),
+              messages: entry.status?.messages ?? 0,
+              unseen: entry.status?.unseen ?? 0,
+            };
+          }),
+        );
+      },
+      searchLimitMs,
+    );
 
   // The UIDs in the open folder of mails with these Message-IDs, a few ids to a search.
   const uidsWithIds = async (client: ImapFlow, ids: readonly string[]): Promise<Result<readonly number[], string>> => {
@@ -1112,8 +1442,11 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   };
 
   const select: MailSource["select"] = (selection) =>
-    runReading("picking out mail", (opened) =>
-      "messageIds" in selection ? selectIds(opened, selection.messageIds) : selectQuery(opened, selection.query),
+    runReading(
+      "picking out mail",
+      (opened) =>
+        "messageIds" in selection ? selectIds(opened, selection.messageIds) : selectQuery(opened, selection.query),
+      bulkLimitMs,
     );
 
   const destinationOf = async (opened: Session, destination: Destination): Promise<Result<string, string>> => {
@@ -1127,60 +1460,65 @@ export const createMailSource = (options: SourceOptions): MailSource => {
   };
 
   const move: MailSource["move"] = (groups, destination, onProgress) =>
-    run("moving mail", async (opened) => {
-      const target = await destinationOf(opened, destination);
-      if (!target.ok) return target;
-      // One chunk moved, or why not: a dropped connection too, so what moved before it is still told.
-      const moveChunk = async (
-        folder: string,
-        part: readonly number[],
-      ): Promise<Result<CopyResponseObject, string>> => {
-        try {
-          const done = await inFolder(opened.client, folder, () =>
-            opened.client.messageMove(toUidSet(part), target.value, { uid: true }),
+    run(
+      "moving mail",
+      async (opened) => {
+        const target = await destinationOf(opened, destination);
+        if (!target.ok) return target;
+        // One chunk moved, or why not: a dropped connection too, so what moved before it is still told.
+        const moveChunk = async (
+          folder: string,
+          part: readonly number[],
+        ): Promise<Result<CopyResponseObject, string>> => {
+          try {
+            const done = await inFolder(opened.client, folder, () =>
+              opened.client.messageMove(toUidSet(part), target.value, { uid: true }),
+            );
+            return done === false ? fail(`The mail server didn't move the mail out of ${folder}.`) : ok(done);
+          } catch (error) {
+            return fail(`Mail couldn't finish moving mail: ${explain(error)}`);
+          }
+        };
+        const parts = groups
+          .filter(({ folder }) => folder !== target.value)
+          .flatMap(({ folder, uids }) =>
+            chunked(newestFirst(uids).toReversed(), moveChunkSize).map((part) => ({ folder, part })),
           );
-          return done === false ? fail(`The mail server didn't move the mail out of ${folder}.`) : ok(done);
-        } catch (error) {
-          return fail(`Mail couldn't finish moving mail: ${explain(error)}`);
+        const total = parts.reduce((sum, { part }) => sum + part.length, 0);
+        // For each folder mail came from, how many moved and, while the server says, their UIDs in the destination.
+        const landed = createCell<ReadonlyMap<string, Landed>>(new Map());
+        const movedSoFar = (): number =>
+          landed
+            .get()
+            .values()
+            .reduce((sum, { count }) => sum + count, 0);
+        const stopped = createCell<string | undefined>(undefined);
+        for (const { folder, part } of parts) {
+          const done = await moveChunk(folder, part);
+          if (!done.ok) {
+            stopped.set(done.failure);
+            break;
+          }
+          const map = done.value.uidMap;
+          landed.update((all) => {
+            const { count, uids } = all.get(folder) ?? { count: 0, uids: [] };
+            const there = uids === undefined || map === undefined ? undefined : [...uids, ...map.values()];
+            return new Map([...all, [folder, { count: count + (map?.size ?? part.length), uids: there }]]);
+          });
+          onProgress?.(movedSoFar(), total);
         }
-      };
-      const parts = groups
-        .filter(({ folder }) => folder !== target.value)
-        .flatMap(({ folder, uids }) =>
-          chunked(newestFirst(uids).toReversed(), moveChunkSize).map((part) => ({ folder, part })),
-        );
-      const total = parts.reduce((sum, { part }) => sum + part.length, 0);
-      // For each folder mail came from, how many moved and, while the server says, their UIDs in the destination.
-      const landed = createCell<ReadonlyMap<string, Landed>>(new Map());
-      const movedSoFar = (): number =>
-        landed
-          .get()
-          .values()
-          .reduce((sum, { count }) => sum + count, 0);
-      const stopped = createCell<string | undefined>(undefined);
-      for (const { folder, part } of parts) {
-        const done = await moveChunk(folder, part);
-        if (!done.ok) {
-          stopped.set(done.failure);
-          break;
-        }
-        const map = done.value.uidMap;
-        landed.update((all) => {
-          const { count, uids } = all.get(folder) ?? { count: 0, uids: [] };
-          const there = uids === undefined || map === undefined ? undefined : [...uids, ...map.values()];
-          return new Map([...all, [folder, { count: count + (map?.size ?? part.length), uids: there }]]);
+        const failure = stopped.get();
+        if (failure !== undefined && movedSoFar() === 0) return fail(failure);
+        return ok({
+          moved: movedSoFar(),
+          destination: target.value,
+          placed: [...landed.get()].map(([origin, { uids }]) => ({ origin, ...(uids !== undefined && { uids }) })),
+          ...(failure !== undefined && { failure }),
         });
-        onProgress?.(movedSoFar(), total);
-      }
-      const failure = stopped.get();
-      if (failure !== undefined && movedSoFar() === 0) return fail(failure);
-      return ok({
-        moved: movedSoFar(),
-        destination: target.value,
-        placed: [...landed.get()].map(([origin, { uids }]) => ({ origin, ...(uids !== undefined && { uids }) })),
-        ...(failure !== undefined && { failure }),
-      });
-    });
+      },
+      false,
+      bulkLimitMs,
+    );
 
   const hasWritten: MailSource["hasWritten"] = (address) =>
     run("reading sent mail", async (opened) => {
@@ -1192,7 +1530,7 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     });
 
   const senders: MailSource["senders"] = () =>
-    runReading("reading sent mail", async (opened) => ok(await sendersIn(opened)));
+    runReading("reading sent mail", async (opened) => ok(await sendersIn(opened)), searchLimitMs);
 
   const lastFrom: MailSource["lastFrom"] = (address) =>
     runReading("reading sent mail", async (opened) => {
@@ -1214,33 +1552,41 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     });
 
   const sent: MailSource["sent"] = (since) =>
-    runReading("reading sent mail", async (opened) => {
-      const query = sinceQuery(since);
-      if (!query.ok) return query;
-      if (opened.folders.sent === undefined) return fail("This account has no Sent folder.");
-      const mails = await mailsIn(opened.client, [opened.folders.sent], query.value);
-      return mails.ok ? ok(mails.value.toSorted(byDate)) : mails;
-    });
+    runReading(
+      "reading sent mail",
+      async (opened) => {
+        const query = sinceQuery(since);
+        if (!query.ok) return query;
+        if (opened.folders.sent === undefined) return fail("This account has no Sent folder.");
+        const mails = await mailsIn(opened.client, [opened.folders.sent], query.value);
+        return mails.ok ? ok(mails.value.toSorted(byDate)) : mails;
+      },
+      bulkLimitMs,
+    );
 
   const sentBodies: MailSource["sentBodies"] = (limit) =>
-    runReading("reading sent mail", async (opened) => {
-      const folder = opened.folders.sent;
-      if (folder === undefined) return ok([]);
-      return inFolder(opened.client, folder, async (): Promise<Result<readonly SentBody[], string>> => {
-        const uids = await searchUids(opened.client, { all: true });
-        if (!uids.ok) return uids;
-        const latest = uids.value.toSorted((left, right) => left - right).slice(-limit);
-        if (latest.length === 0) return ok([]);
-        const bodies = createCell<readonly SentBody[]>([]);
-        const messages = opened.client.fetch(toUidSet(latest), { uid: true, source: true }, { uid: true });
-        for await (const { source } of messages) {
-          if (source === undefined) continue;
-          const body = await parseSentBody(source);
-          bodies.update((current) => [body, ...current]);
-        }
-        return ok(bodies.get());
-      });
-    });
+    runReading(
+      "reading sent mail",
+      async (opened) => {
+        const folder = opened.folders.sent;
+        if (folder === undefined) return ok([]);
+        return inFolder(opened.client, folder, async (): Promise<Result<readonly SentBody[], string>> => {
+          const uids = await searchUids(opened.client, { all: true });
+          if (!uids.ok) return uids;
+          const latest = uids.value.toSorted((left, right) => left - right).slice(-limit);
+          if (latest.length === 0) return ok([]);
+          const bodies = createCell<readonly SentBody[]>([]);
+          const messages = opened.client.fetch(toUidSet(latest), { uid: true, source: true }, { uid: true });
+          for await (const { source } of messages) {
+            if (source === undefined) continue;
+            const body = await parseSentBody(source);
+            bodies.update((current) => [body, ...current]);
+          }
+          return ok(bodies.get());
+        });
+      },
+      searchLimitMs,
+    );
 
   const close: MailSource["close"] = async () => {
     for (const stop of watchers.get()) stop();
@@ -1260,7 +1606,10 @@ export const createMailSource = (options: SourceOptions): MailSource => {
     thread,
     draft,
     removeDraft,
+    hasDraft,
     file,
+    mark,
+    attachment,
     fileInto,
     folders,
     select,
