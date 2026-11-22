@@ -111,9 +111,10 @@ These commands are for when they bring mail up, or when a conversation needs it.
 ## Opportunities
 
 A role, an investor, or a company asking them to join or work with it matters most: be prompt.
-Keep each one in their pursuit, such as the job search. When the company is new to them, put two
-lines on what it actually does in that option's `note`, from the mail and a web search, so they can
-judge it at a glance. When they ask what to make of one, say what you'd do and why.
+A role goes in their career pipeline as its own `career` thing in motion, as the things-in-motion
+skill says: change the one that's there rather than start another. When the firm is new to them,
+give it a `source` note of two lines on what it actually does, from the mail and a web search, so
+they can judge it at a glance. When they ask what to make of one, say what you'd do and why.
 
 ## Tidying
 

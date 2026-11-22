@@ -191,6 +191,16 @@ const motionSkill: OwnSkill = {
   text: readFileSync(new URL("../agent/motion.md", import.meta.url), "utf8"),
 };
 
+const reviewSkill: OwnSkill = {
+  id: "review-and-approve",
+  summary:
+    "debriefing a recording they sent, proposing changes as rows they approve one by one, and showing a file " +
+    "for review before it goes in a draft",
+  text: readFileSync(new URL("../agent/review.md", import.meta.url), "utf8"),
+};
+
+const ownSkills: readonly OwnSkill[] = [motionSkill, chaptersSkill, reviewSkill];
+
 const dayMs = 24 * 60 * 60 * 1000;
 
 const textRetentionMs = 30 * dayMs;
@@ -277,7 +287,7 @@ export const createServer = (options: ServerOptions): Server => {
   const launcher = writeLauncher(path.join(options.dataDirectory, "bin", "ito"));
   const groups = createGroups({ groups: [mailGroup, contactsGroup], tools: () => allTools(), command: launcher });
   const skills = (): string =>
-    writeOwnSkills(path.join(options.dataDirectory, "skills"), [motionSkill, chaptersSkill, ...groups.skills()]) +
+    writeOwnSkills(path.join(options.dataDirectory, "skills"), [...ownSkills, ...groups.skills()]) +
     writeSkills(path.join(options.dataDirectory, "skills"), host.offered(), launcher);
   const memory = createMemory({
     directory: path.join(options.dataDirectory, "thread"),

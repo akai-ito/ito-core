@@ -27,6 +27,7 @@ type Started = {
   readonly data: string;
   readonly prompts: () => readonly string[];
   readonly states: () => readonly Recording[];
+  readonly instructions: () => string;
 };
 
 type Options = {
@@ -57,12 +58,14 @@ const start = async ({
   mkdirSync(path.join(data, "voice"), { recursive: true });
   writeFileSync(path.join(data, "voice", "voiceprint.json"), JSON.stringify({ vector: [0.6, 0.8], threshold: 0.5 }));
   const prompts = createCell<readonly string[]>([]);
+  const instructions = createCell<() => string>(() => "");
   const server = createServer({
     embedder: wordEmbedder,
     dataDirectory: data,
     name: "recordings",
-    createEngine: ({ callTool }) =>
-      createScriptEngine(
+    createEngine: ({ callTool, instructions: given }) => {
+      instructions.set(given);
+      return createScriptEngine(
         systemClock,
         (_turn, _inputs, now) => ({
           events: [{ at: now + turnMs, event: { type: "ended" } }],
@@ -77,7 +80,8 @@ const start = async ({
           prompts.update((current) => [...current, prompt]);
           return Promise.resolve(fail({ code: "engine_failed", detail: "The test has Kumo do nothing here." }));
         },
-      ),
+      );
+    },
     ...(hasVoice && {
       createVoice: (context) => createSidecarVoice({ ...context, directory: voice, models: path.join(data, "models") }),
     }),
@@ -89,7 +93,14 @@ const start = async ({
   server.store.subscribe(({ event }) => {
     if (event.type === "recording.changed") states.update((current) => [...current, event.recording]);
   });
-  return { server, voice, data, prompts: () => prompts.get(), states: () => states.get() };
+  return {
+    server,
+    voice,
+    data,
+    prompts: () => prompts.get(),
+    states: () => states.get(),
+    instructions: () => instructions.get()(),
+  };
 };
 
 const call = async (server: Server, method: "GET" | "POST" | "PUT" | "DELETE", url: string, payload?: object) =>
@@ -172,9 +183,21 @@ describe("recordings", () => {
     expect(prompt).toContain("post in a new one (new_thread)");
     expect(prompt).toContain("Propose, don't do");
     expect(prompt).toContain("as one ari:proposals block");
+    expect(prompt).toContain("as the review-and-approve skill shows");
     expect(prompt).toContain(`[18:42](recording:${id}?t=18:42)`);
     const listed = await call(server, "GET", "/v0/recordings");
     expect(listed.json<{ recordings: Recording[] }>().recordings.map(({ attachment }) => attachment)).toEqual([id]);
+  });
+
+  it("come with a skill Kumo reads before it debriefs one or proposes changes", async () => {
+    const { data, instructions } = await start();
+    const skillFile = path.join(data, "skills", "review-and-approve", "SKILL.md");
+
+    expect(instructions()).toContain(`- review-and-approve: debriefing a recording they sent`);
+    expect(instructions()).toContain(`(file: ${skillFile})`);
+    const skill = readFileSync(skillFile, "utf8");
+    expect(skill).toContain("name: review-and-approve");
+    expect(skill).toContain('"kind": "calendar"');
   });
 
   it("give their transcript with times and voices, as JSON or text, and take corrections over what was heard", async () => {

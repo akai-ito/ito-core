@@ -210,8 +210,8 @@ export const createRecordings = (options: RecordingsOptions): Recordings => {
       `time a link that opens the transcript there, such as [18:42](recording:${recording.attachment}?t=18:42), and`,
       "keep your reading separate and marked as yours. Voices are told apart by a best guess, so say so where it matters.",
       "Propose, don't do: end with the actions and memory updates you suggest as one ari:proposals block, a row each,",
-      "and make none of them until they tap one. Don't write memory, start or change things in motion, add cards or",
-      "set wake-ups from it until they do.",
+      "as the review-and-approve skill shows, and make none of them until they tap one. Don't write memory, start or",
+      "change things in motion, add cards or set wake-ups from it until they do.",
       "End with one line saying what you posted.",
     ].join("\n");
   };
