@@ -4354,15 +4354,15 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
-      name: "90-chapters-and-what-kumo-learnt",
-      scenario: 90,
+      name: "87-chapters-and-what-kumo-learnt",
+      scenario: 87,
       title: "Chapters and what Kumo learnt",
       summary:
         "You're home from Florence. Kumo keeps the trip as a chapter of your life, a short story that began and " +
         "ended, linked to the journal days it draws on, and learns something about you on the way. Tidying a page " +
         "teaches it nothing, so it adds no line. The Library shows the chapter in its own row, what Kumo learnt " +
         "lately, newest first, and the chapter's page with when Kumo noticed it and what it drew on.",
-      guarantees: ["G60"],
+      guarantees: ["G58"],
     });
     const seededAt = "2026-11-10T18:00:00.000Z";
     const mira = {
@@ -4630,8 +4630,8 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
-      name: "90-reply-in-a-thread",
-      scenario: 90,
+      name: "88-reply-in-a-thread",
+      scenario: 88,
       title: "Reply in a thread",
       summary:
         "Yesterday you replied to one of Kumo's messages, which started a thread under it, and Kumo named it. " +
@@ -4697,8 +4697,8 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
-      name: "91-kumo-comes-back-to-a-thread",
-      scenario: 91,
+      name: "89-kumo-comes-back-to-a-thread",
+      scenario: 89,
       title: "Kumo comes back to a thread",
       summary:
         "You start a thread of your own from Threads, and Kumo names it after answering. Later its background work " +
@@ -4903,7 +4903,7 @@ const scenarios: readonly (() => Transcript)[] = [
         "answers in a few sentences with a card that opens it. You open it. The next morning Kumo keeps it current: " +
         "a room reopened, so it's back in, with a note that says so. At the museum you tick things off as you spot " +
         "them, and the Made shelf lists the page.",
-      guarantees: ["G31", "G57"],
+      guarantees: ["G31", "G59"],
     });
     transcript.begin("2026-11-21T18:10:00.000Z");
     transcript.connect();
