@@ -158,6 +158,7 @@ describe("Kumo's line on the Desk", () => {
   it("sets a short line with a mood, changes it, and clears it, without a message", async () => {
     const { server, clock, inMind } = await open();
     try {
+      const empty = inMind();
       const set = await server.callTool("set_desk_line", { text: "Quiet morning.", mood: "Focused" });
       const line = server.store.desk().line;
       const long = await server.callTool("set_desk_line", { text: "x".repeat(141), mood: "calm" });
@@ -165,6 +166,7 @@ describe("Kumo's line on the Desk", () => {
       clock.moveTo(Date.parse("2026-11-12T12:30:00.000Z"));
       await server.callTool("set_desk_line", { text: "The deck is done.", mood: "proud" });
       const changed = server.store.desk().line;
+      clock.moveTo(Date.parse("2026-11-12T15:40:00.000Z"));
       const mind = inMind();
       const cleared = await server.callTool("set_desk_line", { text: "", mood: "calm" });
 
@@ -173,9 +175,14 @@ describe("Kumo's line on the Desk", () => {
       expect(long.isError).toBe(true);
       expect(twoWords.isError).toBe(true);
       expect(changed).toEqual({ text: "The deck is done.", mood: "proud", at: "2026-11-12T12:30:00.000Z" });
-      expect(mind).toContain("Your line on their Desk, set 2026-11-12T12:30:00.000Z: “The deck is done.” (proud)");
+      expect(empty).toContain("Your line under your face on their Desk is empty, so their home screen has nothing");
+      expect(mind).toContain(
+        "Your line on their Desk, set 2026-11-12T12:30:00.000Z, 3 hours ago: “The deck is done.” (proud). Change it " +
+          "once its moment has passed.",
+      );
       expect(cleared.text).toBe("Cleared your line.");
       expect(server.store.desk().line).toBeUndefined();
+      expect(inMind()).toContain("<desk_line>\nYour line under your face on their Desk is empty");
       expect(server.store.snapshot("no_cursor").event.messages).toEqual([]);
     } finally {
       await server.close();

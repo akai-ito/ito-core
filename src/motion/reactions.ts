@@ -37,7 +37,7 @@ export const toReactionPrompt = ({ id, kind, title, summary, version, content, s
     "  place, and set the place to picked.",
     "- Take a place they made an idea again, or passed on, out of the days, with anything only about it, such as",
     "  its to-do, and set the place to shortlisted or passed.",
-    "- For a training session, set the week's note to a line on how the week is going and what's next.",
+    "- For a session in a training block, set the week's note to a line on how the week is going and what's next.",
     "- Keep the summary current: what's left counts their ticks.",
     "- Change nothing else. If nothing follows from what they did, give an empty list and the summary as it is.",
     "",

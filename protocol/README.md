@@ -7,7 +7,8 @@
 | [openapi.yaml](openapi.yaml) | The commands, as OpenAPI 3.1 |
 | [events.schema.json](events.schema.json) | Every event on the stream, as JSON Schema |
 | [push.schema.json](push.schema.json) | What a push notification carries, encrypted and decrypted |
-| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: places, choices, pictures and things in motion |
+| [blocks.schema.json](blocks.schema.json) | The `ari:` blocks a reply may hold: places, choices, pictures, picks, tables with verdicts, a key number, events, Desk cards, people, made pages, things in motion, files to look at and changes to approve, and what your taps on them send |
+| [made.schema.json](made.schema.json) | What a page Kumo made holds: its sections, items to tick and pictures |
 | [motion.schema.json](motion.schema.json) | What a thing in motion holds, for each kind, and the changes Ari makes to it |
 | [stream.schema.json](stream.schema.json) | The frames on a call's stream, both ways |
 | [guarantees.md](guarantees.md) | What the server and the protocol promise |
@@ -45,6 +46,11 @@ sequenceDiagram
   once the message is on disk; what it does next arrives on the stream.
 - **Stop** a turn, or **try again** after one failed, with commands addressed to the turn.
 - **Attach** photos and files: upload each under an id the app makes, then name them in a message.
+  Anything over 20 MB, such as a recording, goes up in chunks that resume after any drop; `GET
+  /v0/uploads` says what the server takes, and how big, before anything is sent.
+- **Recordings:** an audio attachment you send is transcribed on the server, with times and, as a
+  best guess, who spoke; `recording.changed` follows it to `ready`. Kumo reads the transcript, and
+  the app can too, correct what it misheard, name its voices, and delete it.
 - **Pair** a new app with the short-lived code in the QR code `ito pair` shows, for a token of its
   own.
 - **Answer** what the agent asks by sending a message, or cancel the ask. Asking ends the agent's
@@ -54,6 +60,11 @@ sequenceDiagram
 - **Say where you are:** the phone sends its time zone and, roughly, its place. Kumo lives by that
   time zone, and the Desk shows the weather there.
 - **Plan with Kumo:** list, move and cancel the wake-ups Kumo set, which the Desk shows as its plans.
+- **Talk in threads:** a side thread is a conversation of its own beside the main chat. Send into
+  one, reply to a message to start one, open one with its messages, rename it, mark it done or open,
+  and move a message between threads; list and search them for Threads by day.
+- **Open what Kumo made:** list the Made shelf, fetch a page with its content and your ticks, and
+  tick its items.
 
 ## Events
 
@@ -76,6 +87,13 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `message.delta` | Text appended to a message, at an offset |
 | `message.ended` | A message is finished: completed, stopped, interrupted or failed |
 | `turn.ended` | The turn is over, and its status is cleared |
+| `thread.started` | A side thread starts: Kumo branched one, or you replied to a message or started one |
+| `thread.changed` | A thread's name, state, line, replies, result, picture or news changed |
+| `message.moved` | A message moved between the main chat and a thread, or between threads |
+| `recording.changed` | A recording you sent moved on: queued, transcribing, ready, failed or deleted |
+| `made.created`, `made.changed` | Kumo made a page, or kept one current, with a note of what changed |
+| `made.state` | Your ticks on a page changed, from any device |
+| `made.removed` | You let Kumo forget a page |
 
 ## Versioning
 

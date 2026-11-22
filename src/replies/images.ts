@@ -43,9 +43,10 @@ export const createImageTool = ({ attachments, keep, newId, fetchImage }: ImageT
   name: imageToolName,
   title: "Keep a picture from the web",
   description:
-    "Keep a picture you found on the web, so the person's phone can show it in an ari:images block without " +
-    "going to the site. Give the image's own address, not the page it's on. Pictures are found and credited, " +
-    "never generated.",
+    "Keep a picture you found on the web, so their phone can show it without going to the site: in ari:images, " +
+    "ari:picks or ari:place, or on a page you make. Use pictures whenever they help someone recognise or choose, " +
+    "such as a dish, a place or a thing to look for. Give the image's own address, not the page it's on. " +
+    "Pictures are found and credited, never generated.",
   inputSchema: {
     type: "object",
     properties: { url: { type: "string", description: "The image's own address, starting https://." } },
@@ -67,8 +68,9 @@ export const createImageTool = ({ attachments, keep, newId, fetchImage }: ImageT
     keep(id);
     return {
       text:
-        `Kept it as ${id}. Show it with "attachment": "${id}" in an ari:images block, with its alt text, ` +
-        "the page it came from as source_url, and its credit.",
+        `Kept it as ${id}. Show it as a picture, {"attachment": "${id}", "alt": …, "source_url": …, "credit": …}, ` +
+        "with its alt text, the page it came from and its credit, in an ari:images, ari:picks or ari:place block, " +
+        "or on a page you make.",
       structured: { attachment: id },
     };
   },

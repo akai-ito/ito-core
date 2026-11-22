@@ -1,7 +1,7 @@
 import type { Stakes } from "#engine/quick-model.ts";
 import type { JsonSchema } from "#engine/engine.ts";
 import { plainOf } from "#mail/compose.ts";
-import { isSameAddress, type Mail } from "#mail/message.ts";
+import { isSameAddress, type Mail, type MailAttachment } from "#mail/message.ts";
 import type { CalendarItem, Card } from "#protocol/types.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 
@@ -54,6 +54,54 @@ const replyToLines = ({ from, replyTo = [] }: Mail): readonly string[] =>
     ? []
     : [`Reply-To: ${replyTo.map(({ address }) => address).join(", ")}`];
 
+const sizeOf = (bytes: number): string =>
+  bytes < 1024 * 1024
+    ? `${String(Math.max(1, Math.round(bytes / 1024)))} KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+const fileName = ({ filename, contentType }: MailAttachment): string =>
+  filename ?? (contentType === "text/calendar" ? "a calendar invitation" : `an unnamed ${contentType} file`);
+
+// The files a mail carries, each with its id for reading it: files first, then pictures shown in the mail, such as
+// a logo, in one line.
+const attachmentLines = (mail: Mail): readonly string[] => {
+  const files = mail.attachments ?? [];
+  if (files.length === 0) return [];
+  const attached = files.filter(({ inline, contentType }) => !inline || !contentType.startsWith("image/"));
+  const shown = files.filter((file) => !attached.includes(file));
+  return [
+    "",
+    "Files it carries, which may hold what the words don't, such as tickets, invoices or an invitation's times. Read " +
+      "one with ito mail attachment --message-id <its Message-ID> --attachment <its id>:",
+    ...attached.map(
+      (file) =>
+        `- ${file.id}: ${fileName(file)} (${file.contentType}, ${sizeOf(file.size)}${file.method === undefined ? "" : `, ${file.method}`})`,
+    ),
+    ...(shown.length === 0
+      ? []
+      : [
+          `- and ${String(shown.length)} picture${shown.length === 1 ? "" : "s"} shown in the mail: ${shown.map(({ id }) => id).join(", ")}`,
+        ]),
+  ];
+};
+
+// Said when the words are missing, so an empty mail and one that couldn't be read never look alike.
+const bodyNote = (mail: Mail): readonly string[] => {
+  if (mail.body?.problem !== undefined) return [`(Its words couldn't be read: ${mail.body.problem})`];
+  if (mail.body?.from !== "none" || mail.text.trim() !== "") return [];
+  return [
+    (mail.attachments ?? []).length > 0
+      ? "(It has no words of its own, only the files below.)"
+      : "(It has no words at all.)",
+  ];
+};
+
+const isDraft = (mail: Mail): boolean => mail.flags.includes("\\Draft");
+
+// What a mail says: its own words, or for a draft the whole of it, with the history it quotes, so a draft can be
+// checked as it would go.
+const wordsOf = (mail: Mail): string => (isDraft(mail) ? (mail.fullText ?? mail.text) : mail.text);
+
 // A mail as the agent reads it, with who the sender is in their Contacts when that's known.
 export const describe = (account: string, mail: Mail, limit = textLimit, sender?: string): string =>
   [
@@ -66,8 +114,12 @@ export const describe = (account: string, mail: Mail, limit = textLimit, sender?
     `Date: ${mail.date}`,
     `Account: ${account}, Message-ID: ${mail.messageId}`,
     ...(mail.inReplyTo === undefined ? [] : [`In-Reply-To: ${mail.inReplyTo}`]),
+    ...(isDraft(mail) && mail.references.length > 0 ? [`References: ${mail.references.join(" ")}`] : []),
+    ...(mail.flags.includes("\\Flagged") ? ["Flagged"] : []),
     "",
-    mail.text.slice(0, limit),
+    ...bodyNote(mail),
+    ...(mail.text === "" && bodyNote(mail).length > 0 ? [] : [wordsOf(mail).slice(0, limit)]),
+    ...attachmentLines(mail),
   ].join("\n");
 
 export const toJudgement = (answer: unknown): Judgement | undefined => {

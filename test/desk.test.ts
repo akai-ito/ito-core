@@ -15,7 +15,9 @@ import { openDatabase } from "#store/database.ts";
 import { createStore } from "#store/store.ts";
 import { createCell } from "#cell.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
-import { createServer } from "#server.ts";
+import type { Card, Desk } from "#protocol/types.ts";
+import { createServer, type EngineContext } from "#server.ts";
+import { createVirtualClock } from "./support/virtual-clock.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-desk-"));
 const ignore = (): void => undefined;
@@ -256,5 +258,173 @@ describe("the Desk", () => {
     expect(await desk.undo(entry.id)).toEqual({ ok: false, failure: "That can't be undone." });
     desk.close();
     store.close();
+  });
+});
+
+const openKept = () => {
+  const clock = createVirtualClock(Date.parse("2026-11-21T10:00:00.000Z"));
+  const context = createCell<EngineContext | undefined>(undefined);
+  const server = createServer({
+    embedder: wordEmbedder,
+    dataDirectory: mkdtempSync(path.join(home, "kept-")),
+    name: "kept",
+    clock,
+    timeZone: "UTC",
+    createEngine: (given) => {
+      context.set(given);
+      return createScriptEngine(clock, () => {
+        throw new Error("This test starts no turns.");
+      });
+    },
+  });
+  const changes = createCell<readonly Desk[]>([]);
+  server.store.subscribe(({ event }) => {
+    if (event.type === "desk.changed") changes.update((current) => [...current, event.desk]);
+  });
+  // Runs what's due up to a moment, such as a card's until.
+  const runUntil = (moment: number): void => {
+    if (clock.runNext(moment)) {
+      runUntil(moment);
+      return;
+    }
+    clock.moveTo(moment);
+  };
+  const titled = (title: string): Card | undefined => server.store.desk().waiting.find((card) => card.title === title);
+  const done = () =>
+    server.store.listDone(undefined, 20).entries.map(({ text, reason, quiet }) => ({ text, reason, quiet }));
+  return { server, clock, runUntil, titled, done, changes, inMind: () => context.get()?.inMind() ?? "" };
+};
+
+const cardIn = (text: string): string => /k_\w+/u.exec(text)?.[0] ?? "";
+
+describe("keeping Waiting on you true", () => {
+  it("shows Kumo every card by id, and lets it change, answer and clear any of them from the chat", async () => {
+    const { server, titled, done, changes, inMind } = openKept();
+    try {
+      const added = await server.callTool("add_card", {
+        kind: "question",
+        title: "Where to meet?",
+        text: "The station or the venue, before the gig?",
+        options: [{ label: "Station" }, { label: "Venue" }],
+        until: "2026-11-21T19:00:00Z",
+      });
+      const id = cardIn(added.text);
+      const before = titled("Where to meet?");
+      const mind = inMind();
+      const changed = await server.callTool("change_card", { card: id, text: "Station at 18:30, or the venue?" });
+      const after = titled("Where to meet?");
+      await server.callTool("show_mail", {});
+      const draft = titled("Note to Hotel Orto");
+      const redraft = await server.callTool("change_card", { card: draft?.id ?? "", title: "Another" });
+      const cleared = await server.callTool("clear_card", { card: draft?.id ?? "", reason: "You sent it yourself" });
+      const answered = await server.callTool("answer_card", { card: id, option: "Station" });
+
+      expect(added.text).toBe(`Put Where to meet? on the Desk as ${id}. 1 waits on them now: Where to meet? (${id}).`);
+      expect(before).toMatchObject({ id, kind: "question", until: "2026-11-21T19:00:00.000Z" });
+      expect(mind).toContain(
+        `- ${id} question “Where to meet?”, since Sat 21 Nov 10:00: The station or the venue, before the gig? ` +
+          "Options: Station, Venue. Leaves by itself Sat 21 Nov 19:00.",
+      );
+      expect(mind).toContain("answer it for them with answer_card, change it with change_card");
+      expect(changed.text).toBe(
+        "It shows Where to meet?: Station at 18:30, or the venue?; options Station, Venue; leaves by itself at " +
+          "2026-11-21T19:00:00.000Z.",
+      );
+      expect(after).toMatchObject({
+        id,
+        at: before?.at,
+        changed_at: expect.any(String) as unknown,
+        question: { text: "Station at 18:30, or the venue?" },
+        until: "2026-11-21T19:00:00.000Z",
+      });
+      expect(changes.get().some(({ waiting }) => waiting.some((card) => card.changed_at !== undefined))).toBe(true);
+      expect(redraft).toMatchObject({
+        isError: true,
+        text: `Change a draft by drafting it again with --replaces ${draft?.id ?? ""}.`,
+      });
+      expect(cleared.text).toContain("Took Note to Hotel Orto off the Desk. The draft itself is untouched");
+      expect(answered.text).toContain("Answered Where to meet? for them and took it off the Desk.");
+      expect(server.store.desk().waiting).toEqual([]);
+      expect(changes.get().at(-1)?.waiting).toEqual([]);
+      expect(done()).toEqual(
+        expect.arrayContaining([
+          { text: "You answered “Where to meet?” in the chat: Station", reason: undefined, quiet: false },
+          { text: "Took “Note to Hotel Orto” off Waiting on you", reason: "You sent it yourself", quiet: false },
+        ]),
+      );
+      expect(inMind()).not.toContain("<desk>");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("retires a card once its moment has passed, and an invite once its event is over", async () => {
+    const { server, clock, runUntil, titled, done } = openKept();
+    try {
+      const past = await server.callTool("add_card", {
+        kind: "question",
+        title: "Leave from where?",
+        text: "Home or the office, for the 18:00 train?",
+        until: "2026-11-21T09:00:00Z",
+      });
+      await server.callTool("add_card", {
+        kind: "question",
+        title: "Leave from where?",
+        text: "Home or the office, for the 18:00 train?",
+        until: "2026-11-21T18:00:00Z",
+      });
+      await server.callTool("add_card", { kind: "offer", title: "Italian practice?", text: "Lessons?" });
+      await server.callTool("show_invite", {});
+
+      runUntil(Date.parse("2026-11-21T17:59:00.000Z"));
+      const waitingBefore = server.store.desk().waiting.map(({ title }) => title);
+      runUntil(Date.parse("2026-11-21T18:00:00.000Z"));
+      const waitingAfter = server.store.desk().waiting.map(({ title }) => title);
+      runUntil(clock.now() + 26 * 60 * 60 * 1000);
+
+      expect(
+        await server.callTool("add_card", { kind: "question", title: "A", text: "B", until: "2026-11-21T19:00" }),
+      ).toMatchObject({ isError: true, text: "Give until as a time with its offset, such as 2026-11-21T19:00:00Z." });
+      expect(past).toMatchObject({
+        isError: true,
+        text: "That until has already passed: the card wouldn't help any more.",
+      });
+      expect(waitingBefore).toEqual(["Leave from where?", "Italian practice?", "Halcyon technical, tomorrow"]);
+      expect(waitingAfter).toEqual(["Italian practice?", "Halcyon technical, tomorrow"]);
+      expect(titled("Italian practice?")).toBeDefined();
+      expect(titled("Halcyon technical, tomorrow")).toBeUndefined();
+      expect(done()).toEqual(
+        expect.arrayContaining([
+          { text: "“Leave from where?” left Waiting on you", reason: "Its moment has passed.", quiet: true },
+          { text: "“Halcyon technical, tomorrow” left Waiting on you", reason: "Its event is over.", quiet: true },
+        ]),
+      );
+      expect(server.store.desk().handled).toBe(0);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("answers an invite for them through the calendar, as their tap would", async () => {
+    const { server, titled } = openKept();
+    try {
+      await server.callTool("show_invite", {});
+      const invite = titled("Halcyon technical, tomorrow");
+      const changed = await server.callTool("change_card", { card: invite?.id ?? "", title: "Moved" });
+      const wrong = await server.callTool("answer_card", { card: invite?.id ?? "", text: "Sure" });
+      const answered = await server.callTool("answer_card", { card: invite?.id ?? "", option: "Accept" });
+
+      expect(changed).toMatchObject({
+        isError: true,
+        text: "An invite can't be changed: answer it for them, or clear it.",
+      });
+      expect(wrong).toMatchObject({ isError: true, text: "Halcyon technical, tomorrow takes one of its options." });
+      expect(answered.text).toContain("it's being acted on as their tap would be");
+      await vi.waitFor(() => {
+        expect(titled("Halcyon technical, tomorrow")).toBeUndefined();
+      });
+    } finally {
+      await server.close();
+    }
   });
 });

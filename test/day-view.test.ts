@@ -98,7 +98,9 @@ describe("Kumo's blocks in the day view", () => {
           undefined,
           (prompt) => {
             prompts.update((current) => [...current, prompt]);
-            return Promise.resolve(fail("Kumo does nothing in the background here."));
+            return Promise.resolve(
+              fail({ code: "engine_failed", detail: "Kumo does nothing in the background here." }),
+            );
           },
         );
       },

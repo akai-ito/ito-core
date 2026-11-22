@@ -1,6 +1,6 @@
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
-import { startOfDay, toLocal, untilMinutes } from "#desk/day.ts";
+import { atLocal, startOfDay, toLocal, untilMinutes } from "#desk/day.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type { Ambient, CalendarItem, Card, Desk, DeskLine, DoneEntry, WakeUp } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -19,11 +19,23 @@ export type Undoer = (entry: DoneEntry, payload: unknown) => Promise<Result<unde
 
 export type Work = (prompt: string) => Promise<Result<string, string>>;
 
+// Kumo answering a card for them, with what they said in the chat: either the card's own handler acts on it, as
+// their tap would, or nothing else would, so it's settled and Kumo acts on it itself.
+export type AnsweredFor = "acting" | "settled";
+
 export type DeskKeeper = {
   readonly addCard: (card: NewCard) => Card;
   readonly cards: () => readonly Card[];
   readonly removeCard: (id: string) => void;
   readonly answer: (id: string, answer: CardAnswer) => Result<Card, string>;
+  // Kumo answers a card for them, once they've settled it in the chat.
+  readonly answerFor: (id: string, answer: CardAnswer) => Result<AnsweredFor, string>;
+  // Kumo changes a question, offer or times card while it waits, under the same id, marked changed.
+  readonly changeCard: (id: string, card: NewCard) => Result<Card, string>;
+  // Whether a card has a handler of its own, such as a question only the mailbox can act on.
+  readonly isOwnCard: (card: Card) => boolean;
+  // What waits on them, by id, for Kumo to keep true in the chat and in the background.
+  readonly inMindText: () => string;
   readonly handle: (kind: Card["kind"], handler: CardHandler) => void;
   // Answers one card, ahead of its kind's handler, such as a question only the mailbox can act on.
   readonly handleCard: (id: string, handler: CardHandler) => void;
@@ -114,6 +126,49 @@ const without = <Given extends object, Field extends keyof Given>(given: Given, 
 
 const alreadyActing = "Kumo is already acting on your answer.";
 
+export const stillActing = (card: Card): string =>
+  `${card.title} is being acted on, with their answer: it leaves the Desk, or comes back, when that's done.`;
+
+// Why a card with a handler of its own can't be changed by hand, and what to do instead.
+export const ownCardChange = (card: Card): string => {
+  if (card.kind === "draft") return `Change a draft by drafting it again with --replaces ${card.id}.`;
+  if (card.kind === "invite") return "An invite can't be changed: answer it for them, or clear it.";
+  return `${card.title} is Ito's own and acts on its options: answer it for them, or clear it.`;
+};
+
+// An all-day event ends on a date. Its card goes once that day is over both where they are and in UTC, which is how
+// the calendar tells an invite has passed, so it isn't offered again.
+const endOf = (when: string, timeZone: string): number =>
+  when.length === 10 ? Math.max(Date.parse(`${when}T00:00:00.000Z`), atLocal(when, 0, timeZone)) : Date.parse(when);
+
+// When a card can no longer help: its `until`, or an invite's event ending. Others wait however long it takes.
+const deadlineOf = (card: Card, timeZone: string): number | undefined => {
+  if (card.until !== undefined) return Date.parse(card.until);
+  return card.invite === undefined ? undefined : endOf(card.invite.event.end, timeZone);
+};
+
+// Looks again at least this often, since a timer can't wait for weeks.
+const longestRetireWaitMs = 6 * 60 * 60 * 1000;
+
+const longestShownText = 160;
+
+const shortened = (text: string): string =>
+  text.length <= longestShownText ? text : `${text.slice(0, longestShownText - 1).replace(/\s+\S*$/u, "")}…`;
+
+// "Sat 21 Nov 19:00", for Kumo.
+const shortWhen = (at: number, timeZone: string): string =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+    .format(at)
+    .replace(",", "");
+
 type Shown = NonNullable<Card["answer"]>;
 
 // An answer as the Desk shows it, with only the parts given.
@@ -127,7 +182,7 @@ const shownAnswer = ({ option, slots, text }: CardAnswer): Shown => ({
 const isSameAnswer = (shown: Shown | undefined, given: CardAnswer): boolean =>
   JSON.stringify(shown) === JSON.stringify(shownAnswer(given));
 
-const checked = (card: Card, answer: CardAnswer): Result<CardAnswer, string> => {
+const checked = (card: Card, answer: CardAnswer, allowsText = card.allows_text): Result<CardAnswer, string> => {
   if (answer.option !== undefined && card.options.every(({ label }) => label !== answer.option)) {
     return fail(`${card.title} has no option ${answer.option}.`);
   }
@@ -137,8 +192,43 @@ const checked = (card: Card, answer: CardAnswer): Result<CardAnswer, string> => 
     if (answer.slots.some((index) => index >= slots.length))
       return fail(`${card.title} has ${String(slots.length)} times.`);
   }
-  return answer.text === undefined || card.allows_text ? ok(answer) : fail(`${card.title} takes one of its options.`);
+  return allowsText || answer.text === undefined ? ok(answer) : fail(`${card.title} takes one of its options.`);
 };
+
+// One card as Kumo sees it in mind: its id, kind and title, what it asks, and anything that changes what to do.
+const describeCard = (card: Card, now: number, timeZone: string): string => {
+  const asks = ((): string => {
+    if (card.question) return shortened(card.question.text);
+    if (card.offer) return shortened(card.offer.text);
+    if (card.times) {
+      const { purpose, slots } = card.times;
+      const isPast = slots.every((slot) => Date.parse(slot.end) <= now);
+      return isPast
+        ? `${purpose}. Every time on it has passed: offer new ones with change_card, or clear it.`
+        : `${purpose}, ${slots.map((slot) => shortWhen(Date.parse(slot.start), timeZone)).join("; ")}.`;
+    }
+    if (card.draft)
+      return `to ${card.draft.to.join(", ")}, “${card.draft.subject}”, in their ${card.draft.account} Drafts.`;
+    return card.invite ? `${card.invite.event.calendar.name} calendar.` : "";
+  })();
+  const options = card.options.length === 0 ? "" : ` Options: ${card.options.map(({ label }) => label).join(", ")}.`;
+  const acting =
+    card.state === "working" && card.answer
+      ? ` They answered “${toAnswerText(card, card.answer)}”; it's being acted on.`
+      : "";
+  const until = card.until === undefined ? "" : ` Leaves by itself ${shortWhen(Date.parse(card.until), timeZone)}.`;
+  const changed = card.changed_at === undefined ? "" : `, changed ${shortWhen(Date.parse(card.changed_at), timeZone)}`;
+  return (
+    `- ${card.id} ${card.kind} “${card.title}”, since ${shortWhen(Date.parse(card.at), timeZone)}${changed}: ` +
+    `${asks}${options}${acting}${until}`
+  );
+};
+
+const deskHeader = [
+  "Waiting on them on their Desk, oldest first: the same cards they see, and they can answer or talk about any",
+  "of them with you in the chat. Keep it true as soon as one is settled, by them in the chat or by what happened:",
+  "answer it for them with answer_card, change it with change_card, or take it off with clear_card.",
+].join(" ");
 
 export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: DeskOptions): DeskKeeper => {
   const handlers = createCell<ReadonlyMap<Card["kind"], CardHandler>>(new Map());
@@ -147,6 +237,8 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
   const pending = createCell<Promise<void>>(Promise.resolve());
   const undoing = createCell<ReadonlyMap<string, Promise<Result<DoneEntry, string>>>>(new Map());
   const midnight = createCell<Cancel | undefined>(undefined);
+  const retireTimer = createCell<Cancel | undefined>(undefined);
+  const isClosed = createCell(false);
 
   const at = (): string => toTimestamp(clock.now());
 
@@ -156,6 +248,25 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
 
   const changeCards = (change: (waiting: readonly Card[]) => readonly Card[]): void => {
     changeDesk((desk) => ({ ...desk, waiting: [...change(desk.waiting)] }));
+    scheduleRetire();
+  };
+
+  const findCard = (id: string): Card | undefined => store.desk().waiting.find((card) => card.id === id);
+
+  // The soonest moment a waiting card stops mattering, looked at again then. One being acted on waits for that.
+  const scheduleRetire = (): void => {
+    retireTimer.get()?.();
+    retireTimer.set(undefined);
+    if (isClosed.get()) return;
+    const zone = timeZone();
+    const deadlines = store
+      .desk()
+      .waiting.filter((card) => card.state !== "working")
+      .map((card) => deadlineOf(card, zone))
+      .filter((deadline): deadline is number => deadline !== undefined && !Number.isNaN(deadline));
+    if (deadlines.length === 0) return;
+    const wait = Math.min(Math.max(Math.min(...deadlines) - clock.now(), 0), longestRetireWaitMs);
+    retireTimer.set(clock.after(wait, retirePassed));
   };
 
   const today = (): readonly DoneEntry[] => {
@@ -214,6 +325,31 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     return entry;
   };
 
+  // Cards that can no longer help leave quietly, each noted in Done among what was cleared.
+  const retirePassed = (): void => {
+    retireTimer.set(undefined);
+    const now = clock.now();
+    const zone = timeZone();
+    const passed = store
+      .desk()
+      .waiting.filter((card) => card.state !== "working" && (deadlineOf(card, zone) ?? Infinity) <= now);
+    if (passed.length === 0) {
+      scheduleRetire();
+      return;
+    }
+    const gone = new Set(passed.map(({ id }) => id));
+    cardHandlers.update((current) => new Map([...current].filter(([card]) => !gone.has(card))));
+    changeCards((waiting) => waiting.filter((card) => !gone.has(card.id)));
+    for (const card of passed) {
+      addDone({
+        text: `“${card.title}” left Waiting on you`,
+        reason: card.invite && card.until === undefined ? "Its event is over." : "Its moment has passed.",
+        ...(card.motion !== undefined && { motion: card.motion }),
+        quiet: true,
+      });
+    }
+  };
+
   const askKumo = async (card: Card, answer: CardAnswer): Promise<NewCard | undefined> => {
     const said = toAnswerText(card, answer);
     const prompt = [
@@ -266,25 +402,72 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
   const handlerOf = (card: Card): CardHandler =>
     cardHandlers.get().get(card.id) ?? handlers.get().get(card.kind) ?? askKumo;
 
+  const isOwnCard = (card: Card): boolean => cardHandlers.get().has(card.id) || handlers.get().has(card.kind);
+
+  // The card shows the answer while its handler acts, then leaves, or comes back changed.
+  const startWorking = (card: Card, answer: CardAnswer): Card => {
+    const working: Card = { ...card, state: "working", answer: shownAnswer(answer) };
+    changeCards((waiting) => waiting.map((waitingCard) => (waitingCard.id === card.id ? working : waitingCard)));
+    background(async () => {
+      const replacement = await handlerOf(card)(card, answer);
+      settle(card.id, replacement);
+    });
+    return working;
+  };
+
+  scheduleRetire();
+
   return {
     addCard,
     cards: () => store.desk().waiting,
     removeCard: (id) => {
-      changeCards((waiting) => waiting.filter((card) => card.id !== id));
+      settle(id, undefined);
     },
     answer: (id, given) => {
-      const card = store.desk().waiting.find((waiting) => waiting.id === id);
+      const card = findCard(id);
       if (!card) return fail("not_found");
       if (card.state === "working") return isSameAnswer(card.answer, given) ? ok(card) : fail(alreadyActing);
       const answer = checked(card, given);
+      return answer.ok ? ok(startWorking(card, answer.value)) : answer;
+    },
+    // A card with its own handler is acted on as their tap would be. Any other is settled at once, since Kumo,
+    // answering for them in the chat, acts on it itself; it can say what they said in words of their own.
+    answerFor: (id, given) => {
+      const card = findCard(id);
+      if (!card) return fail(`No card ${id} is waiting on them.`);
+      if (card.state === "working") return fail(stillActing(card));
+      const isOwn = isOwnCard(card);
+      const answer = checked(card, given, card.allows_text || !isOwn);
       if (!answer.ok) return answer;
-      const working: Card = { ...card, state: "working", answer: shownAnswer(answer.value) };
-      changeCards((waiting) => waiting.map((waitingCard) => (waitingCard.id === id ? working : waitingCard)));
-      background(async () => {
-        const replacement = await handlerOf(card)(card, answer.value);
-        settle(id, replacement);
+      if (isOwn) {
+        startWorking(card, answer.value);
+        return ok("acting");
+      }
+      settle(id, undefined);
+      addDone({
+        text: `You answered “${card.title}” in the chat: ${toAnswerText(card, answer.value)}`,
+        ...(card.motion !== undefined && { motion: card.motion }),
+        quiet: false,
       });
-      return ok(working);
+      return ok("settled");
+    },
+    changeCard: (id, given) => {
+      const card = findCard(id);
+      if (!card) return fail(`No card ${id} is waiting on them.`);
+      if (card.state === "working") return fail(stillActing(card));
+      if (isOwnCard(card)) return fail(ownCardChange(card));
+      if (given.kind !== card.kind) return fail(`${card.title} stays a ${card.kind} card: clear it and add another.`);
+      replaceCard(id, given);
+      const changed = findCard(id);
+      return changed ? ok(changed) : fail(`No card ${id} is waiting on them.`);
+    },
+    isOwnCard,
+    inMindText: () => {
+      const { waiting } = store.desk();
+      if (waiting.length === 0) return "";
+      const now = clock.now();
+      const zone = timeZone();
+      return ["<desk>", deskHeader, ...waiting.map((card) => describeCard(card, now, zone)), "</desk>"].join("\n");
     },
     handle: (kind, handler) => {
       handlers.update((current) => new Map([...current, [kind, handler]]));
@@ -332,7 +515,9 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     },
     settled: () => pending.get(),
     close: () => {
+      isClosed.set(true);
       midnight.get()?.();
+      retireTimer.get()?.();
     },
   };
 };

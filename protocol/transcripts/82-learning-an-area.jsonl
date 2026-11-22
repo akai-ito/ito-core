@@ -1,7 +1,7 @@
 {"transcript":"82-learning-an-area","start":"2026-11-12T10:00:00.000Z","scenario":82,"title":"Learning an area","summary":"Kumo opens a learning track for writing as you, and after weeks of drafts you sent as it wrote them, moves it to spot checks. Its next draft to Clara is recorded on the track. You say it was wrong: too formal. The track steps back to learning, with your correction as evidence, and Kumo's work shows it.","guarantees":["G43","G53"],"app":{}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-11-12T10:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-12T10:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"threads":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
 {"at":1000,"world":"agent_calls","tool":"open_track","input":{"name":"Writing as you","note":"How you write to recruiters and friends."}}
 {"at":2000,"app":{"method":"GET","path":"/v0/work"}}
 {"at":2000,"server":{"status":200,"body":{"day":"2026-11-12","handled":[],"cleared":[],"tracks":[{"id":"l_0001_72180","name":"Writing as you","stage":"learning","since":"2026-11-12T10:00:01.000Z","note":"How you write to recruiters and friends.","confirmed":0,"corrected":0,"evidence":[]}]}}}

@@ -27,7 +27,7 @@ const trip: Fields = {
   ],
 };
 
-const card = { title: "Florence with Mira", summary: "6–9 Nov · 2 to book", pinned: true };
+const card = { title: "Florence with Mira", summary: "6–9 Nov · 2 to book", pinned: true, salience: "loud" as const };
 
 const florence: Applied = { card, content: trip };
 

@@ -1,8 +1,13 @@
-import type { MessageId, TurnId } from "#conversation/ids.ts";
+import type { MessageId, ThreadId, TurnId } from "#conversation/ids.ts";
 import type { Ask, ModelChoice, ModelOption, Step, StepKind } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 
-export type InputAttachment = { readonly kind: "image" | "file"; readonly name: string; readonly source: string };
+// A recording can be large (up to a gigabyte), so it stays where the server keeps it, out of the workspace.
+export type InputAttachment = {
+  readonly kind: "image" | "audio" | "file";
+  readonly name: string;
+  readonly source: string;
+};
 
 export type Input = {
   readonly messageId: MessageId;
@@ -62,6 +67,9 @@ export type EngineEvent =
   | { readonly type: "approval"; readonly key: string; readonly fields: AskFields }
   | { readonly type: "asked" }
   | { readonly type: "progress" }
+  // The model's connection dropped and the engine is trying again, such as "Reconnecting... 2/5". What it hadn't
+  // finished, an open message or thinking, it starts again from the beginning.
+  | { readonly type: "reconnecting"; readonly detail: string }
   | { readonly type: "stopped" }
   | { readonly type: "ended" };
 
@@ -71,18 +79,39 @@ export type JsonSchema = Readonly<Record<string, unknown>>;
 
 export type Complete = (prompt: string, schema: JsonSchema, choice?: ModelChoice) => Promise<Result<unknown, string>>;
 
+// Why background work didn't finish: a turn's failure codes, and the technical cause.
+export type WorkFailure = { readonly code: EngineFailureCode; readonly detail: string };
+
+export type WorkOptions = {
+  // The model and effort to work on, or else the one they chose.
+  readonly choice?: ModelChoice;
+  // Each sign of life while it works, such as text, reasoning or a tool starting, so its silence can be told.
+  readonly onActivity?: () => void;
+  // Aborting it interrupts the work.
+  readonly signal?: AbortSignal;
+};
+
 export type Engine = {
-  readonly start: (turn: TurnId, inputs: readonly Input[]) => AsyncIterable<EngineEvent>;
+  // A turn in the main chat's conversation, or in a side thread's: each its own, and they run at the same time.
+  readonly start: (turn: TurnId, inputs: readonly Input[], thread?: ThreadId) => AsyncIterable<EngineEvent>;
   readonly steer: (turn: TurnId, input: Input) => Promise<SteerOutcome>;
   readonly interrupt: (turn: TurnId) => Promise<void>;
   readonly approve: (turn: TurnId, key: string, isAllowed: boolean) => void;
   readonly complete: Complete;
-  // Background work in a thread of its own, on the model and effort given, or else the one they chose.
-  readonly work: (prompt: string, run: string, choice?: ModelChoice) => Promise<Result<string, string>>;
+  // Background work in a thread of its own, under a run that its tool calls carry.
+  readonly work: (prompt: string, run: string, options?: WorkOptions) => Promise<Result<string, WorkFailure>>;
+  // When the model provider's usage limit resets, in milliseconds, as it last said; undefined while it isn't
+  // reached, or when it never said.
+  readonly usageResetsAt: () => number | undefined;
   readonly restart: () => Promise<void>;
+  // Gets one conversation unstuck: its turn is dropped at once, and the engine restarts only once nothing else runs.
+  readonly reset: (thread: ThreadId | undefined) => Promise<void>;
   readonly refresh: () => Promise<void>;
   readonly models: () => Promise<Result<readonly ModelOption[], string>>;
   readonly close: () => Promise<void>;
 };
 
 export const restartedDetail = "Codex restarted before it answered.";
+
+// Background work held back while Kumo's model is paused by a usage limit: the one catch-up after takes it in.
+export const pausedDetail = "Kumo's paused until its model's usage limit resets, and catches up then.";

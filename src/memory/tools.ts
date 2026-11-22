@@ -1,18 +1,35 @@
 import type { AskFields, StepFacts } from "#engine/engine.ts";
+import { beganGuide, endedGuide } from "#memory/chapters.ts";
 import { numberLines, toVersion } from "#memory/edits.ts";
 import { gistGuide, toOneLine } from "#memory/gists.ts";
+import { learntCopiesText, learntGuide, type LearntBody } from "#memory/learnt.ts";
 import { parsePage, toLocation, type Location, type Page } from "#memory/pages.ts";
 import type { Passage } from "#memory/recall.ts";
 import type { FileCommit } from "#memory/thread.ts";
 import type { Result } from "#result.ts";
-import { textOf } from "#tools/input.ts";
+import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
+
+// A page that says some words: the lines that do, numbered as read_page numbers them, and its gist or title when
+// those do.
+export type Copy = {
+  readonly address: string;
+  readonly title: string;
+  readonly version: string;
+  readonly lines: readonly { readonly number: number; readonly text: string }[];
+  readonly gist?: string;
+  readonly inTitle?: boolean;
+};
 
 export type Saved = {
   readonly title: string;
   readonly change: string;
   readonly version: string;
   readonly photos: number;
+  // Something worth knowing about the page now, such as a page in mind growing long.
+  readonly note?: string;
+  // After a correction, the other pages that still say what was wrong.
+  readonly copies?: readonly Copy[];
 };
 
 export type PageOperations = {
@@ -31,6 +48,8 @@ export type PageOperations = {
   readonly journal: (
     input: unknown,
   ) => Promise<Result<{ readonly address: string; readonly title: string; readonly photos: number }, string>>;
+  readonly findCopies: (words: readonly string[]) => Promise<readonly Copy[]>;
+  readonly findLearnt: (words: readonly string[]) => readonly LearntBody[];
   readonly recordStep: (facts: StepFacts) => boolean;
   readonly approve: (fields: AskFields) => Promise<boolean>;
 };
@@ -73,6 +92,22 @@ const toPageReference = ({
   readonly title: string;
 }): StepFacts["pages"] => [{ address, title }];
 
+const formatCopy = ({ address, title, version, lines, gist, inTitle }: Copy): string =>
+  [
+    `${address} (${title}, version ${version})`,
+    ...(inTitle === true ? ["  in its title"] : []),
+    ...(gist === undefined ? [] : [`  gist: ${gist}`]),
+    ...lines.map(({ number, text }) => `  ${String(number)}  ${text}`),
+  ].join("\n");
+
+// What a save says after a correction: where what was wrong still is, or that it's nowhere else.
+const copiesText = (copies: readonly Copy[] | undefined): string => {
+  if (copies === undefined) return "";
+  return copies.length === 0
+    ? " No other page says it."
+    : ` Still said elsewhere, so put each right too:\n${copies.map((copy) => formatCopy(copy)).join("\n")}`;
+};
+
 const formatPassage = (passage: Passage, index: number): string =>
   `${String(index + 1)}. ${passage.title} (${passage.address}, ${passage.at.slice(0, 10)})\n${passage.text}`;
 
@@ -103,6 +138,39 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
           .toSorted((left, right) => left.title.localeCompare(right.title));
         memory.recordStep({ action: "used", pages });
         return { text: passages.map((passage, index) => formatPassage(passage, index)).join("\n\n") };
+      }),
+  },
+  {
+    name: "find_in_memory",
+    title: "Find every copy in memory",
+    description:
+      "Find every page that says some words, exactly: every shelf, every journal day and the pages in your " +
+      "mind, in their words, titles and gists, with the lines numbered as read_page numbers them and each " +
+      "page's version. Use it when they correct something, before you edit, so every copy is put right.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        words: {
+          type: "array",
+          items: { type: "string" },
+          description: "A few distinctive words or phrases, any of which counts, such as “worried about Sam”.",
+        },
+      },
+      required: ["words"],
+      additionalProperties: false,
+    },
+    call: (input) =>
+      memory.whenReady(async () => {
+        const words = (
+          Array.isArray(fieldOf(input, "words")) ? (fieldOf(input, "words") as readonly unknown[]) : []
+        ).filter((word): word is string => typeof word === "string" && word.trim().length >= 3);
+        if (words.length === 0) return failed("Give a word or phrase of three letters or more to find.");
+        const copies = await memory.findCopies(words);
+        return {
+          text:
+            (copies.length === 0 ? "No page says that." : copies.map((copy) => formatCopy(copy)).join("\n")) +
+            learntCopiesText(memory.findLearnt(words)),
+        };
       }),
   },
   {
@@ -160,7 +228,9 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
       "replace lines start_line to end_line, as read_page numbers them, with new_text. An empty new_text removes " +
       "them. Keep the present first, in the present tense with an (as of <date>) note, and move what used to be " +
       "true to the ## Earlier section as a dated line. Give title, gist, aliases or links to change those too. " +
-      "Portrait, Now and How to help you hold 2,000 characters each. Never store passwords or tokens.",
+      "Write what they told you and what happened; never your guess at their feelings, relationships or motives " +
+      "as fact. Portrait, Now and How to help you are in your mind on every turn: keep them to what matters now, " +
+      "in whole sentences, and move the rest to a shelf page. Never store passwords or tokens.",
     inputSchema: {
       type: "object",
       properties: {
@@ -179,8 +249,18 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         title: { type: "string", description: "A new title." },
         circle: { type: "string", description: `People pages only. ${circleGuide}` },
         contact: { type: "string", description: contactGuide },
+        began: { type: "string", description: beganGuide },
+        ended: { type: "string", description: endedGuide },
+        learnt: { type: "string", description: learntGuide },
         aliases: { type: "array", items: { type: "string" }, description: "Other names for it, all of them." },
         links: { type: "array", items: { type: "string" }, description: "Addresses of related pages, all of them." },
+        corrects: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "When this puts right something that was wrong, the words it said, a few distinctive ones per claim: " +
+            "the answer lists every other page, journal day and gist that still says them.",
+        },
       },
       required: ["address", "version", "note"],
       additionalProperties: false,
@@ -196,8 +276,12 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
           pages: toPageReference({ address: textOf(input, "address").trim(), title: edited.value.title }),
           change: edited.value.change,
         });
+        const { title, photos, version, note, copies } = edited.value;
         return {
-          text: `Saved ${edited.value.title}${withPhotos(edited.value.photos)}, now at version ${edited.value.version}.`,
+          text:
+            `Saved ${title}${withPhotos(photos)}, now at version ${version}.` +
+            (note === undefined ? "" : ` ${note}`) +
+            copiesText(copies),
         };
       }),
   },
@@ -207,7 +291,9 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
     description:
       "Write a page that doesn't exist yet: memory:portrait, memory:now, memory:helping-you, or a page on a " +
       "shelf, memory:people/… for one person, memory:groups/… for a group of people, memory:goals/…, " +
-      "memory:projects/…, memory:places/… or memory:topics/…, named with lowercase words and dashes. The present first, in the present tense with an (as of <date>) note, " +
+      "memory:projects/…, memory:places/…, memory:topics/… or memory:chapters/… for a chapter of their life " +
+      "(read the chapters skill first), named with lowercase words and dashes. The present first, in the " +
+      "present tense with an (as of <date>) note, " +
       "then an ## Earlier section of dated lines for what used to be true. To change a page that exists, read " +
       "it and use edit_page. Never store passwords or tokens.",
     inputSchema: {
@@ -218,7 +304,10 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         gist: { type: "string", description: gistGuide },
         circle: { type: "string", description: `Required on a people page. ${circleGuide}` },
         contact: { type: "string", description: contactGuide },
+        began: { type: "string", description: `Required on a chapter. ${beganGuide}` },
+        ended: { type: "string", description: endedGuide },
         note: { type: "string", description: "What this page is for, in a few words." },
+        learnt: { type: "string", description: learntGuide },
         aliases: { type: "array", items: { type: "string" }, description: "Other names for it." },
         links: {
           type: "array",
@@ -245,8 +334,9 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
           pages: toPageReference({ address: textOf(input, "address").trim(), title: written.value.title }),
           change: written.value.change,
         });
+        const { title, photos, version, note } = written.value;
         return {
-          text: `Saved ${written.value.title}${withPhotos(written.value.photos)}, at version ${written.value.version}.`,
+          text: `Saved ${title}${withPhotos(photos)}, at version ${version}.${note === undefined ? "" : ` ${note}`}`,
         };
       }),
   },
@@ -313,7 +403,8 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
           text: history
             .map(
               ({ commit: version, at, subject, body, isDeleted }) =>
-                `${toVersion(version)}  ${at.slice(0, 16).replace("T", " ")}  ${subject}${body ? `: ${body}` : ""}` +
+                `${toVersion(version)}  ${at.slice(0, 16).replace("T", " ")}  ${subject}` +
+                (body ? `: ${body.replaceAll(/\s*\n+\s*/gu, " · ")}` : "") +
                 (isDeleted ? " (gone after this)" : ""),
             )
             .join("\n"),
@@ -360,13 +451,19 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
     name: "journal",
     title: "Add to today's journal",
     description:
-      "Add to today's journal, your running account of the day: what you talked about, what happened, how " +
-      "the person seemed. When they journal to you themselves, add their own words with yours: true.",
+      "Add to today's journal, your running account of the day: what you talked about and what happened. When " +
+      "they journal to you themselves, add their own words with yours: true. Your own reading of them, such as " +
+      "how they seemed, goes in as its own entry with reading: true, so it's never taken for a fact; never read " +
+      "their relationships or motives, and keep any reading out of the gist.",
     inputSchema: {
       type: "object",
       properties: {
         text: { type: "string", description: `What to add, as Markdown. ${photoGuide}` },
         yours: { type: "boolean", description: "True when these are the person's own words." },
+        reading: {
+          type: "boolean",
+          description: "True when this is your reading of them, in a line or two, marked as yours.",
+        },
         gist: {
           type: "string",
           description:
@@ -374,6 +471,7 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
             "Keep it current as the day goes on.",
         },
         note: { type: "string", description: "What this entry adds, in a few words." },
+        learnt: { type: "string", description: learntGuide },
       },
       required: ["text", "gist", "note"],
       additionalProperties: false,

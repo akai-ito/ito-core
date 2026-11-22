@@ -72,9 +72,6 @@
           "$ref": "#/$defs/VoiceStatus"
         },
         {
-          "$ref": "#/$defs/TopicStarted"
-        },
-        {
           "$ref": "#/$defs/MotionStarted"
         },
         {
@@ -90,6 +87,18 @@
           "$ref": "#/$defs/MotionRemoved"
         },
         {
+          "$ref": "#/$defs/MadeCreated"
+        },
+        {
+          "$ref": "#/$defs/MadeChanged"
+        },
+        {
+          "$ref": "#/$defs/MadeStateChanged"
+        },
+        {
+          "$ref": "#/$defs/MadeRemoved"
+        },
+        {
           "$ref": "#/$defs/DeskChanged"
         },
         {
@@ -97,6 +106,18 @@
         },
         {
           "$ref": "#/$defs/ProblemsChanged"
+        },
+        {
+          "$ref": "#/$defs/ThreadStarted"
+        },
+        {
+          "$ref": "#/$defs/ThreadChanged"
+        },
+        {
+          "$ref": "#/$defs/MessageMoved"
+        },
+        {
+          "$ref": "#/$defs/RecordingChanged"
         }
       ]
     },
@@ -136,17 +157,17 @@
       "minLength": 1,
       "maxLength": 64
     },
+    "FileId": {
+      "description": "Opaque: the id of a file Kumo showed you, which stays the same across its versions.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
     "UploadId": {
       "description": "A random UUID, in lowercase, the app makes before uploading. It is the attachment's id and its retry key.",
       "type": "string",
       "format": "uuid",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-    },
-    "TopicId": {
-      "description": "Opaque. The server makes it when Ari marks a topic.",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 64
     },
     "CallId": {
       "description": "A random UUID the app makes when you start a call.",
@@ -166,8 +187,8 @@
       "minimum": 1
     },
     "Outcome": {
-      "description": "How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. Treat an outcome you don't recognise as ended.",
-      "enum": ["completed", "stopped", "interrupted", "failed"]
+      "description": "How a message or a turn ended: `completed`; `stopped` by you; `interrupted` because the server restarted; or `failed`, with an error. A message alone may end `discarded`: the agent took it back unfinished, such as a reply whose model stream dropped and that the model writes again from the start, so hide it; snapshots and history leave it out. Treat an outcome you don't recognise as ended.",
+      "enum": ["completed", "stopped", "interrupted", "failed", "discarded"]
     },
     "Error": {
       "description": "Why something failed. A failed turn uses `model_timeout`, `model_unavailable`, `usage_limit`, `engine_signed_out`, `context_full`, `engine_failed`, `server_disk_full`, `refused` or `internal`. A refused command uses `invalid_request`, `token_rejected`, `pairing_code_rejected`, `not_found`, `id_conflict`, `too_large`, `attachment_missing`, `slow_down`, `unavailable` or `internal`. Codes are added over time: show the message of a code you don't recognise.",
@@ -178,13 +199,13 @@
           "description": "Stable and snake_case.",
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "examples": ["model_timeout"]
+          "examples": ["model_unavailable"]
         },
         "message": {
           "description": "A plain sentence for the person using the app, written by the server.",
           "type": "string",
           "minLength": 1,
-          "examples": ["The model didn't respond for 60 seconds."]
+          "examples": ["The model service isn't responding right now."]
         },
         "detail": {
           "description": "The technical cause, for a Details view.",
@@ -197,7 +218,7 @@
       "enum": ["reply", "note", "post"]
     },
     "Message": {
-      "description": "One message in the conversation. Messages are ordered by when they began.",
+      "description": "One message, in the main chat or in a side thread. Messages are ordered by when they began, wherever they are.",
       "type": "object",
       "required": ["id", "role", "text", "at", "position"],
       "properties": {
@@ -260,6 +281,14 @@
         "done": {
           "$ref": "#/$defs/DoneId",
           "description": "User messages only: the Done entry this message replies to, such as a correction to one of Kumo's calls."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread it's in. Absent in the main chat."
+        },
+        "quotes": {
+          "$ref": "#/$defs/Quote",
+          "description": "User messages only: inside a thread, the message you replied to."
         }
       },
       "if": {
@@ -305,7 +334,7 @@
       ]
     },
     "AttachmentKind": {
-      "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",
+      "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's or one you send, which the server transcribes for the agent; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",
       "enum": ["image", "audio", "file"]
     },
     "Attachment": {
@@ -664,7 +693,7 @@
       "enum": ["answered", "cancelled"]
     },
     "Ask": {
-      "description": "Something the agent asked you. Asking ends the agent's turn, and the ask waits as long as it takes: through the app closing, the phone going offline and the server restarting. The next message you send answers it, whether you tap an option, type your own answer or write about something else. At most one ask waits at a time.",
+      "description": "Something the agent asked you. Asking ends the agent's turn, and the ask waits as long as it takes: through the app closing, the phone going offline and the server restarting. The next message you send where it waits answers it, whether you tap an option, type your own answer or write about something else. At most one ask waits in each thread, and one in the main chat.",
       "type": "object",
       "required": ["id", "turn", "kind", "question", "options", "allows_text", "at", "position"],
       "properties": {
@@ -725,6 +754,10 @@
         "answer": {
           "$ref": "#/$defs/MessageId",
           "description": "Present when the outcome is `answered`: the message that answered it."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread it waits in; absent for the main chat."
         }
       }
     },
@@ -786,6 +819,10 @@
           "$ref": "#/$defs/TurnId",
           "description": "Present when the turn is a new attempt at a failed one."
         },
+        "started_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the turn started, as in its `turn.started`, so an app can say how long the agent has been working. A turn is never failed for being quiet, so this is what tells you when it has gone on too long. Absent when the server no longer knows."
+        },
         "status": {
           "description": "The current live status, if there is one yet.",
           "oneOf": [
@@ -796,6 +833,10 @@
               "type": "null"
             }
           ]
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread it answers in; absent for the main chat."
         }
       }
     },
@@ -814,7 +855,7 @@
         "steps",
         "asks",
         "calls",
-        "topics",
+        "threads",
         "desk"
       ],
       "properties": {
@@ -832,7 +873,7 @@
           "enum": ["no_cursor", "cursor_unknown", "too_far_behind"]
         },
         "messages": {
-          "description": "The latest messages, oldest first, including a message still being written (with its text so far and no outcome). Page further back with `GET /v0/messages`.",
+          "description": "The main chat's latest messages, oldest first, including a message still being written (with its text so far and no outcome). A thread's messages come with `GET /v0/threads/{thread}`; page further back with `GET /v0/messages`.",
           "type": "array",
           "maxItems": 50,
           "items": {
@@ -844,21 +885,21 @@
           "type": "boolean"
         },
         "steps": {
-          "description": "Every step from the first of these messages on, including the running turn's steps, in position order.",
+          "description": "Every step in the main chat from the first of these messages on, including the running turn's steps, in position order.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Step"
           }
         },
         "asks": {
-          "description": "Every ask from the first of these messages on, in position order, including the one that waits for your answer (it has no outcome).",
+          "description": "Every ask in the main chat from the first of these messages on, in position order, including the one that waits for your answer (it has no outcome).",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Ask"
           }
         },
         "turn": {
-          "description": "The running turn, or null when the agent is idle.",
+          "description": "The main chat's running turn, or null when it's idle. A thread's running turn comes with the thread.",
           "oneOf": [
             {
               "$ref": "#/$defs/LiveTurn"
@@ -869,7 +910,7 @@
           ]
         },
         "next": {
-          "description": "Messages waiting as Next, in the order they will be answered.",
+          "description": "Messages waiting as Next in the main chat, in the order they will be answered.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/MessageId"
@@ -882,11 +923,11 @@
             "$ref": "#/$defs/Call"
           }
         },
-        "topics": {
-          "description": "The topics Ari marked on these messages, in position order.",
+        "threads": {
+          "description": "Every open thread, and every thread whose line sits among these messages, in position order.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Topic"
+            "$ref": "#/$defs/Thread"
           }
         },
         "desk": {
@@ -1022,6 +1063,10 @@
         "retry_of": {
           "$ref": "#/$defs/TurnId",
           "description": "Present when this is a new attempt at a failed turn."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread this turn answers in, with its own conversation. Absent for the main chat. Turns in different threads run at the same time."
         }
       }
     },
@@ -1160,6 +1205,10 @@
         "text": {
           "type": "string",
           "minLength": 1
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread its message is in; absent in the main chat."
         }
       }
     },
@@ -1192,6 +1241,10 @@
         "error": {
           "$ref": "#/$defs/Error",
           "description": "Present when the outcome is `failed`."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread its message is in; absent in the main chat."
         }
       }
     },
@@ -1320,45 +1373,183 @@
         }
       }
     },
-    "Topic": {
-      "description": "Where the subject changed: a quiet label Ari puts on the message that changed it. A label used again is the same subject, returned to.",
+    "ThreadId": {
+      "description": "Opaque. The server makes it when a side thread starts.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "Quote": {
+      "description": "The message you replied to inside a thread, and the words of it to show above yours.",
       "type": "object",
-      "required": ["id", "label", "position", "at"],
+      "required": ["message", "text"],
       "properties": {
-        "id": {
-          "$ref": "#/$defs/TopicId"
+        "message": {
+          "$ref": "#/$defs/MessageId"
         },
-        "label": {
-          "description": "One to four words, such as \"Florence trip\", safe to show as it is.",
+        "text": {
+          "description": "A line of the quoted message, at most 200 characters, safe to show as it is.",
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "ThreadNews": {
+      "description": "Something Kumo said in a thread that you haven't seen yet.",
+      "type": "object",
+      "required": ["message", "text", "at"],
+      "properties": {
+        "message": {
+          "$ref": "#/$defs/MessageId"
         },
-        "position": {
-          "$ref": "#/$defs/Position",
-          "description": "The position of the message that changed the subject. Draw the label above it."
+        "text": {
+          "description": "Its first line, with Markdown stripped, at most 200 characters.",
+          "type": "string",
+          "minLength": 1
         },
         "at": {
           "$ref": "#/$defs/Timestamp"
         }
       }
     },
-    "TopicStarted": {
-      "title": "topic.started",
-      "description": "Ari marked where the subject changed, while answering the message that changed it.",
+    "ThreadDone": {
+      "description": "Who marked a thread done, and when.",
       "type": "object",
-      "required": ["id", "type", "at", "topic"],
+      "required": ["at", "by"],
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "by": {
+          "description": "`kumo` when Kumo closed it because its question was answered or its task finished; `you` when you marked it.",
+          "enum": ["kumo", "you"]
+        }
+      }
+    },
+    "Thread": {
+      "description": "A side thread: a subject of its own beside the main chat, with its own conversation, so talking in it never steers the main chat or another thread aside. Kumo starts one for a one-off, a new subject or long work, moving the message that started it in; you start one by replying to a message in the main chat, or from Threads. It shows in the main chat as one quiet line.",
+      "type": "object",
+      "required": ["id", "by", "state", "started_at", "position", "replies", "last_at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "title": {
+          "description": "One to five plain words, such as \"Kiln menu\", safe to show as it is. Absent until Kumo names a thread you started, just after its first answer.",
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "description": "Who started it: `kumo` or `you`.",
+          "enum": ["kumo", "you"]
+        },
+        "state": {
+          "description": "`open` while its question or task is still live; `done` once it's settled. Any message in a done thread opens it again.",
+          "enum": ["open", "done"]
+        },
+        "started_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "Where its line sits in the main chat: just after the main chat's message with the greatest position below it. It moves to the end when Kumo comes back to the thread with something new."
+        },
+        "anchor": {
+          "$ref": "#/$defs/MessageId",
+          "description": "A thread you started by replying to a message in the main chat: that message, which stays in the main chat with the thread's line under it while the line hasn't moved."
+        },
+        "replies": {
+          "description": "How many messages it holds, yours and Kumo's, notes aside.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When its latest message began."
+        },
+        "result": {
+          "description": "Kumo's one line on where it stands or how it ended, such as \"Noodles, laab, skewers · £47 for two\". Absent until Kumo writes one.",
+          "type": "string",
+          "minLength": 1
+        },
+        "news": {
+          "$ref": "#/$defs/ThreadNews"
+        },
+        "done": {
+          "$ref": "#/$defs/ThreadDone",
+          "description": "Present while it's done."
+        },
+        "picture": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "Its first picture, yours or one Kumo found, for a thumbnail: fetch it with `GET /v0/attachments/{attachment}`."
+        },
+        "page": {
+          "description": "It holds a page Kumo made: one of its replies or posts shows an `ari:made` card.",
+          "const": true
+        }
+      }
+    },
+    "ThreadStarted": {
+      "title": "thread.started",
+      "description": "A side thread starts: Kumo branched one, you replied to a message in the main chat, or you started one from Threads. A thread Kumo branches arrives before the messages it moves in.",
+      "type": "object",
+      "required": ["id", "type", "at", "thread"],
       "properties": {
         "id": {
           "$ref": "#/$defs/EventId"
         },
         "type": {
-          "const": "topic.started"
+          "const": "thread.started"
         },
         "at": {
           "$ref": "#/$defs/Timestamp"
         },
-        "topic": {
-          "$ref": "#/$defs/Topic"
+        "thread": {
+          "$ref": "#/$defs/Thread"
+        }
+      }
+    },
+    "ThreadChanged": {
+      "title": "thread.changed",
+      "description": "Something about a thread changed: its name, whether it's open or done, its line's place in the main chat, how many replies it has, its result, its picture or its news. Replace your copy with this one.",
+      "type": "object",
+      "required": ["id", "type", "at", "thread"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "thread.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "thread": {
+          "$ref": "#/$defs/Thread"
+        }
+      }
+    },
+    "MessageMoved": {
+      "title": "message.moved",
+      "description": "A message moved between the main chat and a thread, or between threads: Kumo branched a thread from it, or you moved it. It keeps its id and its position; `message` is the whole message as it is now, so an app that hadn't loaded where it came from can show it where it went.",
+      "type": "object",
+      "required": ["id", "type", "at", "message"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "message.moved"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "message": {
+          "$ref": "#/$defs/Message"
+        },
+        "from": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The thread it left; absent when it left the main chat."
         }
       }
     },
@@ -1475,7 +1666,7 @@
       "maxLength": 64
     },
     "Motion": {
-      "description": "A thing in motion: something going on that Ari keeps for you, such as a trip being planned. Its content and state come from `GET /v0/motion/{id}`.",
+      "description": "A thing in motion: something going on that Kumo keeps for you, such as a trip being planned or a role you're interviewing for. Its content and state come from `GET /v0/motion/{id}`.",
       "type": "object",
       "required": [
         "id",
@@ -1484,6 +1675,7 @@
         "summary",
         "status",
         "pinned",
+        "salience",
         "version",
         "started_at",
         "changed_at",
@@ -1494,7 +1686,7 @@
           "$ref": "#/$defs/MotionId"
         },
         "kind": {
-          "description": "Which widget draws it. Show a plain card, with its title and summary, for a kind you don't recognise.",
+          "description": "Which widget draws it, and which section of In motion it sits in: `career`, `body`, `trip`, `project`, `learning` or `other`, always in that order. 0.18's `training` sits in Body, `pursuit` in Career, and `occasion` and `case` in Other until Kumo reshapes them. Show a kind you don't recognise as a plain card in Other.",
           "type": "string",
           "examples": ["trip"]
         },
@@ -1504,15 +1696,20 @@
           "minLength": 1
         },
         "summary": {
-          "description": "Where it stands, in one line, for the pinned line and the In motion tab, such as \"6–9 Nov · 3 to book\". Ari keeps it current with every change.",
+          "description": "Kumo's line for you: where it stands, short, such as \"Virtual 1 · Python PR review\" or \"6–9 Nov · 3 to book\". Kumo keeps it current with every change, and keeps sources, guesses and ids out of it, in the content's notes. Once it's finished, it says how it ended, such as \"No offer after the final round\".",
           "type": "string"
         },
         "status": {
-          "enum": ["active", "done"]
+          "enum": ["active", "done"],
+          "description": "`done` once Kumo stops keeping it: tracking ended, which isn't the same as achieving it. `outcome` says how it ended."
         },
         "pinned": {
           "description": "Whether it's pinned above the composer. Ari pins a thing it starts, unpins it when it's done or when you ask, and pins it again when you ask.",
           "type": "boolean"
+        },
+        "salience": {
+          "description": "How much it matters to you now, by Kumo's judgement of the stakes, the timing and what you've said, never by its stage or date: `loud` is big and carries the picture in its section, `normal` is a row, and `quiet` folds into \"+ N quieter\". You correct it by telling Kumo. Show a value you don't recognise as `normal`.",
+          "enum": ["loud", "normal", "quiet"]
         },
         "cover": {
           "$ref": "#/$defs/AttachmentId",
@@ -1532,6 +1729,14 @@
         "done_at": {
           "$ref": "#/$defs/Timestamp",
           "description": "When it was finished. Absent while it's active."
+        },
+        "outcome": {
+          "description": "How it ended, once it's done: `achieved`; `not_met`, a goal missed; `let_go`, stopped by choice; `merged` into another thing; or one never to show, kept only to recover: `duplicate`, a copy of another thing, `test`, and `elsewhere`, small admin that lives on the Desk and in Kumo's plans now. Absent for a thing finished before 0.19 until Kumo gives it one: show it as ended, never as achieved. Show a value you don't recognise as ended.",
+          "enum": ["achieved", "not_met", "let_go", "merged", "duplicate", "test", "elsewhere"]
+        },
+        "merged_into": {
+          "$ref": "#/$defs/MotionId",
+          "description": "For `merged` and `duplicate`: the thing it went into, to open."
         },
         "position": {
           "$ref": "#/$defs/Position",
@@ -1676,6 +1881,215 @@
         },
         "motion": {
           "$ref": "#/$defs/MotionId"
+        }
+      }
+    },
+    "Picture": {
+      "description": "A picture Ari found on the web, kept on the server as an attachment so the app never contacts its host. Never generated.",
+      "type": "object",
+      "required": ["attachment", "alt", "source_url", "credit"],
+      "properties": {
+        "attachment": {
+          "description": "Fetch it with `GET /v0/attachments/{attachment}`.",
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "alt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_url": {
+          "description": "The page the picture came from.",
+          "type": "string",
+          "format": "uri"
+        },
+        "credit": {
+          "description": "Who made it, as its source asks.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "MadeItemId": {
+      "description": "Lowercase words and dashes, unique on the page, such as `trajans-column`.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "MadeState": {
+      "description": "Your ticks on a made page: when you ticked each item, by its id. `{}` until you tick something.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ticks": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/MadeItemId"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Timestamp"
+          }
+        }
+      }
+    },
+    "MadeId": {
+      "description": "A made page's id: readable, chosen by Ari, unique on the server, such as `va-guide`.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "Made": {
+      "description": "A page Ari made: a rich, lasting answer, such as a gallery guide, that a reply shows as an `ari:made` card, and that sits on the Made shelf. Ari keeps it current. Its content and your ticks come from `GET /v0/made/{id}`.",
+      "type": "object",
+      "required": ["id", "title", "summary", "version", "made_at", "changed_at", "position"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/MadeId"
+        },
+        "title": {
+          "description": "Such as \"Your guide to the V&A\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "description": "What's in it, in one line, such as \"4 rooms · 9 things to spot\".",
+          "type": "string"
+        },
+        "cover": {
+          "$ref": "#/$defs/Picture",
+          "description": "The picture at its top and on its card. Absent when it has none."
+        },
+        "for_day": {
+          "description": "The day it's for, such as the visit, as `YYYY-MM-DD`: \"Made for Saturday\". Ari keeps it current until then. Absent when it isn't for a day.",
+          "type": "string",
+          "format": "date"
+        },
+        "version": {
+          "description": "How many times it has changed, counting its making as 1.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "made_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "changed_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When Ari last changed it: \"Updated 2h ago\", with the latest change's note."
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "The position of your message Ari was answering when it made the page: \"From your chat\" links back to it."
+        }
+      }
+    },
+    "MadeChange": {
+      "description": "One change to a made page.",
+      "type": "object",
+      "required": ["version", "at", "note", "position"],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "note": {
+          "description": "What changed, said to you, such as \"The Raphael Cartoons reopened this morning, so they're back in.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "The position of your message Ari was answering when it made the change."
+        }
+      }
+    },
+    "MadeCreated": {
+      "title": "made.created",
+      "description": "Ari made a page. It joins the Made shelf.",
+      "type": "object",
+      "required": ["id", "type", "at", "made", "change"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "made.created"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "made": {
+          "$ref": "#/$defs/Made"
+        },
+        "change": {
+          "$ref": "#/$defs/MadeChange"
+        }
+      }
+    },
+    "MadeChanged": {
+      "title": "made.changed",
+      "description": "Ari changed a page, such as when something on it changed in the world. Fetch its content again. It never notifies: when you need to know, Ari says so in a message.",
+      "type": "object",
+      "required": ["id", "type", "at", "made", "change"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "made.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "made": {
+          "$ref": "#/$defs/Made"
+        },
+        "change": {
+          "$ref": "#/$defs/MadeChange"
+        }
+      }
+    },
+    "MadeStateChanged": {
+      "title": "made.state",
+      "description": "Your ticks on a page changed, from a tap on any device, or because a change removed an item you'd ticked. It carries the whole state.",
+      "type": "object",
+      "required": ["id", "type", "at", "made", "state"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "made.state"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "made": {
+          "$ref": "#/$defs/MadeId"
+        },
+        "state": {
+          "$ref": "#/$defs/MadeState"
+        }
+      }
+    },
+    "MadeRemoved": {
+      "title": "made.removed",
+      "description": "You allowed Ari to forget a page, so it's gone from the shelf and its cards.",
+      "type": "object",
+      "required": ["id", "type", "at", "made"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "made.removed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "made": {
+          "$ref": "#/$defs/MadeId"
         }
       }
     },
@@ -1857,7 +2271,7 @@
       }
     },
     "Card": {
-      "description": "Something waiting on you on the Desk. It stays until it's done, whatever the date. Draw its buttons from `options`; `allows_text` offers a typed answer, which for a draft asks for a change, such as \"a bit more casual\". Its kind's payload sits under a field of the same name. Show a kind you don't recognise by its title and options.",
+      "description": "Something waiting on you on the Desk. It stays until it's done, or until it can no longer help: a card with `until`, or an invite once its event is over, leaves by itself then. Draw its buttons from `options`; `allows_text` offers a typed answer, which for a draft asks for a change, such as \"a bit more casual\". Its kind's payload sits under a field of the same name. Show a kind you don't recognise by its title and options.",
       "type": "object",
       "required": ["id", "kind", "at", "title", "options", "allows_text"],
       "properties": {
@@ -1874,6 +2288,10 @@
         "at": {
           "$ref": "#/$defs/Timestamp",
           "description": "When it began waiting, for \"since Wed\"."
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it stops mattering, such as the evening a question about where to meet is for: it leaves the Desk by itself then. Absent for a card that waits however long it takes."
         },
         "changed_at": {
           "$ref": "#/$defs/Timestamp",
@@ -2604,7 +3022,7 @@
           "minLength": 1
         },
         "area": {
-          "description": "What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities`, `memory`, or `kumo` when its own work in the background can't go on. Show an area you don't know plainly.",
+          "description": "What it's about: `notifications`, `mail`, `calendar`, `contacts`, `capabilities`, `memory`, or `kumo` when its own work in the background can't go on, such as `kumo:paused` while its model's usage limit holds it until a reset. Show an area you don't know plainly.",
           "type": "string",
           "minLength": 1
         },
@@ -2665,6 +3083,91 @@
         },
         "onboarding": {
           "$ref": "#/$defs/Onboarding"
+        }
+      }
+    },
+    "RecordingState": {
+      "description": "`queued` while it waits its turn, or for the server's voice to be ready, as `reason` says; `transcribing` while the server listens to it; `ready` once its transcript is; `failed` when it couldn't be transcribed, as `error` says, until it's tried again; `deleted` once its audio and transcript are gone.",
+      "enum": ["queued", "transcribing", "ready", "failed", "deleted"]
+    },
+    "Recording": {
+      "description": "A recording you sent in a message, and where its transcript stands. The server transcribes every audio attachment you send, on its own GPU, with times and, as a best guess, who spoke; nothing leaves the server. Fetch the transcript with `GET /v0/recordings/{attachment}/transcript` once it's `ready`.",
+      "type": "object",
+      "required": ["attachment", "message", "name", "state", "changed_at"],
+      "properties": {
+        "attachment": {
+          "$ref": "#/$defs/AttachmentId"
+        },
+        "message": {
+          "$ref": "#/$defs/MessageId",
+          "description": "The message that carries it."
+        },
+        "name": {
+          "description": "The recording's file name, as uploaded.",
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "$ref": "#/$defs/RecordingState"
+        },
+        "reason": {
+          "description": "`queued` only: why it hasn't started, such as the voice still loading. Absent while it simply waits its turn.",
+          "type": "string",
+          "minLength": 1
+        },
+        "progress": {
+          "description": "`transcribing` only: how far through it the server is.",
+          "type": "object",
+          "required": ["done_seconds"],
+          "properties": {
+            "done_seconds": {
+              "description": "How much of it has been heard.",
+              "type": "number",
+              "minimum": 0
+            },
+            "total_seconds": {
+              "description": "How long it is, when the server could tell.",
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "duration_seconds": {
+          "description": "`ready` only: how long it is.",
+          "type": "number",
+          "minimum": 0
+        },
+        "speakers": {
+          "description": "`ready` only: how many voices the server told apart, which is a best guess.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "$ref": "#/$defs/Error",
+          "description": "`failed` only: why."
+        },
+        "changed_at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      }
+    },
+    "RecordingChanged": {
+      "title": "recording.changed",
+      "description": "A recording moved on: queued, transcribing (about every 5% of the way), ready, failed or deleted. It carries the whole recording. These events are compacted like the Desk's, so after a `snapshot`, fetch `GET /v0/recordings` for the recordings you show.",
+      "type": "object",
+      "required": ["id", "type", "at", "recording"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "recording.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "recording": {
+          "$ref": "#/$defs/Recording"
         }
       }
     }

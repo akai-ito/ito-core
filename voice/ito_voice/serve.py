@@ -7,6 +7,7 @@ import traceback
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -16,9 +17,12 @@ from ito_voice import models
 from ito_voice.audio import from_pcm, spoken_rate, to_base64
 from ito_voice.link import Link, LinkError, claim_stdout, protocol
 from ito_voice.session import Session, Tools, to_voiceprint
+from ito_voice.transcribe import CancelledError, Models, TranscriptionError, decode, probe_seconds, transcribe
 
 loading_code = -32_001
 failed_code = -32_002
+unreadable_code = -32_003
+cancelled_code = -32_004
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,8 @@ class Voice:
         self._reported: tuple[str, str | None] | None = None
         self._gpu_lock = threading.Lock()
         self._sessions: dict[str, Session] = {}
+        self._transcribing = ThreadPoolExecutor(max_workers=1, thread_name_prefix="transcribe")
+        self._cancels: dict[str, threading.Event] = {}
 
     def _state(self) -> tuple[str, str | None]:
         if self._failure is not None:
@@ -188,6 +194,59 @@ class Voice:
             await asyncio.get_running_loop().run_in_executor(None, session.stop().wait)
         return {}
 
+    def _transcription_models(self, loaded: Loaded) -> Models:
+        speech, _ = new_vad()
+
+        def recognise(samples: np.ndarray) -> str:
+            with self._gpu_lock:
+                return models.recognise(loaded.recogniser, samples)
+
+        return Models(
+            speech=speech,
+            recognise=recognise,
+            voiceprint=lambda samples: models.voiceprint(loaded.voiceprints, samples),
+        )
+
+    async def transcribe(self, params: Mapping[str, Any]) -> Mapping[str, Any]:
+        self._ready_speaker()
+        loaded = self._loaded
+        job, path = params.get("job"), params.get("path")
+        if loaded is None or not isinstance(job, str) or not isinstance(path, str):
+            raise LinkError(-32_602, "transcribe needs a job and a path.")
+        cancelled = threading.Event()
+        self._cancels[job] = cancelled
+        you = to_voiceprint(params)
+
+        def work() -> Mapping[str, Any]:
+            recording = Path(path)
+            total = probe_seconds(recording)
+
+            def progress(done: float) -> None:
+                self._link.notify("transcribing", {"job": job, "done": done, "total": total})
+
+            transcript = transcribe(decode(recording), self._transcription_models(loaded), you, progress, cancelled)
+            return {
+                "seconds": transcript.seconds,
+                "segments": [segment.to_json() for segment in transcript.segments],
+                "speakers": [vars(speaker) for speaker in transcript.speakers],
+                "model": models.parakeet_model,
+            }
+
+        try:
+            return await asyncio.get_running_loop().run_in_executor(self._transcribing, work)
+        except CancelledError as error:
+            raise LinkError(cancelled_code, "The transcription was cancelled.") from error
+        except TranscriptionError as error:
+            raise LinkError(unreadable_code, str(error)) from error
+        finally:
+            self._cancels.pop(job, None)
+
+    async def cancel_transcription(self, params: Mapping[str, Any]) -> Mapping[str, Any]:
+        cancelled = self._cancels.get(str(params.get("job")))
+        if cancelled is not None:
+            cancelled.set()
+        return {}
+
     def hear(self, params: Mapping[str, Any]) -> None:
         pcm = params.get("pcm")
         if isinstance(pcm, str):
@@ -210,6 +269,8 @@ async def run() -> None:
         "flush": voice.flush,
         "stop": voice.stop,
         "forget": voice.forget,
+        "transcribe": voice.transcribe,
+        "cancel_transcription": voice.cancel_transcription,
     }
     await link.run(handlers, {"audio": voice.hear, "saying": voice.saying})
     loading.cancel()

@@ -1,7 +1,6 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
-import { randomUUID } from "node:crypto";
 import { createCell } from "#cell.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, type Host, type Installed } from "#capabilities/host.ts";
@@ -19,16 +18,20 @@ import { createMemory, type Memory } from "#memory/memory.ts";
 import { createBackup, type Backup } from "#memory/backup.ts";
 import type { GitHubHosts } from "#memory/github.ts";
 import { createImageTool } from "#replies/images.ts";
+import { createMadePages } from "#made/made.ts";
 import type { Fetch } from "#capabilities/connect.ts";
 import { createCapabilityApprovals } from "#capabilities/approvals.ts";
-import { createTopics } from "#topics/topics.ts";
+import { createNaming } from "#threads/naming.ts";
+import { createThreads } from "#threads/threads.ts";
+import { createLanes, type Lanes } from "#threads/lanes.ts";
+import { toThreadId, type ThreadId } from "#conversation/ids.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import { createGroups } from "#tools/groups.ts";
 import { withCheckedInput } from "#tools/input.ts";
 import { systemClock, toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { codexVersion } from "#engine/codex/binary.ts";
-import { readChoice, restartedDetail, type Engine, type ToolServer } from "#engine/engine.ts";
+import { readChoice, type Engine, type ToolServer } from "#engine/engine.ts";
 import { createApp } from "#http/app.ts";
 import { createGate, createToken, tokenSetting } from "#http/auth.ts";
 import { leadOf } from "#http/settings.ts";
@@ -37,17 +40,26 @@ import { randomIdentifiers, type Identifiers } from "#identifiers.ts";
 import { loadSchemas } from "#protocol/schemas.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { createAttachments, type Attachments } from "#attachments/attachments.ts";
+import {
+  createUploads,
+  defaultLimits as defaultUploadLimits,
+  type Limits as UploadLimits,
+} from "#attachments/uploads.ts";
+import { createRecordings, type Recordings } from "#recordings/recordings.ts";
+import { createRecordingTools } from "#recordings/tools.ts";
+import { createShownFiles, type ShownFiles } from "#files/files.ts";
 import { appleHosts, createApns, readApnsCredentials, type ApnsHosts } from "#notifications/apns.ts";
 import { createNotifier } from "#notifications/notifier.ts";
 import { openDatabase } from "#store/database.ts";
 import { createStore, type Settings, type Store } from "#store/store.ts";
-import { createTurns, defaultLimits, type Info, type Limits, type Log, type Turns } from "#turns/turns.ts";
+import { defaultLimits, type Info, type Limits, type Log } from "#turns/turns.ts";
+import { createBackground, whenWords, type Background } from "#turns/background.ts";
 import { packageVersion } from "#version.ts";
 import type { Message, ModelChoice } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 import { toSpoken } from "#desk/day.ts";
 import { createDesk } from "#desk/desk.ts";
-import { createWorkTools } from "#work/tools.ts";
+import { createWorkTools, type PostPlace } from "#work/tools.ts";
 import { createCorrections } from "#work/corrections.ts";
 import { createWakeUps, type WakeUps } from "#wakeups/wakeups.ts";
 import { registerWakeUps } from "#http/wakeups.ts";
@@ -65,6 +77,7 @@ import { createContacts, type Contacts, type PersonPage } from "#contacts/contac
 import { createContactsSource, type ContactsSource } from "#contacts/carddav.ts";
 import { contactsGroup } from "#contacts/group.ts";
 import { mailGroup } from "#mail/group.ts";
+import { chaptersSkill } from "#memory/chapters.ts";
 import { parsePage, sectionOf, toAddress } from "#memory/pages.ts";
 import { createMailbox, type CreateMailSource, type Mailbox } from "#mail/mail.ts";
 import {
@@ -77,6 +90,7 @@ import {
   mailProblem,
   memoryBackupId,
   memoryBackupProblem,
+  pausedProblem,
   pushDeliveryId,
   pushDeliveryProblem,
   pushProblem,
@@ -88,7 +102,7 @@ import { createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
 import { createBlockStore } from "#day/blocks.ts";
 import { createDayPicture } from "#day/picture.ts";
 import { registerDay } from "#http/day.ts";
-import { contextRun, inToolContext } from "#tools/context.ts";
+import { contextRun, contextThread, inToolContext } from "#tools/context.ts";
 import { createDemoTools } from "#demo/tools.ts";
 
 export type ServerOptions = {
@@ -111,6 +125,9 @@ export type ServerOptions = {
   readonly createMailSource?: CreateMailSource;
   readonly github?: GitHubHosts;
   readonly backupCheckMs?: number;
+  // The largest big upload of each kind, and the largest chunk; ITO_MAX_RECORDING_MB and ITO_MAX_FILE_MB set them.
+  readonly uploadLimits?: Partial<UploadLimits>;
+  readonly freeBytes?: (directory: string) => number;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts };
@@ -122,15 +139,18 @@ export type EngineContext = {
   readonly tools: () => ToolServer | undefined;
   readonly skills: () => string;
   readonly instructions: () => string;
-  readonly inMind: () => string;
-  readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
+  // What a turn has in mind, in the main chat or in a side thread.
+  readonly inMind: (thread?: ThreadId) => string;
+  readonly callTool: (name: string, input: unknown, run?: string, thread?: string) => Promise<ToolResult>;
 };
 
 export type Server = {
   readonly app: FastifyInstance;
   readonly store: Store;
-  readonly turns: Turns;
+  readonly turns: Lanes;
   readonly attachments: Attachments;
+  readonly recordings: Recordings;
+  readonly files: ShownFiles;
   readonly host: Host;
   readonly memory: Memory;
   readonly backup: Backup;
@@ -142,7 +162,8 @@ export type Server = {
   readonly contacts: Contacts;
   readonly mail: Mailbox;
   readonly problems: Problems;
-  readonly callTool: (name: string, input: unknown, run?: string) => Promise<ToolResult>;
+  readonly background: Background;
+  readonly callTool: (name: string, input: unknown, run?: string, thread?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
 
@@ -166,9 +187,19 @@ export const icloudContacts = (values: Values): ContactsSource =>
 const motionSkill: OwnSkill = {
   id: "things-in-motion",
   summary:
-    "starting and keeping things in motion, such as a trip, a job search, a dinner or a refund, and finding photos",
+    "starting, keeping and honestly ending things in motion, such as a role, a training block or a trip, and finding photos",
   text: readFileSync(new URL("../agent/motion.md", import.meta.url), "utf8"),
 };
+
+const reviewSkill: OwnSkill = {
+  id: "review-and-approve",
+  summary:
+    "debriefing a recording they sent, proposing changes as rows they approve one by one, and showing a file " +
+    "for review before it goes in a draft",
+  text: readFileSync(new URL("../agent/review.md", import.meta.url), "utf8"),
+};
+
+const ownSkills: readonly OwnSkill[] = [motionSkill, chaptersSkill, reviewSkill];
 
 const dayMs = 24 * 60 * 60 * 1000;
 
@@ -256,7 +287,7 @@ export const createServer = (options: ServerOptions): Server => {
   const launcher = writeLauncher(path.join(options.dataDirectory, "bin", "ito"));
   const groups = createGroups({ groups: [mailGroup, contactsGroup], tools: () => allTools(), command: launcher });
   const skills = (): string =>
-    writeOwnSkills(path.join(options.dataDirectory, "skills"), [motionSkill, ...groups.skills()]) +
+    writeOwnSkills(path.join(options.dataDirectory, "skills"), [...ownSkills, ...groups.skills()]) +
     writeSkills(path.join(options.dataDirectory, "skills"), host.offered(), launcher);
   const memory = createMemory({
     directory: path.join(options.dataDirectory, "thread"),
@@ -315,11 +346,15 @@ export const createServer = (options: ServerOptions): Server => {
       nowText(),
       memory.inMindText(),
       motions.inMindText(),
+      made.inMindText(),
       wakeUps.inMindText(),
       tracks.inMindText(),
       deskLine.inMindText(),
+      desk.inMindText(),
       picture.inMindText(),
+      recordings.inMindText(),
       latelyText(),
+      threads.backgroundText(),
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -330,21 +365,30 @@ export const createServer = (options: ServerOptions): Server => {
     tools: toolServer,
     skills,
     instructions: () => voiceText.replaceAll("{lead}", () => leadOf(store)) + skills(),
-    inMind: () =>
+    inMind: (thread) =>
       [
+        threads.inMindText(thread),
         nowText(),
         memory.inMindText(),
         motions.inMindText(),
+        made.inMindText(),
         wakeUps.inMindText(),
         tracks.inMindText(),
         deskLine.inMindText(),
+        desk.inMindText(),
         picture.inMindText(),
+        recordings.inMindText(),
         gettingStarted.inMindText(),
         callContext(),
       ]
         .filter(Boolean)
         .join("\n\n"),
-    callTool: (name, input, run) => callTool(name, input, run),
+    callTool: (name, input, run, thread) => callTool(name, input, run, thread),
+  });
+  const threads = createThreads({
+    store,
+    spoken: (at) => toSpoken(Date.parse(at), timeZone()),
+    branched: (thread, moved, brief) => turns.branched(thread, moved, brief),
   });
   host.subscribe(() => {
     void engine.refresh();
@@ -360,11 +404,25 @@ export const createServer = (options: ServerOptions): Server => {
       log,
     }) ?? noVoice("This server runs without a voice.");
   const attachments = createAttachments(store, path.join(options.dataDirectory, "attachments"));
-  const turns = createTurns(store, engine, clock, identifiers, log, {
-    limits: options.limits ?? defaultLimits,
-    attachmentPath: attachments.pathOf,
-    trail: createTrail(host, launcher, groups),
-    moreNotes: () => motions.tickNote(),
+  const uploads = createUploads({
+    directory: path.join(options.dataDirectory, "uploads"),
+    attachments,
+    clock,
+    ...(options.uploadLimits && { limits: options.uploadLimits }),
+    ...(options.freeBytes && { freeBytes: options.freeBytes }),
+  });
+  const turns = createLanes({
+    store,
+    engine,
+    clock,
+    identifiers,
+    log,
+    turns: {
+      limits: options.limits ?? defaultLimits,
+      attachmentPath: attachments.pathOf,
+      trail: createTrail(host, launcher, groups),
+      moreNotes: () => motions.tickNote(),
+    },
   });
   const schemas = loadSchemas();
   const motions = createMotions({
@@ -378,6 +436,7 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     complete: (prompt, schema) => engine.complete(prompt, schema),
   });
+  const made = createMadePages({ store, schemas, clock, timeZone, approve: (fields) => turns.approve(fields) });
   const quickComplete: Engine["complete"] = async (prompt, schema, choice) => {
     await listening.get();
     return engine.complete(prompt, schema, choice);
@@ -386,25 +445,33 @@ export const createServer = (options: ServerOptions): Server => {
     await listening.get();
     return engine.models();
   };
-  const topics = createTopics({ store, complete: quickComplete, models: listedModels, info });
-  const touchedRuns = createCell<ReadonlySet<string>>(new Set());
-  // One piece of Kumo's work in the background, under a run of its own unless it's given one. When the model can't
-  // act, nothing stands in for it: the problem shows until a later piece of work goes through.
-  const runWork = async (prompt: string, choice?: ModelChoice, given?: string): Promise<Result<string, string>> => {
-    await listening.get();
-    const attempt = async (retries: number): Promise<Result<string, string>> => {
-      const run = given ?? randomUUID();
-      const done = await engine.work(`${workRules}\n\n${backgroundText()}\n\n${prompt}`, run, choice);
-      const isTouched = touchedRuns.get().has(run);
-      touchedRuns.update((runs) => new Set([...runs].filter((other) => other !== run)));
-      const isCutOff = !done.ok && done.failure === restartedDetail && !isTouched;
-      return isCutOff && retries > 0 ? attempt(retries - 1) : done;
-    };
-    const done = await attempt(2);
-    if (!done.ok) info("Kumo's background work didn't finish", { error: done.failure });
-    problems.report(workId, done.ok ? { ok: true } : { ok: false, reason: done.failure, isAuth: false }, workProblem);
-    return done;
-  };
+  const naming = createNaming({ store, complete: quickComplete, models: listedModels, info });
+  // Kumo's work in the background: a backstop on silence, one retry, and a pause through a usage limit with one
+  // catch-up after. When the model can't act, nothing stands in for it: the problem shows until work goes through.
+  const background = createBackground({
+    engine,
+    clock,
+    settings: store,
+    info,
+    timeZone,
+    ready: () => listening.get(),
+    frame: (prompt) => `${workRules}\n\n${backgroundText()}\n\n${prompt}`,
+    wakeUps: () => wakeUps,
+    post: (text) => {
+      store.postMessage(text);
+    },
+    report: (health) => {
+      problems.report(workId, health, workProblem);
+    },
+    onPause: () => {
+      problems.refresh();
+    },
+  });
+  // Background work that, while Kumo's paused, the catch-up takes in once under this line.
+  const workFor =
+    (missed: string) =>
+    (prompt: string, choice?: ModelChoice): Promise<Result<string, string>> =>
+      background.work(prompt, { missed, ...(choice && { choice }) });
   // The runs Kumo messaged them in, so a wake-up can say it did.
   const postedRuns = createCell<ReadonlySet<string>>(new Set());
   // One part of their How to help you page, such as how they like their mail sorted.
@@ -412,14 +479,21 @@ export const createServer = (options: ServerOptions): Server => {
     const page = memory.page("memory:helping-you");
     return page.ok ? sectionOf(page.value.markdown, section) : "";
   };
-  const desk = createDesk({ store, identifiers, clock, timeZone, work: runWork, info });
+  const desk = createDesk({
+    store,
+    identifiers,
+    clock,
+    timeZone,
+    work: workFor("Answers they gave on the Desk, which went back on it"),
+    info,
+  });
   const wakeUps = createWakeUps({
     store: createWakeUpStore(database),
     isMotion: (id) => store.findMotion(id) !== undefined,
     clock,
     timeZone,
     identifiers,
-    work: (prompt, run) => runWork(prompt, undefined, run),
+    work: (prompt, run) => background.work(prompt, { run }),
     postedIn: (run) => {
       const isPosted = postedRuns.get().has(run);
       postedRuns.update((runs) => new Set([...runs].filter((other) => other !== run)));
@@ -428,8 +502,29 @@ export const createServer = (options: ServerOptions): Server => {
     event: (uid) => calendar.listItems().find((item) => item.uid === uid && !item.calendar.kumo),
     desk,
     info,
+    isHolding: () => background.isHolding(),
   });
   const voiceprints = createVoiceprints(path.join(options.dataDirectory, "voice", "voiceprint.json"));
+  const files = createShownFiles({
+    database,
+    attachments,
+    store,
+    newAttachment: () => identifiers.attachment(),
+    workspace: path.join(options.dataDirectory, "workspace"),
+    maxBytes: options.uploadLimits?.fileBytes ?? defaultUploadLimits.fileBytes,
+    clock,
+  });
+  const recordings = createRecordings({
+    database,
+    store,
+    attachments,
+    voice,
+    voiceprint: () => voiceprints.load(),
+    work: workFor("Recordings they sent that you hadn't read yet"),
+    workspace: path.join(options.dataDirectory, "workspace"),
+    clock,
+    info,
+  });
   const calls = createCalls({
     store,
     turns,
@@ -446,6 +541,9 @@ export const createServer = (options: ServerOptions): Server => {
     clock,
     standing: () => [
       ...(store.devices().length > 0 && readApnsCredentials(store) === undefined ? [pushProblem] : []),
+      ...[background.paused() ?? []]
+        .flat()
+        .map(({ until, isKnown }) => pausedProblem(whenWords(until, clock.now(), timeZone()), isKnown)),
       ...host.list().flatMap((capability) => capabilityProblem(capability) ?? []),
     ],
     publish: (current) => {
@@ -495,7 +593,7 @@ export const createServer = (options: ServerOptions): Server => {
     clock,
     timeZone,
     info,
-    work: runWork,
+    work: workFor("Dates coming up in their contacts, such as birthdays"),
     people: peoplePages,
     createSource: options.createContactsSource ?? icloudContacts,
     onHealth: (health) => {
@@ -510,7 +608,7 @@ export const createServer = (options: ServerOptions): Server => {
     fetch: fetcher,
     complete: quickComplete,
     quickChoice: createQuickChoice(listedModels),
-    work: runWork,
+    work: workFor("Mail they got or sent: look through their inboxes and Sent"),
     stakesChoice: createStakesChoice(listedModels, () => readChoice(store.setting)),
     matters: () =>
       motions
@@ -560,7 +658,7 @@ export const createServer = (options: ServerOptions): Server => {
     settings: store,
     clock,
     timeZone,
-    work: runWork,
+    work: workFor("Changes on their calendars"),
     wakeUps,
     describe: wakeUps.describe,
     info,
@@ -568,7 +666,7 @@ export const createServer = (options: ServerOptions): Server => {
   const gettingStarted = createGettingStarted({
     store,
     identifiers,
-    work: runWork,
+    work: workFor("Getting started"),
     catchUp: mail.catchUp,
     mailAccounts: mail.accounts,
     onSources: (listener) => host.subscribe(listener),
@@ -597,12 +695,19 @@ export const createServer = (options: ServerOptions): Server => {
       );
     },
   });
-  const corrections = createCorrections({ store, desk, clock, work: runWork, tracks, info });
+  const corrections = createCorrections({
+    store,
+    desk,
+    clock,
+    work: workFor("What they told you was wrong in your work"),
+    tracks,
+    info,
+  });
   const deskLine = createDeskLine({ store, desk, clock });
   // Their phone moved to another time zone: repeating wake-ups follow at once, and Kumo looks at the rest.
   places.onMoved((from, to) => {
     wakeUps.refit();
-    void runWork(
+    void background.work(
       [
         `Their phone moved from ${from} to ${to}; it's ${toSpoken(clock.now(), to)} there.`,
         "Your repeating wake-ups already come back at their local times there. Move your other wake-ups and your",
@@ -610,12 +715,16 @@ export const createServer = (options: ServerOptions): Server => {
         "them only if something needs them, such as a call that now falls in their night.",
         "End with one line saying what you moved.",
       ].join("\n"),
+      { missed: `A move from ${from} to ${to}` },
     );
   });
-  const post = (text: string, isUrgent: boolean): Message => {
+  const post = (text: string, isUrgent: boolean, place: PostPlace = {}): Message | undefined => {
+    const existing = place.thread === undefined ? undefined : store.findThread(toThreadId(place.thread));
+    if (!existing && place.thread !== undefined) return undefined;
+    const thread = place.newThread === undefined ? existing : store.startThread("kumo", place.newThread);
     const run = contextRun();
     if (run !== undefined) postedRuns.update((runs) => new Set([...runs, run]));
-    return store.postMessage(text, { isUrgent });
+    return store.postMessage(text, { isUrgent, ...(thread && { thread: toThreadId(thread.id) }) });
   };
 
   const app = createApp({
@@ -626,10 +735,14 @@ export const createServer = (options: ServerOptions): Server => {
     info: { name: options.name, version: packageVersion() },
     gate: createGate(() => [store.setting(tokenSetting) ?? "", ...store.pairedTokenHashes()].filter(Boolean), clock),
     attachments,
+    uploads,
+    recordings,
+    files,
     host,
     memory,
     backup,
     motions,
+    made,
     voice,
     calls,
     voiceprints,
@@ -643,6 +756,9 @@ export const createServer = (options: ServerOptions): Server => {
     gettingStarted,
     onLeadRenamed: () => {
       void engine.refresh();
+    },
+    moved: (message, from, to) => {
+      turns.moved(message, from, to);
     },
     logger: options.logger ?? false,
   });
@@ -663,7 +779,7 @@ export const createServer = (options: ServerOptions): Server => {
     if ("error" in details || "reason" in details) app.log.warn(details, message);
     else app.log.info(details, message);
   });
-  const doors = createDoors({ host, currentTurn: () => store.runningTurn()?.id, command: launcher });
+  const doors = createDoors({ host, currentTurn: () => store.runningTurn(contextThread())?.id, command: launcher });
   const imageTool = createImageTool({
     attachments,
     keep: (id) => {
@@ -677,7 +793,9 @@ export const createServer = (options: ServerOptions): Server => {
     imageTool,
     ...memory.tools,
     ...motions.tools,
-    ...createWorkTools({ post, desk, isTrack: (id) => tracks.find(id) !== undefined }),
+    ...made.tools,
+    ...createWorkTools({ post, desk, isTrack: (id) => tracks.find(id) !== undefined, clock }),
+    ...threads.tools,
     ...tracks.tools,
     deskLine.tool,
     ...calendar.tools,
@@ -686,26 +804,42 @@ export const createServer = (options: ServerOptions): Server => {
     ...wakeUps.tools,
     ...mail.tools,
     ...gettingStarted.tools,
-    ...createDemoTools({ store, desk, post, gettingStarted, identifiers, clock, timeZone }),
+    ...createRecordingTools(recordings),
+    files.tool,
+    ...createDemoTools({
+      store,
+      desk,
+      post: (text, isUrgent) => store.postMessage(text, { isUrgent }),
+      gettingStarted,
+      identifiers,
+      clock,
+      timeZone,
+    }),
   ];
   const noteRun = (tool: Tool): Tool => ({
     ...tool,
     call: (input) => {
       const run = contextRun();
-      if (run !== undefined) touchedRuns.update((runs) => new Set([...runs, run]));
+      if (run !== undefined) background.touch(run);
       return tool.call(input);
     },
   });
   const allTools = (): readonly Tool[] =>
     [...coreTools, ...doors.tools()].map((tool) => groups.reporting(noteRun(withCheckedInput(tool))));
-  const callTool = async (name: string, input: unknown, run?: string): Promise<ToolResult> => {
+  const callTool = async (name: string, input: unknown, run?: string, thread?: string): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
     return tool
-      ? inToolContext(run === undefined ? {} : { run }, () => tool.call(input))
+      ? inToolContext({ ...(run !== undefined && { run }), ...(thread !== undefined && { thread }) }, () =>
+          tool.call(input),
+        )
       : { text: `Ito has no tool ${name}.`, isError: true };
   };
   store.subscribe(({ event }) => {
-    if (event.type === "turn.ended") memory.indexConversation();
+    if (event.type !== "turn.ended") return;
+    memory.indexConversation();
+    // A turn in the chat shows how the model stands: a usage limit pauses background work, an answer ends a pause.
+    if (event.outcome === "completed") background.answered();
+    if (event.error?.code === "usage_limit") background.limitReached();
   });
   registerWakeUps(app, { wakeUps, schemas });
   registerDay(app, { picture, schemas });
@@ -720,6 +854,7 @@ export const createServer = (options: ServerOptions): Server => {
   const compact = (): void => {
     store.compact(toTimestamp(clock.now() - textRetentionMs));
     attachments.sweep(toTimestamp(clock.now() - dayMs));
+    uploads.sweep();
     compaction.set(clock.after(dayMs, compact));
   };
   compact();
@@ -732,8 +867,9 @@ export const createServer = (options: ServerOptions): Server => {
     problems.close();
     await backup.close();
     motions.close();
-    topics.close();
+    naming.close();
     desk.close();
+    background.close();
     wakeUps.close();
     calendarChanges.close();
     places.close();
@@ -747,6 +883,7 @@ export const createServer = (options: ServerOptions): Server => {
     await engine.close();
     await host.close();
     await calls.close();
+    await recordings.close();
     await voice.close();
     await memory.close();
     apns.close();
@@ -759,6 +896,8 @@ export const createServer = (options: ServerOptions): Server => {
     store,
     turns,
     attachments,
+    recordings,
+    files,
     host,
     memory,
     backup,
@@ -770,6 +909,7 @@ export const createServer = (options: ServerOptions): Server => {
     contacts,
     mail,
     problems,
+    background,
     callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();

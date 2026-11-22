@@ -138,3 +138,71 @@ describe("a 0.17 database", () => {
     });
   });
 });
+
+// A database migrated up to 0.18's last migration, with the things in motion given.
+const at018 = (file: string, motions: readonly object[]): void => {
+  const version = migrations.findIndex((sql) => sql.includes("CREATE TABLE tracks"));
+  const upTo018 = migrations.slice(0, version + 1);
+  const fresh = new DatabaseSync(file);
+  for (const [index, sql] of upTo018.entries()) {
+    fresh.exec(sql);
+    fresh.exec(versionAfter(index));
+  }
+  for (const [index, motion] of motions.entries()) {
+    const body = JSON.stringify(motion);
+    fresh
+      .prepare("INSERT INTO motions (id, position, status, changed_at, body) VALUES (?, 1, 'active', ?, ?)")
+      .run(`thing-${String(index)}`, "2026-11-01T09:00:00.000Z", body);
+    fresh
+      .prepare("INSERT INTO events (seq, id, type, at, body) VALUES (?, ?, 'motion.started', ?, ?)")
+      .run(index + 1, `e_${String(index)}`, "2026-11-01T09:00:00.000Z", JSON.stringify({ motion }));
+  }
+  fresh.close();
+};
+
+describe("a 0.18 database", () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "ito-migration-0.18-"));
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("gives every thing in motion a normal salience, and has Kumo tidy them into the new kinds", () => {
+    const file = path.join(home, "with-motions.db");
+    at018(file, [{ id: "thing-0", kind: "pursuit", title: "Job search", status: "active", pinned: true }]);
+
+    const migrated = openDatabase(file);
+    const motion = migrated.prepare("SELECT body FROM motions").get() as { readonly body: string };
+    const event = migrated.prepare("SELECT body FROM events").get() as { readonly body: string };
+    const wakeUp = migrated.prepare("SELECT id, at, body FROM wake_ups").get() as {
+      readonly id: string;
+      readonly at: string;
+      readonly body: string;
+    };
+    migrated.close();
+
+    expect(JSON.parse(motion.body)).toMatchObject({ kind: "pursuit", salience: "normal" });
+    expect(JSON.parse(event.body)).toMatchObject({ motion: { salience: "normal" } });
+    expect(wakeUp.id).toBe("w_motion_0_19");
+    expect(Date.parse(wakeUp.at)).toBeGreaterThan(Date.now());
+    expect(JSON.parse(wakeUp.body)).toMatchObject({
+      id: "w_motion_0_19",
+      at: wakeUp.at,
+      what: "Tidy In motion into its new shapes",
+      by: "kumo",
+      source: { kind: "chat", title: "Ito 0.19: In motion, rethought" },
+    });
+    expect((JSON.parse(wakeUp.body) as { readonly why: string }).why).toContain("what's over with an honest outcome");
+  });
+
+  it("sets no wake-up when nothing is in motion", () => {
+    const file = path.join(home, "empty.db");
+    at018(file, []);
+
+    const migrated = openDatabase(file);
+    const wakeUps = migrated.prepare("SELECT COUNT(*) AS count FROM wake_ups").get() as { readonly count: number };
+    migrated.close();
+
+    expect(wakeUps.count).toBe(0);
+  });
+});

@@ -10,6 +10,7 @@ import type { EngineEvent, EngineFailureCode, StepFacts } from "#engine/engine.t
 import { toMessageId } from "#conversation/ids.ts";
 import { askToolName } from "#asks/tool.ts";
 import { memoryToolNames } from "#memory/tool-names.ts";
+import { madeToolNames } from "#made/made.ts";
 import { imageToolName } from "#replies/images.ts";
 import { toolServerName } from "#tools/mcp.ts";
 import { fieldOf } from "#tools/input.ts";
@@ -171,7 +172,8 @@ const closing = (state: TurnState): readonly EngineEvent[] => (state.openMessage
 const isAskCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
   item.server === toolServerName && item.tool === askToolName;
 
-const quietToolNames: ReadonlySet<string> = new Set([...memoryToolNames, imageToolName]);
+// A page Kumo makes shows as its card in the reply, so making one leaves no step of its own.
+const quietToolNames: ReadonlySet<string> = new Set([...memoryToolNames, imageToolName, ...madeToolNames]);
 
 const isQuietCall = (item: Extract<ThreadItem, { readonly type: "mcpToolCall" }>): boolean =>
   item.server === toolServerName && quietToolNames.has(item.tool);
@@ -340,6 +342,7 @@ const updatePlan = (state: TurnState, explanation: string | null, plan: readonly
 };
 
 const handledMethods = [
+  "error",
   "item/started",
   "item/completed",
   "item/agentMessage/delta",
@@ -378,6 +381,15 @@ const toTurnEnd = ({
 export const toEngineEvents = (state: TurnState, notification: ServerNotification): Mapped => {
   if (!isHandled(notification)) return { state, events: [] };
   switch (notification.method) {
+    // Codex lost the model's stream and tries again: the only sign of life it gives through a long wait. It keeps
+    // what the model finished and writes an unfinished message again from the start, under a new id, so the open one
+    // is over. An error it won't retry ends the turn with turn/completed.
+    case "error": {
+      const { error, willRetry } = notification.params;
+      return willRetry
+        ? { state: { ...state, openMessage: undefined }, events: [{ type: "reconnecting", detail: error.message }] }
+        : { state, events: [] };
+    }
     case "item/started": {
       return startItem(state, notification.params.item);
     }

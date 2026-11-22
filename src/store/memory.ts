@@ -8,6 +8,16 @@ export type ChangeRow = {
   readonly commit: string;
   readonly before?: string;
   readonly note?: string;
+  // What Kumo learnt about them from the change, in a line to them.
+  readonly learnt?: string;
+  readonly at: string;
+};
+
+// A line Kumo learnt, with the change it came with.
+export type LearntLine = {
+  readonly id: string;
+  readonly address: string;
+  readonly learnt: string;
   readonly at: string;
 };
 
@@ -54,6 +64,12 @@ export type MemoryStore = {
   readonly findChange: (id: string) => ChangeRow | undefined;
   readonly latestChanges: () => readonly LatestChange[];
   readonly recentChanges: (limit: number) => readonly RecentChange[];
+  // The newest lines Kumo learnt, newest first.
+  readonly learntLines: (limit: number) => readonly LearntLine[];
+  // Every line Kumo learnt that says any of the words, newest first.
+  readonly findLearnt: (words: readonly string[]) => readonly LearntLine[];
+  // Takes back lines Kumo learnt: those that say any of the words, or every one from changes to a page.
+  readonly withdrawLearnt: (which: { readonly words: readonly string[] } | { readonly address: string }) => void;
   readonly replaceChunks: (address: string, chunks: readonly Chunk[]) => void;
   readonly addChunks: (chunks: readonly Chunk[]) => void;
   readonly clearChunks: () => void;
@@ -107,13 +123,13 @@ export const createMemoryStore = (database: DatabaseSync): MemoryStore => {
   };
 
   return {
-    recordChange: ({ id, address, title, file, commit, before, note, at }) => {
+    recordChange: ({ id, address, title, file, commit, before, note, learnt, at }) => {
       database
         .prepare(
-          `INSERT INTO memory_changes (id, address, title, file, commit_sha, before_sha, note, at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO memory_changes (id, address, title, file, commit_sha, before_sha, note, learnt, at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(id, address, title, file, commit, before ?? null, note ?? null, at);
+        .run(id, address, title, file, commit, before ?? null, note ?? null, learnt ?? null, at);
     },
     findChange: (id) => {
       const row = database
@@ -139,6 +155,36 @@ export const createMemoryStore = (database: DatabaseSync): MemoryStore => {
           .prepare("SELECT id, address, title, note, at FROM memory_changes ORDER BY at DESC, rowid DESC LIMIT ?")
           .all(limit) as unknown as readonly (Omit<RecentChange, "note"> & { readonly note: string | null })[]
       ).map(({ note, ...change }) => (note === null ? change : { ...change, note })),
+    learntLines: (limit) =>
+      database
+        .prepare(
+          `SELECT id, address, learnt, at FROM memory_changes WHERE learnt IS NOT NULL
+           ORDER BY at DESC, rowid DESC LIMIT ?`,
+        )
+        .all(limit) as unknown as readonly LearntLine[],
+    findLearnt: (words) =>
+      words.length === 0
+        ? []
+        : (database
+            .prepare(
+              `SELECT id, address, learnt, at FROM memory_changes WHERE learnt IS NOT NULL
+               AND (${words.map(() => "instr(lower(learnt), lower(?)) > 0").join(" OR ")})
+               ORDER BY at DESC, rowid DESC`,
+            )
+            .all(...words) as unknown as readonly LearntLine[]),
+    withdrawLearnt: (which) => {
+      if ("address" in which) {
+        database.prepare("UPDATE memory_changes SET learnt = NULL WHERE address = ?").run(which.address);
+        return;
+      }
+      if (which.words.length === 0) return;
+      database
+        .prepare(
+          `UPDATE memory_changes SET learnt = NULL
+           WHERE ${which.words.map(() => "instr(lower(learnt), lower(?)) > 0").join(" OR ")}`,
+        )
+        .run(...which.words);
+    },
     replaceChunks: (address, chunks) => {
       inTransaction(() => {
         database

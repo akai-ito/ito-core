@@ -6,16 +6,27 @@ import Fastify, {
   type FastifyServerOptions,
 } from "fastify";
 import { maxAttachmentBytes, toMediaType, type Attachments } from "#attachments/attachments.ts";
+import type { Uploads } from "#attachments/uploads.ts";
 import type { Clock } from "#clock.ts";
 import { toCommandError, type CommandFailureCode } from "#conversation/failures.ts";
 import { accountSetting, effortSetting, modelSetting, readChoice } from "#engine/engine.ts";
 import { readApnsCredentials } from "#notifications/apns.ts";
 import type { Host } from "#capabilities/host.ts";
-import { toAskId, toDeviceId, toMessageId, toTurnId } from "#conversation/ids.ts";
+import {
+  toAskId,
+  toDeviceId,
+  toMessageId,
+  toThreadId,
+  toTurnId,
+  type MessageId,
+  type ThreadId,
+} from "#conversation/ids.ts";
 import { createToken, hashToken, type Gate } from "#http/auth.ts";
 import { registerCapabilities } from "#http/capabilities.ts";
 import { registerMemory } from "#http/memory.ts";
+import { registerMade } from "#http/made.ts";
 import { registerMotion } from "#http/motion.ts";
+import type { MadePages } from "#made/made.ts";
 import type { Motions } from "#motion/motion.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { leadOf, registerSettings } from "#http/settings.ts";
@@ -32,7 +43,14 @@ import type { VoiceLoop } from "#voice/loop.ts";
 import type { Calls } from "#voice/calls.ts";
 import type { Voiceprints } from "#voice/voiceprints.ts";
 import { registerStream } from "#http/stream.ts";
+import { registerThreads } from "#http/threads.ts";
 import { createEventStream } from "#http/events.ts";
+import { inlineDisposition, parseRange } from "#http/ranges.ts";
+import { registerUploads, tooLargeChunk } from "#http/uploads.ts";
+import { registerRecordings, toTranscription } from "#http/recordings.ts";
+import type { Recordings } from "#recordings/recordings.ts";
+import { registerFiles } from "#http/files.ts";
+import type { ShownFiles } from "#files/files.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
 import type { Error as ErrorBody, RegisterDevice, Whereabouts } from "#protocol/types.ts";
@@ -52,10 +70,14 @@ export type AppOptions = {
   readonly info: ServerInfo;
   readonly gate: Gate;
   readonly attachments: Attachments;
+  readonly uploads: Uploads;
+  readonly recordings: Recordings;
+  readonly files: ShownFiles;
   readonly host: Host;
   readonly memory: Memory;
   readonly backup: Backup;
   readonly motions: Motions;
+  readonly made: MadePages;
   readonly voice: VoiceLoop;
   readonly calls: Calls;
   readonly voiceprints: Voiceprints;
@@ -67,6 +89,8 @@ export type AppOptions = {
   readonly places: Pick<Places, "report" | "held" | "timeZone">;
   readonly calendar: Calendar;
   readonly onLeadRenamed: () => void;
+  // You moved a message between the main chat and a thread, or between threads.
+  readonly moved: (message: MessageId, from: ThreadId | undefined, to: ThreadId | undefined) => void;
   readonly gettingStarted: GettingStarted;
   readonly logger: FastifyServerOptions["logger"];
 };
@@ -88,6 +112,9 @@ type SendBody = {
   readonly text?: string;
   readonly attachments?: readonly string[];
   readonly done?: string;
+  readonly thread?: string;
+  readonly reply_to?: string;
+  readonly new_thread?: true;
 };
 
 const maxReplay = 2000;
@@ -109,10 +136,14 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     info,
     gate,
     attachments,
+    uploads,
+    recordings,
+    files,
     host,
     memory,
     backup,
     motions,
+    made,
     voice,
     calls,
     voiceprints,
@@ -125,6 +156,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     calendar,
     onLeadRenamed,
     gettingStarted,
+    moved,
     logger,
   } = options;
   const protocol = protocolVersion(schemas.document);
@@ -159,6 +191,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error.statusCode === 413 && request.url.startsWith("/v0/attachments/"))
       return reply.code(413).send({ error: tooLargeAttachment });
+    if (error.statusCode === 413 && request.url.startsWith("/v0/uploads/"))
+      return reply.code(413).send(tooLargeChunk(uploads.limits().chunk_bytes));
     if ((isTooLong(error) && request.url.startsWith("/v0/messages")) || error.statusCode === 413)
       return reply.code(413).send(toErrorResult("too_large", error.message));
     if (error.validation || (error.statusCode !== undefined && error.statusCode < 500)) {
@@ -233,9 +267,11 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   });
   registerMemory(app, memory, backup, schemaFor);
   registerMotion(app, motions, schemaFor);
+  registerMade(app, made, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
   registerTalk(app, { store, attachments, voice, calls, voiceprints, schemaFor });
   registerStream(app, { store, calls, voice, protocol });
+  registerThreads(app, { store, moved, schemaFor });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);
@@ -264,8 +300,20 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   );
 
   app.post<{ Body: SendBody }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text = "", attachments: attached = [], done } = request.body;
-    const accepted = store.acceptMessage(toMessageId(id), text, attached, undefined, done);
+    const {
+      id,
+      text = "",
+      attachments: attached = [],
+      done,
+      thread,
+      reply_to: replyTo,
+      new_thread: isNew,
+    } = request.body;
+    const accepted = store.acceptMessage(toMessageId(id), text, attached, undefined, done, {
+      ...(thread !== undefined && { thread: toThreadId(thread) }),
+      ...(replyTo !== undefined && { replyTo: toMessageId(replyTo) }),
+      ...(isNew === true && { isNewThread: true }),
+    });
     if (!accepted.ok) {
       switch (accepted.failure) {
         case "unknown_attachment": {
@@ -283,6 +331,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         }
         case "call_not_on": {
           return reply.code(400).send(toErrorResult("invalid_request", "That call isn't on."));
+        }
+        case "unknown_thread": {
+          return reply.code(400).send(toErrorResult("invalid_request", `No thread ${thread ?? ""}.`));
+        }
+        case "unknown_message": {
+          return reply.code(400).send(toErrorResult("invalid_request", `No message ${replyTo ?? ""} to reply to.`));
         }
         case "id_conflict": {
           return reply
@@ -309,7 +363,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
             steps: page.value.steps,
             asks: page.value.asks,
             calls: page.value.calls,
-            topics: page.value.topics,
+            threads: page.value.threads,
             has_more: page.value.hasMore,
           }
         : reply
@@ -369,26 +423,48 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     registered();
   });
 
+  registerUploads(app, { uploads, transcription: () => toTranscription(voice.readiness()), schemaFor });
+  registerRecordings(app, { recordings, schemaFor });
+  registerFiles(app, { files, schemaFor });
+
   app.get<{ Params: { readonly attachment: string } }>(
     "/v0/attachments/:attachment",
     { schema: schemaFor("getAttachment") },
     async (request, reply) => {
       const found = attachments.find(request.params.attachment);
-      return found
-        ? reply
-            .header("content-type", found.media_type)
+      if (!found) {
+        return reply
+          .code(404)
+          .send(
+            toErrorResult("not_found", `No attachment ${request.params.attachment}.`, "That file isn't on the server."),
+          );
+      }
+      const range = parseRange(request.headers.range, found.size);
+      void reply
+        .header("content-type", found.media_type)
+        .header("content-disposition", inlineDisposition(found.name))
+        .header("accept-ranges", "bytes")
+        .header("cache-control", "private, max-age=31536000, immutable");
+      switch (range.kind) {
+        case "whole": {
+          return reply
             .header("content-length", String(found.size))
-            .header("cache-control", "private, max-age=31536000, immutable")
-            .send(createReadStream(attachments.pathOf(found.id)))
-        : reply
-            .code(404)
-            .send(
-              toErrorResult(
-                "not_found",
-                `No attachment ${request.params.attachment}.`,
-                "That file isn't on the server.",
-              ),
-            );
+            .send(createReadStream(attachments.pathOf(found.id)));
+        }
+        case "part": {
+          return reply
+            .code(206)
+            .header("content-range", `bytes ${String(range.start)}-${String(range.end)}/${String(found.size)}`)
+            .header("content-length", String(range.end - range.start + 1))
+            .send(createReadStream(attachments.pathOf(found.id), { start: range.start, end: range.end }));
+        }
+        case "unsatisfiable": {
+          return reply
+            .code(416)
+            .header("content-range", `bytes */${String(found.size)}`)
+            .send();
+        }
+      }
     },
   );
 

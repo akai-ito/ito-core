@@ -172,7 +172,7 @@ export const migrations: readonly string[] = [
   UPDATE desk SET body = json_set(
     json_remove(body, '$.moment'),
     '$.waiting',
-    (SELECT json_group_array(json(json_remove(value, '$.quiet', '$.review'))) FROM json_each(desk.body, '$.waiting'))
+    json((SELECT json_group_array(json(json_remove(value, '$.quiet', '$.review'))) FROM json_each(desk.body, '$.waiting')))
   );
   UPDATE done SET body = json_remove(body, '$.work');
   ALTER TABLE asks DROP COLUMN reminded;
@@ -243,5 +243,100 @@ export const migrations: readonly string[] = [
     id TEXT PRIMARY KEY,
     position INTEGER NOT NULL,
     body TEXT NOT NULL
+  );`,
+  // In motion, rethought: every thing has a salience, normal until Kumo judges it, and a thing already ended keeps no
+  // outcome, so it shows as ended, never as achieved. Where there's anything in motion, a one-off wake-up a few
+  // minutes on has Kumo tidy it into the new kinds and tell them what it did.
+  `UPDATE motions SET body = json_set(body, '$.salience', 'normal') WHERE json_extract(body, '$.salience') IS NULL;
+  UPDATE events SET body = json_set(body, '$.motion.salience', 'normal')
+    WHERE type IN ('motion.started', 'motion.changed', 'motion.finished')
+    AND json_extract(body, '$.motion.salience') IS NULL;
+  INSERT INTO wake_ups (id, at, body)
+  SELECT id, at, json_object(
+    'id', id,
+    'at', at,
+    'what', 'Tidy In motion into its new shapes',
+    'why', 'In motion changed shape with Ito 0.19. Follow "Tidying from 0.18" in the Things in motion skill: ' ||
+      'reshape what fits, make the job search one pipeline of roles, end what''s over with an honest outcome and ' ||
+      'story, hide duplicates and tests, move small admin to the Desk and your plans, and judge how loud each ' ||
+      'thing is. Then tell them with post what you did, in a short message: this is worth their attention.',
+    'by', 'kumo',
+    'source', json(json_object('kind', 'chat', 'title', 'Ito 0.19: In motion, rethought')),
+    'set_at', set_at
+  )
+  FROM (
+    SELECT 'w_motion_0_19' AS id,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+5 minutes') AS at,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AS set_at
+  )
+  WHERE EXISTS (SELECT 1 FROM motions);`,
+  // What Kumo learnt about them from a change to memory, in a line to them: only real learnings, never housekeeping.
+  `ALTER TABLE memory_changes ADD COLUMN learnt TEXT;`,
+  // 0.19: side threads replace topics. Each message and turn may belong to a thread; the main chat is the rest, so
+  // every earlier message stays where it was, readable as before. The topic labels, their events and the labeller's
+  // progress go: threads by day take their place from here on.
+  `CREATE TABLE threads (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    last_at TEXT NOT NULL,
+    anchor TEXT,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX threads_by_position ON threads (position);
+  CREATE INDEX threads_by_start ON threads (started_at, id);
+  ALTER TABLE messages ADD COLUMN thread TEXT;
+  ALTER TABLE messages ADD COLUMN quotes TEXT;
+  CREATE INDEX messages_by_thread ON messages (thread, position);
+  ALTER TABLE turns ADD COLUMN thread TEXT;
+  DROP TABLE topics;
+  DELETE FROM events WHERE type = 'topic.started';
+  DELETE FROM settings WHERE key = 'topics_history';`,
+  // 0.19: the recordings they send, each with where its transcript stands, the transcript itself once it's made, and
+  // whether Kumo has read it or come back to it. Audio and transcripts stay on the server, never in memory.
+  `CREATE TABLE recordings (
+    attachment TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    transcript TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    read INTEGER NOT NULL DEFAULT 0,
+    followed_up INTEGER NOT NULL DEFAULT 0
+  );`,
+  // 0.19: the files Kumo shows them to look at, each version an attachment kept as it was made.
+  `CREATE TABLE shown_files (
+    attachment TEXT PRIMARY KEY,
+    file TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    body TEXT NOT NULL,
+    UNIQUE (file, version)
+  );
+  CREATE INDEX shown_files_by_path ON shown_files (path);
+  CREATE INDEX shown_files_by_bytes ON shown_files (sha256);`,
+  // Pages Kumo makes: the page as the shelf lists it, each version's content, what changed, and their ticks.
+  `CREATE TABLE made (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    changed_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE TABLE made_contents (
+    made TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    PRIMARY KEY (made, version)
+  );
+  CREATE TABLE made_changes (
+    made TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    PRIMARY KEY (made, version)
+  );
+  CREATE TABLE made_states (
+    made TEXT PRIMARY KEY,
+    state TEXT NOT NULL
   );`,
 ];

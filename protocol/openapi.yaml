@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.18"
+  version: "0.19"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -17,18 +17,23 @@ info:
     - **Stop** a turn, or **try again** after one failed, with commands on the turn.
     - **Pair** a new app by exchanging the short-lived code in the QR code `ito pair` shows for a
       token of its own.
-    - **Attach** photos and files: upload each one, then name them in a message.
+    - **Attach** photos and files: upload each one, then name them in a message. Big files, such as
+      a recording, go up in chunks that resume after any drop.
+    - **Recordings:** a recording you send is transcribed on the server, with times and who spoke,
+      for Kumo to read; follow it, read and correct its transcript, and delete it.
     - **Answer** what the agent asks by sending a message, or cancel the ask.
     - **Shaped replies:** a reply may hold [`ari:` blocks](blocks.schema.json) the app draws
-      natively: places, choices, pictures and things in motion.
+      natively: places, choices, pictures, things in motion, files to look at and changes to approve.
+    - **Files to review:** a file Kumo made or changed, such as a PDF, shown in the chat at one
+      version, with its bytes exactly as made; every version stays until you delete the file.
     - **Notify** a device: register it, and every reply, ask and message from Kumo reaches it at
       once. [The push schema](push.schema.json) describes what it receives.
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
       and fill in its setup sheet, or connect it through its provider.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
-      journal, the photos a page keeps with its story, what Ari changed lately and why, and what
-      each change changed. Ari writes memory itself; the API only reads it, and backs it up to
-      GitHub.
+      journal, the photos a page keeps with its story, the chapters of your life Ari noticed, what
+      it learnt about you lately, what Ari changed lately and why, and what each change changed.
+      Ari writes memory itself; the API only reads it, and backs it up to GitHub.
     - **Choose the model** the agent runs on, and how hard it thinks, from those its engine offers.
     - **Talk:** start and end a call with the agent, and stream it: your microphone up, Ari's voice
       down, with states and captions. The server hears your turns, steered toward the names in
@@ -69,6 +74,20 @@ tags:
     description: Home, with Kumo's plans, Coming up, Waiting on you, Kumo's work and the calendar.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
+  - name: Threads
+    description: |
+      Side threads beside the main chat, each with its own conversation: list and search them, open
+      one, rename it, mark it done or open, and move a message between them.
+  - name: Recordings
+    description: |
+      The recordings you send, transcribed on the server for Kumo to read, with times and, as a best
+      guess, who spoke. Audio and transcript stay on the server until you delete them. Kumo quotes a
+      moment as a Markdown link, such as `[18:42](recording:<attachment>?t=18:42)`, with `t` as
+      `m:ss`, `h:mm:ss` or seconds; the app opens the transcript there.
+  - name: Files
+    description: |
+      Files Kumo showed you in the chat to look at, such as a PDF it made, with every version. Each
+      version is an attachment whose bytes never change.
   - name: Turns
     description: Control the agent's work on a turn.
   - name: Asks
@@ -81,8 +100,15 @@ tags:
     description: Read what Ari remembers, and back it up. Ari writes it; apps only read.
   - name: Motion
     description: |
-      Things in motion that Ari keeps for you, such as a trip being planned. Ari writes them; apps
-      read them and tick their items.
+      Things in motion that Kumo keeps for you, such as a trip being planned or a role you're
+      interviewing for. Kumo writes them; apps read them and tick their items. In motion shows them
+      in fixed sections by kind (Career, Body, Trips, Projects, Learning, Other), loudest first by
+      the salience Kumo judges, and ended things in History by their outcome: never a `duplicate`,
+      a `test` or small admin kept `elsewhere`.
+  - name: Made
+    description: |
+      Pages Ari made for you, such as a gallery guide, for the Made shelf and the cards in the chat.
+      Ari writes and keeps them current; apps read them and tick their items.
   - name: Model
     description: Choose the model the agent runs on.
   - name: Talk
@@ -341,8 +367,16 @@ paths:
         refused with `attachment_missing`: upload its attachments again under the same ids, then
         send the same message again.
 
-        While an ask waits, the message answers it: `message.accepted` for the message comes first,
-        then `ask.ended`. To reply to an entry in the Done list, name it in `done`.
+        While an ask waits where the message goes, the message answers it: `message.accepted` for
+        the message comes first, then `ask.ended`. To reply to an entry in the Done list, name it in
+        `done`.
+
+        A message goes to the main chat unless it says otherwise. Name a `thread` to send it there;
+        a done thread opens again. Name a message in `reply_to` to reply to it: one in the main chat
+        gets a thread under it (`thread.started` comes first when it's the first reply), and Kumo
+        names that thread after its first answer; one in a thread is quoted there. Set `new_thread`
+        to start a thread of your own with this message. Each thread has its own turns, so a message
+        in one never steers or waits behind another.
       requestBody:
         required: true
         content:
@@ -390,15 +424,16 @@ paths:
       operationId: listMessages
       summary: Read older messages
       description: |
-        The messages just before a given one, oldest first, with the agent's steps among them.
-        The newest messages come from the event stream's `snapshot`, so `before` is always
-        required. A `404` means the server doesn't know that message (it was restored from a
+        The messages just before a given one, oldest first, with the agent's steps among them,
+        from the same place as that message: the main chat, or its thread. The newest messages come
+        from the event stream's `snapshot`, or from `GET /v0/threads/{thread}`, so `before` is
+        always required. A `404` means the server doesn't know that message (it was restored from a
         backup): reconnect to the event stream for a snapshot.
       parameters:
         - name: before
           in: query
           required: true
-          description: Return messages older than this one.
+          description: Return messages older than this one, from where it is.
           schema: { $ref: "events.schema.json#/$defs/MessageId" }
         - name: limit
           in: query
@@ -774,6 +809,141 @@ paths:
               schema: { $ref: "#/components/schemas/Lead" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/threads:
+    get:
+      tags: [Threads]
+      operationId: listThreads
+      summary: List the threads
+      description: |
+        Every open thread, then done ones a page at a time, newest first: what Threads by day
+        shows. With `query`, only threads whose name, result or messages hold all its words.
+      parameters:
+        - name: query
+          in: query
+          required: false
+          description: Words to look for, such as a dish, a place or a person.
+          schema: { type: string, maxLength: 200 }
+        - name: before
+          in: query
+          required: false
+          description: Return done threads older than this one.
+          schema: { $ref: "events.schema.json#/$defs/ThreadId" }
+        - name: limit
+          in: query
+          required: false
+          description: How many done threads to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: The threads.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadList" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/threads/{thread}:
+    get:
+      tags: [Threads]
+      operationId: getThread
+      summary: Open a thread
+      description: |
+        The thread with its latest messages, its steps and asks, and its running turn, as a
+        snapshot does for the main chat. Events for it keep arriving on the event stream: apply
+        the ones after this to it.
+      parameters:
+        - $ref: "#/components/parameters/Thread"
+      responses:
+        "200":
+          description: The thread.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadPage" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Threads]
+      operationId: changeThread
+      summary: Rename a thread, or mark it done or open
+      description: |
+        `thread.changed` follows on the event stream. Marking a done thread done, or an open one
+        open, changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/Thread"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ThreadChange" }
+            example: { title: Kiln menu }
+      responses:
+        "200":
+          description: The thread as it is now.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/threads/{thread}/seen:
+    post:
+      tags: [Threads]
+      operationId: seeThread
+      summary: Say you've seen a thread's news
+      description: |
+        Clears its `news`, on every app, with `thread.changed`. Opening a thread, or a notification
+        about it, sends this; replying in it does the same on its own.
+      parameters:
+        - $ref: "#/components/parameters/Thread"
+      responses:
+        "200":
+          description: The thread as it is now.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/messages/{message}/move:
+    post:
+      tags: [Threads]
+      operationId: moveMessage
+      summary: Move a message to another thread
+      description: |
+        Moves one message, yours or Kumo's, into a thread or back to the main chat. It keeps its id
+        and its position; `message.moved` follows, and `thread.changed` for each thread it left or
+        joined. Kumo hears of the move in both places with its next turn there. A message a thread
+        hangs from stays in the main chat.
+      parameters:
+        - $ref: "#/components/parameters/Message"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MoveMessage" }
+            example: { thread: h_0001 }
+      responses:
+        "200":
+          description: The message as it is now.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/turns/{turn}/stop:
     post:
       tags: [Turns]
@@ -891,21 +1061,442 @@ paths:
       tags: [Attachments]
       operationId: getAttachment
       summary: Fetch an attachment's bytes
-      description: The bytes, with the media type they were uploaded with. They never change, so keep them once fetched.
+      description: |
+        The bytes, exactly as they were uploaded or made, with their media type and their name in
+        `Content-Disposition`. They never change, so keep them once fetched. Ask for part of a big
+        file with one `Range: bytes=…` range, such as to play a recording as it downloads or to
+        resume a download; the answer is a `206` with `Content-Range`.
       parameters:
         - $ref: "#/components/parameters/Attachment"
+        - name: Range
+          in: header
+          required: false
+          description: One byte range, such as `bytes=0-1048575` or `bytes=1048576-`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+            Accept-Ranges:
+              description: Always `bytes`.
+              schema: { type: string }
+          content:
+            "*/*":
+              schema:
+                description: The file's bytes.
+        "206":
+          description: The part of the file the range asked for.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+            Content-Range:
+              description: Which bytes these are, such as `bytes 0-1048575/52428800`.
+              schema: { type: string }
+          content:
+            "*/*":
+              schema:
+                description: Those bytes.
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "416":
+          description: The range is past the end of the file; `Content-Range` gives its size as `bytes */size`.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+            Content-Range:
+              description: The file's size, such as `bytes */52428800`.
+              schema: { type: string }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/uploads:
+    get:
+      tags: [Attachments]
+      operationId: listUploads
+      summary: See the limits, and the big uploads still going
+      description: |
+        What the server takes, to show before anything is uploaded: the media types and the largest
+        size of each kind, the largest chunk, and what happens to a recording. Then the big uploads
+        that haven't finished, so an app that was closed mid-upload can carry on from `received`.
+      responses:
+        "200":
+          description: The limits and the unfinished uploads.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    post:
+      tags: [Attachments]
+      operationId: createUpload
+      summary: Start a big upload
+      description: |
+        For a file too big for `PUT /v0/attachments/{attachment}` (over 20 MB), such as a recorded
+        conversation. Say what's coming: the id the app made, which becomes the attachment's id, the
+        file's name, media type and size in bytes. Then send it in chunks with
+        `PUT /v0/uploads/{upload}`, in order, and finish with `POST /v0/uploads/{upload}/finish`.
+        The finished upload is an attachment like any other: name it in a message.
+
+        Starting the same upload again changes nothing and answers where it stands, so it's also how
+        an app resumes. Only the media types `GET /v0/uploads` lists are taken, each kind up to its
+        size. An upload no chunk reaches for two days is deleted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUpload" }
+            example:
+              id: 6f1c1f4e-9b7a-4c52-8f0e-2b6d1f0a9c31
+              name: Interview with Northwind.m4a
+              media_type: audio/mp4
+              size: 96468992
+      responses:
+        "201":
+          description: Started; send the first chunk at offset 0.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "200":
+          description: Already started, or finished; this is where it stands.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedType" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+        "507": { $ref: "#/components/responses/ServerDiskFull" }
+  /v0/uploads/{upload}:
+    get:
+      tags: [Attachments]
+      operationId: getUpload
+      summary: See where a big upload stands
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+      responses:
+        "200":
+          description: How much the server has, or the attachment it became.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    put:
+      tags: [Attachments]
+      operationId: sendUploadChunk
+      summary: Send a chunk of a big upload
+      description: |
+        The body is the next bytes of the file, at most `chunk_bytes` (about 8 MB is a good size),
+        and `offset` says where they start. The server answers once they're on its disk, with how
+        much it now has: show that as the upload's progress, and send the next chunk from there.
+
+        Sending a chunk again is safe: bytes the server already has are skipped. A chunk that starts
+        past what the server has is refused with `offset_mismatch` and the upload as it stands, so
+        the app carries on from its `received`.
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+        - name: offset
+          in: query
+          required: true
+          description: Where in the file this chunk starts, in bytes.
+          schema:
+            type: integer
+            minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              description: The chunk's bytes.
+      responses:
+        "200":
+          description: On disk.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/OffsetMismatch" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+        "507": { $ref: "#/components/responses/ServerDiskFull" }
+    delete:
+      tags: [Attachments]
+      operationId: cancelUpload
+      summary: Give up a big upload
+      description: Deletes what the server has of an unfinished upload. Cancelling one that isn't there changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+      responses:
+        "204":
+          description: Gone.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/uploads/{upload}/finish:
+    post:
+      tags: [Attachments]
+      operationId: finishUpload
+      summary: Finish a big upload
+      description: |
+        Once the server has every byte, this makes the upload an attachment, after checking that its
+        first bytes fit its media type (a recording must be audio, a PDF a PDF). Give the file's
+        SHA-256 to have the server check it arrived whole; when it doesn't match, the server starts
+        the upload over from offset 0 and says so with `checksum_mismatch`. Finishing again answers
+        the same attachment.
+      parameters:
+        - $ref: "#/components/parameters/BigUpload"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FinishUpload" }
+      responses:
+        "201":
+          description: The attachment it became.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachmentResult" }
+        "200":
+          description: Already finished; this is its attachment.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachmentResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/UploadIncomplete" }
+        "415": { $ref: "#/components/responses/UnsupportedType" }
+        "422": { $ref: "#/components/responses/ChecksumMismatch" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings:
+    get:
+      tags: [Recordings]
+      operationId: listRecordings
+      summary: List the recordings you sent
+      description: Newest first, with where each one's transcript stands. Deleted recordings aren't listed.
+      responses:
+        "200":
+          description: The recordings.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}:
+    get:
+      tags: [Recordings]
+      operationId: getRecording
+      summary: See where a recording's transcript stands
+      description: |
+        Every audio attachment you send in a message becomes a recording. `recording.changed` says
+        when it moves on; this is for a recording on screen after a snapshot.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "200":
+          description: The recording.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    delete:
+      tags: [Recordings]
+      operationId: deleteRecording
+      summary: Delete a recording's audio and transcript
+      description: |
+        Deletes the audio, its transcript and any copy in Kumo's workspace, and stops a transcription
+        under way. The message stays, with the attachment's name, but its audio can't be fetched
+        again. What Kumo already wrote from it, such as a summary in the chat, stays; ask Kumo to
+        change what it remembers. Deleting again answers the deleted recording.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "200":
+          description: Deleted.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}/retry:
+    post:
+      tags: [Recordings]
+      operationId: retryRecording
+      summary: Transcribe a failed recording again
+      description: |
+        Puts a `failed` recording back in the queue, such as after installing ffmpeg on the server.
+        A recording that isn't failed is answered as it is.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      responses:
+        "202":
+          description: Queued again.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "200":
+          description: It wasn't failed; this is where it stands.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordingResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}/transcript:
+    get:
+      tags: [Recordings]
+      operationId: getTranscript
+      summary: Read a recording's transcript
+      description: |
+        What was said, piece by piece, with times from the start of the recording and, where the
+        server could tell voices apart, who said it, with your corrections applied. It's what the
+        model heard, not a summary: Kumo reads the same words and keeps its own reading separate.
+        Ask for `format=text` for plain text to share, one line per turn with its time.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+        - name: format
+          in: query
+          required: false
+          description: "`json`, the default, or `text`."
+          schema:
+            enum: [json, text]
+            default: json
+      responses:
+        "200":
+          description: The transcript.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranscriptResult" }
+            text/plain:
+              schema:
+                type: string
+                example: "[0:00] Speaker 1: Thanks for making the time today.\n[0:04] You: Of course.\n"
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotTranscribed" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/recordings/{attachment}/corrections:
+    post:
+      tags: [Recordings]
+      operationId: correctTranscript
+      summary: Correct what the transcript misheard, and name its voices
+      description: |
+        Replace words the server misheard, such as a name or a term, everywhere they appear, and
+        give voices names, such as "Interviewer" for `S1`. The words as heard are kept underneath:
+        correcting the same words again replaces the earlier correction, and correcting them to
+        themselves undoes it. Kumo makes the same corrections when you tell it in the chat.
+      parameters:
+        - $ref: "#/components/parameters/Attachment"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CorrectTranscript" }
+            example:
+              replace:
+                - { heard: Myra, meant: Mira }
+              speakers:
+                - { id: S1, name: Interviewer }
+      responses:
+        "200":
+          description: The transcript, corrected.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TranscriptResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotTranscribed" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/files:
+    get:
+      tags: [Files]
+      operationId: listFiles
+      summary: List the files Kumo showed you
+      description: Newest change first, each with all its versions, for a shelf of what Kumo made.
+      responses:
+        "200":
+          description: The files.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+  /v0/files/{file}:
+    get:
+      tags: [Files]
+      operationId: getFile
+      summary: See a file Kumo showed you, with its versions
+      description: |
+        What an `ari:file` card needs: the file's versions, oldest first, each with its attachment
+        (name, media type and size) and what changed. Fetch a version's bytes with
+        `GET /v0/attachments/{attachment}`; they are exactly what Kumo made, and never change.
+      parameters:
+        - $ref: "#/components/parameters/File"
       responses:
         "200":
           description: The file.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
           content:
-            "*/*":
-              schema:
-                description: The file's bytes.
-        "400": { $ref: "#/components/responses/InvalidRequest" }
+            application/json:
+              schema: { $ref: "#/components/schemas/FileResult" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/SlowDown" }
+    delete:
+      tags: [Files]
+      operationId: deleteFile
+      summary: Delete a file Kumo showed you, every version
+      description: |
+        Deletes every version's bytes from the server, and the copies kept for mail drafts; the
+        file Kumo works on in its workspace stays. Cards for it then say it's gone. Deleting one
+        that isn't there changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/File"
+      responses:
+        "204":
+          description: Gone.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
         "429": { $ref: "#/components/responses/SlowDown" }
   /v0/asks/{ask}/cancel:
     post:
@@ -1162,9 +1753,12 @@ paths:
       tags: [Memory]
       operationId: listShelves
       summary: The shelves, with how much is on each
+      description: |
+        Chapters aren't among them: the Library shows them as a row of their own, from
+        `listChapters`.
       responses:
         "200":
-          description: Every shelf, in order, the journal last.
+          description: Every shelf but chapters, in order, the journal last.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
           content:
@@ -1208,6 +1802,44 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RecentChanges" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/memory/chapters:
+    get:
+      tags: [Memory]
+      operationId: listChapters
+      summary: The chapters of your life Ari noticed
+      description: |
+        Arcs Ari noticed and named, such as "Florence with Mira" or "Back to training", each a page
+        on the `chapters` shelf: a short story with photos, then what changed. Those still going
+        come first, the one changed most lately leading; then the rest, the latest to end first.
+        `getPage` opens one.
+      responses:
+        "200":
+          description: Every chapter.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChapterList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/memory/learnt:
+    get:
+      tags: [Memory]
+      operationId: listLearnt
+      summary: What Ari learnt about you lately
+      description: |
+        The five newest lines Ari learnt about you, newest first, each in its own words to you,
+        such as "Half marathons suit you more than 5Ks." A line comes only with a change to memory
+        that taught Ari something about you, never with one that tidies, reconciles or fixes
+        records. One Ari took back, or whose page it forgot, is gone. To correct one, you tell Ari.
+      responses:
+        "200":
+          description: The lines.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LearntLines" }
         "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/memory/page:
     get:
@@ -1358,7 +1990,10 @@ paths:
       tags: [Motion]
       operationId: listMotion
       summary: Everything in motion, then what's done
-      description: Active things first, then done ones, each group newest first.
+      description: |
+        Active things first, then done ones, each group newest first. Done ones carry their
+        `outcome`; those that never show (`duplicate`, `test`, `elsewhere`) are listed too, so
+        nothing is lost, for apps to leave out.
       responses:
         "200":
           description: The things.
@@ -1427,6 +2062,71 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MotionState" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/made:
+    get:
+      tags: [Made]
+      operationId: listMade
+      summary: The Made shelf
+      description: Every page Ari made, most recently changed first.
+      responses:
+        "200":
+          description: The pages.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MadeList" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/made/{made}:
+    get:
+      tags: [Made]
+      operationId: getMade
+      summary: One page, with its content, your ticks and what changed
+      description: The content is as `MadeContent` in [the made schema](made.schema.json) describes.
+      parameters:
+        - $ref: "#/components/parameters/Made"
+      responses:
+        "200":
+          description: The page.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MadeDetail" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/made/{made}/state:
+    patch:
+      tags: [Made]
+      operationId: patchMadeState
+      summary: Tick items on a page, or take a tick back
+      description: |
+        A JSON Merge Patch (RFC 7386) on the state, such as
+        `{"ticks": {"trajans-column": "2026-11-22T14:32:00.000Z"}}` with when you ticked it, sent as
+        `application/merge-patch+json` or `application/json`; `null` takes a tick back. Only a page
+        with a `check` word ticks, and only its items. Every app hears `made.state`, and Ari reads
+        the ticks with the page. Sending the same patch twice changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/Made"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { type: object, additionalProperties: true }
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: The whole state, after the patch.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MadeStateResult" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1681,12 +2381,30 @@ components:
       required: true
       description: The item's id, from its `CalendarItem` in Coming up.
       schema: { $ref: "events.schema.json#/$defs/CalendarItemId" }
+    Made:
+      name: made
+      in: path
+      required: true
+      description: The page's id, from its `Made`.
+      schema: { $ref: "events.schema.json#/$defs/MadeId" }
     Motion:
       name: motion
       in: path
       required: true
       description: The thing's id, from its `Motion`.
       schema: { $ref: "events.schema.json#/$defs/MotionId" }
+    Thread:
+      name: thread
+      in: path
+      required: true
+      description: The thread's id, from its `Thread`.
+      schema: { $ref: "events.schema.json#/$defs/ThreadId" }
+    Message:
+      name: message
+      in: path
+      required: true
+      description: The message's id.
+      schema: { $ref: "events.schema.json#/$defs/MessageId" }
     Turn:
       name: turn
       in: path
@@ -1698,6 +2416,18 @@ components:
       in: path
       required: true
       description: The id the app made for what it's uploading.
+      schema: { $ref: "events.schema.json#/$defs/UploadId" }
+    File:
+      name: file
+      in: path
+      required: true
+      description: The file's id, from an `ari:file` block.
+      schema: { $ref: "events.schema.json#/$defs/FileId" }
+    BigUpload:
+      name: upload
+      in: path
+      required: true
+      description: The id the app made for the big upload, which becomes its attachment's id.
       schema: { $ref: "events.schema.json#/$defs/UploadId" }
     Attachment:
       name: attachment
@@ -1794,6 +2524,61 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
+    UnsupportedType:
+      description: |
+        The server doesn't take this media type in a big upload, or the file's first bytes don't fit
+        the type it was given (`unsupported_type`). The message names what it takes.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+          example:
+            error:
+              code: unsupported_type
+              message: "Ito takes recordings as M4A, MP3, WAV, AAC, Ogg/Opus, FLAC, WebM, AMR, Core Audio or AIFF."
+              detail: video/quicktime isn't a media type big uploads take.
+    NotTranscribed:
+      description: The recording has no transcript yet, or any more (`not_transcribed`); `recording` says where it stands.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RecordingErrorResult" }
+    ServerDiskFull:
+      description: The server's disk hasn't room for the file (`server_disk_full`).
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResult" }
+    OffsetMismatch:
+      description: |
+        The chunk starts past what the server has (`offset_mismatch`). Send again from the upload's
+        `received`.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadErrorResult" }
+    UploadIncomplete:
+      description: |
+        The server hasn't every byte yet (`upload_incomplete`). Send the rest from the upload's
+        `received`, then finish again.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadErrorResult" }
+    ChecksumMismatch:
+      description: |
+        The bytes that arrived don't have the SHA-256 the app gave (`checksum_mismatch`). The server
+        has started the upload over: send it again from offset 0.
+      headers:
+        Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/UploadErrorResult" }
     SlowDown:
       description: Too many requests, or too many wrong tokens (`slow_down`).
       headers:
@@ -1897,8 +2682,8 @@ components:
         is_default: { description: True for the engine's default model., type: boolean }
         images: { description: Whether it can see photos you attach., type: boolean }
     Shelf:
-      description: A shelf in memory; `people` holds one page per person, `groups` one per group of people, and `journal` one per day.
-      enum: [people, groups, goals, projects, places, topics, journal]
+      description: A shelf in memory; `people` holds one page per person, `groups` one per group of people, `chapters` one per chapter of your life, and `journal` one per day.
+      enum: [people, groups, goals, projects, places, topics, chapters, journal]
     Gist:
       description: |
         What the page is now, in one line, written by Ari and kept current with every change: a
@@ -1941,7 +2726,7 @@ components:
         circle: { $ref: "#/components/schemas/Circle" }
         shelf:
           description: Its shelf, or `portrait`, `now` or `helping-you` for the pages in mind.
-          enum: [portrait, now, helping-you, people, groups, goals, projects, places, topics, journal]
+          enum: [portrait, now, helping-you, people, groups, goals, projects, places, topics, chapters, journal]
         aliases:
           description: Other names Ari knows it by.
           type: array
@@ -1961,6 +2746,7 @@ components:
             show its words instead.
           type: array
           items: { $ref: "#/components/schemas/MemoryPhoto" }
+        chapter: { $ref: "#/components/schemas/ChapterFacts" }
     MemoryPhoto:
       description: A photo a page keeps with its story.
       type: object
@@ -2019,6 +2805,80 @@ components:
         changes:
           type: array
           items: { $ref: "#/components/schemas/RecentChange" }
+    Day:
+      description: A day, as YYYY-MM-DD, where you are.
+      type: string
+      format: date
+    Chapter:
+      description: A chapter in the Library's row.
+      type: object
+      required: [address, title, began, changed_at]
+      properties:
+        address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        title:
+          description: Its name, such as "Florence with Mira".
+          type: string
+        gist: { $ref: "#/components/schemas/Gist" }
+        began: { $ref: "#/components/schemas/Day" }
+        ended:
+          description: The day it ended. Absent while it's still going.
+          $ref: "#/components/schemas/Day"
+        cover:
+          description: The first photo its story shows. Absent when it shows none.
+          $ref: "#/components/schemas/MemoryPhoto"
+        changed_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    ChapterList:
+      type: object
+      required: [chapters]
+      properties:
+        chapters:
+          type: array
+          items: { $ref: "#/components/schemas/Chapter" }
+    ChapterFacts:
+      description: |
+        A chapter's page only: when it began and ended, when Ari noticed it, and what it drew on,
+        counted by the server rather than said by Ari. The story and *What changed* are its Markdown.
+      type: object
+      required: [began, drawn_from]
+      properties:
+        began: { $ref: "#/components/schemas/Day" }
+        ended:
+          description: The day it ended. Absent while it's still going.
+          $ref: "#/components/schemas/Day"
+        noticed:
+          description: The day Ari first wrote it. Absent for a chapter that came from outside.
+          $ref: "#/components/schemas/Day"
+        drawn_from:
+          type: object
+          required: [journal_days, photos]
+          properties:
+            journal_days:
+              description: The journal days it links to.
+              type: integer
+              minimum: 0
+            photos:
+              description: The photos in memory that it and those days show.
+              type: integer
+              minimum: 0
+    LearntLine:
+      type: object
+      required: [text, at, address, change]
+      properties:
+        text:
+          description: What Ari learnt, in a line to you.
+          type: string
+        at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        address:
+          description: The page whose change taught it.
+          $ref: "events.schema.json#/$defs/MemoryAddress"
+        change: { $ref: "events.schema.json#/$defs/ChangeId" }
+    LearntLines:
+      type: object
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/LearntLine" }
     ShelfList:
       type: object
       required: [shelves]
@@ -2574,6 +3434,15 @@ components:
         done:
           description: The Done entry this message replies to, such as a correction to one of Kumo's calls.
           $ref: "events.schema.json#/$defs/DoneId"
+        thread:
+          description: The thread to send it into. Left out, it goes to the main chat, unless `reply_to` names a message in a thread.
+          $ref: "events.schema.json#/$defs/ThreadId"
+        reply_to:
+          description: The message you're replying to. In the main chat, the message goes into the thread under it, started now if there's none yet; in a thread, it's quoted there.
+          $ref: "events.schema.json#/$defs/MessageId"
+        new_thread:
+          description: Start a new thread of your own with this message, as Threads' New thread does.
+          const: true
     MessageResult:
       type: object
       required: [message]
@@ -2581,7 +3450,7 @@ components:
         message: { $ref: "events.schema.json#/$defs/Message" }
     MessagePage:
       type: object
-      required: [messages, steps, asks, calls, topics, has_more]
+      required: [messages, steps, asks, calls, threads, has_more]
       properties:
         messages:
           description: Oldest first.
@@ -2599,13 +3468,112 @@ components:
           description: Every call that started in the same span, in position order.
           type: array
           items: { $ref: "events.schema.json#/$defs/Call" }
-        topics:
-          description: The topics Ari marked on these messages, in position order.
+        threads:
+          description: In the main chat, the threads whose lines sit among these messages, in position order. Empty in a thread.
           type: array
-          items: { $ref: "events.schema.json#/$defs/Topic" }
+          items: { $ref: "events.schema.json#/$defs/Thread" }
         has_more:
           description: Whether even older messages exist.
           type: boolean
+    ThreadList:
+      type: object
+      required: [open, threads, has_more]
+      properties:
+        open:
+          description: Every open thread, latest first, or those that match the query.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Thread" }
+        threads:
+          description: Done threads, newest first by when they started, a page at a time.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Thread" }
+        has_more:
+          description: Whether older done threads exist.
+          type: boolean
+    ThreadPage:
+      type: object
+      required: [thread, messages, steps, asks, turn, next, has_more]
+      properties:
+        thread: { $ref: "events.schema.json#/$defs/Thread" }
+        anchor:
+          description: A thread you started by replying in the main chat has the message it replies to here, to show at its top.
+          $ref: "events.schema.json#/$defs/Message"
+        messages:
+          description: The thread's latest messages, oldest first, including one still being written. Page further back with `GET /v0/messages`.
+          type: array
+          maxItems: 50
+          items: { $ref: "events.schema.json#/$defs/Message" }
+        steps:
+          description: Every step in the thread from the first of these messages on, in position order.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Step" }
+        asks:
+          description: Every ask in the thread from the first of these messages on, in position order.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Ask" }
+        turn:
+          description: The thread's running turn, or null when it's idle.
+          oneOf:
+            - $ref: "events.schema.json#/$defs/LiveTurn"
+            - type: "null"
+        next:
+          description: Messages waiting as Next in the thread.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/MessageId" }
+        has_more:
+          description: Whether older messages exist in the thread.
+          type: boolean
+    ThreadResult:
+      type: object
+      required: [thread]
+      properties:
+        thread: { $ref: "events.schema.json#/$defs/Thread" }
+    ThreadChange:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          description: Its new name, one to five words.
+          type: string
+          pattern: \S
+          maxLength: 60
+        state:
+          description: Mark it `done`, or `open` again.
+          enum: [open, done]
+    MoveMessage:
+      type: object
+      properties:
+        thread:
+          description: The thread to move it into. Left out, it moves to the main chat.
+          $ref: "events.schema.json#/$defs/ThreadId"
+
+    MadeList:
+      type: object
+      required: [made]
+      properties:
+        made:
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Made" }
+    MadeDetail:
+      type: object
+      required: [made, content, state, changes]
+      properties:
+        made: { $ref: "events.schema.json#/$defs/Made" }
+        content:
+          description: The page under its title, as `MadeContent` in [the made schema](made.schema.json) describes.
+          type: object
+          additionalProperties: true
+        state: { $ref: "events.schema.json#/$defs/MadeState" }
+        changes:
+          description: The 20 newest changes, newest first.
+          type: array
+          maxItems: 20
+          items: { $ref: "events.schema.json#/$defs/MadeChange" }
+    MadeStateResult:
+      type: object
+      required: [state]
+      properties:
+        state: { $ref: "events.schema.json#/$defs/MadeState" }
     MotionList:
       type: object
       required: [motions]
@@ -2661,6 +3629,285 @@ components:
       required: [attachment]
       properties:
         attachment: { $ref: "events.schema.json#/$defs/Attachment" }
+    UploadKind:
+      description: "`audio` for a recording, `image` for a photo, `file` for a document."
+      enum: [audio, image, file]
+    UploadKindLimit:
+      type: object
+      required: [kind, max_bytes, media_types]
+      properties:
+        kind: { $ref: "#/components/schemas/UploadKind" }
+        max_bytes:
+          description: The largest file of this kind, in bytes.
+          type: integer
+          minimum: 1
+        media_types:
+          description: The media types of this kind that big uploads take.
+          type: array
+          items: { type: string }
+    UploadLimits:
+      type: object
+      required: [simple_bytes, chunk_bytes, kinds]
+      properties:
+        simple_bytes:
+          description: The largest file `PUT /v0/attachments/{attachment}` takes in one go; anything bigger goes in chunks.
+          type: integer
+          minimum: 1
+        chunk_bytes:
+          description: The most one chunk may hold.
+          type: integer
+          minimum: 1
+        kinds:
+          type: array
+          items: { $ref: "#/components/schemas/UploadKindLimit" }
+    CreateUpload:
+      type: object
+      required: [id, name, media_type, size]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/UploadId" }
+        name:
+          description: The file's name, shown with the message and used in the agent's workspace.
+          type: string
+          minLength: 1
+          maxLength: 255
+        media_type:
+          description: Its media type, such as `audio/mp4` for a Voice Memos recording.
+          type: string
+          minLength: 1
+          maxLength: 255
+        size:
+          description: Its whole size, in bytes.
+          type: integer
+          minimum: 1
+    Upload:
+      type: object
+      required: [id, name, media_type, kind, size, received, state]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/UploadId" }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        media_type: { type: string, minLength: 1 }
+        kind: { $ref: "#/components/schemas/UploadKind" }
+        size:
+          description: Its whole size, in bytes, as the app said.
+          type: integer
+          minimum: 1
+        received:
+          description: How many bytes from the start the server has on disk. The next chunk starts here.
+          type: integer
+          minimum: 0
+        state:
+          description: "`receiving` until it's finished; `finished` once it's an attachment."
+          enum: [receiving, finished]
+        expires_at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: "`receiving` only: when the server deletes it if no more arrives."
+        attachment:
+          $ref: "events.schema.json#/$defs/Attachment"
+          description: "`finished` only: the attachment it became."
+    Transcription:
+      type: object
+      required: [state, languages, consent]
+      properties:
+        state:
+          description: |
+            Whether the server can transcribe a recording now: `ready`; `loading` while its voice
+            starts; `unavailable` when it has none or it failed, as `reason` says. A recording sent
+            while it can't waits, queued, until it can.
+          enum: [ready, loading, unavailable]
+        reason:
+          description: Why it isn't ready.
+          type: string
+        languages:
+          description: The languages it transcribes well, such as `en`; speech in others comes out wrong.
+          type: array
+          items: { type: string }
+        consent:
+          description: A line to show before a recording is sent, about the other people in it.
+          type: string
+    UploadResult:
+      type: object
+      required: [upload]
+      properties:
+        upload: { $ref: "#/components/schemas/Upload" }
+    UploadErrorResult:
+      type: object
+      required: [error, upload]
+      properties:
+        error: { $ref: "events.schema.json#/$defs/Error" }
+        upload: { $ref: "#/components/schemas/Upload" }
+    UploadList:
+      type: object
+      required: [limits, transcription, uploads]
+      properties:
+        limits: { $ref: "#/components/schemas/UploadLimits" }
+        transcription: { $ref: "#/components/schemas/Transcription" }
+        uploads:
+          description: The big uploads that haven't finished, oldest first.
+          type: array
+          items: { $ref: "#/components/schemas/Upload" }
+    RecordingList:
+      type: object
+      required: [recordings]
+      properties:
+        recordings:
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Recording" }
+    RecordingResult:
+      type: object
+      required: [recording]
+      properties:
+        recording: { $ref: "events.schema.json#/$defs/Recording" }
+    RecordingErrorResult:
+      type: object
+      required: [error, recording]
+      properties:
+        error: { $ref: "events.schema.json#/$defs/Error" }
+        recording: { $ref: "events.schema.json#/$defs/Recording" }
+    TranscriptSpeaker:
+      type: object
+      required: [id, name, seconds, you]
+      properties:
+        id:
+          description: "`S1`, `S2`… in the order they first speak, or `you` for the voice that matches your voiceprint."
+          type: string
+          minLength: 1
+        name:
+          description: What to call them, such as "Speaker 1", "You", or the name you gave them.
+          type: string
+          minLength: 1
+        seconds:
+          description: How long they spoke, roughly.
+          type: number
+          minimum: 0
+        you:
+          description: Whether this voice matched yours. Without a voiceprint (it's learnt on calls), no voice is you.
+          type: boolean
+    TranscriptSegment:
+      type: object
+      required: [start, end, text]
+      properties:
+        start:
+          description: Seconds from the start of the recording.
+          type: number
+          minimum: 0
+        end:
+          type: number
+          minimum: 0
+        text:
+          description: What was said, as the model heard it, with your corrections.
+          type: string
+        speaker:
+          description: The `id` of who said it, when the server could tell.
+          type: string
+    TranscriptCorrection:
+      type: object
+      required: [heard, meant]
+      properties:
+        heard:
+          description: The words as the model heard them, matched whole and in any case.
+          type: string
+          minLength: 1
+          maxLength: 200
+        meant:
+          description: What was really said.
+          type: string
+          minLength: 1
+          maxLength: 200
+    SpeakerName:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1, maxLength: 80 }
+    Transcript:
+      type: object
+      required: [attachment, name, duration_seconds, language, model, speakers, segments, corrections, made_at]
+      properties:
+        attachment: { $ref: "events.schema.json#/$defs/AttachmentId" }
+        name:
+          description: The recording's file name.
+          type: string
+        duration_seconds: { type: number, minimum: 0 }
+        language: { type: string }
+        model:
+          description: The speech model that heard it, such as `nvidia/parakeet-tdt-0.6b-v2`.
+          type: string
+        speakers:
+          description: The voices the server told apart, a best guess; empty when it couldn't tell.
+          type: array
+          items: { $ref: "#/components/schemas/TranscriptSpeaker" }
+        segments:
+          type: array
+          items: { $ref: "#/components/schemas/TranscriptSegment" }
+        corrections:
+          description: The corrections applied, in order.
+          type: array
+          items: { $ref: "#/components/schemas/TranscriptCorrection" }
+        made_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    TranscriptResult:
+      type: object
+      required: [transcript]
+      properties:
+        transcript: { $ref: "#/components/schemas/Transcript" }
+    CorrectTranscript:
+      type: object
+      minProperties: 1
+      properties:
+        replace:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/TranscriptCorrection" }
+        speakers:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/SpeakerName" }
+    FileVersion:
+      type: object
+      required: [version, attachment, made_at]
+      properties:
+        version:
+          description: 1 for the first one Kumo showed, then one more each time it showed a change.
+          type: integer
+          minimum: 1
+        attachment:
+          $ref: "events.schema.json#/$defs/Attachment"
+          description: This version's bytes, name, media type and size.
+        note:
+          description: What changed since the version before, in Kumo's words.
+          type: string
+        made_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    ShownFile:
+      type: object
+      required: [id, name, versions]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/FileId" }
+        name:
+          description: The latest version's name.
+          type: string
+        versions:
+          description: Oldest first; the last is the latest.
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/FileVersion" }
+    FileList:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/ShownFile" }
+    FileResult:
+      type: object
+      required: [file]
+      properties:
+        file: { $ref: "#/components/schemas/ShownFile" }
+    FinishUpload:
+      type: object
+      properties:
+        sha256:
+          description: The whole file's SHA-256, in lowercase hex, for the server to check.
+          type: string
+          pattern: ^[0-9a-f]{64}$
     Pair:
       type: object
       required: [code, device_name]

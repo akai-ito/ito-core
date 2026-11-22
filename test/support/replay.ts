@@ -7,7 +7,7 @@ import { setImmediate as yieldToIo, setTimeout as delay } from "node:timers/prom
 import { createCell } from "#cell.ts";
 import { createCannedVoice, type CannedVoice, type YouSay } from "./canned-voice.ts";
 import { openCallSocket, type Arrived, type CallSocket } from "./call-socket.ts";
-import type { Complete } from "#engine/engine.ts";
+import type { Complete, WorkFailure } from "#engine/engine.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import { fail as failed, ok, type Result } from "#result.ts";
@@ -126,8 +126,12 @@ const toEventIcs = (event: CalendarEventFields): string =>
 type WorkPlan = {
   readonly calls: readonly { readonly tool: string; readonly input: unknown }[];
   readonly post?: string;
+  // What the work answers at its end, such as a catch-up's one message.
+  readonly answer?: string;
   // The model doesn't answer, with this reason.
   readonly fails?: string;
+  // The model provider's usage limit is reached, and resets then.
+  readonly limited?: string;
 };
 
 const draftIdsOf = (transcript: Transcript): readonly string[] => {
@@ -260,18 +264,26 @@ export const replay = async (name: string): Promise<void> => {
   const plans = createCell<readonly WorkPlan[]>([]);
   const workFailures = createCell<readonly string[]>([]);
 
-  const work = async (run: string): Promise<Result<string, string>> => {
+  const resetsAt = createCell<number | undefined>(undefined);
+
+  const work = async (run: string): Promise<Result<string, WorkFailure>> => {
     const [plan] = plans.get();
-    if (!plan) return failed("The transcript has Kumo do nothing in the background here.");
+    if (!plan) {
+      return failed({ code: "engine_failed", detail: "The transcript has Kumo do nothing in the background here." });
+    }
     plans.update((current) => current.slice(1));
-    if (plan.fails !== undefined) return failed(plan.fails);
+    if (plan.fails !== undefined) return failed({ code: "model_unavailable", detail: plan.fails });
+    if (plan.limited !== undefined) {
+      resetsAt.set(Date.parse(plan.limited));
+      return failed({ code: "usage_limit", detail: "You've hit your usage limit." });
+    }
     const server = live.get()?.server;
     for (const { tool, input } of plan.calls) {
       const called = await server?.callTool(tool, ids.translate(withLiveVersion(input)), run);
       if (called?.isError === true) workFailures.update((current) => [...current, `${tool}: ${called.text}`]);
     }
     if (plan.post !== undefined) await server?.callTool("post", { text: plan.post }, run);
-    return ok("Done.");
+    return ok(plan.answer ?? "Done.");
   };
 
   const isApproved = createCell(false);
@@ -322,7 +334,15 @@ export const replay = async (name: string): Promise<void> => {
         }),
       createMailSource: mail.create,
       createEngine: () =>
-        createScriptEngine(clock, scripts, undefined, demoModels, complete, (_prompt, run) => work(run)),
+        createScriptEngine(
+          clock,
+          scripts,
+          undefined,
+          demoModels,
+          complete,
+          (_prompt, run) => work(run),
+          () => resetsAt.get(),
+        ),
       name: "studio",
 
       clock,
@@ -547,13 +567,20 @@ export const replay = async (name: string): Promise<void> => {
       }
       case "agent_calls": {
         await advance(time);
-        const { tool, input, returns } = step as unknown as {
+        const { tool, input, returns, thread } = step as unknown as {
           readonly tool: string;
           readonly input: unknown;
           readonly returns?: unknown;
+          readonly thread?: string;
         };
-        const called = await (live.get()?.server.callTool(tool, ids.translate(withLiveVersion(input))) ??
-          Promise.resolve(undefined));
+        const called = await (live
+          .get()
+          ?.server.callTool(
+            tool,
+            ids.translate(withLiveVersion(input)),
+            undefined,
+            thread === undefined ? undefined : ids.translate(thread),
+          ) ?? Promise.resolve(undefined));
         check(called?.isError === true ? `${tool} failed: ${called.text}` : undefined, index);
         if (returns !== undefined) check(ids.match(returns, called?.structured), index);
         return;
@@ -608,8 +635,17 @@ export const replay = async (name: string): Promise<void> => {
         return;
       }
       case "kumo_works": {
-        const { calls, post } = step as unknown as WorkPlan;
-        plans.update((current) => [...current, { calls, ...(post !== undefined && { post }) }]);
+        const { calls, post, answer } = step as unknown as WorkPlan;
+        plans.update((current) => [
+          ...current,
+          { calls, ...(post !== undefined && { post }), ...(answer !== undefined && { answer }) },
+        ]);
+        await advance(time);
+        return;
+      }
+      case "usage_limit_reached": {
+        const { resets_at: limited } = step as unknown as { readonly resets_at: string };
+        plans.update((current) => [...current, { calls: [], limited }]);
         await advance(time);
         return;
       }
@@ -627,9 +663,9 @@ export const replay = async (name: string): Promise<void> => {
         await settle();
         return;
       }
-      case "topic_decided": {
-        const { label } = step as unknown as { readonly label: string };
-        asides.update((current) => [...current, { changed: true, label }]);
+      case "thread_named": {
+        const { title } = step as unknown as { readonly title: string };
+        asides.update((current) => [...current, { title }]);
         await advance(time);
         return;
       }

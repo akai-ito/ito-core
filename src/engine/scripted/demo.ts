@@ -5,6 +5,18 @@ import type { AskFields, Complete, Engine, EngineEvent, Input, StepFacts } from 
 import { fail, ok } from "#result.ts";
 import type { Act, CallTool, ScriptSource, TimedEvent } from "#engine/scripted/script-engine.ts";
 import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "#protocol/tools/florence.ts";
+import {
+  hybridContent,
+  hybridId,
+  projectContent,
+  projectId,
+  quietRoles,
+  roleContent,
+  roleId,
+  springContent,
+  springId,
+  springStory,
+} from "#protocol/tools/in-motion.ts";
 import { sub20Id, sub20Training } from "#protocol/tools/sub20.ts";
 
 const pieceMs = 70;
@@ -14,10 +26,13 @@ const shortReply = [
   "",
   "- It streams a reply in small pieces, the way a real model does.",
   "- Send a message while it writes to try **steering**.",
-  "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a timeout, *ask* for a question, or *approve* for an approval.",
+  "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a quiet turn that works until you stop it, *ask* for a question, or *approve* for an approval.",
   "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
   "- *trip* starts Florence with Mira in In motion, *training* a sub-20 5K block, and *booked* books the trip's Uffizi.",
+  "- *motion* fills In motion with a role, a hybrid block, a project and a goal that ended unmet.",
   "- *plan* lays out a day with Kumo's plan and guesses.",
+  "- *menu* answers with shape (a table with verdicts, picks with pictures, a total), *guide* makes a page with " +
+    "things to spot, and *cards* shows an event, a place, a Desk question and a person as cards.",
 ].join("\n");
 
 const longReply = Array.from(
@@ -214,6 +229,7 @@ const startTrip: Act["act"] = async (callTool) => {
     kind: "trip",
     title: "Florence with Mira",
     summary: "6–9 Nov · 4 to book",
+    salience: "loud",
     content: florenceTrip(Object.fromEntries(kept) as FlorencePictures),
     note: "Started the trip",
   });
@@ -222,11 +238,71 @@ const startTrip: Act["act"] = async (callTool) => {
 const startTraining: Act["act"] = async (callTool) => {
   await callTool("start_motion", {
     id: sub20Id,
-    kind: "training",
+    kind: "body",
     title: "Sub-20 5K",
     summary: "Week 6 of 10 · intervals today",
+    salience: "normal",
     content: sub20Training,
     note: "Started the block",
+  });
+};
+
+// Every 0.19 shape at once: three roles, loudest first, a hybrid block, a project, and a goal ended unmet.
+const fillInMotion: Act["act"] = async (callTool) => {
+  const now = Date.now();
+  await callTool("start_motion", {
+    id: roleId,
+    kind: "career",
+    title: "Northwind",
+    summary: "Virtual 1 · Python PR review",
+    salience: "loud",
+    content: roleContent(now),
+    note: "Added Northwind to the pipeline",
+  });
+  for (const [index, { id, content, summary }] of quietRoles.entries()) {
+    await callTool("start_motion", {
+      id,
+      kind: "career",
+      title: String(content.org),
+      summary,
+      salience: index === 0 ? "normal" : "quiet",
+      content,
+      note: "Added it to the pipeline",
+    });
+  }
+  await callTool("start_motion", {
+    id: hybridId,
+    kind: "body",
+    title: "Hybrid restart",
+    summary: "Three done this week. Saturday's easy run is the last.",
+    salience: "loud",
+    content: hybridContent(now),
+    note: "Started the block",
+  });
+  await callTool("start_motion", {
+    id: projectId,
+    kind: "project",
+    title: "Ito 0.19 · Lived-in",
+    summary: "Design round 2 of 4 · In motion",
+    salience: "normal",
+    content: projectContent,
+    note: "Started the release",
+  });
+  await callTool("start_motion", {
+    id: springId,
+    kind: "body",
+    title: "Sub-20 5K",
+    summary: "Training incomplete",
+    salience: "normal",
+    content: springContent,
+    note: "Kept the goal",
+  });
+  await callTool("finish_motion", {
+    id: springId,
+    outcome: "not_met",
+    summary: "Training incomplete, race not booked; a fresh hybrid plan followed.",
+    story: springStory,
+    note: "Ended the goal, unmet",
   });
 };
 
@@ -296,6 +372,181 @@ const showDay: Act["act"] = async (callTool) => {
   await callTool("show_day", {});
 };
 
+const demoPictureOf = async (
+  callTool: CallTool,
+  name: string,
+  alt: string,
+): Promise<Readonly<Record<string, string>>> => {
+  const kept = await callTool("keep_image", { url: `${demoPictures}${name}.jpg` });
+  return {
+    attachment: String(kept.structured?.attachment),
+    alt,
+    source_url: `https://example.org/ito-demo/about/${name}`,
+    credit: "Ito demo picture",
+  };
+};
+
+const block = (kind: string, value: unknown): string => ["```ari:" + kind, JSON.stringify(value), "```"].join("\n");
+
+const verdict = (label: string, tone: string): Readonly<Record<string, string>> => ({ label, tone });
+
+// A menu answered with shape: the table with verdicts, picks with pictures, the total, and choices. It comes as a
+// message of Kumo's, since its pictures are kept as it goes.
+const showMenu: Act["act"] = async (callTool) => {
+  const dishes = [
+    ["Clay pot glass noodles", "£9.50", "What people come for: smoky, peppery, crab all through it."],
+    ["Langoustine laab", "£11", "Bright and sharp, so it cuts the richness of the noodles."],
+    ["Lamb skewers", "£8", "Two skewers, easy to split, properly charred."],
+    ["Wild ginger greens", "£6.50", "Something green, since you said not too heavy."],
+    ["Sticky rice × 2", "£7", "For the laab's juices. You'll want the second."],
+  ] as const;
+  const picks = await Promise.all(
+    dishes.map(async ([name, detail, why], index) => ({
+      name,
+      detail,
+      why,
+      image: await demoPictureOf(callTool, `dish-${String(index + 1)}`, name),
+    })),
+  );
+  const text = [
+    "Good menu. It's northern Thai, cooked over wood, all small plates to share: four or five between two, plus rice.",
+    "",
+    block("table", {
+      columns: ["Dish", "My take"],
+      rows: [
+        {
+          name: "Clay pot glass noodles",
+          detail: "Pork belly, brown crab, white pepper",
+          verdict: verdict("Must try", "strong"),
+        },
+        {
+          name: "Langoustine laab",
+          detail: "Minced, toasted rice, herbs, lime",
+          verdict: verdict("Must try", "strong"),
+        },
+        {
+          name: "Lamb & cumin skewers",
+          detail: "Aged lamb, charred over wood",
+          verdict: verdict("Recommended", "good"),
+        },
+        { name: "Jungle curry", detail: "Pork, fiery, no coconut", verdict: verdict("If you like heat", "quiet") },
+        { name: "Isaan sausage", detail: "Fermented pork, ginger, peanut", verdict: verdict("Skip today", "quiet") },
+        { name: "Sticky rice", detail: "Steamed in a basket", verdict: verdict("Best value", "neutral") },
+      ],
+    }),
+    "",
+    block("picks", { title: "What I'd order", picks }),
+    "",
+    block("number", {
+      label: "Estimated for two",
+      value: "£47",
+      context: "Five plates and rice. £53 with the 12.5% service.",
+    }),
+    "",
+    "Want a drink matched to it, or is that the lot? Say hi to [Alex](memory:people/alex).",
+    "",
+    block("choices", { options: ["Add drinks", "Lighter swap", "That's the lot"] }),
+  ].join("\n");
+  await callTool("post", { text });
+};
+
+const guideRoom = (
+  id: string,
+  title: string,
+  detail: string,
+  items: readonly (readonly [string, string, string])[],
+) => ({
+  id,
+  title,
+  detail,
+  items: items.map(([item, name, where]) => ({ id: item, title: name, detail: where })),
+});
+
+// A page Kumo made: a gallery guide with rooms that fold, things to spot and a place for coffee.
+const makeGuide: Act["act"] = async (callTool) => {
+  const cover = await demoPictureOf(callTool, "gallery", "The gallery's dome");
+  const casts = await demoPictureOf(callTool, "casts", "The Cast Courts");
+  await callTool("make_made_page", {
+    id: "gallery-guide",
+    title: "Your guide to the gallery",
+    summary: "3 rooms · 4 things to spot",
+    cover,
+    content: {
+      intro: "Two hours, three rooms, in walking order from the main door. Coffee halfway.",
+      check: "Spotted",
+      sections: [
+        {
+          ...guideRoom("cast-courts", "Cast Courts", "Room 46a–b · 25 min", [
+            ["column", "Trajan's Column", "Cut in two to fit under the roof. Find the join."],
+            ["fig-leaf", "David's fig leaf", "Not on him: it hangs in a case behind."],
+          ]),
+          image: casts,
+          text: "Plaster copies of great monuments, made so people who couldn't travel could still stand in front of them.",
+        },
+        guideRoom("south-asia", "South Asia", "Room 41 · 20 min", [
+          ["tiger", "Tipu's Tiger", "A wooden tiger with an organ inside."],
+        ]),
+        guideRoom("fashion", "Fashion", "Room 40 · 20 min", [
+          ["mantua", "The silk mantua", "So wide you went through doors sideways."],
+        ]),
+        {
+          id: "halfway",
+          title: "Halfway",
+          numbered: false,
+          text: block("place", {
+            name: "The Morris Room",
+            address: "Cromwell Road, London",
+            note: "the first museum café",
+          }),
+        },
+      ],
+    },
+  });
+};
+
+const cardIn = (text: string): string => /as (?<card>k_\S+?)\.?$/u.exec(text)?.groups?.card ?? "";
+
+// Action cards: a question on the Desk shown in the chat, an event to add, a place with Directions, and a person.
+const showCards: Act["act"] = async (callTool) => {
+  const added = await callTool("add_card", {
+    kind: "question",
+    title: "Walk in, or book?",
+    text: "The restaurant only books for six or more. Walk in and queue, or find somewhere that books?",
+    options: [{ label: "Walk in", acts: true }, { label: "Find one that books" }],
+  });
+  const card = cardIn(added.text);
+  const mailed = await callTool("show_mail", {});
+  const draft = cardIn(mailed.text);
+  await callTool("post", {
+    text: [
+      "Thursday works: you're free after your 17:00 call. Here's the evening, and one question.",
+      "",
+      block("event", {
+        title: "Dinner with Theo",
+        start: "2026-11-27T19:30:00+00:00",
+        end: "2026-11-27T21:30:00+00:00",
+        place: "Saffron Lane, Soho",
+      }),
+      "",
+      block("place", {
+        name: "Saffron Lane",
+        address: "Greek Street, London",
+        note: "open till 23:00",
+        lat: 51.5136,
+        lon: -0.1318,
+      }),
+      "",
+      block("desk", { card }),
+      "",
+      block("person", { page: alex }),
+      "",
+      "And the hotel note, which is in your Drafts:",
+      "",
+      block("desk", { card: draft }),
+    ].join("\n"),
+  });
+};
+
 const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {
   const chosen = [
     { pattern: /\bdesk\b/u, act: fillDesk, said: "I've put a question and an offer on your Desk." },
@@ -305,6 +556,13 @@ const deskScript = (text: string, start: readonly TimedEvent[]): Script | undefi
     { pattern: /\bstart\b/u, act: showGettingStarted, said: "I've read your mail. Here's what I found." },
     { pattern: /\bwork\b/u, act: showWork, said: "Here's my day so far, in my work on the Desk." },
     { pattern: /\bplan\b/u, act: showDay, said: "Here's the shape of today: my plan and my guesses are in Coming up." },
+    { pattern: /\bmenu\b/u, act: showMenu, said: "That's what I'd get for two." },
+    {
+      pattern: /\bguide\b/u,
+      act: makeGuide,
+      said: `I've made you a guide, in walking order, with things to spot in each room.\n\n${block("made", { made: "gallery-guide" })}`,
+    },
+    { pattern: /\bcards\b/u, act: showCards, said: "That's Thursday sorted, bar the question." },
   ].find(({ pattern }) => pattern.test(text));
   if (!chosen) return undefined;
   const actAt = lastAt(start) + 300;
@@ -319,7 +577,9 @@ export const demoWork =
       return ok("Noted; nothing more was needed.");
     }
     if (prompt.includes("They told you this was wrong")) return ok("Noted on How to help you for next time.");
-    if (!prompt.includes("Post your first question")) return fail("The demo does no background work.");
+    if (!prompt.includes("Post your first question")) {
+      return fail({ code: "engine_failed", detail: "The demo does no background work." });
+    }
     await callTool("post", { text: "While I read: what would make the next month a good one for you?" }, run);
     return ok("Asked.");
   };
@@ -336,6 +596,7 @@ const motionScript = (text: string, start: readonly TimedEvent[]): Script | unde
     { pattern: /\btrip\b/u, act: startTrip, said: `I've started Florence with Mira.\n\n${motionLine(florenceId)}` },
     { pattern: /\btraining\b/u, act: startTraining, said: `All ten weeks are in.\n\n${motionLine(sub20Id)}` },
     { pattern: /\bbooked\b/u, act: bookUffizi, said: "Lovely: the Uffizi is booked for 8:15 on Saturday." },
+    { pattern: /\bmotion\b/u, act: fillInMotion, said: "In motion has a bit of everything now." },
   ].find(({ pattern }) => pattern.test(text));
   if (!chosen) return undefined;
   const actAt = lastAt(start) + 300;
@@ -358,9 +619,13 @@ const memoryScript = (text: string, start: readonly TimedEvent[], now: number): 
   };
 };
 
+// A conversation hears of the posts it didn't see, such as the demo's own, before the person's words. Those aren't
+// theirs, so the demo never answers a word in them.
+const postNote = /\(Meanwhile, your background work posted this here: “[\s\S]*?”\)/gu;
+
 const scriptFor = (inputs: readonly Input[], now: number): Script => {
   const text = inputs
-    .map((input) => input.text)
+    .map((input) => input.text.replaceAll(postNote, ""))
     .join("\n")
     .toLowerCase();
   const opened = opening(text, now);

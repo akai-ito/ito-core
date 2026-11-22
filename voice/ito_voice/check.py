@@ -5,9 +5,11 @@ import platform
 import statistics
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
+from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -34,6 +36,15 @@ everyday = [
     "Add oat milk, eggs and a loaf of sourdough to the shopping list.",
 ]
 first_audio_target_ms = 700
+# Two made-up people for a recording: who says what, in turn.
+conversation = [
+    ("af_heart", "Thanks for making the time today. Could you start by telling me about your current role?"),
+    ("bm_george", "Of course. I lead a small team that builds the tools our analysts use every day."),
+    ("af_heart", "What's a decision you made there that you'd make differently now?"),
+    ("bm_george", "We rewrote the data loader too early. I'd measure first and only then rebuild it."),
+    ("af_heart", "That's honest. How do you decide what your team works on next?"),
+    ("bm_george", "We keep a short list, ranked by what blocks people most, and look at it every Monday."),
+]
 
 type Lines = list[str]
 
@@ -376,6 +387,78 @@ def check_call(report: Report, loaded: Models) -> dict[str, float]:
     return found
 
 
+def speaker_agreement(segments: Sequence[Any], turns: Sequence[tuple[float, float, str]]) -> float:
+    pairs = []
+    for segment in segments:
+        middle = (segment.start + segment.end) / 2
+        voice = next((voice for start, end, voice in turns if start <= middle <= end), None)
+        if voice is not None:
+            pairs.append((voice, segment.speaker))
+    if not pairs:
+        return 0.0
+    usual = {voice: Counter(label for each, label in pairs if each == voice).most_common(1)[0][0] for voice, _ in pairs}
+    if len(set(usual.values())) < len(usual):
+        return 0.0
+    return sum(label == usual[voice] for voice, label in pairs) / len(pairs)
+
+
+def check_transcription(report: Report, loaded: Models) -> dict[str, float]:
+    lines = report.section("Transcribing a recording")
+    found: dict[str, float] = {}
+    speaker, recogniser = loaded.speaker, loaded.recogniser
+    lines.append(f"- ffmpeg: {(run_command(['ffmpeg', '-version']).splitlines() or ['unavailable'])[0]}")
+    if speaker is None or recogniser is None:
+        lines.append("- Skipped: Kokoro or Parakeet didn't load.")
+        return found
+    lines.append(
+        "Two Kokoro voices hold a short interview, written to a WAV file, which goes through the same code a "
+        "recording you upload does: ffmpeg, Silero, Parakeet, and TitaNet voiceprints to tell the speakers apart."
+    )
+    lines.append("")
+    with report.step(lines, "Transcribing a recording"), tempfile.TemporaryDirectory() as folder:
+        from scipy.io import wavfile
+
+        from ito_voice.serve import new_vad
+        from ito_voice.transcribe import Models as Ears
+        from ito_voice.transcribe import decode, transcribe
+
+        voiceprints = models.load_voiceprints("cpu")
+        gap = np.zeros(int(0.8 * heard_rate), dtype=np.float32)
+        clips = [(voice, render(speaker, text, voice)) for voice, text in conversation * 2]
+        turns: list[tuple[float, float, str]] = []
+        position = 0
+        for voice, clip in clips:
+            turns.append((position / heard_rate, (position + clip.shape[0]) / heard_rate, voice))
+            position += clip.shape[0] + gap.shape[0]
+        audio = np.concatenate([part for _, clip in clips for part in (clip, gap)])
+        recording = Path(folder) / "interview.wav"
+        wavfile.write(recording, heard_rate, (np.clip(audio, -1, 1) * 32_767).astype(np.int16))
+        speech, _ = new_vad()
+
+        def recognise(samples: np.ndarray) -> str:
+            with gpu_lock:
+                return models.recognise(recogniser, samples)
+
+        ears = Ears(speech, recognise, lambda samples: models.voiceprint(voiceprints, samples))
+        transcript, ms = timed(transcribe, decode(recording), ears, None, lambda _: None, threading.Event())
+        speed = transcript.seconds / (ms / 1000)
+        agreement = speaker_agreement(transcript.segments, turns)
+        lines.append(f"- {transcript.seconds:.0f} s of audio in {ms / 1000:.1f} s: {speed:.0f} times real time")
+        lines.append(
+            f"- An hour's recording would take about {3600 / speed / 60:.1f} minutes (with nothing else on the GPU)"
+        )
+        lines.append(f"- Segments: {len(transcript.segments)} from {len(clips)} turns")
+        lines.append(f"- Speakers found: {len(transcript.speakers)} (2 spoke)")
+        lines.append(f"- Segments labelled with the right speaker: {agreement:.0%}")
+        for segment in transcript.segments[:4]:
+            lines.append(f"  - [{segment.start:.1f} s] {segment.speaker}: {segment.text}")
+        if len(transcript.speakers) != 2 or agreement < 0.9:
+            report.problems.append("Speaker labels on a two-person recording weren't right; see its section.")
+        found["transcription_speed"] = speed
+        found["speaker_agreement"] = agreement
+    return found
+
+
 def note_memory(report: Report) -> None:
     if not (torch.cuda.is_available() and torch.cuda.is_initialized()):
         return
@@ -392,6 +475,7 @@ def note_memory(report: Report) -> None:
 def summarise(report: Report, device: str, loaded: Models, results: Mapping[str, float]) -> None:
     first = results.get("first_audio")
     call = results.get("call_turn")
+    speed = results.get("transcription_speed")
     gpu = torch.cuda.get_device_properties(0).name if device == "cuda" else "none (CPU numbers)"
     layout = (
         "Kokoro and Parakeet both on the GPU"
@@ -412,6 +496,12 @@ def summarise(report: Report, device: str, loaded: Models, results: Mapping[str,
             f"{first_audio_target_ms} ms target)"
         ),
         f"- On a call, end of speech to the turn's words: {'n/a' if call is None else f'{call:.0f} ms'}",
+        "- Transcribing a recording: "
+        + (
+            "n/a"
+            if speed is None
+            else f"{speed:.0f} times real time, speakers right on {results.get('speaker_agreement', 0):.0%} of segments"
+        ),
         f"- Problems: {len(report.problems)}",
     ]
 
@@ -426,6 +516,7 @@ def check(report_file: Path, details_file: Path) -> int:
     sections: list[Callable[[], Mapping[str, float]]] = [
         lambda: check_speaking(report, loaded),
         lambda: check_call(report, loaded),
+        lambda: check_transcription(report, loaded),
     ]
     for section in sections:
         results |= section()

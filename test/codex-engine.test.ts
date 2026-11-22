@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createCell } from "#cell.ts";
-import { toMessageId, toTurnId, type TurnId } from "#conversation/ids.ts";
-import { createCodexEngine, threadSetting } from "#engine/codex/codex-engine.ts";
+import { toMessageId, toThreadId, toTurnId, type TurnId } from "#conversation/ids.ts";
+import { createCodexEngine, threadSetting, threadSettingFor } from "#engine/codex/codex-engine.ts";
 import { choiceSetting } from "#engine/engine.ts";
 import type { Engine, EngineEvent, Input } from "#engine/engine.ts";
 import { createAskTool } from "#asks/tool.ts";
@@ -14,7 +14,7 @@ import type { AskFields } from "#engine/engine.ts";
 import type { Settings } from "#store/store.ts";
 import { fixtureDirectory } from "#protocol/tools/transcript-files.ts";
 import type { Tool } from "#tools/mcp.ts";
-import { startMockModel, type MockModel } from "./support/mock-model.ts";
+import { startMockModel, usageResetsAt, type MockModel } from "./support/mock-model.ts";
 import { startToolServer, type RunningToolServer } from "./support/tool-server.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-codex-"));
@@ -70,7 +70,7 @@ const writeCodexConfig = (baseUrl: string): void => {
   );
 };
 
-const openEngine = (baseUrl: string, given = instructions, context?: () => string): Engine =>
+const openEngine = (baseUrl: string, given = instructions, context?: () => string, streamRetries = 0): Engine =>
   createCodexEngine({
     codexHome,
     workspace,
@@ -83,7 +83,13 @@ const openEngine = (baseUrl: string, given = instructions, context?: () => strin
     modelProvider: "mock",
     config: {
       model_providers: {
-        mock: { name: "Mock", base_url: baseUrl, wire_api: "responses", request_max_retries: 0, stream_max_retries: 0 },
+        mock: {
+          name: "Mock",
+          base_url: baseUrl,
+          wire_api: "responses",
+          request_max_retries: 0,
+          stream_max_retries: streamRetries,
+        },
       },
     },
   });
@@ -314,6 +320,20 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(currentModel().userTexts().at(-1)).toContain("uploads/riverside.jpg, uploads/running-log.csv");
   });
 
+  it("keeps a recording out of the workspace, saying it came", async () => {
+    const recording = {
+      kind: "audio" as const,
+      name: "debrief.m4a",
+      source: path.join(fixtureDirectory, "running-log.csv"),
+    };
+    expect(await sendAttachments([recording])).toEqual({ type: "ended" });
+    expect(existsSync(path.join(workspace, "uploads", "debrief.m4a"))).toBe(false);
+    expect(currentModel().userTexts().at(-1)).toContain(
+      "(Recordings attached, kept on Ito rather than in your workspace: debrief.m4a. Ito transcribes each one: read " +
+        "what was said with read_recording, which lists them when given no attachment.)",
+    );
+  });
+
   it("fits a long name, steps around a planted link, and says when it can't save an attachment", async () => {
     const uploads = path.join(workspace, "uploads");
     const log = path.join(fixtureDirectory, "running-log.csv");
@@ -349,6 +369,42 @@ describe("the Codex engine against the pinned codex app-server", () => {
   it("maps a usage limit to usage_limit", async () => {
     const events = await runTurn("[[usage]] Again");
     expect(events.at(-1)).toMatchObject({ type: "failed", code: "usage_limit" });
+  });
+
+  it("fails background work at a usage limit with usage_limit, and says when the limit resets", async () => {
+    const done = await currentEngine().work("[[usage]] Look at the wake-up", "run-limited");
+    expect(done).toMatchObject({ ok: false, failure: { code: "usage_limit" } });
+    expect(currentEngine().usageResetsAt()).toBe(usageResetsAt * 1000);
+  });
+
+  it("shows signs of life while it works in the background, and stops when interrupted", async () => {
+    const controller = new AbortController();
+    const signs = createCell(0);
+    const done = await currentEngine().work("[[slow]] Read the long thread", "run-slow", {
+      onActivity: () => {
+        if (signs.update((count) => count + 1) === 3) controller.abort();
+      },
+      signal: controller.signal,
+    });
+    expect(signs.get()).toBeGreaterThanOrEqual(3);
+    expect(done).toMatchObject({ ok: false, failure: { code: "engine_failed" } });
+  });
+
+  it("says it's reconnecting when the model's stream drops, then goes on", async () => {
+    await currentEngine().close();
+    engine.set(openEngine(currentModel().baseUrl, instructions, undefined, 1));
+    const events = await runTurn("[[drop]] Plan my Sunday");
+    await currentEngine().close();
+    engine.set(openEngine(currentModel().baseUrl));
+    const reconnecting = events.findIndex((event) => event.type === "reconnecting");
+    expect(events[reconnecting]).toEqual({ type: "reconnecting", detail: "Reconnecting... 1/1" });
+    // The half reply is over without ending: the reply is written again from the start.
+    expect(events.slice(0, reconnecting)).toEqual([
+      { type: "text.started", kind: "reply" },
+      { type: "text", text: "Half" },
+    ]);
+    expect(events.slice(reconnecting).filter((event) => event.type === "text.started")).toHaveLength(2);
+    expect(events.at(-1)).toEqual({ type: "ended" });
   });
 
   it("maps a rejected sign-in to engine_signed_out", async () => {
@@ -448,8 +504,7 @@ describe("the Codex engine against the pinned codex app-server", () => {
     settings.setSetting(choiceSetting, JSON.stringify({ model: "gpt-6.1-sol", effort: "low" }));
 
     const done = await currentEngine().work("[[reply]] File the receipt", "run-light", {
-      model: "gpt-6-luna",
-      effort: "medium",
+      choice: { model: "gpt-6-luna", effort: "medium" },
     });
     const light = currentModel().lastRun();
     await currentEngine().work("[[reply]] Read the recruiter's mail", "run-chosen");
@@ -457,6 +512,29 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(done.ok).toBe(true);
     expect(light).toEqual({ model: "gpt-6-luna", effort: "medium" });
     expect(currentModel().lastRun()).toEqual({ model: "gpt-6.1-sol", effort: "low" });
+  });
+
+  it("runs a side thread's turn in a conversation of its own, beside the main chat's", async () => {
+    const main = settings.setting(threadSetting);
+    const side = toThreadId("h_test_side");
+    const collect = async (events: AsyncIterable<EngineEvent>): Promise<readonly EngineEvent[]> => {
+      const seen = createCell<readonly EngineEvent[]>([]);
+      for await (const event of events) if (event.type !== "progress") seen.update((current) => [...current, event]);
+      return seen.get();
+    };
+    turnCount.update((count) => count + 1);
+    const inMain = collect(currentEngine().start(currentTurn(), [toInput("[[reply]] Anything for today?")]));
+    turnCount.update((count) => count + 1);
+    const inSide = collect(currentEngine().start(currentTurn(), [toInput("[[reply]] What's on this menu?")], side));
+
+    const [mainEvents, sideEvents] = await Promise.all([inMain, inSide]);
+
+    expect(mainEvents.at(-1)).toEqual({ type: "ended" });
+    expect(sideEvents.at(-1)).toEqual({ type: "ended" });
+    expect(settings.setting(threadSetting)).toBe(main);
+    expect(settings.setting(threadSettingFor(side))).toBeDefined();
+    expect(settings.setting(threadSettingFor(side))).not.toBe(main);
+    expect(logged.get()).toEqual([]);
   });
 
   it("answers a one-off prompt in a side thread, as JSON in the shape asked for", async () => {

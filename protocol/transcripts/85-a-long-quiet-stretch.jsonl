@@ -1,0 +1,35 @@
+{"transcript":"85-a-long-quiet-stretch","start":"2026-10-12T08:41:00.000Z","scenario":85,"title":"A long quiet stretch","summary":"Kumo works for minutes with nothing to show, as it does while it writes a long document in one tool call. Nothing fails on its own: the turn keeps running and its status stays on what it was last doing. When the model's stream drops mid-reply, the half-written reply is discarded, since the model writes it again from the start, and the status says it's reconnecting. Stop ends the turn whenever you choose, keeping the note it wrote.","guarantees":["G6","G7","G10"],"app":{"cursor":"e_0009_40874"}}
+{"given":{"id":"e_0001_36648","type":"message.accepted","at":"2026-10-11T21:14:00.000Z","message":{"id":"c51fdd0d-6423-44a6-a01d-d8139b1eb9f6","role":"user","text":"Is it worth fixing the old bike or buying a new one?","at":"2026-10-11T21:14:00.000Z","position":1}}}
+{"given":{"id":"e_0002_72493","type":"turn.started","at":"2026-10-11T21:14:00.001Z","turn":"t_0001_45831","inputs":["c51fdd0d-6423-44a6-a01d-d8139b1eb9f6"]}}
+{"given":{"id":"e_0003_29703","type":"step.started","at":"2026-10-11T21:14:00.301Z","step":{"id":"s_0001_23176","turn":"t_0001_45831","kind":"thinking","title":"Thinking it through","at":"2026-10-11T21:14:00.301Z","position":3}}}
+{"given":{"id":"e_0004_62875","type":"turn.status","at":"2026-10-11T21:14:00.301Z","turn":"t_0001_45831","kind":"thinking","label":"Thinking it through"}}
+{"given":{"id":"e_0005_23890","type":"step.ended","at":"2026-10-11T21:14:01.801Z","step":{"id":"s_0001_23176","turn":"t_0001_45831","kind":"thinking","title":"Thought it through","at":"2026-10-11T21:14:00.301Z","position":3,"ended_at":"2026-10-11T21:14:01.801Z","outcome":"completed","duration_ms":1500}}}
+{"given":{"id":"e_0006_82477","type":"message.started","at":"2026-10-11T21:14:01.801Z","message":{"id":"m_0001_84243","role":"agent","kind":"reply","turn":"t_0001_45831","text":"","at":"2026-10-11T21:14:01.801Z","position":6}}}
+{"given":{"id":"e_0007_00180","type":"message.delta","at":"2026-10-11T21:14:01.801Z","message":"m_0001_84243","offset":0,"text":"Fix it. The frame is sound; new brakes and a chain come to about £90, against roughly £600 for a comparable new bike. If the gears still slip after that, revisit."}}
+{"given":{"id":"e_0008_21345","type":"message.ended","at":"2026-10-11T21:14:02.401Z","message":"m_0001_84243","outcome":"completed","length":162}}
+{"given":{"id":"e_0009_40874","type":"turn.ended","at":"2026-10-11T21:14:02.402Z","turn":"t_0001_45831","outcome":"completed"}}
+{"at":0,"app":{"method":"GET","path":"/v0/events","headers":{"Last-Event-ID":"e_0009_40874"}}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":2000,"app":{"method":"POST","path":"/v0/messages","body":{"id":"1b881358-1181-493f-a53a-c5e407dea518","text":"Write my whole Lisbon trip into one document I can print."}}}
+{"at":2000,"event":{"id":"e_0010_57350","type":"message.accepted","at":"2026-10-12T08:41:02.000Z","message":{"id":"1b881358-1181-493f-a53a-c5e407dea518","role":"user","text":"Write my whole Lisbon trip into one document I can print.","at":"2026-10-12T08:41:02.000Z","position":10}}}
+{"at":2000,"server":{"status":201,"body":{"message":{"id":"1b881358-1181-493f-a53a-c5e407dea518","role":"user","text":"Write my whole Lisbon trip into one document I can print.","at":"2026-10-12T08:41:02.000Z","position":10}}}}
+{"at":2000,"event":{"id":"e_0011_18482","type":"turn.started","at":"2026-10-12T08:41:02.000Z","turn":"t_0002_43421","inputs":["1b881358-1181-493f-a53a-c5e407dea518"]}}
+{"at":2300,"event":{"id":"e_0012_32408","type":"step.started","at":"2026-10-12T08:41:02.300Z","step":{"id":"s_0002_20682","turn":"t_0002_43421","kind":"thinking","title":"Thinking it through","at":"2026-10-12T08:41:02.300Z","position":12}}}
+{"at":2300,"event":{"id":"e_0013_30396","type":"turn.status","at":"2026-10-12T08:41:02.300Z","turn":"t_0002_43421","kind":"thinking","label":"Thinking it through"}}
+{"at":3800,"event":{"id":"e_0014_64789","type":"step.ended","at":"2026-10-12T08:41:03.800Z","step":{"id":"s_0002_20682","turn":"t_0002_43421","kind":"thinking","title":"Thought it through","at":"2026-10-12T08:41:02.300Z","position":12,"ended_at":"2026-10-12T08:41:03.800Z","outcome":"completed","duration_ms":1500}}}
+{"at":3800,"event":{"id":"e_0015_83569","type":"message.started","at":"2026-10-12T08:41:03.800Z","message":{"id":"m_0002_09603","role":"agent","kind":"note","turn":"t_0002_43421","text":"","at":"2026-10-12T08:41:03.800Z","position":15}}}
+{"at":3800,"event":{"id":"e_0016_06960","type":"message.delta","at":"2026-10-12T08:41:03.800Z","message":"m_0002_09603","offset":0,"text":"I'll put every day in "}}
+{"at":3920,"event":{"id":"e_0017_83763","type":"message.delta","at":"2026-10-12T08:41:03.920Z","message":"m_0002_09603","offset":22,"text":"one document, with the "}}
+{"at":4040,"event":{"id":"e_0018_66800","type":"message.delta","at":"2026-10-12T08:41:04.040Z","message":"m_0002_09603","offset":45,"text":"bookings at the end."}}
+{"at":4040,"event":{"id":"e_0019_27413","type":"message.ended","at":"2026-10-12T08:41:04.040Z","message":"m_0002_09603","outcome":"completed","length":65}}
+{"at":244040,"event":{"id":"e_0020_04972","type":"turn.status","at":"2026-10-12T08:45:04.040Z","turn":"t_0002_43421","kind":"writing","label":"Writing"}}
+{"at":244040,"event":{"id":"e_0021_81888","type":"message.started","at":"2026-10-12T08:45:04.040Z","message":{"id":"m_0003_93533","role":"agent","kind":"reply","turn":"t_0002_43421","text":"","at":"2026-10-12T08:45:04.040Z","position":21}}}
+{"at":244040,"event":{"id":"e_0022_57193","type":"message.delta","at":"2026-10-12T08:45:04.040Z","message":"m_0003_93533","offset":0,"text":"Your Lisbon document "}}
+{"at":244160,"event":{"id":"e_0023_06307","type":"message.delta","at":"2026-10-12T08:45:04.160Z","message":"m_0003_93533","offset":21,"text":"is ready: four days, "}}
+{"at":244280,"event":{"id":"e_0024_42596","type":"message.delta","at":"2026-10-12T08:45:04.280Z","message":"m_0003_93533","offset":42,"text":"from the tram up to"}}
+{"at":246280,"event":{"id":"e_0025_06915","type":"message.ended","at":"2026-10-12T08:45:06.280Z","message":"m_0003_93533","outcome":"discarded","length":61}}
+{"at":246280,"event":{"id":"e_0026_63409","type":"turn.status","at":"2026-10-12T08:45:06.280Z","turn":"t_0002_43421","kind":"waiting","label":"Reconnecting to the model"}}
+{"at":426280,"app":{"method":"POST","path":"/v0/turns/t_0002_43421/stop"}}
+{"at":426280,"server":{"status":202,"body":{"turn":"t_0002_43421","state":"stopping"}}}
+{"at":426280,"event":{"id":"e_0027_37815","type":"turn.status","at":"2026-10-12T08:48:06.280Z","turn":"t_0002_43421","kind":"stopping","label":"Stopping"}}
+{"at":426430,"event":{"id":"e_0028_29908","type":"turn.ended","at":"2026-10-12T08:48:06.430Z","turn":"t_0002_43421","outcome":"stopped"}}

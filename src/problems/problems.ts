@@ -133,6 +133,24 @@ export const workProblem = (reason: string): Problem => ({
   fix: "Kumo catches up on its own. If it goes on, check Settings › Model, or sign in again with ito login on the server.",
 });
 
+export const pausedId = "kumo:paused";
+
+// Kumo's model reached its plan's usage limit: background work waits until it resets, then Kumo catches up once.
+// It shows at once: the pause has a known end, so there's nothing to wait out.
+export const pausedProblem = (until: string, isKnown: boolean): Problem => ({
+  id: pausedId,
+  area: "kumo",
+  title: isKnown ? `Kumo's paused until ${until}` : `Kumo's paused until about ${until}`,
+  detail: isKnown
+    ? "Your plan's usage limit was reached, so wake-ups and mail wait until it resets. Then Kumo catches up once, " +
+      "and tells you in one message what it missed."
+    : "Your plan's usage limit was reached, and it didn't say when it resets, so Kumo looks again then. Wake-ups " +
+      "and mail wait; once it can work, it catches up once, and tells you in one message what it missed.",
+  fix:
+    "Nothing to do: Kumo picks up on its own. To go on sooner, add usage to your plan; Kumo starts again as soon " +
+    "as a message in the chat goes through.",
+});
+
 export const contactsId = "contacts:icloud";
 
 export const contactsProblem = (reason: string, isAuth: boolean): Problem => ({

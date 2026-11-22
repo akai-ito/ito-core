@@ -7,6 +7,22 @@ export type Address = { readonly address: string; readonly name?: string };
 
 export type Unsubscribe = { readonly post?: string; readonly url?: string; readonly mailto?: string };
 
+// A file a mail carries, as listed when it's read whole: its id, the MIME part number such as `2` or `1.3`, which
+// stays the same each time the mail is read; its name, when it has one; its type and size; and whether it's shown in
+// the mail's words, such as a logo, rather than attached. A calendar invitation says what it asks, such as REQUEST.
+export type MailAttachment = {
+  readonly id: string;
+  readonly filename?: string;
+  readonly contentType: string;
+  readonly size: number;
+  readonly inline: boolean;
+  readonly method?: string;
+};
+
+// Where a mail's words came from, when it was read whole: its plain text, its HTML when it has no plain text, or
+// nowhere, as it has none; and why they couldn't be read, when that's so.
+export type Body = { readonly from: "text" | "html" | "none"; readonly problem?: string };
+
 export type Mail = {
   readonly account: string;
   readonly folder: string;
@@ -27,6 +43,9 @@ export type Mail = {
   readonly fullText?: string;
   readonly unsubscribe?: Unsubscribe;
   readonly flags: readonly string[];
+  // Read whole only: where its words came from, and the files it carries.
+  readonly body?: Body;
+  readonly attachments?: readonly MailAttachment[];
 };
 
 export type Draft = {
@@ -59,6 +78,8 @@ export type MailMeta = {
   readonly uid: number;
   readonly flags: readonly string[];
   readonly receivedAt?: string;
+  // Only its headers were fetched, as for a search, so it has no words or files to tell of.
+  readonly isHeaders?: boolean;
 };
 
 export type RawHeaders = Readonly<Record<string, string | undefined>>;
@@ -203,13 +224,43 @@ export const trimQuoted = (text: string): string => {
 const validDate = (date: Date | undefined): string | undefined =>
   date === undefined || Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 
+// A mail's words: its plain text, or when that's missing or blank, as in rich mail sent as HTML alone inside
+// multipart/related, or with an empty plain-text part beside the HTML, the HTML's own words.
+const wordsOf = (parsed: ParsedMail): { readonly words: string; readonly body: Body } => {
+  const text = parsed.text ?? "";
+  if (text.trim() !== "") return { words: text, body: { from: "text" } };
+  const html = typeof parsed.html === "string" ? parsed.html : "";
+  const fromHtml = html.trim() === "" ? "" : plainText(parseHtml(html));
+  if (fromHtml !== "") return { words: fromHtml, body: { from: "html" } };
+  const failure = parsed.textConversionError;
+  return failure === undefined
+    ? { words: "", body: { from: "none" } }
+    : { words: "", body: { from: "none", problem: `Its HTML couldn't be read as words: ${failure.message}` } };
+};
+
+const toAttachment = (attachment: ParsedMail["attachments"][number], index: number): MailAttachment => {
+  const header = attachment.headers.get("content-type") as
+    { readonly params?: Readonly<Record<string, string>> } | undefined;
+  const calendarMethod = header?.params?.method;
+  return {
+    id: attachment.partId ?? String(index + 1),
+    ...(attachment.filename !== undefined && attachment.filename !== "" && { filename: attachment.filename }),
+    contentType: attachment.contentType.toLowerCase(),
+    size: attachment.size,
+    inline: attachment.related === true || attachment.contentDisposition === "inline",
+    ...(calendarMethod !== undefined && { method: calendarMethod.toUpperCase() }),
+  };
+};
+
 export const toMail = (parsed: ParsedMail, meta: MailMeta): Mail => {
   const [messageId] = toMessageIds(parsed.messageId);
   const [inReplyTo] = toMessageIds(parsed.inReplyTo);
   const [from] = toAddresses(parsed.from);
   const replyTo = toAddresses(parsed.replyTo);
-  const fullText = (parsed.text ?? "").replaceAll("\r\n", "\n").trim();
-  const text = trimQuoted(parsed.text ?? "");
+  const { words, body } = wordsOf(parsed);
+  const fullText = words.replaceAll("\r\n", "\n").trim();
+  const text = trimQuoted(words);
+  const attachments = parsed.attachments.map((attachment, index) => toAttachment(attachment, index));
   const unsubscribe = toUnsubscribe({
     "list-unsubscribe": unfoldHeader(parsed.headerLines, "list-unsubscribe"),
     "list-unsubscribe-post": unfoldHeader(parsed.headerLines, "list-unsubscribe-post"),
@@ -231,14 +282,43 @@ export const toMail = (parsed: ParsedMail, meta: MailMeta): Mail => {
     ...(fullText !== text && { fullText }),
     ...(unsubscribe !== undefined && { unsubscribe }),
     flags: meta.flags,
+    ...(meta.isHeaders !== true && { body }),
+    ...(meta.isHeaders !== true && attachments.length > 0 && { attachments }),
   };
 };
 
-export const parseMail = async (source: Buffer | string, meta: MailMeta): Promise<Mail> =>
-  toMail(
-    await simpleParser(source, { skipTextToHtml: true, skipTextLinks: true, skipImageLinks: true, keepCidLinks: true }),
-    meta,
-  );
+const parserOptions = { skipTextToHtml: true, skipTextLinks: true, skipImageLinks: true, keepCidLinks: true };
+
+const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+// The headers alone: everything before the first blank line.
+const headersOnly = (source: Buffer | string): string => {
+  const text = source.toString("utf8");
+  const end = /\r?\n\r?\n/u.exec(text);
+  return `${end ? text.slice(0, end.index) : text}\r\n\r\n`;
+};
+
+// A mail whose contents can't be parsed is still read by its headers, and says its words couldn't be read, so a
+// parsing failure never passes for an empty mail.
+export const parseMail = async (source: Buffer | string, meta: MailMeta): Promise<Mail> => {
+  try {
+    return toMail(await simpleParser(source, parserOptions), meta);
+  } catch (error) {
+    const mail = toMail(await simpleParser(headersOnly(source), parserOptions), meta);
+    const problem = `Its contents couldn't be parsed: ${describeError(error)}`;
+    return meta.isHeaders === true ? mail : { ...mail, body: { from: "none", problem } };
+  }
+};
+
+// One file a mail carries, by the id its listing gave, with its bytes.
+export type AttachmentContent = MailAttachment & { readonly content: Buffer };
+
+export const attachmentIn = async (source: Buffer | string, id: string): Promise<AttachmentContent | undefined> => {
+  const parsed = await simpleParser(source, parserOptions);
+  const index = parsed.attachments.findIndex((attachment, at) => (attachment.partId ?? String(at + 1)) === id);
+  const found = parsed.attachments[index];
+  return found === undefined ? undefined : { ...toAttachment(found, index), content: found.content };
+};
 
 export const parseSentBody = async (source: Buffer | string): Promise<SentBody> => {
   const parsed = await simpleParser(source, { skipImageLinks: true, keepCidLinks: true });
@@ -265,6 +345,46 @@ const replyReferences = (draft: Pick<Draft, "inReplyTo" | "references">): readon
   ...new Set([...(draft.references ?? []), ...(draft.inReplyTo === undefined ? [] : [draft.inReplyTo])]),
 ];
 
+const isPlainAscii = (text: string): boolean => /^[\u{20}-\u{7E}]*$/u.test(text);
+
+// A file name fit for a quoted parameter: no quotes, backslashes or control characters. It's the name the file
+// reads back with.
+export const attachedName = (name: string): string =>
+  name
+    .split(/(?=[\s\S])/u)
+    .filter((character) => character >= " " && character !== "\u{7F}" && character !== '"' && character !== "\\")
+    .join("")
+    .trim() || "attachment";
+
+// A name as RFC 2231 writes it beyond ASCII: UTF-8, percent-encoded, with the characters it reserves encoded too.
+const percentName = (name: string): string =>
+  encodeURIComponent(name).replaceAll(
+    /['()*]/gu,
+    (character) => `%${(character.codePointAt(0) ?? 0).toString(16).toUpperCase()}`,
+  );
+
+// A file attached to a draft, written out whole, the way mail apps write theirs, so every app loads it: its name
+// quoted in both Content-Type and Content-Disposition, a name beyond ASCII as an encoded word in the one and RFC
+// 2231's single `filename*` in the other (never split into numbered pieces), its size, and its bytes in base64 lines
+// of 76.
+export const attachedPart = ({ filename, contentType, content }: Part): string => {
+  const name = attachedName(filename);
+  const [given = ""] = contentType.split(";", 1);
+  const type = given.trim() === "" ? "application/octet-stream" : given.trim();
+  const isAscii = isPlainAscii(name);
+  const encodedName = isAscii ? name : `=?UTF-8?B?${Buffer.from(name).toString("base64")}?=`;
+  const disposition = isAscii ? `filename="${name}"` : `filename*=UTF-8''${percentName(name)}`;
+  const lines = content.toString("base64").match(/.{1,76}/gu) ?? [];
+  return [
+    `Content-Type: ${type};\r\n name="${encodedName}"`,
+    `Content-Disposition: attachment;\r\n ${disposition};\r\n size=${String(content.length)}`,
+    "Content-Transfer-Encoding: base64",
+    "",
+    ...lines,
+    "",
+  ].join("\r\n");
+};
+
 // Plain text alone, or multipart/alternative with the HTML; pictures shown inline sit with the HTML in
 // multipart/related, by Content-ID, and attached files make it multipart/mixed.
 export const toDraftMime = (draft: Draft, messageId: string, date: Date): Promise<Buffer> => {
@@ -279,7 +399,7 @@ export const toDraftMime = (draft: Draft, messageId: string, date: Date): Promis
       cid,
       contentDisposition: "inline" as const,
     })),
-    ...(draft.attachments ?? []).map(({ filename, contentType, content }) => ({ filename, contentType, content })),
+    ...(draft.attachments ?? []).map((part) => ({ raw: attachedPart(part) })),
   ];
   return new MailComposer({
     from: toMimeAddress(draft.from),

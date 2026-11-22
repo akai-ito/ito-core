@@ -6,11 +6,13 @@ import {
   toAskId,
   toDeviceId,
   toMessageId,
+  toThreadId,
   toTurnId,
   type AskId,
   type DeviceId,
   type EventId,
   type MessageId,
+  type ThreadId,
   type TurnId,
 } from "#conversation/ids.ts";
 import type { Identifiers } from "#identifiers.ts";
@@ -25,20 +27,26 @@ import type {
   Spoken,
   LiveTurn,
   Message,
+  Made,
+  MadeChange,
+  MadeState,
   Motion,
   MotionChange,
   Outcome,
   Problem,
+  Recording,
   Snapshot,
   Status,
   Step,
   StepKind,
-  Topic,
+  Thread,
+  Quote,
   VoiceState,
 } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { AskFields, StepFacts } from "#engine/engine.ts";
 import { project, type LoggedEvent } from "#store/projection.ts";
+import { lineOf } from "#notifications/text.ts";
 
 export type LogEntry = { readonly seq: number; readonly event: LoggedEvent };
 
@@ -57,8 +65,11 @@ export type PendingWork =
 export type StoredTurn = {
   readonly id: TurnId;
   readonly inputs: readonly MessageId[];
+  readonly read: readonly MessageId[];
   readonly hasStartedReply: boolean;
   readonly outcome: Outcome | undefined;
+  // The side thread it answers in; undefined for the main chat.
+  readonly thread: ThreadId | undefined;
 };
 
 export type OpenMessage = { readonly id: MessageId; readonly text: string };
@@ -70,9 +81,42 @@ export type Page = {
   readonly steps: readonly Step[];
   readonly asks: readonly Ask[];
   readonly calls: readonly Call[];
-  readonly topics: readonly Topic[];
+  readonly threads: readonly Thread[];
   readonly hasMore: boolean;
 };
+
+export type ThreadPage = {
+  readonly thread: Thread;
+  readonly anchor: Message | undefined;
+  readonly messages: readonly Message[];
+  readonly steps: readonly Step[];
+  readonly asks: readonly Ask[];
+  readonly turn: LiveTurn | null;
+  readonly next: readonly string[];
+  readonly hasMore: boolean;
+};
+
+export type ThreadList = {
+  readonly open: readonly Thread[];
+  readonly done: readonly Thread[];
+  readonly hasMore: boolean;
+};
+
+// Where a message you send goes: the main chat unless it names a thread, replies to a message, or starts a thread.
+export type Where = {
+  readonly thread?: ThreadId;
+  readonly replyTo?: MessageId;
+  readonly isNewThread?: boolean;
+};
+
+export type ThreadChange = {
+  readonly by: "kumo" | "you";
+  readonly title?: string;
+  readonly result?: string;
+  readonly state?: Thread["state"];
+};
+
+export type MoveFailure = "not_found" | "unknown_thread" | "anchor";
 
 export type Exchange = {
   readonly turn: TurnId;
@@ -81,7 +125,8 @@ export type Exchange = {
   readonly answered: string;
 };
 
-export type AcceptFailure = "id_conflict" | "unknown_attachment" | "attachment_taken" | "call_not_on";
+export type AcceptFailure =
+  "id_conflict" | "unknown_attachment" | "attachment_taken" | "call_not_on" | "unknown_thread" | "unknown_message";
 
 export const onboardingSetting = "onboarding";
 
@@ -126,9 +171,13 @@ export type Store = Settings & {
     attachments?: readonly string[],
     spoken?: SpokenInput,
     done?: string,
+    where?: Where,
   ) => Result<Accepted, AcceptFailure>;
   // A message from Kumo outside any turn; an urgent one is sent time-sensitive.
-  readonly postMessage: (text: string, options?: { readonly isUrgent?: boolean }) => Message;
+  readonly postMessage: (
+    text: string,
+    options?: { readonly isUrgent?: boolean; readonly thread?: ThreadId },
+  ) => Message;
   readonly desk: () => Desk;
   readonly setDesk: (desk: Desk) => void;
   readonly onboarding: () => Onboarding;
@@ -149,10 +198,26 @@ export type Store = Settings & {
   readonly endCall: (id: string, reason?: string) => Call | undefined;
   readonly deleteCallAudio: (id: string) => DeletedAudio | undefined;
   readonly recordVoiceStatus: (state: VoiceState, reason?: string) => void;
+  // Where a recording's transcript stands, for the app to follow.
+  readonly recordRecording: (recording: Recording) => void;
   readonly latestCall: () => Call | undefined;
-  readonly exchanges: (through: TurnId | undefined, limit: number) => readonly Exchange[];
-  readonly listTopics: () => readonly Topic[];
-  readonly startTopic: (position: number, label: string) => Result<Topic, "marked">;
+  readonly exchanges: (through: TurnId | undefined, limit: number, thread?: ThreadId) => readonly Exchange[];
+  // A thread Kumo starts empty, for a post; it sits at the end of the main chat.
+  readonly startThread: (by: Thread["by"], title?: string) => Thread;
+  // Kumo moves messages out of the main chat into a thread of its own, which sits where the first of them was.
+  readonly branchThread: (title: string, messages: readonly MessageId[]) => Result<Thread, "not_found">;
+  readonly changeThread: (thread: ThreadId, change: ThreadChange) => Thread | undefined;
+  readonly seeThread: (thread: ThreadId) => Thread | undefined;
+  readonly moveMessage: (message: MessageId, thread: ThreadId | undefined) => Result<Message, MoveFailure>;
+  readonly findThread: (thread: ThreadId) => Thread | undefined;
+  readonly findMessage: (message: MessageId) => Message | undefined;
+  readonly openThreads: () => readonly Thread[];
+  readonly listThreads: (query: string, before: ThreadId | undefined, limit: number) => ThreadList;
+  readonly threadPage: (thread: ThreadId) => ThreadPage | undefined;
+  // A thread's latest messages, oldest first, that someone would read: yours, Kumo's replies and posts.
+  readonly threadMessages: (thread: ThreadId | undefined, limit: number) => readonly Message[];
+  // Kumo's posts in the main chat or a thread since its last turn there, which that conversation hasn't seen.
+  readonly postsSinceTurn: (thread: ThreadId | undefined) => readonly Message[];
   readonly saveAttachment: (attachment: Attachment, sha256: string) => Result<SavedAttachment, "id_conflict">;
   readonly findAttachment: (id: string) => { readonly attachment: Attachment; readonly sha256: string } | undefined;
   readonly sentAttachment: (sha256: string) => string | undefined;
@@ -184,16 +249,36 @@ export type Store = Settings & {
     readonly before: Readonly<Record<string, unknown>>;
     readonly after: Readonly<Record<string, unknown>>;
   }[];
+  // A page Kumo made, or changed, with its whole content at that version.
+  readonly recordMade: (
+    type: "made.created" | "made.changed",
+    made: Omit<Made, "position"> & { readonly position?: number },
+    note: string,
+    content: Readonly<Record<string, unknown>>,
+  ) => { readonly made: Made; readonly change: MadeChange };
+  readonly setMadeState: (made: string, state: MadeState) => void;
+  readonly removeMade: (made: string) => void;
+  readonly findMade: (made: string) => Made | undefined;
+  readonly listMade: () => readonly Made[];
+  readonly madeChanges: (made: string, limit: number) => readonly MadeChange[];
+  readonly madeState: (made: string) => MadeState;
+  readonly madeContent: (made: string, version: number) => Readonly<Record<string, unknown>> | undefined;
   readonly keepAttachment: (id: string) => void;
   readonly messageAttachments: (message: MessageId) => readonly Attachment[];
   readonly answeredAsk: (message: MessageId) => AskId | undefined;
-  readonly pendingWork: () => readonly PendingWork[];
-  readonly runningTurn: () => StoredTurn | undefined;
+  // What waits in the main chat, or in a thread.
+  readonly pendingWork: (thread?: ThreadId) => readonly PendingWork[];
+  // The running turn in the main chat, or in a thread.
+  readonly runningTurn: (thread?: ThreadId) => StoredTurn | undefined;
+  // Every running turn, wherever it is.
+  readonly runningTurns: () => readonly StoredTurn[];
+  // The threads where something waits to be answered.
+  readonly waitingThreads: () => readonly ThreadId[];
   readonly findTurn: (turn: TurnId) => StoredTurn | undefined;
   readonly openMessage: (turn: TurnId) => OpenMessage | undefined;
   readonly retryFor: (failed: TurnId) => TurnId | undefined;
   readonly requestRetry: (failed: TurnId, turn: TurnId) => TurnId;
-  readonly startTurn: (turn: TurnId, inputs: readonly MessageId[], retryOf?: TurnId) => void;
+  readonly startTurn: (turn: TurnId, inputs: readonly MessageId[], retryOf?: TurnId, thread?: ThreadId) => void;
   readonly setStatus: (turn: TurnId, status: Status) => void;
   readonly markRead: (turn: TurnId, message: MessageId) => void;
   readonly queueMessage: (turn: TurnId, message: MessageId) => void;
@@ -208,7 +293,7 @@ export type Store = Settings & {
   readonly startAsk: (turn: TurnId, fields: AskFields) => Ask;
   readonly cancelAsk: (ask: AskId) => Result<Ask, "not_found">;
   readonly findAsk: (ask: AskId) => Ask | undefined;
-  readonly waitingAsk: () => Ask | undefined;
+  readonly waitingAsk: (thread?: ThreadId) => Ask | undefined;
   readonly registerDevice: (
     id: DeviceId,
     registration: Registration,
@@ -240,6 +325,8 @@ type MessageRow = {
   readonly spoken: string | null;
   readonly done: string | null;
   readonly urgent: number;
+  readonly thread: string | null;
+  readonly quotes: string | null;
 };
 
 type AttachmentRow = { readonly body: string; readonly sha256: string; readonly message: string | null };
@@ -264,6 +351,7 @@ type TurnRow = {
   readonly status: string | null;
   readonly has_started_reply: number;
   readonly outcome: Outcome | null;
+  readonly thread: string | null;
 };
 
 type PendingRow = {
@@ -280,7 +368,8 @@ type StepRow = { readonly body: string };
 const snapshotSize = 50;
 const compactedSetting = "compacted_through_seq";
 
-const compactedTypes = "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed')";
+const compactedTypes =
+  "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed', 'recording.changed')";
 
 const parseIds = (json: string): readonly string[] => JSON.parse(json) as readonly string[];
 
@@ -296,6 +385,8 @@ const toMessage = (row: MessageRow): Message =>
         ...(row.attachments && { attachments: JSON.parse(row.attachments) as Attachment[] }),
         ...(row.spoken && { spoken: JSON.parse(row.spoken) as Spoken }),
         ...(row.done && { done: row.done }),
+        ...(row.thread && { thread: row.thread }),
+        ...(row.quotes && { quotes: JSON.parse(row.quotes) as Quote }),
       }
     : {
         id: row.id,
@@ -309,21 +400,29 @@ const toMessage = (row: MessageRow): Message =>
         ...(row.outcome && { outcome: row.outcome }),
         ...(row.error && { error: JSON.parse(row.error) as ErrorBody }),
         ...(row.urgent === 1 && { urgent: true }),
+        ...(row.thread && { thread: row.thread }),
       };
 
 const toStoredTurn = (row: TurnRow): StoredTurn => ({
   id: toTurnId(row.id),
   inputs: parseIds(row.inputs).map((input) => toMessageId(input)),
+  read: parseIds(row.read).map((input) => toMessageId(input)),
   hasStartedReply: row.has_started_reply === 1,
   outcome: row.outcome ?? undefined,
+  thread: row.thread === null ? undefined : toThreadId(row.thread),
 });
 
-const toLiveTurn = (row: TurnRow): LiveTurn => ({
+// A message the agent took back unfinished, ended discarded, is out of everything read from the conversation.
+const kept = "outcome IS NOT 'discarded'";
+
+const toLiveTurn = (row: TurnRow, startedAt: string | undefined): LiveTurn => ({
   id: row.id,
   inputs: [...parseIds(row.inputs)],
   read: [...parseIds(row.read)],
   ...(row.retry_of && { retry_of: row.retry_of }),
+  ...(startedAt !== undefined && { started_at: startedAt }),
   status: row.status ? (JSON.parse(row.status) as Status) : null,
+  ...(row.thread && { thread: row.thread }),
 });
 
 const toPendingWork = (row: PendingRow): PendingWork =>
@@ -348,6 +447,47 @@ const toDevice = (row: DeviceRow): StoredDevice => ({
 
 export const toKeyId = (notificationKey: string): string =>
   createHash("sha256").update(Buffer.from(notificationKey, "base64")).digest("hex").slice(0, 8);
+
+// The main chat is where `thread` is null, and `IS ?` matches a null parameter too.
+const placeOf = (thread: string | undefined): string | null => thread ?? null;
+
+type ThreadMessageRow = Pick<MessageRow, "id" | "role" | "kind" | "text" | "at" | "attachments" | "position">;
+
+const imagesBlock = /^```ari:images[^\n]*\n(?<body>[\s\S]*?)^```[ \t]*$/mu;
+
+const pageBlock = /^```ari:made\b/mu;
+
+const without = <Value extends object, Key extends keyof Value>(
+  value: Value,
+  ...keys: readonly Key[]
+): Omit<Value, Key> =>
+  Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key as Key))) as Omit<Value, Key>;
+
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, inner: unknown) =>
+    inner !== null && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).toSorted(([left], [right]) => left.localeCompare(right)))
+      : inner,
+  );
+
+// A thread's picture: your first photo in it, or the first picture Kumo found for it.
+const pictureIn = (row: ThreadMessageRow): string | undefined => {
+  if (row.role === "user") {
+    const attached = row.attachments ? (JSON.parse(row.attachments) as readonly Attachment[]) : [];
+    return attached.find((attachment) => attachment.kind === "image")?.id;
+  }
+  const body = imagesBlock.exec(row.text)?.groups?.body;
+  if (body === undefined) return undefined;
+  try {
+    const first = (JSON.parse(body) as { readonly images?: readonly { readonly attachment?: unknown }[] }).images?.[0];
+    return typeof first?.attachment === "string" ? first.attachment : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const isShownRow = (row: ThreadMessageRow): boolean =>
+  (row.role === "user" || row.kind === "reply" || row.kind === "post") && (row.text !== "" || row.attachments !== null);
 
 export const createStore = (database: DatabaseSync, clock: Clock, identifiers: Identifiers): Store => {
   const listeners = createCell<ReadonlySet<Listener>>(new Set());
@@ -394,11 +534,24 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     });
   };
 
-  const stepsFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Step[] =>
+  // When a turn started, from its turn.started in the log, unless that's been compacted away.
+  const turnStartedAt = (turn: string): string | undefined =>
     (
       database
-        .prepare("SELECT body FROM steps WHERE position >= ? AND position < ? ORDER BY position")
-        .all(from, until) as unknown as readonly StepRow[]
+        .prepare(
+          "SELECT at FROM events WHERE type = 'turn.started' AND json_extract(body, '$.turn') = ? ORDER BY seq DESC LIMIT 1",
+        )
+        .get(turn) as { readonly at: string } | undefined
+    )?.at;
+
+  const stepsFrom = (from: number, until: number, thread: string | undefined): readonly Step[] =>
+    (
+      database
+        .prepare(
+          `SELECT steps.body FROM steps JOIN turns ON turns.id = steps.turn
+           WHERE steps.position >= ? AND steps.position < ? AND turns.thread IS ? ORDER BY steps.position`,
+        )
+        .all(from, until, placeOf(thread)) as unknown as readonly StepRow[]
     ).map((row) => toStep(row));
 
   const callsFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Call[] =>
@@ -431,27 +584,37 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     return ended;
   };
 
-  const topicsFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Topic[] =>
+  const threadsWhere = (where: string, ...parameters: readonly (string | number | null)[]): readonly Thread[] =>
     (
-      database
-        .prepare("SELECT body FROM topics WHERE position >= ? AND position < ? ORDER BY position")
-        .all(from, until) as unknown as readonly { readonly body: string }[]
-    ).map((row) => JSON.parse(row.body) as Topic);
+      database.prepare(`SELECT body FROM threads WHERE ${where}`).all(...parameters) as unknown as readonly {
+        readonly body: string;
+      }[]
+    ).map((row) => JSON.parse(row.body) as Thread);
 
-  const asksFrom = (from: number, until = Number.MAX_SAFE_INTEGER): readonly Ask[] =>
+  const threadRow = (id: string): Thread | undefined => threadsWhere("id = ?", id).at(0);
+
+  const anchoredThread = (message: string): Thread | undefined => threadsWhere("anchor = ? LIMIT 1", message).at(0);
+
+  const asksFrom = (from: number, until: number, thread: string | undefined): readonly Ask[] =>
     (
       database
-        .prepare("SELECT body FROM asks WHERE position >= ? AND position < ? ORDER BY position")
-        .all(from, until) as unknown as readonly AskRow[]
+        .prepare(
+          `SELECT asks.body FROM asks JOIN turns ON turns.id = asks.turn
+           WHERE asks.position >= ? AND asks.position < ? AND turns.thread IS ? ORDER BY asks.position`,
+        )
+        .all(from, until, placeOf(thread)) as unknown as readonly AskRow[]
     ).map((row) => toAsk(row));
 
   const askRow = (id: string): (AskRow & { readonly outcome: string | null }) | undefined =>
     database.prepare("SELECT body, outcome FROM asks WHERE id = ?").get(id) as
       (AskRow & { readonly outcome: string | null }) | undefined;
 
-  const waitingRow = (): AskRow | undefined =>
-    database.prepare("SELECT body FROM asks WHERE outcome IS NULL ORDER BY position DESC LIMIT 1").get() as
-      AskRow | undefined;
+  const waitingRow = (thread: string | undefined): AskRow | undefined =>
+    database
+      .prepare(
+        "SELECT body FROM asks WHERE outcome IS NULL AND json_extract(body, '$.thread') IS ? ORDER BY position DESC LIMIT 1",
+      )
+      .get(placeOf(thread)) as AskRow | undefined;
 
   const endAsk = (ask: Ask, outcome: "answered" | "cancelled", answer?: MessageId): Ask => {
     const at = now();
@@ -468,6 +631,71 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
   const turnRow = (id: string): TurnRow | undefined =>
     database.prepare("SELECT * FROM turns WHERE id = ?").get(id) as TurnRow | undefined;
+
+  const putThread = (type: "thread.started" | "thread.changed", thread: Thread): Thread => {
+    append({ id: identifiers.event(), type, at: now(), thread });
+    return thread;
+  };
+
+  const newThread = (
+    by: Thread["by"],
+    position: number,
+    { title, anchor }: { readonly title?: string; readonly anchor?: string } = {},
+  ): Thread => {
+    const at = now();
+    return putThread("thread.started", {
+      id: identifiers.thread(),
+      ...(title !== undefined && title !== "" && { title }),
+      by,
+      state: "open",
+      started_at: at,
+      position,
+      ...(anchor !== undefined && { anchor }),
+      replies: 0,
+      last_at: at,
+    });
+  };
+
+  // A thread's replies, latest time, picture and page follow its messages; `patch` changes the rest. It says so
+  // only when something changed.
+  const refreshThread = (id: string, patch: (thread: Thread) => Thread = (thread) => thread): Thread | undefined => {
+    const before = threadRow(id);
+    if (!before) return undefined;
+    const rows = database
+      .prepare(
+        `SELECT id, role, kind, text, at, attachments, position FROM messages WHERE thread = ? AND ${kept} ORDER BY position`,
+      )
+      .all(id) as unknown as readonly ThreadMessageRow[];
+    const shown = rows.filter((row) => isShownRow(row));
+    const picture = rows.map((row) => pictureIn(row)).find((found) => found !== undefined);
+    const hasPage = shown.some((row) => row.role === "agent" && pageBlock.test(row.text));
+    const after = patch({
+      ...without(before, "picture", "page"),
+      replies: shown.length,
+      last_at: shown.at(-1)?.at ?? before.started_at,
+      ...(picture !== undefined && { picture }),
+      ...(hasPage && { page: true as const }),
+    });
+    return canonical(after) === canonical(before) ? before : putThread("thread.changed", after);
+  };
+
+  const pendingRows = (where: string, ...parameters: readonly (string | null)[]): readonly PendingRow[] =>
+    database
+      .prepare(
+        `SELECT pending.* FROM pending
+         LEFT JOIN messages ON messages.id = pending.message
+         LEFT JOIN turns ON turns.id = pending.retry_of
+         WHERE ${where} ORDER BY pending.position`,
+      )
+      .all(...parameters) as unknown as readonly PendingRow[];
+
+  const pendingIn = (thread: string | undefined): readonly PendingRow[] =>
+    pendingRows("COALESCE(messages.thread, turns.thread) IS ?", placeOf(thread));
+
+  const pageOf = (thread: string | undefined, before: number, limit: number): readonly MessageRow[] =>
+    database
+      .prepare(`SELECT * FROM messages WHERE thread IS ? AND position < ? AND ${kept} ORDER BY position DESC LIMIT ?`)
+      .all(placeOf(thread), before, limit) as unknown as readonly MessageRow[];
 
   const readSetting = (key: string): string | undefined => {
     const row = database.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
@@ -518,16 +746,13 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     snapshot: (reason) => {
       const latest = database.prepare("SELECT seq, id FROM events ORDER BY seq DESC LIMIT 1").get() as
         { readonly seq: number; readonly id: string } | undefined;
-      const rows = database
-        .prepare("SELECT * FROM messages ORDER BY position DESC LIMIT ?")
-        .all(snapshotSize + 1) as unknown as readonly MessageRow[];
+      const rows = pageOf(undefined, Number.MAX_SAFE_INTEGER, snapshotSize + 1);
       const turn = database
-        .prepare("SELECT * FROM turns WHERE outcome IS NULL ORDER BY position DESC LIMIT 1")
+        .prepare("SELECT * FROM turns WHERE outcome IS NULL AND thread IS NULL ORDER BY position DESC LIMIT 1")
         .get() as TurnRow | undefined;
-      const next = database
-        .prepare("SELECT message FROM pending WHERE kind = 'message' ORDER BY position")
-        .all() as unknown as readonly { readonly message: string }[];
+      const next = pendingIn(undefined).flatMap((row) => (row.kind === "message" && row.message ? [row] : []));
       const window = rows.slice(0, snapshotSize).toReversed();
+      const from = (rows[snapshotSize]?.position ?? 0) + 1;
       return {
         seq: latest?.seq ?? 0,
         event: {
@@ -537,12 +762,12 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           reason,
           messages: window.map((row) => toMessage(row)),
           has_more: rows.length > snapshotSize,
-          steps: window[0] ? [...stepsFrom(window[0].position)] : [],
-          asks: window[0] ? [...asksFrom(window[0].position)] : [],
-          calls: [...callsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
-          topics: [...topicsFrom((rows[snapshotSize]?.position ?? 0) + 1)],
-          turn: turn ? toLiveTurn(turn) : null,
-          next: next.map((row) => row.message),
+          steps: window[0] ? [...stepsFrom(window[0].position, Number.MAX_SAFE_INTEGER, undefined)] : [],
+          asks: window[0] ? [...asksFrom(window[0].position, Number.MAX_SAFE_INTEGER, undefined)] : [],
+          calls: [...callsFrom(from)],
+          threads: [...threadsWhere("position >= ? OR state = 'open' ORDER BY position", from)],
+          turn: turn ? toLiveTurn(turn, turnStartedAt(turn.id)) : null,
+          next: next.map((row) => row.message ?? ""),
           desk: currentDesk(),
           ...(currentOnboarding().state !== "done" && { onboarding: currentOnboarding() }),
           ...(currentProblems().length > 0 && { problems: [...currentProblems()] }),
@@ -550,7 +775,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       };
     },
 
-    acceptMessage: (id, text, attachments = [], spoken, done) =>
+    acceptMessage: (id, text, attachments = [], spoken, done, where = {}) =>
       transaction(() => {
         const existing = messageRow(id);
         if (existing) {
@@ -570,7 +795,25 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         if ([...attachedRows, audioRow].some((row) => row !== undefined && row.message !== null))
           return fail("attachment_taken");
         const attached = attachedRows.flatMap((row) => (row ? [JSON.parse(row.body) as Attachment] : []));
-        const waiting = waitingRow();
+        const target = where.replyTo === undefined ? undefined : messageRow(where.replyTo);
+        if (!target && where.replyTo !== undefined) return fail("unknown_message");
+        if (where.thread !== undefined && !threadRow(where.thread)) return fail("unknown_thread");
+        // A reply in the main chat goes into the thread under that message, started now if there's none yet.
+        const thread = target
+          ? (target.thread ??
+            anchoredThread(target.id)?.id ??
+            newThread("you", target.position, { anchor: target.id }).id)
+          : where.isNewThread === true
+            ? newThread("you", nextSeq()).id
+            : where.thread;
+        const quotes: Quote | undefined =
+          target?.thread == null
+            ? undefined
+            : {
+                message: target.id,
+                text: lineOf(target.text, target.attachments ? (JSON.parse(target.attachments) as Attachment[]) : []),
+              };
+        const waiting = waitingRow(thread);
         const at = now();
         const message: Message = {
           id,
@@ -584,13 +827,18 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
             spoken: { call: spoken.call, ...(audioRow && { audio: JSON.parse(audioRow.body) as Attachment }) },
           }),
           ...(done !== undefined && { done }),
+          ...(thread !== undefined && { thread }),
+          ...(quotes && { quotes }),
         };
         append({ id: identifiers.event(), type: "message.accepted", at, message });
         if (waiting) endAsk(toAsk(waiting), "answered", id);
+        // Replying in a thread opens it again, and you've seen what's new there.
+        if (thread !== undefined)
+          refreshThread(thread, (current) => ({ ...without(current, "news", "done"), state: "open" }));
         return ok({ message, isNew: true });
       }),
 
-    postMessage: (text, { isUrgent = false } = {}) =>
+    postMessage: (text, { isUrgent = false, thread } = {}) =>
       transaction(() => {
         const at = now();
         const message: Message = {
@@ -602,8 +850,17 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           position: nextSeq(),
           outcome: "completed",
           ...(isUrgent && { urgent: true }),
+          ...(thread !== undefined && threadRow(thread) && { thread }),
         };
         append({ id: identifiers.event(), type: "message.posted", at, message });
+        // Kumo coming back to a thread moves its line to the end of the main chat, with what's new.
+        if (message.thread !== undefined) {
+          refreshThread(message.thread, (current) => ({
+            ...current,
+            position: message.position,
+            news: { message: message.id, text: lineOf(text), at },
+          }));
+        }
         return message;
       }),
 
@@ -719,6 +976,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       record((stamp) => ({ ...stamp, type: "voice.status", state, ...(reason !== undefined && { reason }) }));
     },
 
+    recordRecording: (recording) => {
+      record((stamp) => ({ ...stamp, type: "recording.changed", recording }));
+    },
+
     deleteCallAudio: (id) =>
       transaction(() => {
         const row = callRow(id);
@@ -739,15 +1000,17 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         return { call: deleted, audio };
       }),
 
-    exchanges: (through, limit) => {
+    exchanges: (through, limit, thread) => {
       const until = through === undefined ? Number.MAX_SAFE_INTEGER : (turnRow(through)?.position ?? -1);
       const rows = database
-        .prepare("SELECT * FROM turns WHERE outcome IS NOT NULL AND position <= ? ORDER BY position DESC LIMIT ?")
-        .all(until, limit) as unknown as readonly TurnRow[];
+        .prepare(
+          "SELECT * FROM turns WHERE outcome IS NOT NULL AND position <= ? AND thread IS ? ORDER BY position DESC LIMIT ?",
+        )
+        .all(until, placeOf(thread), limit) as unknown as readonly TurnRow[];
       return rows.toReversed().map((row) => {
         const inputs = parseIds(row.inputs).flatMap((id) => messageRow(id) ?? []);
         const replies = database
-          .prepare("SELECT text FROM messages WHERE turn = ? AND kind = 'reply' ORDER BY position")
+          .prepare(`SELECT text FROM messages WHERE turn = ? AND kind = 'reply' AND ${kept} ORDER BY position`)
           .all(row.id) as unknown as readonly { readonly text: string }[];
         return {
           turn: toTurnId(row.id),
@@ -758,16 +1021,148 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       });
     },
 
-    listTopics: () => topicsFrom(0),
+    startThread: (by, title) => transaction(() => newThread(by, nextSeq(), { ...(title !== undefined && { title }) })),
 
-    startTopic: (position, label) =>
+    branchThread: (title, messages) =>
       transaction(() => {
-        if (database.prepare("SELECT id FROM topics WHERE position = ?").get(position)) return fail("marked");
-        const at = now();
-        const topic: Topic = { id: identifiers.topic(), label, position, at };
-        append({ id: identifiers.event(), type: "topic.started", at, topic });
-        return ok(topic);
+        const rows = messages
+          .flatMap((message) => messageRow(message) ?? [])
+          .filter((row) => row.thread === null && !anchoredThread(row.id))
+          .toSorted((left, right) => left.position - right.position);
+        const [first] = rows;
+        if (!first) return fail("not_found");
+        const thread = newThread("kumo", first.position, { title });
+        for (const row of rows) {
+          append({
+            id: identifiers.event(),
+            type: "message.moved",
+            at: now(),
+            message: { ...toMessage(row), thread: thread.id },
+          });
+        }
+        return ok(refreshThread(thread.id) ?? thread);
       }),
+
+    changeThread: (thread, { by, title, result, state }) =>
+      transaction(() =>
+        refreshThread(thread, (current) => {
+          const changed = {
+            ...current,
+            ...(title !== undefined && title !== "" && { title }),
+            ...(result !== undefined && result !== "" && { result }),
+          };
+          if (state === undefined || state === current.state) return changed;
+          return state === "done"
+            ? { ...changed, state, done: { at: now(), by } }
+            : { ...without(changed, "done"), state };
+        }),
+      ),
+
+    seeThread: (thread) => transaction(() => refreshThread(thread, (current) => without(current, "news"))),
+
+    moveMessage: (id, thread) =>
+      transaction(() => {
+        const row = messageRow(id);
+        if (!row) return fail("not_found");
+        if (thread !== undefined && !threadRow(thread)) return fail("unknown_thread");
+        if (anchoredThread(id)) return fail("anchor");
+        const from = row.thread ?? undefined;
+        const before = toMessage(row);
+        if (from === thread) return ok(before);
+        const message: Message = { ...without(before, "thread"), ...(thread !== undefined && { thread }) };
+        append({ id: identifiers.event(), type: "message.moved", at: now(), message, ...(from && { from }) });
+        if (from !== undefined) refreshThread(from);
+        if (thread !== undefined) refreshThread(thread);
+        return ok(message);
+      }),
+
+    findThread: (thread) => threadRow(thread),
+
+    findMessage: (message) => {
+      const row = messageRow(message);
+      return row ? toMessage(row) : undefined;
+    },
+
+    openThreads: () => threadsWhere("state = 'open' ORDER BY last_at DESC, id DESC"),
+
+    listThreads: (query, before, limit) => {
+      const words = query
+        .toLowerCase()
+        .split(/\s+/u)
+        .filter(Boolean)
+        .map((word) => `%${word.replaceAll(/[%_\\]/gu, (character) => `\\${character}`)}%`);
+      const matching = words
+        .map(
+          () =>
+            `(lower(COALESCE(json_extract(body, '$.title'), '') || ' ' || COALESCE(json_extract(body, '$.result'), ''))
+              LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages WHERE messages.thread = threads.id
+              AND lower(messages.text) LIKE ? ESCAPE '\\'))`,
+        )
+        .join(" AND ");
+      const filter = matching === "" ? "1" : matching;
+      const parameters = words.flatMap((word) => [word, word]);
+      const anchor = before === undefined ? undefined : threadRow(before);
+      const done = threadsWhere(
+        `state = 'done' AND ${filter} AND (started_at < ? OR (started_at = ? AND id < ?))
+         ORDER BY started_at DESC, id DESC LIMIT ?`,
+        ...parameters,
+        anchor?.started_at ?? "9999",
+        anchor?.started_at ?? "9999",
+        anchor?.id ?? "",
+        limit + 1,
+      );
+      return {
+        open:
+          before === undefined
+            ? threadsWhere(`state = 'open' AND ${filter} ORDER BY last_at DESC, id DESC`, ...parameters)
+            : [],
+        done: done.slice(0, limit),
+        hasMore: done.length > limit,
+      };
+    },
+
+    threadPage: (id) => {
+      const thread = threadRow(id);
+      if (!thread) return;
+      const rows = pageOf(id, Number.MAX_SAFE_INTEGER, snapshotSize + 1);
+      const window = rows.slice(0, snapshotSize).toReversed();
+      const turn = database
+        .prepare("SELECT * FROM turns WHERE outcome IS NULL AND thread = ? ORDER BY position DESC LIMIT 1")
+        .get(id) as TurnRow | undefined;
+      const anchor = thread.anchor === undefined ? undefined : messageRow(thread.anchor);
+      return {
+        thread,
+        anchor: anchor ? toMessage(anchor) : undefined,
+        messages: window.map((row) => toMessage(row)),
+        steps: window[0] ? stepsFrom(window[0].position, Number.MAX_SAFE_INTEGER, id) : [],
+        asks: window[0] ? asksFrom(window[0].position, Number.MAX_SAFE_INTEGER, id) : [],
+        turn: turn ? toLiveTurn(turn, turnStartedAt(turn.id)) : null,
+        next: pendingIn(id).flatMap((row) => (row.kind === "message" && row.message ? row.message : [])),
+        hasMore: rows.length > snapshotSize,
+      };
+    },
+
+    threadMessages: (thread, limit) =>
+      (
+        database
+          .prepare(
+            `SELECT * FROM messages WHERE thread IS ? AND (role = 'user' OR kind IN ('reply', 'post'))
+             AND (text != '' OR attachments IS NOT NULL) AND ${kept} ORDER BY position DESC LIMIT ?`,
+          )
+          .all(placeOf(thread), limit) as unknown as readonly MessageRow[]
+      )
+        .toReversed()
+        .map((row) => toMessage(row)),
+
+    postsSinceTurn: (thread) =>
+      (
+        database
+          .prepare(
+            `SELECT * FROM messages WHERE kind = 'post' AND thread IS ?
+             AND position > COALESCE((SELECT MAX(position) FROM turns WHERE thread IS ?), 0) ORDER BY position`,
+          )
+          .all(placeOf(thread), placeOf(thread)) as unknown as readonly MessageRow[]
+      ).map((row) => toMessage(row)),
 
     latestCall: () => {
       const row = database.prepare("SELECT body FROM calls ORDER BY position DESC LIMIT 1").get() as
@@ -776,19 +1171,22 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     },
 
     listMessages: (before, limit) => {
-      const anchor = database.prepare("SELECT position FROM messages WHERE id = ?").get(before) as
-        { readonly position: number } | undefined;
+      const anchor = database.prepare("SELECT position, thread FROM messages WHERE id = ?").get(before) as
+        { readonly position: number; readonly thread: string | null } | undefined;
       if (!anchor) return fail("not_found");
-      const rows = database
-        .prepare("SELECT * FROM messages WHERE position < ? ORDER BY position DESC LIMIT ?")
-        .all(anchor.position, limit + 1) as unknown as readonly MessageRow[];
+      const thread = anchor.thread ?? undefined;
+      const rows = pageOf(thread, anchor.position, limit + 1);
       const page = rows.slice(0, limit).toReversed();
+      const from = (rows[limit]?.position ?? 0) + 1;
       return ok({
         messages: page.map((row) => toMessage(row)),
-        steps: page[0] ? stepsFrom(page[0].position, anchor.position) : [],
-        asks: page[0] ? asksFrom(page[0].position, anchor.position) : [],
-        calls: callsFrom((rows[limit]?.position ?? 0) + 1, anchor.position),
-        topics: topicsFrom((rows[limit]?.position ?? 0) + 1, anchor.position),
+        steps: page[0] ? stepsFrom(page[0].position, anchor.position, thread) : [],
+        asks: page[0] ? asksFrom(page[0].position, anchor.position, thread) : [],
+        calls: thread === undefined ? callsFrom(from, anchor.position) : [],
+        threads:
+          thread === undefined
+            ? threadsWhere("position >= ? AND position < ? ORDER BY position", from, anchor.position)
+            : [],
         hasMore: rows.length > limit,
       });
     },
@@ -798,7 +1196,9 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     latestMessages: (limit) =>
       (
         database
-          .prepare("SELECT * FROM messages WHERE text != '' ORDER BY position DESC LIMIT ?")
+          .prepare(
+            `SELECT * FROM messages WHERE text != '' AND thread IS NULL AND ${kept} ORDER BY position DESC LIMIT ?`,
+          )
           .all(limit) as unknown as readonly MessageRow[]
       )
         .toReversed()
@@ -822,6 +1222,62 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     removeMotion: (motion) => {
       record((stamp) => ({ ...stamp, type: "motion.removed", motion }));
+    },
+
+    recordMade: (type, given, note, content) =>
+      transaction(() => {
+        const latest = database.prepare("SELECT MAX(position) AS position FROM messages WHERE role = 'user'").get() as {
+          readonly position: number | null;
+        };
+        const position = latest.position ?? nextSeq();
+        const made: Made = { ...given, position: given.position ?? position };
+        const change: MadeChange = { version: made.version, at: made.changed_at, note, position };
+        database
+          .prepare("INSERT OR REPLACE INTO made_contents (made, version, content) VALUES (?, ?, ?)")
+          .run(made.id, made.version, JSON.stringify(content));
+        append({ id: identifiers.event(), type, at: now(), made, change });
+        return { made, change };
+      }),
+
+    setMadeState: (made, state) => {
+      record((stamp) => ({ ...stamp, type: "made.state", made, state }));
+    },
+
+    removeMade: (made) => {
+      record((stamp) => ({ ...stamp, type: "made.removed", made }));
+    },
+
+    findMade: (made) => {
+      const row = database.prepare("SELECT body FROM made WHERE id = ?").get(made) as
+        { readonly body: string } | undefined;
+      return row ? (JSON.parse(row.body) as Made) : undefined;
+    },
+
+    listMade: () =>
+      (
+        database.prepare("SELECT body FROM made ORDER BY changed_at DESC, id").all() as unknown as readonly {
+          readonly body: string;
+        }[]
+      ).map((row) => JSON.parse(row.body) as Made),
+
+    madeChanges: (made, limit) =>
+      (
+        database
+          .prepare("SELECT body FROM made_changes WHERE made = ? ORDER BY version DESC LIMIT ?")
+          .all(made, limit) as unknown as readonly { readonly body: string }[]
+      ).map((row) => JSON.parse(row.body) as MadeChange),
+
+    madeState: (made) => {
+      const row = database.prepare("SELECT state FROM made_states WHERE made = ?").get(made) as
+        { readonly state: string } | undefined;
+      return row ? (JSON.parse(row.state) as MadeState) : {};
+    },
+
+    madeContent: (made, version) => {
+      const row = database
+        .prepare("SELECT content FROM made_contents WHERE made = ? AND version = ?")
+        .get(made, version) as { readonly content: string } | undefined;
+      return row ? (JSON.parse(row.content) as Readonly<Record<string, unknown>>) : undefined;
     },
 
     findMotion: (motion) => {
@@ -893,16 +1349,36 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       return row?.attachments ? (JSON.parse(row.attachments) as Attachment[]) : [];
     },
 
-    pendingWork: () =>
-      (database.prepare("SELECT * FROM pending ORDER BY position").all() as unknown as readonly PendingRow[]).map(
-        (row) => toPendingWork(row),
-      ),
+    pendingWork: (thread) => pendingIn(thread).map((row) => toPendingWork(row)),
 
-    runningTurn: () => {
-      const row = database.prepare("SELECT * FROM turns WHERE outcome IS NULL ORDER BY position DESC LIMIT 1").get() as
-        TurnRow | undefined;
+    runningTurn: (thread) => {
+      const row = database
+        .prepare("SELECT * FROM turns WHERE outcome IS NULL AND thread IS ? ORDER BY position DESC LIMIT 1")
+        .get(placeOf(thread)) as TurnRow | undefined;
       return row ? toStoredTurn(row) : undefined;
     },
+
+    runningTurns: () =>
+      (
+        database
+          .prepare("SELECT * FROM turns WHERE outcome IS NULL ORDER BY position")
+          .all() as unknown as readonly TurnRow[]
+      ).map((row) => toStoredTurn(row)),
+
+    waitingThreads: () => [
+      ...new Set(
+        (
+          database
+            .prepare(
+              `SELECT COALESCE(messages.thread, turns.thread) AS thread FROM pending
+               LEFT JOIN messages ON messages.id = pending.message
+               LEFT JOIN turns ON turns.id = pending.retry_of
+               WHERE COALESCE(messages.thread, turns.thread) IS NOT NULL ORDER BY pending.position`,
+            )
+            .all() as unknown as readonly { readonly thread: string }[]
+        ).map((row) => toThreadId(row.thread)),
+      ),
+    ],
 
     findTurn: (turn) => {
       const row = turnRow(turn);
@@ -933,13 +1409,14 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         return turn;
       }),
 
-    startTurn: (turn, inputs, retryOf) => {
+    startTurn: (turn, inputs, retryOf, thread) => {
       record((stamp) => ({
         ...stamp,
         type: "turn.started",
         turn,
         inputs: [...inputs],
         ...(retryOf && { retry_of: retryOf }),
+        ...(thread !== undefined && { thread }),
       }));
     },
 
@@ -957,10 +1434,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     startMessage: (turn, kind) => {
       const id = identifiers.message();
+      const thread = turnRow(turn)?.thread ?? undefined;
       record((stamp, position) => ({
         ...stamp,
         type: "message.started",
-        message: { id, role: "agent", kind, turn, text: "", at: stamp.at, position },
+        message: { id, role: "agent", kind, turn, text: "", at: stamp.at, position, ...(thread && { thread }) },
       }));
       return id;
     },
@@ -995,11 +1473,36 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     appendText: (message, text) => {
       const row = messageRow(message);
-      record((stamp) => ({ ...stamp, type: "message.delta", message, offset: row?.text.length ?? 0, text }));
+      record((stamp) => ({
+        ...stamp,
+        type: "message.delta",
+        message,
+        offset: row?.text.length ?? 0,
+        text,
+        ...(row?.thread != null && { thread: row.thread }),
+      }));
     },
 
     endMessage: (message, outcome, length, error) => {
-      record((stamp) => ({ ...stamp, type: "message.ended", message, outcome, length, ...(error && { error }) }));
+      transaction(() => {
+        const before = messageRow(message);
+        append({
+          id: identifiers.event(),
+          type: "message.ended",
+          at: now(),
+          message,
+          outcome,
+          length,
+          ...(error && { error }),
+          ...(before?.thread != null && { thread: before.thread }),
+        });
+        const row = messageRow(message);
+        if (row?.thread == null) return;
+        const isNews = row.kind === "reply" && outcome === "completed" && row.text !== "";
+        refreshThread(row.thread, (current) =>
+          isNews ? { ...current, news: { message: row.id, text: lineOf(row.text), at: row.at } } : current,
+        );
+      });
     },
 
     endTurn: (turn, outcome, error) => {
@@ -1008,7 +1511,8 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     startAsk: (turn, fields) =>
       transaction(() => {
-        const waiting = waitingRow();
+        const thread = turnRow(turn)?.thread ?? undefined;
+        const waiting = waitingRow(thread);
         if (waiting) endAsk(toAsk(waiting), "cancelled");
         const at = now();
         const ask: Ask = {
@@ -1022,6 +1526,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           ...(fields.attachments && fields.attachments.length > 0 && { attachments: [...fields.attachments] }),
           at,
           position: nextSeq(),
+          ...(thread !== undefined && { thread }),
         };
         append({ id: identifiers.event(), type: "ask.started", at, ask });
         return ask;
@@ -1039,8 +1544,8 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       return row ? toAsk(row) : undefined;
     },
 
-    waitingAsk: () => {
-      const row = waitingRow();
+    waitingAsk: (thread) => {
+      const row = waitingRow(thread);
       return row ? toAsk(row) : undefined;
     },
 
@@ -1071,7 +1576,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     lastReply: (turn) => {
       const row = database
         .prepare(
-          "SELECT id, text FROM messages WHERE turn = ? AND kind = 'reply' AND text != '' ORDER BY position DESC LIMIT 1",
+          `SELECT id, text FROM messages WHERE turn = ? AND kind = 'reply' AND text != '' AND ${kept} ORDER BY position DESC LIMIT 1`,
         )
         .get(turn) as { readonly id: string; readonly text: string } | undefined;
       return row ? { id: toMessageId(row.id), text: row.text } : undefined;

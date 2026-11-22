@@ -54,6 +54,11 @@ export const registerTools = (app: FastifyInstance, { token, tools, command, ver
     handle(request, reply, { run: request.params.run }),
   );
 
+  app.post<{ Body: McpMessage; Params: { readonly thread: string } }>(
+    `${toolsPath}/thread/:thread`,
+    async (request, reply) => handle(request, reply, { thread: request.params.thread }),
+  );
+
   app.get(toolsPath, (_request, reply) => reply.code(405).header("allow", "POST").send());
 
   app.post(commandsPath, async (request, reply) => {
