@@ -506,7 +506,7 @@ export const createServer = (options: ServerOptions): Server => {
     attachments,
     voice,
     voiceprint: () => voiceprints.load(),
-    work: (prompt) => runWork(prompt),
+    work: workFor("Recordings they sent that you hadn't read yet"),
     workspace: path.join(options.dataDirectory, "workspace"),
     clock,
     info,

@@ -75,7 +75,7 @@ const start = async ({
         undefined,
         (prompt) => {
           prompts.update((current) => [...current, prompt]);
-          return Promise.resolve(fail("The test has Kumo do nothing here."));
+          return Promise.resolve(fail({ code: "engine_failed", detail: "The test has Kumo do nothing here." }));
         },
       ),
     ...(hasVoice && {
