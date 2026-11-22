@@ -87,8 +87,13 @@ export const createThreads = ({ store, spoken, branched }: ThreadsOptions): Thre
       "<thread>",
       `You're in a side thread with them, ${nameOf(thread)} (${thread.id}), ${thread.state === "done" ? "marked done" : "open"}.`,
       "It's a conversation of its own: answer here. The main chat and their other threads go on without it, and",
-      "you don't need to repeat here what's said there. When its question is answered or its task is finished, mark it",
-      "done with update_thread and a one-line result.",
+      "you don't need to repeat here what's said there. Its line shows under its name in their list of threads: keep",
+      'it to where it stands now, in a few words such as "3 of 9 spotted" or "Waiting for a restock in your size",',
+      "with update_thread's result whenever that changes. When its question is answered or its task is finished,",
+      "mark it done with a line on how it ended.",
+      thread.result === undefined
+        ? "It has no line yet: give it one once you've answered."
+        : `Its line now: “${thread.result}”.`,
       ...(anchor
         ? ["", `They started it by replying to this message in the main chat:`, toLine(anchor, readLength)]
         : []),

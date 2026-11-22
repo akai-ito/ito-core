@@ -3767,7 +3767,7 @@ export interface components {
       /** @description Kumo's line for you: where it stands, short, such as "Virtual 1 · Python PR review" or "6–9 Nov · 3 to book". Kumo keeps it current with every change, and keeps sources, guesses and ids out of it, in the content's notes. Once it's finished, it says how it ended, such as "No offer after the final round". */
       summary: string;
       /**
-       * @description `done` once Kumo stops keeping it: tracking ended, which isn't the same as achieving it. `outcome` says how it ended.
+       * @description `done` once Kumo stops keeping it: tracking ended, which isn't the same as achieving it. `outcome` says how it ended. A trip is done by itself once its last day is over where it happens, with no `outcome` until Kumo gives it one.
        * @enum {unknown}
        */
       status: "active" | "done";
@@ -3787,7 +3787,7 @@ export interface components {
       /** @description When it was finished. Absent while it's active. */
       done_at?: components["schemas"]["Timestamp"];
       /**
-       * @description How it ended, once it's done: `achieved`; `not_met`, a goal missed; `let_go`, stopped by choice; `merged` into another thing; or one never to show, kept only to recover: `duplicate`, a copy of another thing, `test`, and `elsewhere`, small admin that lives on the Desk and in Kumo's plans now. Absent for a thing finished before 0.19 until Kumo gives it one: show it as ended, never as achieved. Show a value you don't recognise as ended.
+       * @description How it ended, once it's done: `achieved`; `not_met`, a goal missed; `let_go`, stopped by choice; `merged` into another thing; or one never to show, kept only to recover: `duplicate`, a copy of another thing, `test`, and `elsewhere`, small admin that lives on the Desk and in Kumo's plans now. Absent for a thing finished before 0.19, or a trip that ended by itself, until Kumo gives it one: show it as ended, never as achieved. Show a value you don't recognise as ended.
        * @enum {unknown}
        */
       outcome?: "achieved" | "not_met" | "let_go" | "merged" | "duplicate" | "test" | "elsewhere";
@@ -3841,6 +3841,8 @@ export interface components {
       changed_at: components["schemas"]["Timestamp"];
       /** @description The position of your message Ari was answering when it made the page: "From your chat" links back to it. */
       position: components["schemas"]["Position"];
+      /** @description The side thread it was made in: "From your thread" opens it, with its name. Absent when it was made in the main chat. */
+      thread?: components["schemas"]["ThreadId"];
     };
     /** @description Lowercase words and dashes, unique on the page, such as `trajans-column`. */
     MadeItemId: string;

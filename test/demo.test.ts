@@ -60,6 +60,15 @@ describe("the demo engine", () => {
     expect(events.at(-1)).toEqual({ type: "ended" });
   });
 
+  it("leaves a steered word that does something to a turn of its own, and takes anything else", () => {
+    const script = demoScripts(turn, [{ messageId: toMessageId("u_demo"), text: "hello" }], 0);
+
+    expect(script.steer({ messageId: toMessageId("u_trip"), text: "Start a trip" }, 100)).toEqual({
+      outcome: "refused",
+    });
+    expect(script.steer({ messageId: toMessageId("u_more"), text: "make it shorter" }, 200).outcome).toBe("taken");
+  });
+
   it("asks a question or an approval on its keywords, then ends the turn", async () => {
     const asked = await runToEnd("Please ask me something");
     expect(asked.slice(-2)).toMatchObject([
@@ -191,11 +200,57 @@ describe("the demo engine's things in motion", () => {
       await send("start my training");
       await send("I booked it");
 
-      expect(server.store.listMotions().map(({ id, version, summary }) => ({ id, version, summary }))).toEqual([
-        { id: "florence-with-mira", version: 2, summary: "6–9 Nov · 3 to book" },
-        { id: "sub-20-5k", version: 1, summary: "Week 6 of 10 · intervals today" },
-      ]);
+      // The act can outlast the reply on a busy machine.
+      await vi.waitFor(
+        () => {
+          expect(
+            server.store.listMotions().map(({ id, version, status, summary }) => ({ id, version, status, summary })),
+          ).toEqual([
+            {
+              id: "florence-with-mira",
+              version: 2,
+              status: "active",
+              summary: expect.stringMatching(/^\d+(?: \w+)?–\d+ \w+ · 3 to book$/u) as unknown,
+            },
+            { id: "sub-20-5k", version: 1, status: "active", summary: "Week 6 of 10 · intervals today" },
+          ]);
+        },
+        { timeout: 15_000, interval: 100 },
+      );
       expect(server.store.findMotion("florence-with-mira")?.cover).toMatch(/^f_/u);
+      // A week or two from now, so it's still to come rather than over and in History.
+      const detail = await server.motions.detail("florence-with-mira");
+      if (!detail.ok) throw new Error(detail.failure.detail);
+      const starts = Date.parse((detail.value.content.dates as { readonly start: string }).start);
+      expect(starts).toBeGreaterThan(Date.now());
+      expect(starts).toBeLessThan(Date.now() + 15 * 24 * 60 * 60 * 1000);
+      expect(new Date(starts).getUTCDay()).toBe(5);
+    } finally {
+      await close();
+    }
+  });
+
+  it("starts the trip from a word sent while another turn is still going, as a turn of its own", async () => {
+    const { server, close } = await openDemo();
+
+    try {
+      for (const text of ["show me motion", "Start a trip page for Florence with Mira"]) {
+        const accepted = server.store.acceptMessage(toMessageId(randomUUID()), text);
+        if (!accepted.ok) throw new Error(accepted.failure);
+        server.turns.route(toMessageId(accepted.value.message.id), text);
+      }
+
+      await vi.waitFor(
+        () => {
+          expect(server.store.findMotion("florence-with-mira")?.status).toBe("active");
+        },
+        { timeout: 30_000, interval: 100 },
+      );
+      const replies = server.store
+        .latestMessages(20)
+        .filter(({ role }) => role === "agent")
+        .map(({ text }) => text);
+      expect(replies.some((text) => text.startsWith("Got it"))).toBe(false);
     } finally {
       await close();
     }
@@ -248,7 +303,11 @@ describe("the demo engine's replies that show", () => {
         .map(({ text }) => text);
       expect(posts.some((text) => text.includes("```ari:picks") && text.includes("```ari:table"))).toBe(true);
       expect(posts.some((text) => text.includes('```ari:made\n{"made":"gallery-guide"}'))).toBe(true);
-      expect(posts.some((text) => text.includes('```ari:desk\n{"card":"k_'))).toBe(true);
+      const cards = posts.flatMap((text) => text.matchAll(/```ari:desk\n\{"card":"(?<card>[^"]*)"\}/gu).toArray());
+      expect(cards.map((match) => match.groups?.card)).toEqual([
+        expect.stringMatching(/^k_/u),
+        expect.stringMatching(/^k_/u),
+      ]);
       expect(server.store.findMade("gallery-guide")).toMatchObject({
         version: 1,
         summary: "3 rooms · 4 things to spot",

@@ -227,7 +227,10 @@ export const createWorkTools = ({ post, desk, isTrack, clock = systemClock }: Wo
       const card = toCard(input, clock.now());
       if (typeof card === "string") return Promise.resolve(failed(card));
       const added = desk.addCard(card);
-      return Promise.resolve({ text: `Put ${added.title} on the Desk as ${added.id}. ${waitingNow(desk)}` });
+      return Promise.resolve({
+        text: `Put ${added.title} on the Desk as ${added.id}. ${waitingNow(desk)}`,
+        structured: { card: added.id },
+      });
     },
   },
   {

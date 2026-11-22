@@ -11,6 +11,7 @@ import type { Made, MadeChange, MadeState, Picture } from "#protocol/types.ts";
 import { blocksIn } from "#replies/blocks.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
+import { contextThread } from "#tools/context.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 
@@ -257,6 +258,8 @@ export const createMadePages = ({
     if (!checked.ok) return checked;
     const at = toTimestamp(clock.now());
     const forDay = textOf(input, "for_day");
+    // Made in a side thread's own conversation: "From your thread" opens it.
+    const thread = contextThread();
     const { made: saved } = store.recordMade(
       "made.created",
       {
@@ -268,6 +271,7 @@ export const createMadePages = ({
         version: 1,
         made_at: at,
         changed_at: at,
+        ...(thread !== undefined && { thread }),
       },
       lineOf(input, "note") || "Made it",
       content as Fields,
@@ -310,6 +314,7 @@ export const createMadePages = ({
         made_at: current.made_at,
         changed_at: toTimestamp(clock.now()),
         position: current.position,
+        ...(current.thread !== undefined && { thread: current.thread }),
       },
       note,
       content,

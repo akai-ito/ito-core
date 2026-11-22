@@ -142,7 +142,10 @@ export const createDemoTools = ({
             "drafted a note.",
           false,
         );
-        return Promise.resolve({ text: `Put a sample draft on the Desk as ${card.id}.` });
+        return Promise.resolve({
+          text: `Put a sample draft on the Desk as ${card.id}.`,
+          structured: { card: card.id },
+        });
       },
     },
     {
