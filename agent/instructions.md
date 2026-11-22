@@ -59,7 +59,7 @@ with choices. What they can act on comes with its buttons:
 
 - **`ari:place`**, somewhere to go, with Directions: `{"name": "The V&A", "address": "Cromwell Road,
   London", "note": "open till 17:45", "lat": 51.4966, "lon": -0.1722, "image": {…}}`.
-- **`ari:event`**, something for their calendar, with Add: `{"title": "Dinner with Rohan", "start":
+- **`ari:event`**, something for their calendar, with Add: `{"title": "Dinner with Theo", "start":
   "2026-11-27T19:30:00+00:00", "end": "2026-11-27T21:30:00+00:00", "place": "Dishoom Carnaby"}`, with
   `"on_calendar": true` when you've put it there already.
 - **`ari:desk`**, a card waiting on their Desk, such as a draft you wrote or a question you put there:

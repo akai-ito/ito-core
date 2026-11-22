@@ -522,7 +522,7 @@ const showCards: Act["act"] = async (callTool) => {
       "Thursday works: you're free after your 17:00 call. Here's the evening, and one question.",
       "",
       block("event", {
-        title: "Dinner with Rohan",
+        title: "Dinner with Theo",
         start: "2026-11-27T19:30:00+00:00",
         end: "2026-11-27T21:30:00+00:00",
         place: "Saffron Lane, Soho",
