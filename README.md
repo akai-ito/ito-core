@@ -187,8 +187,21 @@ talks to an `Engine` of ten functions ([engine.ts](src/engine/engine.ts)): start
 interrupt it, answer an approval, a structured completion, and a piece of background work. Codex's
 own protocol stops at the adapter ([codex-engine.ts](src/engine/codex/codex-engine.ts)), the words
 on Kumo's trail come from Ito's own tables rather than from Codex, and a scripted engine stands in
-for tests and the demo. The conversation is one long-lived Codex thread in a `workspace-write`
-sandbox; background work and quick judgements run in short-lived threads of their own.
+for tests and the demo. The main chat and each side thread are long-lived Codex threads in a
+`workspace-write` sandbox; background work and quick judgements run in short-lived threads of their
+own.
+
+### Side threads, each a conversation of its own
+
+The main chat is your life with Kumo; a subject of its own goes in a side thread beside it. Each
+thread is a conversation of its own on Codex, with its own turns, so talking in one never steers
+another aside, and threads run at the same time ([lanes.ts](src/threads/lanes.ts)). A thread sees
+the in-mind pages plus a short digest of the main chat and the other open threads, written from the
+store, never by a model ([threads.ts](src/threads/threads.ts)). Kumo branches one with a tool when a
+message is a clear one-off, a new subject or long work, moving the message in; replying to a message
+in the main chat starts one under it, and the app can start one too. Kumo marks a thread done when
+it's settled, and its background work comes back to an open one by posting there. Threads replace
+the old topic labels; earlier messages stay in the main chat as they were.
 
 ### Tools: a small MCP surface, the rest as commands and skills
 

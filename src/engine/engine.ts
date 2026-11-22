@@ -1,4 +1,4 @@
-import type { MessageId, TurnId } from "#conversation/ids.ts";
+import type { MessageId, ThreadId, TurnId } from "#conversation/ids.ts";
 import type { Ask, ModelChoice, ModelOption, Step, StepKind } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 
@@ -92,7 +92,8 @@ export type WorkOptions = {
 };
 
 export type Engine = {
-  readonly start: (turn: TurnId, inputs: readonly Input[]) => AsyncIterable<EngineEvent>;
+  // A turn in the main chat's conversation, or in a side thread's: each its own, and they run at the same time.
+  readonly start: (turn: TurnId, inputs: readonly Input[], thread?: ThreadId) => AsyncIterable<EngineEvent>;
   readonly steer: (turn: TurnId, input: Input) => Promise<SteerOutcome>;
   readonly interrupt: (turn: TurnId) => Promise<void>;
   readonly approve: (turn: TurnId, key: string, isAllowed: boolean) => void;
@@ -103,6 +104,8 @@ export type Engine = {
   // reached, or when it never said.
   readonly usageResetsAt: () => number | undefined;
   readonly restart: () => Promise<void>;
+  // Gets one conversation unstuck: its turn is dropped at once, and the engine restarts only once nothing else runs.
+  readonly reset: (thread: ThreadId | undefined) => Promise<void>;
   readonly refresh: () => Promise<void>;
   readonly models: () => Promise<Result<readonly ModelOption[], string>>;
   readonly close: () => Promise<void>;

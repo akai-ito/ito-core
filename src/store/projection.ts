@@ -13,8 +13,8 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       const { message } = event;
       database
         .prepare(
-          `INSERT INTO messages (id, position, role, text, at, answers, attachments, spoken, done)
-            VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO messages (id, position, role, text, at, answers, attachments, spoken, done, thread, quotes)
+            VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           message.id,
@@ -25,6 +25,8 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
           message.attachments?.length ? toJson(message.attachments) : null,
           message.spoken ? toJson(message.spoken) : null,
           message.done ?? null,
+          message.thread ?? null,
+          message.quotes ? toJson(message.quotes) : null,
         );
       const attached = [...(message.attachments ?? []), ...(message.spoken?.audio ? [message.spoken.audio] : [])];
       for (const attachment of attached) {
@@ -72,8 +74,10 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
     case "message.started": {
       const { message } = event;
       database
-        .prepare("INSERT INTO messages (id, position, role, kind, turn, text, at) VALUES (?, ?, 'agent', ?, ?, '', ?)")
-        .run(message.id, seq, message.kind ?? "reply", message.turn ?? null, message.at);
+        .prepare(
+          "INSERT INTO messages (id, position, role, kind, turn, text, at, thread) VALUES (?, ?, 'agent', ?, ?, '', ?, ?)",
+        )
+        .run(message.id, seq, message.kind ?? "reply", message.turn ?? null, message.at, message.thread ?? null);
       if (message.kind === "reply") {
         database.prepare("UPDATE turns SET has_started_reply = 1 WHERE id = ?").run(message.turn ?? null);
       }
@@ -109,8 +113,8 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
     }
     case "turn.started": {
       database
-        .prepare("INSERT INTO turns (id, position, inputs, retry_of) VALUES (?, ?, ?, ?)")
-        .run(event.turn, seq, toJson(event.inputs), event.retry_of ?? null);
+        .prepare("INSERT INTO turns (id, position, inputs, retry_of, thread) VALUES (?, ?, ?, ?, ?)")
+        .run(event.turn, seq, toJson(event.inputs), event.retry_of ?? null, event.thread ?? null);
       for (const input of event.inputs) database.prepare("DELETE FROM pending WHERE message = ?").run(input);
       database.prepare("DELETE FROM pending WHERE turn = ?").run(event.turn);
       return;
@@ -188,20 +192,40 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
     case "voice.status": {
       return;
     }
-    case "topic.started": {
-      const { topic } = event;
+    case "thread.started":
+    case "thread.changed": {
+      const { thread } = event;
       database
-        .prepare("INSERT INTO topics (id, position, body) VALUES (?, ?, ?)")
-        .run(topic.id, topic.position, toJson(topic));
+        .prepare(
+          `INSERT INTO threads (id, position, state, started_at, last_at, anchor, body) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET position = excluded.position, state = excluded.state,
+             last_at = excluded.last_at, body = excluded.body`,
+        )
+        .run(
+          thread.id,
+          thread.position,
+          thread.state,
+          thread.started_at,
+          thread.last_at,
+          thread.anchor ?? null,
+          toJson(thread),
+        );
+      return;
+    }
+    case "message.moved": {
+      database
+        .prepare("UPDATE messages SET thread = ? WHERE id = ?")
+        .run(event.message.thread ?? null, event.message.id);
       return;
     }
     case "message.posted": {
       const { message } = event;
       database
         .prepare(
-          "INSERT INTO messages (id, position, role, kind, text, at, outcome, urgent) VALUES (?, ?, 'agent', 'post', ?, ?, 'completed', ?)",
+          `INSERT INTO messages (id, position, role, kind, text, at, outcome, urgent, thread)
+            VALUES (?, ?, 'agent', 'post', ?, ?, 'completed', ?, ?)`,
         )
-        .run(message.id, seq, message.text, message.at, message.urgent === true ? 1 : 0);
+        .run(message.id, seq, message.text, message.at, message.urgent === true ? 1 : 0, message.thread ?? null);
       return;
     }
     case "onboarding.changed": {

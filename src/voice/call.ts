@@ -1,9 +1,9 @@
 import type { Attachments } from "#attachments/attachments.ts";
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
-import { toMessageId, type MessageId } from "#conversation/ids.ts";
+import { toMessageId, toTurnId, type MessageId } from "#conversation/ids.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Store } from "#store/store.ts";
+import type { LogEntry, Store } from "#store/store.ts";
 import type { Info, Log, Turns } from "#turns/turns.ts";
 import { heardRate, toWav, type Heard, type Listening, type VoiceLoop } from "#voice/loop.ts";
 import type { Voiceprints } from "#voice/voiceprints.ts";
@@ -169,8 +169,18 @@ export const createCallStream = (options: CallOptions): CallStream => {
     send({ type: "stop_playback" });
   };
 
+  // A call is in the main chat: what happens in a side thread meanwhile isn't said aloud.
+  const isInThread = (event: LogEntry["event"]): boolean => {
+    if (event.type === "turn.started" || event.type === "turn.status" || event.type === "turn.ended") {
+      return store.findTurn(toTurnId(event.turn))?.thread !== undefined;
+    }
+    if (event.type === "message.started") return event.message.thread !== undefined;
+    return event.type === "ask.started" && event.ask.thread !== undefined;
+  };
+
   const followAgent = (): (() => void) =>
     store.subscribe(({ event }) => {
+      if (isInThread(event)) return;
       switch (event.type) {
         case "turn.started": {
           isAgentWorking.set(true);
@@ -222,7 +232,9 @@ export const createCallStream = (options: CallOptions): CallStream => {
         case "call.ended":
         case "call.audio_deleted":
         case "voice.status":
-        case "topic.started":
+        case "thread.started":
+        case "thread.changed":
+        case "message.moved":
         case "motion.started":
         case "motion.changed":
         case "motion.finished":

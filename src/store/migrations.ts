@@ -272,4 +272,25 @@ export const migrations: readonly string[] = [
   WHERE EXISTS (SELECT 1 FROM motions);`,
   // What Kumo learnt about them from a change to memory, in a line to them: only real learnings, never housekeeping.
   `ALTER TABLE memory_changes ADD COLUMN learnt TEXT;`,
+  // 0.19: side threads replace topics. Each message and turn may belong to a thread; the main chat is the rest, so
+  // every earlier message stays where it was, readable as before. The topic labels, their events and the labeller's
+  // progress go: threads by day take their place from here on.
+  `CREATE TABLE threads (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    last_at TEXT NOT NULL,
+    anchor TEXT,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX threads_by_position ON threads (position);
+  CREATE INDEX threads_by_start ON threads (started_at, id);
+  ALTER TABLE messages ADD COLUMN thread TEXT;
+  ALTER TABLE messages ADD COLUMN quotes TEXT;
+  CREATE INDEX messages_by_thread ON messages (thread, position);
+  ALTER TABLE turns ADD COLUMN thread TEXT;
+  DROP TABLE topics;
+  DELETE FROM events WHERE type = 'topic.started';
+  DELETE FROM settings WHERE key = 'topics_history';`,
 ];

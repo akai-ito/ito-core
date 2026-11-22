@@ -1,6 +1,6 @@
 import { createCell } from "#cell.ts";
 import type { Clock } from "#clock.ts";
-import { toTurnId } from "#conversation/ids.ts";
+import { toThreadId, toTurnId } from "#conversation/ids.ts";
 import { isRefusal, type Apns } from "#notifications/apns.ts";
 import { sealNotification, type Sealed } from "#notifications/crypto.ts";
 import { toFailedText, toFirstLine } from "#notifications/text.ts";
@@ -122,29 +122,49 @@ export const createNotifier = ({
     deliveries.set(deliverAfter(deliveries.get(), notification, level));
   };
 
+  // Where it happened, so a tap opens the thread there; nothing for the main chat.
+  const placeOf = (thread: string | undefined): Pick<Notification, "thread" | "thread_title"> => {
+    if (thread === undefined) return {};
+    const title = store.findThread(toThreadId(thread))?.title;
+    return { thread, ...(title !== undefined && { thread_title: title }) };
+  };
+
   const onTurnEnded = (event: Extract<LogEntry["event"], { readonly type: "turn.ended" }>): void => {
     const hasAsked = askingTurns.get().has(event.turn);
     askingTurns.update((current) => new Set([...current].filter((turn) => turn !== event.turn)));
+    const place = placeOf(store.findTurn(toTurnId(event.turn))?.thread);
     if (event.outcome === "failed" && event.error) {
-      notify({ kind: "failed", text: toFailedText(event.error.message), turn: event.turn });
+      notify({ kind: "failed", text: toFailedText(event.error.message), turn: event.turn, ...place });
       return;
     }
     const reply = !hasAsked && event.outcome === "completed" ? store.lastReply(toTurnId(event.turn)) : undefined;
-    if (reply)
-      notify({ kind: "reply", text: toFirstLine(withoutBlocks(reply.text)), turn: event.turn, message: reply.id });
+    if (reply) {
+      notify({
+        kind: "reply",
+        text: toFirstLine(withoutBlocks(reply.text)),
+        turn: event.turn,
+        message: reply.id,
+        ...place,
+      });
+    }
   };
 
   const onEvent = ({ event }: LogEntry): void => {
     if (event.type === "message.posted") {
       notify(
-        { kind: "post", text: toFirstLine(withoutBlocks(event.message.text)), message: event.message.id },
+        {
+          kind: "post",
+          text: toFirstLine(withoutBlocks(event.message.text)),
+          message: event.message.id,
+          ...placeOf(event.message.thread),
+        },
         event.message.urgent === true ? "time-sensitive" : "active",
       );
       return;
     }
     if (event.type === "ask.started") {
       askingTurns.update((current) => new Set([...current, event.ask.turn]));
-      notify({ kind: "ask", text: event.ask.question, ask: toAskPart(event.ask) });
+      notify({ kind: "ask", text: event.ask.question, ask: toAskPart(event.ask), ...placeOf(event.ask.thread) });
       return;
     }
     if (event.type === "turn.ended") onTurnEnded(event);

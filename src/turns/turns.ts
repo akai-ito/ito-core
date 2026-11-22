@@ -53,6 +53,11 @@ export type Turns = {
   readonly recordStep: (kind: StepKind, facts: StepFacts) => boolean;
   readonly cancelAsk: (ask: AskId) => Result<Ask, "not_found">;
   readonly recover: () => void;
+  // Ends the running turn quietly, as finished and without another word, such as once Kumo hands its subject to a
+  // side thread. False when nothing is running.
+  readonly handOff: () => boolean;
+  // Starts on whatever waits, if nothing is running, such as a message moved in from elsewhere.
+  readonly wake: () => void;
   readonly settled: () => Promise<void>;
   readonly close: () => Promise<void>;
 };
@@ -719,6 +724,19 @@ export const createTurns = (
         if (!turn.hasStartedReply) store.endMessage(store.startMessage(turn.id, "reply"), "interrupted", 0);
         store.endTurn(turn.id, "interrupted");
       }
+      void enqueue(drain);
+    },
+
+    handOff: () => {
+      const state = running.get();
+      if (state?.phase !== "running") return false;
+      endOpenMessage(state.id);
+      change(state.id, (latest) => ({ ...latest, phase: "asking", buffered: "" }));
+      endAfterAsking(state.id);
+      return true;
+    },
+
+    wake: () => {
       void enqueue(drain);
     },
 

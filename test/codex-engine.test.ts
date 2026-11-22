@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createCell } from "#cell.ts";
-import { toMessageId, toTurnId, type TurnId } from "#conversation/ids.ts";
-import { createCodexEngine, threadSetting } from "#engine/codex/codex-engine.ts";
+import { toMessageId, toThreadId, toTurnId, type TurnId } from "#conversation/ids.ts";
+import { createCodexEngine, threadSetting, threadSettingFor } from "#engine/codex/codex-engine.ts";
 import { choiceSetting } from "#engine/engine.ts";
 import type { Engine, EngineEvent, Input } from "#engine/engine.ts";
 import { createAskTool } from "#asks/tool.ts";
@@ -511,6 +511,29 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(done.ok).toBe(true);
     expect(light).toEqual({ model: "gpt-6-luna", effort: "medium" });
     expect(currentModel().lastRun()).toEqual({ model: "gpt-6.1-sol", effort: "low" });
+  });
+
+  it("runs a side thread's turn in a conversation of its own, beside the main chat's", async () => {
+    const main = settings.setting(threadSetting);
+    const side = toThreadId("h_test_side");
+    const collect = async (events: AsyncIterable<EngineEvent>): Promise<readonly EngineEvent[]> => {
+      const seen = createCell<readonly EngineEvent[]>([]);
+      for await (const event of events) if (event.type !== "progress") seen.update((current) => [...current, event]);
+      return seen.get();
+    };
+    turnCount.update((count) => count + 1);
+    const inMain = collect(currentEngine().start(currentTurn(), [toInput("[[reply]] Anything for today?")]));
+    turnCount.update((count) => count + 1);
+    const inSide = collect(currentEngine().start(currentTurn(), [toInput("[[reply]] What's on this menu?")], side));
+
+    const [mainEvents, sideEvents] = await Promise.all([inMain, inSide]);
+
+    expect(mainEvents.at(-1)).toEqual({ type: "ended" });
+    expect(sideEvents.at(-1)).toEqual({ type: "ended" });
+    expect(settings.setting(threadSetting)).toBe(main);
+    expect(settings.setting(threadSettingFor(side))).toBeDefined();
+    expect(settings.setting(threadSettingFor(side))).not.toBe(main);
+    expect(logged.get()).toEqual([]);
   });
 
   it("answers a one-off prompt in a side thread, as JSON in the shape asked for", async () => {

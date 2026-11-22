@@ -11,7 +11,15 @@ import { toCommandError, type CommandFailureCode } from "#conversation/failures.
 import { accountSetting, effortSetting, modelSetting, readChoice } from "#engine/engine.ts";
 import { readApnsCredentials } from "#notifications/apns.ts";
 import type { Host } from "#capabilities/host.ts";
-import { toAskId, toDeviceId, toMessageId, toTurnId } from "#conversation/ids.ts";
+import {
+  toAskId,
+  toDeviceId,
+  toMessageId,
+  toThreadId,
+  toTurnId,
+  type MessageId,
+  type ThreadId,
+} from "#conversation/ids.ts";
 import { createToken, hashToken, type Gate } from "#http/auth.ts";
 import { registerCapabilities } from "#http/capabilities.ts";
 import { registerMemory } from "#http/memory.ts";
@@ -32,6 +40,7 @@ import type { VoiceLoop } from "#voice/loop.ts";
 import type { Calls } from "#voice/calls.ts";
 import type { Voiceprints } from "#voice/voiceprints.ts";
 import { registerStream } from "#http/stream.ts";
+import { registerThreads } from "#http/threads.ts";
 import { createEventStream } from "#http/events.ts";
 import { createValidatorCompiler, toRouteSchemas, type RouteSchema } from "#http/validation.ts";
 import { protocolVersion, type Schemas } from "#protocol/schemas.ts";
@@ -67,6 +76,8 @@ export type AppOptions = {
   readonly places: Pick<Places, "report" | "held" | "timeZone">;
   readonly calendar: Calendar;
   readonly onLeadRenamed: () => void;
+  // You moved a message between the main chat and a thread, or between threads.
+  readonly moved: (message: MessageId, from: ThreadId | undefined, to: ThreadId | undefined) => void;
   readonly gettingStarted: GettingStarted;
   readonly logger: FastifyServerOptions["logger"];
 };
@@ -88,6 +99,9 @@ type SendBody = {
   readonly text?: string;
   readonly attachments?: readonly string[];
   readonly done?: string;
+  readonly thread?: string;
+  readonly reply_to?: string;
+  readonly new_thread?: true;
 };
 
 const maxReplay = 2000;
@@ -125,6 +139,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     calendar,
     onLeadRenamed,
     gettingStarted,
+    moved,
     logger,
   } = options;
   const protocol = protocolVersion(schemas.document);
@@ -236,6 +251,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerModel(app, { settings: store, models, schemaFor });
   registerTalk(app, { store, attachments, voice, calls, voiceprints, schemaFor });
   registerStream(app, { store, calls, voice, protocol });
+  registerThreads(app, { store, moved, schemaFor });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);
@@ -264,8 +280,20 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   );
 
   app.post<{ Body: SendBody }>("/v0/messages", { schema: schemaFor("sendMessage") }, async (request, reply) => {
-    const { id, text = "", attachments: attached = [], done } = request.body;
-    const accepted = store.acceptMessage(toMessageId(id), text, attached, undefined, done);
+    const {
+      id,
+      text = "",
+      attachments: attached = [],
+      done,
+      thread,
+      reply_to: replyTo,
+      new_thread: isNew,
+    } = request.body;
+    const accepted = store.acceptMessage(toMessageId(id), text, attached, undefined, done, {
+      ...(thread !== undefined && { thread: toThreadId(thread) }),
+      ...(replyTo !== undefined && { replyTo: toMessageId(replyTo) }),
+      ...(isNew === true && { isNewThread: true }),
+    });
     if (!accepted.ok) {
       switch (accepted.failure) {
         case "unknown_attachment": {
@@ -283,6 +311,12 @@ export const createApp = (options: AppOptions): FastifyInstance => {
         }
         case "call_not_on": {
           return reply.code(400).send(toErrorResult("invalid_request", "That call isn't on."));
+        }
+        case "unknown_thread": {
+          return reply.code(400).send(toErrorResult("invalid_request", `No thread ${thread ?? ""}.`));
+        }
+        case "unknown_message": {
+          return reply.code(400).send(toErrorResult("invalid_request", `No message ${replyTo ?? ""} to reply to.`));
         }
         case "id_conflict": {
           return reply
@@ -309,7 +343,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
             steps: page.value.steps,
             asks: page.value.asks,
             calls: page.value.calls,
-            topics: page.value.topics,
+            threads: page.value.threads,
             has_more: page.value.hasMore,
           }
         : reply

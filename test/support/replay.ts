@@ -567,13 +567,20 @@ export const replay = async (name: string): Promise<void> => {
       }
       case "agent_calls": {
         await advance(time);
-        const { tool, input, returns } = step as unknown as {
+        const { tool, input, returns, thread } = step as unknown as {
           readonly tool: string;
           readonly input: unknown;
           readonly returns?: unknown;
+          readonly thread?: string;
         };
-        const called = await (live.get()?.server.callTool(tool, ids.translate(withLiveVersion(input))) ??
-          Promise.resolve(undefined));
+        const called = await (live
+          .get()
+          ?.server.callTool(
+            tool,
+            ids.translate(withLiveVersion(input)),
+            undefined,
+            thread === undefined ? undefined : ids.translate(thread),
+          ) ?? Promise.resolve(undefined));
         check(called?.isError === true ? `${tool} failed: ${called.text}` : undefined, index);
         if (returns !== undefined) check(ids.match(returns, called?.structured), index);
         return;
@@ -656,9 +663,9 @@ export const replay = async (name: string): Promise<void> => {
         await settle();
         return;
       }
-      case "topic_decided": {
-        const { label } = step as unknown as { readonly label: string };
-        asides.update((current) => [...current, { changed: true, label }]);
+      case "thread_named": {
+        const { title } = step as unknown as { readonly title: string };
+        asides.update((current) => [...current, { title }]);
         await advance(time);
         return;
       }

@@ -3,7 +3,7 @@
 {"at":0,"world":"web_has","url":"https://api.open-meteo.com/v1/forecast?latitude=40.7&longitude=-74.0&current=temperature_2m,weather_code,is_day&daily=sunset&timezone=auto&forecast_days=1","json":{"utc_offset_seconds":-18000,"current":{"temperature_2m":12.6,"weather_code":1,"is_day":1},"daily":{"sunset":["2026-11-14T16:42"]}}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
-{"at":0,"event":{"type":"snapshot","at":"2026-11-14T08:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"topics":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-14T08:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"threads":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
 {"at":0,"app":{"method":"PUT","path":"/v0/devices/4a5a96a8-ee97-44da-8861-b0b3cfadb828","body":{"apns_token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","environment":"production","notification_key":"MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="}}}
 {"at":0,"server":{"status":201,"body":{"device":{"id":"4a5a96a8-ee97-44da-8861-b0b3cfadb828","environment":"production","key_id":"861009ec","registered_at":"2026-11-14T08:00:00.000Z"}}}}
 {"at":1000,"world":"agent_calls","tool":"set_wake_up","input":{"what":"Shape the day with you if it's unplanned","why":"You asked for a look at each weekday morning.","repeat":{"days":["mon","tue","wed","thu","fri"],"time":"09:00"},"asked":true,"source":{"kind":"chat","title":"“Look at my day with me each weekday morning”"}}}

@@ -5,6 +5,7 @@ import type { Approval } from "#capabilities/manifest.ts";
 import type { AskFields } from "#engine/engine.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
+import { contextThread } from "#tools/context.ts";
 
 export type CapabilityApprovalsOptions = {
   readonly store: Pick<Store, "sentAttachment" | "runningTurn">;
@@ -26,7 +27,7 @@ export const createCapabilityApprovals =
     if (strangers.length > 0) {
       return fail(`Only pictures the person sent can go out, and ${strangers.join(", ")} isn't one.`);
     }
-    if (!store.runningTurn()) return fail("Ari can only ask while it's answering them.");
+    if (!store.runningTurn(contextThread())) return fail("Ari can only ask while it's answering them.");
     const attachments = shown.flatMap(({ attachment }) => attachment ?? []);
     return ok(
       await approve({

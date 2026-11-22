@@ -1,14 +1,14 @@
 import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
-import type { TurnId } from "#conversation/ids.ts";
+import type { ThreadId, TurnId } from "#conversation/ids.ts";
 import type { Complete, Engine, EngineEvent, Input, SteerOutcome } from "#engine/engine.ts";
 import { demoModels } from "#engine/scripted/models.ts";
 import type { ModelOption } from "#protocol/types.ts";
 import { fail, ok } from "#result.ts";
 import type { ToolResult } from "#tools/mcp.ts";
 
-export type CallTool = (name: string, input: unknown, run?: string) => Promise<ToolResult>;
+export type CallTool = (name: string, input: unknown, run?: string, thread?: string) => Promise<ToolResult>;
 
 export type Act = { readonly at: number; readonly act: (callTool: CallTool) => Promise<void> };
 
@@ -23,11 +23,12 @@ export type TurnScript = {
   readonly stoppedAt: (requestedAt: number) => number;
 };
 
-export type ScriptSource = (turn: TurnId, inputs: readonly Input[], now: number) => TurnScript;
+export type ScriptSource = (turn: TurnId, inputs: readonly Input[], now: number, thread?: ThreadId) => TurnScript;
 
 type Scheduled = { readonly at: number; readonly event: EngineEvent; readonly cancel: Cancel };
 
 type Playing = {
+  readonly thread: ThreadId | undefined;
   readonly queue: AsyncQueue<EngineEvent>;
   readonly script: TurnScript;
   readonly scheduled: readonly Scheduled[];
@@ -104,15 +105,17 @@ export const createScriptEngine = (
     complete,
     work,
     usageResetsAt,
-    start: (turn, inputs) => {
+    start: (turn, inputs, thread) => {
       const queue = createAsyncQueue<EngineEvent>();
-      const script = scriptFor(turn, inputs, clock.now());
+      const script = scriptFor(turn, inputs, clock.now(), thread);
+      // A turn's tools act in its own conversation, as a real engine's do.
+      const inPlace: CallTool = (name, input, run, given) => callTool(name, input, run, given ?? thread);
       const acting = (script.acts ?? []).map(({ at, act }) =>
         clock.after(Math.max(0, at - clock.now()), () => {
-          void act(callTool);
+          void act(inPlace);
         }),
       );
-      playing.update((turns) => new Map([...turns, [turn, { queue, script, scheduled: [], acting }]]));
+      playing.update((turns) => new Map([...turns, [turn, { thread, queue, script, scheduled: [], acting }]]));
       schedule(turn, script.events);
       return queue;
     },
@@ -138,6 +141,11 @@ export const createScriptEngine = (
     models: () => Promise.resolve(ok(models)),
     restart: () => {
       for (const turn of playing.get().keys()) finish(turn);
+      return Promise.resolve();
+    },
+
+    reset: (thread) => {
+      for (const [turn, current] of playing.get()) if (current.thread === thread) finish(turn);
       return Promise.resolve();
     },
 

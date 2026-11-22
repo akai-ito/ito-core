@@ -5,13 +5,17 @@ import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 
 export type WorkToolsOptions = {
-  // Messages them in the conversation; every message notifies them, and an urgent one breaks through their Focus.
-  readonly post: (text: string, isUrgent: boolean) => Message;
+  // Messages them in the main chat, or in a side thread; every message notifies them, and an urgent one breaks
+  // through their Focus. A thread that isn't there gives undefined.
+  readonly post: (text: string, isUrgent: boolean, place: PostPlace) => Message | undefined;
   readonly desk: DeskKeeper;
   // Whether a learning track is open, by id.
   readonly isTrack: (id: string) => boolean;
   readonly clock?: Clock;
 };
+
+// Where a post goes: an existing thread, a new thread with this title, or the main chat.
+export type PostPlace = { readonly thread?: string; readonly newThread?: string };
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
@@ -141,13 +145,17 @@ export const createWorkTools = ({ post, desk, isTrack, clock = systemClock }: Wo
     title: "Message them",
     audience: "work",
     description:
-      "Message the person in the conversation, such as a snag in their plans or how something went: it notifies " +
-      "their phone at once, and their Focus decides whether it makes a sound. One message per thing, in plain words; " +
-      "say nothing when nothing's worth their attention.",
+      "Message the person, such as a snag in their plans or how something went: it notifies their phone at once, and " +
+      "their Focus decides whether it makes a sound. One message per thing, in plain words; say nothing when nothing's " +
+      "worth their attention. What's about one of their open threads goes in that thread (`thread`), which moves to " +
+      "the end of their chat with your line; something new that will need its own back-and-forth, such as a booking " +
+      "you're chasing, can start a thread (`new_thread`). Everything else goes in the main chat.",
     inputSchema: {
       type: "object",
       properties: {
         text: { type: "string", description: "One or two lines, plain words." },
+        thread: { type: "string", description: "The id of the open thread it's about, from <threads>." },
+        new_thread: { type: "string", description: "Start a thread for it with this title, of one to five words." },
         urgent: {
           type: "boolean",
           description:
@@ -161,8 +169,19 @@ export const createWorkTools = ({ post, desk, isTrack, clock = systemClock }: Wo
     call: (input) => {
       const text = textOf(input, "text").trim();
       if (text === "") return Promise.resolve(failed("Give the message's text."));
-      const message = post(text, fieldOf(input, "urgent") === true);
-      return Promise.resolve({ text: `Sent as ${message.id}.` });
+      const thread = textOf(input, "thread").trim();
+      const newThread = textOf(input, "new_thread").replaceAll(/\s+/gu, " ").trim();
+      if (thread !== "" && newThread !== "")
+        return Promise.resolve(failed("Post in a thread, or start one: not both."));
+      if (newThread.split(" ").length > 5) return Promise.resolve(failed("A thread's title is one to five words."));
+      const message = post(text, fieldOf(input, "urgent") === true, {
+        ...(thread !== "" && { thread }),
+        ...(newThread !== "" && { newThread }),
+      });
+      if (!message) return Promise.resolve(failed(`There's no thread ${thread}.`));
+      return Promise.resolve({
+        text: message.thread === undefined ? `Sent as ${message.id}.` : `Sent as ${message.id}, in ${message.thread}.`,
+      });
     },
   },
   {

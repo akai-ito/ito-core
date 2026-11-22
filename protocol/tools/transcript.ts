@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { isImage, readDimensions } from "#attachments/media.ts";
-import { createCell } from "#cell.ts";
-import { toFailedText, toFirstLine } from "#notifications/text.ts";
+import { createCell, type Cell } from "#cell.ts";
+import { lineOf, toFailedText, toFirstLine } from "#notifications/text.ts";
 import { mergePatch } from "#motion/changes.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import type {
@@ -19,7 +19,7 @@ import type {
   DeskLine,
   Onboarding,
   Problem,
-  Topic,
+  Thread,
   Error as ErrorBody,
   LiveTurn,
   Message,
@@ -67,7 +67,15 @@ type SendOptions = {
   readonly isLost?: boolean;
   readonly attachments?: readonly string[];
   readonly done?: string;
+  // Into a side thread, as a reply to a message (into the thread under it, or quoted in its thread), or starting one.
+  readonly thread?: string;
+  readonly replyTo?: string;
+  readonly newThread?: boolean;
 };
+
+type PostOptions = { readonly isUrgent?: boolean; readonly thread?: string; readonly newThread?: string };
+
+type ThreadChange = { readonly title?: string; readonly result?: string; readonly state?: "open" | "done" };
 
 type NewCard = Omit<Card, "id" | "at">;
 
@@ -125,7 +133,7 @@ export type Transcript = {
   readonly connect: (options?: { readonly headers?: HttpHeaders }) => void;
   readonly disconnect: (marker: string, fields?: Fields) => void;
   readonly stall: (durationMs: number) => void;
-  readonly exchange: (user: string, agent: string, files?: readonly string[], topic?: string) => Exchange;
+  readonly exchange: (user: string, agent: string, files?: readonly string[], where?: SendOptions) => Exchange;
   readonly callExchange: (user: string, agent: string, recording: string) => string;
   readonly send: (text: string, options?: SendOptions) => string;
   readonly startTurn: (inputs: readonly string[], options?: { readonly retryOf?: string }) => string;
@@ -151,8 +159,8 @@ export type Transcript = {
   readonly showPairingCode: (code: string) => void;
   readonly pair: (code: string, deviceName: string, token: string) => void;
   readonly listMessages: (before: string, limit: number) => void;
-  // A message Kumo posts outside a turn; an urgent one is time-sensitive.
-  readonly post: (text: string, options?: { readonly isUrgent?: boolean }) => string;
+  // A message Kumo posts outside a turn, in the main chat or a thread; an urgent one is time-sensitive.
+  readonly post: (text: string, options?: PostOptions) => string;
   readonly desk: () => Desk;
   readonly getDesk: () => void;
   readonly calendarItem: (item: NewCalendarItem) => CalendarItem;
@@ -201,7 +209,20 @@ export type Transcript = {
   readonly hangUp: () => void;
   readonly voiceFails: (reason: string) => void;
   readonly streamTimesOut: () => void;
-  readonly topic: (label: string, message: string) => string;
+  // Runs the steps in a side thread's conversation: its turn, its messages, its asks.
+  readonly inThread: <Value>(thread: string, work: () => Value) => Value;
+  // The thread a message is in, or the latest thread started.
+  readonly threadOf: (message: string) => string | undefined;
+  readonly latestThread: () => string;
+  // Kumo moves messages out of the main chat's running turn into a thread of their own; they wait there for its turn.
+  readonly branch: (title: string, messages: readonly string[]) => string;
+  // Kumo keeps a thread up to date: done or open, its result, its name.
+  readonly changeThread: (thread: string, change: ThreadChange) => Thread;
+  readonly patchThread: (thread: string, change: ThreadChange) => void;
+  readonly seeThread: (thread: string) => void;
+  readonly moveMessage: (message: string, thread?: string) => void;
+  readonly getThread: (thread: string) => void;
+  readonly listThreads: (query?: string) => void;
   readonly keptImage: (file: string, name: string) => string;
   readonly motion: (
     type: "started" | "changed" | "finished",
@@ -215,7 +236,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "p" | "k" | "d" | "w" | "l" | "v" | "n";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "h" | "k" | "d" | "w" | "l" | "v" | "n";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -248,8 +269,29 @@ type Projection = {
   readonly steps: ReadonlyMap<string, Step>;
   readonly asks: ReadonlyMap<string, Ask>;
   readonly calls: ReadonlyMap<string, Call>;
-  readonly topics: ReadonlyMap<string, Topic>;
+  readonly threads: ReadonlyMap<string, Thread>;
+  // The side thread each turn answers in; absent for the main chat.
+  readonly turnThreads: ReadonlyMap<string, string>;
 };
+
+// One conversation's live state: the main chat's, or a side thread's.
+type Conversation = {
+  readonly turn: LiveTurn | undefined;
+  readonly next: readonly string[];
+  readonly writing: string | undefined;
+  readonly runningSteps: ReadonlyMap<string, RunningStep>;
+  readonly waiting: string | undefined;
+};
+
+const idle: Conversation = {
+  turn: undefined,
+  next: [],
+  writing: undefined,
+  runningSteps: new Map(),
+  waiting: undefined,
+};
+
+const mainChat = "";
 
 type SnapshotReason = "no_cursor" | "cursor_unknown" | "too_far_behind";
 
@@ -313,9 +355,19 @@ const projectEvent = (projection: Projection, event: Event): Projection => {
       const call = event.call as Call;
       return { ...projection, calls: new Map(projection.calls).set(call.id, call) };
     }
-    case "topic.started": {
-      const topic = event.topic as Topic;
-      return { ...projection, topics: new Map(projection.topics).set(topic.id, topic) };
+    case "thread.started":
+    case "thread.changed": {
+      const thread = event.thread as Thread;
+      return { ...projection, threads: new Map(projection.threads).set(thread.id, thread) };
+    }
+    case "message.moved": {
+      const message = event.message as Message;
+      return { ...projection, byId: new Map(byId).set(message.id, message) };
+    }
+    case "turn.started": {
+      return typeof event.thread === "string"
+        ? { ...projection, turnThreads: new Map(projection.turnThreads).set(event.turn as string, event.thread) }
+        : projection;
     }
     case "call.audio_deleted": {
       const call = event.call as Call;
@@ -372,7 +424,8 @@ const project = (log: readonly Event[]): Projection =>
     steps: new Map(),
     asks: new Map(),
     calls: new Map(),
-    topics: new Map(),
+    threads: new Map(),
+    turnThreads: new Map(),
   });
 
 const positionBefore = (order: readonly string[], byId: ReadonlyMap<string, Message>, index: number): number =>
@@ -414,7 +467,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacfpkdwlvn]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfhkdwlvn]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -431,7 +484,7 @@ const toCounters = (log: readonly Event[]): Counters => {
     a: highest("a"),
     c: highest("c"),
     f: highest("f"),
-    p: highest("p"),
+    h: highest("h"),
     k: highest("k"),
     d: highest("d"),
     w: highest("w"),
@@ -441,6 +494,16 @@ const toCounters = (log: readonly Event[]): Counters => {
   };
 };
 
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, inner: unknown) =>
+    inner !== null && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).toSorted(([left], [right]) => left.localeCompare(right)))
+      : inner,
+  );
+
+const omit = (thread: Thread, ...keys: readonly (keyof Thread)[]): Thread =>
+  Object.fromEntries(Object.entries(thread).filter(([key]) => !keys.includes(key as keyof Thread))) as Thread;
+
 // A small model of the server's event log. Scenarios drive it the way the server and an app would,
 // and it records what crosses the API, so offsets, ids and delivery after a disconnect can't drift.
 export const createTranscript = (header: Header): Transcript => {
@@ -448,7 +511,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({
     boot: 1,
-    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, p: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0 },
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, h: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0 },
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
@@ -461,12 +524,41 @@ export const createTranscript = (header: Header): Transcript => {
   const isConnected = createCell(false);
   const cursor = createCell<string | undefined>(undefined);
   const stallUntil = createCell<number | undefined>(undefined);
-  const turn = createCell<LiveTurn | undefined>(undefined);
-  const next = createCell<readonly string[]>([]);
-  const writing = createCell<string | undefined>(undefined);
-  const runningSteps = createCell<ReadonlyMap<string, RunningStep>>(new Map());
+  // The main chat and each side thread have their own turn, Next, writing, steps and ask; the steps a scenario takes
+  // act on the one it's in.
+  const conversations = createCell<ReadonlyMap<string, Conversation>>(new Map());
+  const place = createCell(mainChat);
+  const conversationIn = (key: string): Conversation => conversations.get().get(key) ?? idle;
+  const lens = <Key extends keyof Conversation>(key: Key): Cell<Conversation[Key]> => ({
+    get: () => conversationIn(place.get())[key],
+    set: (value) => {
+      conversations.update(
+        (current) => new Map([...current, [place.get(), { ...conversationIn(place.get()), [key]: value }]]),
+      );
+    },
+    update: (change) => {
+      const value = change(conversationIn(place.get())[key]);
+      conversations.update(
+        (current) => new Map([...current, [place.get(), { ...conversationIn(place.get()), [key]: value }]]),
+      );
+      return value;
+    },
+  });
+  const inPlace = <Value>(key: string, work: () => Value): Value => {
+    const before = place.get();
+    place.set(key);
+    try {
+      return work();
+    } finally {
+      place.set(before);
+    }
+  };
+  const turn = lens("turn");
+  const next = lens("next");
+  const writing = lens("writing");
+  const runningSteps = lens("runningSteps");
   const retries = createCell<ReadonlyMap<string, string>>(new Map());
-  const waiting = createCell<string | undefined>(undefined);
+  const waiting = lens("waiting");
   const device = createCell<Device | undefined>(undefined);
   const attachments = createCell<ReadonlyMap<string, Attachment>>(new Map());
   const pairingCodes = createCell<ReadonlySet<string>>(new Set());
@@ -576,10 +668,14 @@ export const createTranscript = (header: Header): Transcript => {
   };
 
   const snapshot = (reason: SnapshotReason): void => {
-    const { order, byId, steps, asks, calls, topics } = project(log.get());
+    const { order: everywhere, byId, steps, asks, calls, threads, turnThreads } = project(log.get());
+    const order = everywhere.filter((id) => byId.get(id)?.thread === undefined);
     const latest = latestEventId();
     const messages = order.slice(-messagesPerSnapshot).flatMap((id) => byId.get(id) ?? []);
     const first = messages[0]?.position;
+    const from = positionBefore(order, byId, order.length - messagesPerSnapshot) + 1;
+    const isMain = ({ turn: owner }: { readonly turn: string }): boolean => !turnThreads.has(owner);
+    const main = conversationIn(mainChat);
     addStep({
       event: {
         ...(latest && { id: latest }),
@@ -588,12 +684,16 @@ export const createTranscript = (header: Header): Transcript => {
         reason,
         messages,
         has_more: order.length > messagesPerSnapshot,
-        steps: first === undefined ? [] : between(steps, first),
-        asks: first === undefined ? [] : between(asks, first),
-        calls: callsFrom(calls, positionBefore(order, byId, order.length - messagesPerSnapshot) + 1),
-        topics: between(topics, positionBefore(order, byId, order.length - messagesPerSnapshot) + 1),
-        turn: turn.get() ?? null,
-        next: next.get(),
+        steps: first === undefined ? [] : between(steps, first).filter(isMain),
+        asks: first === undefined ? [] : between(asks, first).filter(isMain),
+        calls: callsFrom(calls, from),
+        threads: threads
+          .values()
+          .filter((thread) => thread.position >= from || thread.state === "open")
+          .toArray()
+          .toSorted((left, right) => left.position - right.position),
+        turn: main.turn ?? null,
+        next: main.next,
         desk: deskState.get(),
         ...(onboardingState.get().state !== "done" && { onboarding: onboardingState.get() }),
         ...(problemsState.get().length > 0 && { problems: [...problemsState.get()] }),
@@ -624,7 +724,7 @@ export const createTranscript = (header: Header): Transcript => {
     isConnected.set(false);
     const model = callModel.get();
     if (!model || !["offline", "app_closed"].includes(marker)) return;
-    const state = model.state === "speaking" ? (turn.get() ? "working" : "listening") : model.state;
+    const state = model.state === "speaking" ? (conversationIn(mainChat).turn ? "working" : "listening") : model.state;
     callModel.set({ ...model, isAttached: false, unplayed: [], state });
   };
 
@@ -647,6 +747,16 @@ export const createTranscript = (header: Header): Transcript => {
     addStep({ push: { device: current.id, level, notification } });
   };
 
+  // The thread this conversation is, or undefined in the main chat.
+  const threadHere = (): string | undefined => (place.get() === mainChat ? undefined : place.get());
+
+  // Where a notification happened, so a tap opens the thread.
+  const placeFields = (thread: string | undefined): Pick<Notification, "thread" | "thread_title"> => {
+    if (thread === undefined) return {};
+    const title = project(log.get()).threads.get(thread)?.title;
+    return { thread, ...(title !== undefined && { thread_title: title }) };
+  };
+
   const askById = (id: string): Ask => {
     const found = project(log.get()).asks.get(id);
     if (!found) throw new Error(`unknown ask ${id}`);
@@ -664,9 +774,10 @@ export const createTranscript = (header: Header): Transcript => {
     if (turn.get()) throw new Error("a turn is already running");
     const id = newId("t");
     const retry = options.retryOf ? { retry_of: options.retryOf } : {};
-    turn.set({ id, inputs: [...inputs], read: [], ...retry, status: null });
+    const thread = threadHere();
+    turn.set({ id, inputs: [...inputs], read: [], ...retry, status: null, ...(thread !== undefined && { thread }) });
     next.update((current) => current.filter((message) => !inputs.includes(message)));
-    emit("turn.started", { turn: id, inputs, ...retry });
+    emit("turn.started", { turn: id, inputs, ...retry, ...(thread !== undefined && { thread }) });
     return id;
   };
 
@@ -759,8 +870,18 @@ export const createTranscript = (header: Header): Transcript => {
     const running = runningTurn();
     const id = newId("m");
     writing.set(id);
+    const thread = threadHere();
     emit("message.started", {
-      message: { id, role: "agent", kind, turn: running.id, text: "", at: timestamp(), position: nextPosition() },
+      message: {
+        id,
+        role: "agent",
+        kind,
+        turn: running.id,
+        text: "",
+        at: timestamp(),
+        position: nextPosition(),
+        ...(thread !== undefined && { thread }),
+      },
     });
     return id;
   };
@@ -771,7 +892,13 @@ export const createTranscript = (header: Header): Transcript => {
     const pieces = splitIntoPieces(text, options.pieces);
     for (const [index, piece] of pieces.entries()) {
       if (index > 0) wait(options.everyMs ?? defaultPieceIntervalMs);
-      emit("message.delta", { message: id, offset: messageById(id).text.length, text: piece });
+      const { thread } = messageById(id);
+      emit("message.delta", {
+        message: id,
+        offset: messageById(id).text.length,
+        text: piece,
+        ...(thread !== undefined && { thread }),
+      });
     }
   };
 
@@ -779,8 +906,21 @@ export const createTranscript = (header: Header): Transcript => {
     const id = writing.get();
     if (!id) throw new Error("no message is being written");
     const length = options.length ?? messageById(id).text.length;
-    emit("message.ended", { message: id, outcome, length, ...(options.error && { error: options.error }) });
+    const { thread: where } = messageById(id);
+    emit("message.ended", {
+      message: id,
+      outcome,
+      length,
+      ...(options.error && { error: options.error }),
+      ...(where !== undefined && { thread: where }),
+    });
     writing.set(undefined);
+    const ended = messageById(id);
+    if (ended.thread === undefined) return;
+    const isNews = ended.kind === "reply" && outcome === "completed" && ended.text !== "";
+    refreshThread(ended.thread, (current) =>
+      isNews ? { ...current, news: { message: id, text: lineOf(ended.text), at: ended.at } } : current,
+    );
   };
 
   const endTurn = (outcome: Outcome, error?: ErrorBody): string => {
@@ -798,16 +938,18 @@ export const createTranscript = (header: Header): Transcript => {
       .filter((message) => message.turn === running.id && message.kind === "reply" && message.text !== "")
       .toArray()
       .at(-1);
+    const where = placeFields(threadHere());
     if (outcome === "completed" && !hasAsked && lastReply) {
       push("active", {
         kind: "reply",
         text: toFirstLine(withoutBlocks(lastReply.text)),
         turn: running.id,
         message: lastReply.id,
+        ...where,
       });
     }
     if (outcome === "failed" && error) {
-      push("active", { kind: "failed", text: toFailedText(error.message), turn: running.id });
+      push("active", { kind: "failed", text: toFailedText(error.message), turn: running.id, ...where });
     }
     return running.id;
   };
@@ -826,32 +968,24 @@ export const createTranscript = (header: Header): Transcript => {
     };
   };
 
-  const exchange = (user: string, agent: string, files: readonly string[] = [], topic?: string): Exchange => {
+  const exchange = (user: string, agent: string, files: readonly string[] = [], where: SendOptions = {}): Exchange => {
     const userMessageId = newUserId();
     const attached = files.map((file) => describeAttachment(file, newUserId()));
-    emit("message.accepted", {
-      message: {
-        id: userMessageId,
-        role: "user",
-        text: user,
-        at: timestamp(),
-        position: nextPosition(),
-        ...(attached.length > 0 && { attachments: attached }),
-      },
+    const thread = accept(userMessageId, user, attached, where);
+    return inPlace(thread ?? mainChat, () => {
+      wait(1);
+      const turnId = startTurn([userMessageId]);
+      wait(300);
+      step("thinking", { title: "Thinking it through", endedTitle: "Thought it through" });
+      wait(1500);
+      const agentMessageId = reply();
+      write(agent, { pieces: 1 });
+      wait(600);
+      endMessage("completed");
+      wait(1);
+      endTurn("completed");
+      return { user: userMessageId, agent: agentMessageId, turn: turnId };
     });
-    wait(1);
-    const turnId = startTurn([userMessageId]);
-    wait(300);
-    step("thinking", { title: "Thinking it through", endedTitle: "Thought it through" });
-    wait(1500);
-    const agentMessageId = reply();
-    write(agent, { pieces: 1 });
-    wait(600);
-    endMessage("completed");
-    wait(1);
-    endTurn("completed");
-    if (topic !== undefined) markTopic(topic, userMessageId);
-    return { user: userMessageId, agent: agentMessageId, turn: turnId };
   };
 
   const motions = createCell<ReadonlyMap<string, Motion>>(new Map());
@@ -895,12 +1029,153 @@ export const createTranscript = (header: Header): Transcript => {
     return after;
   };
 
-  const markTopic = (label: string, message: string): string => {
-    const position = project(log.get()).byId.get(message)?.position;
-    if (position === undefined) throw new Error(`a topic on unknown message ${message}`);
-    const topic: Topic = { id: newId("p"), label, position, at: timestamp() };
-    emit("topic.started", { topic });
-    return topic.id;
+  const threadById = (id: string): Thread => {
+    const found = project(log.get()).threads.get(id);
+    if (!found) throw new Error(`unknown thread ${id}`);
+    return found;
+  };
+
+  const startThreadAt = (
+    by: Thread["by"],
+    position: number,
+    { title, anchor }: { readonly title?: string; readonly anchor?: string } = {},
+  ): Thread => {
+    const thread: Thread = {
+      id: newId("h"),
+      ...(title !== undefined && { title }),
+      by,
+      state: "open",
+      started_at: timestamp(),
+      position,
+      ...(anchor !== undefined && { anchor }),
+      replies: 0,
+      last_at: timestamp(),
+    };
+    emit("thread.started", { thread });
+    return thread;
+  };
+
+  // As the server does: a thread's replies, latest time, picture and page follow its messages, and it says so only
+  // when something changed.
+  const refreshThread = (id: string, patch: (thread: Thread) => Thread = (thread) => thread): Thread => {
+    const { order, byId } = project(log.get());
+    const before = threadById(id);
+    const rows = order.flatMap((messageId) => byId.get(messageId) ?? []).filter((message) => message.thread === id);
+    const shown = rows.filter(
+      (message) =>
+        (message.role === "user" || message.kind === "reply" || message.kind === "post") &&
+        (message.text !== "" || (message.attachments?.length ?? 0) > 0),
+    );
+    const picture = rows.map((message) => pictureOf(message)).find((found) => found !== undefined);
+    const hasPage = shown.some((message) => message.role === "agent" && /^```ari:page\b/mu.test(message.text));
+    const after = patch({
+      ...omit(before, "picture", "page"),
+      replies: shown.length,
+      last_at: shown.at(-1)?.at ?? before.started_at,
+      ...(picture !== undefined && { picture }),
+      ...(hasPage && { page: true as const }),
+    });
+    if (canonical(after) === canonical(before)) return before;
+    emit("thread.changed", { thread: after });
+    return after;
+  };
+
+  const pictureOf = (message: Message): string | undefined => {
+    if (message.role === "user") return message.attachments?.find((attachment) => attachment.kind === "image")?.id;
+    const body = /^```ari:images[^\n]*\n(?<body>[\s\S]*?)^```[ \t]*$/mu.exec(message.text)?.groups?.body;
+    if (body === undefined) return undefined;
+    try {
+      const first = (JSON.parse(body) as { readonly images?: readonly { readonly attachment?: unknown }[] })
+        .images?.[0];
+      return typeof first?.attachment === "string" ? first.attachment : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const anchoredAt = (message: string): Thread | undefined =>
+    project(log.get())
+      .threads.values()
+      .find((thread) => thread.anchor === message);
+
+  const changeThreadNow = (id: string, { title, result, state }: ThreadChange, by: "kumo" | "you"): Thread =>
+    refreshThread(id, (current) => {
+      const changed = { ...current, ...(title !== undefined && { title }), ...(result !== undefined && { result }) };
+      if (state === undefined || state === current.state) return changed;
+      return state === "done"
+        ? { ...changed, state, done: { at: timestamp(), by } }
+        : { ...omit(changed, "done"), state };
+    });
+
+  const branch = (title: string, messages: readonly string[]): string => {
+    const { byId } = project(log.get());
+    const rows = messages
+      .flatMap((id) => byId.get(id) ?? [])
+      .filter((message) => message.thread === undefined && !anchoredAt(message.id))
+      .toSorted((left, right) => left.position - right.position);
+    const [first] = rows;
+    if (!first) throw new Error("nothing to branch");
+    const thread = startThreadAt("kumo", first.position, { title });
+    for (const message of rows) emit("message.moved", { message: { ...message, thread: thread.id } });
+    refreshThread(thread.id);
+    const running = conversationIn(mainChat).turn;
+    if (!running) throw new Error("a branch without the main chat's turn");
+    for (const message of rows) {
+      inPlace(thread.id, () => {
+        next.update((current) => [...current, message.id]);
+      });
+      emit("message.queued", { message: message.id, turn: running.id });
+    }
+    return thread.id;
+  };
+
+  const threadPage = (id: string): Fields => {
+    const { order, byId, steps, asks, turnThreads } = project(log.get());
+    const thread = threadById(id);
+    const inThread = order.filter((messageId) => byId.get(messageId)?.thread === id);
+    const messages = inThread.slice(-messagesPerSnapshot).flatMap((messageId) => byId.get(messageId) ?? []);
+    const first = messages[0]?.position;
+    const isHere = ({ turn: owner }: { readonly turn: string }): boolean => turnThreads.get(owner) === id;
+    const here = conversationIn(id);
+    const anchor = thread.anchor === undefined ? undefined : byId.get(thread.anchor);
+    return {
+      thread,
+      ...(anchor && { anchor }),
+      messages,
+      steps: first === undefined ? [] : between(steps, first).filter(isHere),
+      asks: first === undefined ? [] : between(asks, first).filter(isHere),
+      turn: here.turn ?? null,
+      next: here.next,
+      has_more: inThread.length > messagesPerSnapshot,
+    };
+  };
+
+  const listThreads = (query = ""): void => {
+    request("GET", query === "" ? "/v0/threads" : `/v0/threads?query=${encodeURIComponent(query)}`);
+    const { order, byId, threads } = project(log.get());
+    const words = query.toLowerCase().split(/\s+/u).filter(Boolean);
+    const isMatch = (thread: Thread): boolean =>
+      words.every(
+        (word) =>
+          `${thread.title ?? ""} ${thread.result ?? ""}`.toLowerCase().includes(word) ||
+          order.some(
+            (id) => byId.get(id)?.thread === thread.id && (byId.get(id)?.text ?? "").toLowerCase().includes(word),
+          ),
+      );
+    const all = threads
+      .values()
+      .filter((thread) => isMatch(thread))
+      .toArray();
+    response(200, {
+      open: all
+        .filter((thread) => thread.state === "open")
+        .toSorted((left, right) => right.last_at.localeCompare(left.last_at) || right.id.localeCompare(left.id)),
+      threads: all
+        .filter((thread) => thread.state === "done")
+        .toSorted((left, right) => right.started_at.localeCompare(left.started_at) || right.id.localeCompare(left.id))
+        .slice(0, 50),
+      has_more: all.filter((thread) => thread.state === "done").length > 50,
+    });
   };
 
   const callById = (id: string): Call => {
@@ -1151,6 +1426,46 @@ export const createTranscript = (header: Header): Transcript => {
     return call.id;
   };
 
+  // As the server accepts a message you send: a reply in the main chat goes into the thread under that message,
+  // started now if there's none; a reply in a thread quotes; a message into a done thread opens it again.
+  const accept = (
+    id: string,
+    text: string,
+    attached: readonly Attachment[],
+    options: SendOptions = {},
+  ): string | undefined => {
+    const target = options.replyTo === undefined ? undefined : messageById(options.replyTo);
+    const thread = target
+      ? (target.thread ?? anchoredAt(target.id)?.id ?? startThreadAt("you", target.position, { anchor: target.id }).id)
+      : options.newThread === true
+        ? startThreadAt("you", nextPosition()).id
+        : options.thread;
+    const quotes =
+      target?.thread === undefined ? undefined : { message: target.id, text: lineOf(target.text, target.attachments) };
+    inPlace(thread ?? mainChat, () => {
+      const answering = waiting.get();
+      emit("message.accepted", {
+        message: {
+          id,
+          role: "user",
+          text,
+          at: timestamp(),
+          position: nextPosition(),
+          ...(answering && { answers: answering }),
+          ...(options.done !== undefined && { done: options.done }),
+          ...(attached.length > 0 && { attachments: attached }),
+          ...(thread !== undefined && { thread }),
+          ...(quotes && { quotes }),
+        },
+      });
+      if (answering) endAsk(answering, "answered", id);
+    });
+    if (thread !== undefined) {
+      refreshThread(thread, (current) => ({ ...omit(current, "news", "done"), state: "open" }));
+    }
+    return thread;
+  };
+
   const send = (text: string, options: SendOptions = {}): string => {
     const id = options.id ?? newUserId();
     const attached = options.attachments ?? [];
@@ -1160,6 +1475,9 @@ export const createTranscript = (header: Header): Transcript => {
         text,
         ...(attached.length > 0 && { attachments: attached }),
         ...(options.done !== undefined && { done: options.done }),
+        ...(options.thread !== undefined && { thread: options.thread }),
+        ...(options.replyTo !== undefined && { reply_to: options.replyTo }),
+        ...(options.newThread === true && { new_thread: true }),
       },
     });
     const isKnown = project(log.get()).byId.has(id);
@@ -1175,26 +1493,16 @@ export const createTranscript = (header: Header): Transcript => {
       return id;
     }
     if (!isKnown) {
-      const answering = waiting.get();
-      emit("message.accepted", {
-        message: {
-          id,
-          role: "user",
-          text,
-          at: timestamp(),
-          position: nextPosition(),
-          ...(answering && { answers: answering }),
-          ...(options.done !== undefined && { done: options.done }),
-          ...(attached.length > 0 && {
-            attachments: attached.map((attachment) => {
-              const found = attachments.get().get(attachment);
-              if (!found) throw new Error(`unknown attachment ${attachment}`);
-              return found;
-            }),
-          }),
-        },
-      });
-      if (answering) endAsk(answering, "answered", id);
+      accept(
+        id,
+        text,
+        attached.map((attachment) => {
+          const found = attachments.get().get(attachment);
+          if (!found) throw new Error(`unknown attachment ${attachment}`);
+          return found;
+        }),
+        options,
+      );
     }
     response(isKnown ? 200 : 201, { message: messageById(id) }, { isLost: options.isLost });
     return id;
@@ -1216,6 +1524,7 @@ export const createTranscript = (header: Header): Transcript => {
       ...(fields.preview && { preview: fields.preview }),
       at: timestamp(),
       position: nextPosition(),
+      ...(threadHere() !== undefined && { thread: threadHere() }),
     };
     emit("ask.started", { ask: asked });
     waiting.set(asked.id);
@@ -1227,6 +1536,7 @@ export const createTranscript = (header: Header): Transcript => {
         options: options.map((option) => option.label),
         allows_text: asked.allows_text,
       },
+      ...placeFields(threadHere()),
     });
     return asked.id;
   };
@@ -1383,7 +1693,10 @@ export const createTranscript = (header: Header): Transcript => {
 
   const listMessages = (before: string, limit: number): void => {
     request("GET", `/v0/messages?before=${before}&limit=${limit}`);
-    const { order, byId, steps, asks, calls, topics } = project(log.get());
+    const { order: everywhere, byId, steps, asks, calls, threads, turnThreads } = project(log.get());
+    const where = byId.get(before)?.thread;
+    const order = everywhere.filter((id) => byId.get(id)?.thread === where);
+    const isHere = ({ turn: owner }: { readonly turn: string }): boolean => turnThreads.get(owner) === where;
     const index = order.indexOf(before);
     if (index === -1) throw new Error(`no message ${before}`);
     const first = Math.max(0, index - limit);
@@ -1392,29 +1705,41 @@ export const createTranscript = (header: Header): Transcript => {
     const until = byId.get(before)?.position;
     response(200, {
       messages,
-      steps: from === undefined ? [] : between(steps, from, until),
-      asks: from === undefined ? [] : between(asks, from, until),
-      calls: callsFrom(calls, positionBefore(order, byId, first) + 1, until),
-      topics: between(topics, positionBefore(order, byId, first) + 1, until),
+      steps: from === undefined ? [] : between(steps, from, until).filter(isHere),
+      asks: from === undefined ? [] : between(asks, from, until).filter(isHere),
+      calls: where === undefined ? callsFrom(calls, positionBefore(order, byId, first) + 1, until) : [],
+      threads: where === undefined ? between(threads, positionBefore(order, byId, first) + 1, until) : [],
       has_more: first > 0,
     });
   };
 
-  const post = (text: string, { isUrgent = false }: { readonly isUrgent?: boolean } = {}): string => {
+  const post = (text: string, { isUrgent = false, thread: given, newThread }: PostOptions = {}): string => {
+    const thread = newThread === undefined ? given : startThreadAt("kumo", nextPosition(), { title: newThread }).id;
     const id = newId("m");
+    const at = timestamp();
+    const position = nextPosition();
     emit("message.posted", {
       message: {
         id,
         role: "agent",
         kind: "post",
         text,
-        at: timestamp(),
-        position: nextPosition(),
+        at,
+        position,
         outcome: "completed",
         ...(isUrgent && { urgent: true }),
+        ...(thread !== undefined && { thread }),
       },
     });
-    push(isUrgent ? "time-sensitive" : "active", { kind: "post", text: toFirstLine(withoutBlocks(text)), message: id });
+    if (thread !== undefined) {
+      refreshThread(thread, (current) => ({ ...current, position, news: { message: id, text: lineOf(text), at } }));
+    }
+    push(isUrgent ? "time-sensitive" : "active", {
+      kind: "post",
+      text: toFirstLine(withoutBlocks(text)),
+      message: id,
+      ...placeFields(thread),
+    });
     return id;
   };
 
@@ -1590,9 +1915,18 @@ export const createTranscript = (header: Header): Transcript => {
     disconnect("server_restarted");
     ids.update((current) => ({ ...current, boot: current.boot + 1 }));
     wait(2400);
-    if (!turn.get()) return;
-    if (writing.get()) endMessage("interrupted");
-    endTurn("interrupted");
+    const others = conversations
+      .get()
+      .keys()
+      .filter((other) => other !== mainChat)
+      .toArray();
+    for (const key of [mainChat, ...others]) {
+      inPlace(key, () => {
+        if (!turn.get()) return;
+        if (writing.get()) endMessage("interrupted");
+        endTurn("interrupted");
+      });
+    }
   };
 
   const restore = (to: string): void => {
@@ -1601,17 +1935,19 @@ export const createTranscript = (header: Header): Transcript => {
     disconnect("server_restored", { to });
     const kept = log.update((current) => current.slice(0, index + 1));
     ids.update((current) => ({ ...current, boot: current.boot + 1, counters: toCounters(kept) }));
-    turn.set(undefined);
-    next.set([]);
-    writing.set(undefined);
-    runningSteps.set(new Map());
+    conversations.set(new Map());
     wait(3000);
   };
 
   const toJsonl = (): string => {
-    if (turn.get() || next.get().length > 0 || writing.get()) {
-      throw new Error(`${header.name} ends with work in progress`);
-    }
+    const isBusy = conversations
+      .get()
+      .values()
+      .some(
+        (conversation) =>
+          conversation.turn !== undefined || conversation.next.length > 0 || conversation.writing !== undefined,
+      );
+    if (isBusy) throw new Error(`${header.name} ends with work in progress`);
     const started = start.get();
     const headerLine = {
       transcript: header.name,
@@ -1638,7 +1974,42 @@ export const createTranscript = (header: Header): Transcript => {
     stepAtOffset,
     world,
     callExchange,
-    topic: markTopic,
+    inThread: (thread, work) => inPlace(thread, work),
+    threadOf: (message) => messageById(message).thread,
+    latestThread: () => {
+      const latest = project(log.get())
+        .threads.values()
+        .toArray()
+        .toSorted((left, right) => left.id.localeCompare(right.id))
+        .at(-1);
+      if (!latest) throw new Error("no thread yet");
+      return latest.id;
+    },
+    branch,
+    changeThread: (thread, change) => changeThreadNow(thread, change, "kumo"),
+    patchThread: (thread, change) => {
+      request("PATCH", `/v0/threads/${thread}`, { body: change });
+      response(200, { thread: changeThreadNow(thread, change, "you") });
+    },
+    seeThread: (thread) => {
+      request("POST", `/v0/threads/${thread}/seen`);
+      response(200, { thread: refreshThread(thread, (current) => omit(current, "news")) });
+    },
+    moveMessage: (message, thread) => {
+      request("POST", `/v0/messages/${message}/move`, { body: thread === undefined ? {} : { thread } });
+      const before = messageById(message);
+      const { thread: from, ...rest } = before;
+      const moved: Message = { ...rest, ...(thread !== undefined && { thread }) };
+      emit("message.moved", { message: moved, ...(from !== undefined && { from }) });
+      if (from !== undefined) refreshThread(from);
+      if (thread !== undefined) refreshThread(thread);
+      response(200, { message: moved });
+    },
+    getThread: (thread) => {
+      request("GET", `/v0/threads/${thread}`);
+      response(200, threadPage(thread));
+    },
+    listThreads,
     keptImage: (file, name) => {
       const attachment = describeAttachment(file, newId("f"), name);
       attachments.update((current) => new Map([...current, [attachment.id, attachment]]));
