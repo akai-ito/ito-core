@@ -37,9 +37,12 @@ pages.</sub></p>
 
 ## What works today
 
-- **One live conversation.** Replies stream as they're written, with a trail of what Kumo is
-  doing, a Stop that works at once, and messages sent while it's busy steering the turn or
-  waiting their turn. Photos and files go in with a message.
+- **One live conversation, with side threads.** Replies stream as they're written, with a trail
+  of what Kumo is doing, a Stop that works at once, and messages sent while it's busy steering the
+  turn or waiting their turn. A subject of its own goes in a side thread, a conversation of its own
+  that runs beside the main chat. Where an answer has shape, it shows: tables with verdicts, picks
+  with pictures, cards to act on, and pages Kumo made and keeps current. Photos, files and long
+  recordings go in with a message; recordings are transcribed on the server.
 - **Mail.** iCloud, Outlook or Gmail over IMAP. Kumo reads each new mail as it arrives, puts
   bookings on your calendar, and drafts replies in your voice into your Drafts folder. It never
   sends mail.
@@ -47,12 +50,13 @@ pages.</sub></p>
   Kumo's own calendar for its plan of your day and its guesses, and contact details kept current.
 - **Memory.** The Thread, a git repository of Markdown pages and a journal that you can read
   without Ito, with search over it and past conversations, and an optional backup to a private
-  GitHub repository.
+  GitHub repository. Kumo keeps the chapters of your life there, and tells you what it learnt.
 - **Follow-through.** Kumo sets itself wake-ups, wakes on new mail and calendar changes, and
   messages you when something is worth saying. Every action it takes is recorded, with an undo
   where there can be one.
-- **In motion.** Trips, training blocks and other things you're doing, kept as structured
-  documents that Kumo changes a part at a time as you talk.
+- **In motion.** Roles you're pursuing, training blocks, trips, projects and other things you're
+  doing, kept as structured documents that Kumo changes a part at a time as you talk, and ended
+  with an honest outcome.
 - **Voice.** Calls with Kumo through CallKit, with speech recognition and synthesis on the server's
   own GPU.
 - **Notifications.** Every message notifies, encrypted so that Apple's push service only carries
@@ -145,10 +149,11 @@ each capability and the voice as child processes, each speaking JSON-RPC over it
 | --- | --- |
 | [protocol](protocol) | The client API: OpenAPI for commands, JSON Schema for events, the guarantees and the golden transcripts |
 | [src/http](src/http), [src/store](src/store) | The routes, the event stream and the SQLite event log with its projections |
-| [src/turns](src/turns) | One turn at a time: routing, Stop, steering, asks, approvals, crash recovery |
+| [src/turns](src/turns), [src/threads](src/threads) | One turn at a time in each conversation, the main chat and every side thread: routing, Stop, steering, asks, approvals, crash recovery, and the backstop for background work |
 | [src/engine](src/engine) | The engine seam, the Codex adapter and the scripted engine for tests and the demo |
 | [src/tools](src/tools), [src/capabilities](src/capabilities) | The MCP server, the `ito` commands and skills, and the capability host |
 | [src/memory](src/memory) | The Thread, recall and backup |
+| [src/recordings](src/recordings), [src/files](src/files), [src/made](src/made) | Recordings transcribed on the box, files Kumo shows at one version, and pages Kumo makes |
 | [src/mail](src/mail), [src/calendar](src/calendar), [src/contacts](src/contacts) | IMAP, CalDAV and CardDAV, drafts and Kumo's calendar |
 | [src/wakeups](src/wakeups), [src/desk](src/desk), [src/work](src/work) | Wake-ups, the Desk, and Kumo's work log and learning tracks |
 | [capabilities](capabilities) | The capability SDK, Reports and a sample |
@@ -183,7 +188,7 @@ left open is ended as interrupted, keeping the text it had.
 
 The agent runs on OpenAI's Codex, driven as `codex app-server` over JSON-RPC, with TypeScript
 bindings generated from the pinned Codex version (CI checks they're current). Everything else
-talks to an `Engine` of ten functions ([engine.ts](src/engine/engine.ts)): start a turn, steer it,
+talks to an `Engine` of twelve functions ([engine.ts](src/engine/engine.ts)): start a turn, steer it,
 interrupt it, answer an approval, a structured completion, and a piece of background work. Codex's
 own protocol stops at the adapter ([codex-engine.ts](src/engine/codex/codex-engine.ts)), the words
 on Kumo's trail come from Ito's own tables rather than from Codex, and a scripted engine stands in
