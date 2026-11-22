@@ -1,6 +1,8 @@
 import type { AskFields, StepFacts } from "#engine/engine.ts";
+import { beganGuide, endedGuide } from "#memory/chapters.ts";
 import { numberLines, toVersion } from "#memory/edits.ts";
 import { gistGuide, toOneLine } from "#memory/gists.ts";
+import { learntCopiesText, learntGuide, type LearntBody } from "#memory/learnt.ts";
 import { parsePage, toLocation, type Location, type Page } from "#memory/pages.ts";
 import type { Passage } from "#memory/recall.ts";
 import type { FileCommit } from "#memory/thread.ts";
@@ -47,6 +49,7 @@ export type PageOperations = {
     input: unknown,
   ) => Promise<Result<{ readonly address: string; readonly title: string; readonly photos: number }, string>>;
   readonly findCopies: (words: readonly string[]) => Promise<readonly Copy[]>;
+  readonly findLearnt: (words: readonly string[]) => readonly LearntBody[];
   readonly recordStep: (facts: StepFacts) => boolean;
   readonly approve: (fields: AskFields) => Promise<boolean>;
 };
@@ -164,7 +167,9 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         if (words.length === 0) return failed("Give a word or phrase of three letters or more to find.");
         const copies = await memory.findCopies(words);
         return {
-          text: copies.length === 0 ? "No page says that." : copies.map((copy) => formatCopy(copy)).join("\n"),
+          text:
+            (copies.length === 0 ? "No page says that." : copies.map((copy) => formatCopy(copy)).join("\n")) +
+            learntCopiesText(memory.findLearnt(words)),
         };
       }),
   },
@@ -244,6 +249,9 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         title: { type: "string", description: "A new title." },
         circle: { type: "string", description: `People pages only. ${circleGuide}` },
         contact: { type: "string", description: contactGuide },
+        began: { type: "string", description: beganGuide },
+        ended: { type: "string", description: endedGuide },
+        learnt: { type: "string", description: learntGuide },
         aliases: { type: "array", items: { type: "string" }, description: "Other names for it, all of them." },
         links: { type: "array", items: { type: "string" }, description: "Addresses of related pages, all of them." },
         corrects: {
@@ -283,7 +291,9 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
     description:
       "Write a page that doesn't exist yet: memory:portrait, memory:now, memory:helping-you, or a page on a " +
       "shelf, memory:people/… for one person, memory:groups/… for a group of people, memory:goals/…, " +
-      "memory:projects/…, memory:places/… or memory:topics/…, named with lowercase words and dashes. The present first, in the present tense with an (as of <date>) note, " +
+      "memory:projects/…, memory:places/…, memory:topics/… or memory:chapters/… for a chapter of their life " +
+      "(read the chapters skill first), named with lowercase words and dashes. The present first, in the " +
+      "present tense with an (as of <date>) note, " +
       "then an ## Earlier section of dated lines for what used to be true. To change a page that exists, read " +
       "it and use edit_page. Never store passwords or tokens.",
     inputSchema: {
@@ -294,7 +304,10 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         gist: { type: "string", description: gistGuide },
         circle: { type: "string", description: `Required on a people page. ${circleGuide}` },
         contact: { type: "string", description: contactGuide },
+        began: { type: "string", description: `Required on a chapter. ${beganGuide}` },
+        ended: { type: "string", description: endedGuide },
         note: { type: "string", description: "What this page is for, in a few words." },
+        learnt: { type: "string", description: learntGuide },
         aliases: { type: "array", items: { type: "string" }, description: "Other names for it." },
         links: {
           type: "array",
@@ -390,7 +403,8 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
           text: history
             .map(
               ({ commit: version, at, subject, body, isDeleted }) =>
-                `${toVersion(version)}  ${at.slice(0, 16).replace("T", " ")}  ${subject}${body ? `: ${body}` : ""}` +
+                `${toVersion(version)}  ${at.slice(0, 16).replace("T", " ")}  ${subject}` +
+                (body ? `: ${body.replaceAll(/\s*\n+\s*/gu, " · ")}` : "") +
                 (isDeleted ? " (gone after this)" : ""),
             )
             .join("\n"),
@@ -457,6 +471,7 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
             "Keep it current as the day goes on.",
         },
         note: { type: "string", description: "What this entry adds, in a few words." },
+        learnt: { type: "string", description: learntGuide },
       },
       required: ["text", "gist", "note"],
       additionalProperties: false,

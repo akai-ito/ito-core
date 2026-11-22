@@ -5,9 +5,18 @@ import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import type { AskFields, StepFacts } from "#engine/engine.ts";
 import type { Identifiers } from "#identifiers.ts";
+import {
+  chaptersShelf,
+  createChapters,
+  toChapterDates,
+  withoutChapterDates,
+  type ChapterFacts,
+  type ChapterSummary,
+} from "#memory/chapters.ts";
 import type { Embedder } from "#memory/embedder.ts";
 import { applyEdit, isSameVersion, isSharplyShorter, toVersion, type BodyEdit } from "#memory/edits.ts";
 import { toOneLine } from "#memory/gists.ts";
+import { createLearntTools, learntShown, toLearnt, withLearnt, type LearntBody } from "#memory/learnt.ts";
 import {
   appendEntry,
   dayTitle,
@@ -46,7 +55,7 @@ import { rank, toMessageChunk, toPageChunks, type Passage } from "#memory/recall
 import { openThread, type GitAccess, type Thread } from "#memory/thread.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import { fail, ok, type Result } from "#result.ts";
-import type { MemoryStore } from "#store/memory.ts";
+import type { LearntLine, MemoryStore } from "#store/memory.ts";
 import type { Settings } from "#store/store.ts";
 import { createMemoryTools, type Copy, type Saved } from "#memory/tools.ts";
 import { fieldOf, stringsOf, textOf } from "#tools/input.ts";
@@ -74,12 +83,19 @@ export type PageBody = {
   readonly changed_at: string;
   readonly markdown: string;
   readonly photos?: readonly PhotoBody[];
+  // On a chapter: when it began and ended, when Kumo noticed it, and what it drew on.
+  readonly chapter?: ChapterFacts;
 };
 
 // A photo from the media folder, to send as it is.
 export type MediaBody = { readonly file: string; readonly mediaType: string; readonly size: number };
 
-type ReadPage = Omit<PageBody, "links" | "photos"> & { readonly links: readonly string[] };
+type ReadPage = Omit<PageBody, "links" | "photos" | "chapter"> & {
+  readonly links: readonly string[];
+  readonly began?: string;
+  readonly ended?: string;
+  readonly noticed?: string;
+};
 
 export type PageSummary = {
   readonly address: string;
@@ -112,6 +128,10 @@ export type SeededPage = {
   readonly gist?: string;
   readonly circle?: string;
   readonly note?: string;
+  readonly began?: string;
+  readonly ended?: string;
+  readonly noticed?: string;
+  readonly learnt?: string;
   readonly aliases: readonly string[];
   readonly links: readonly string[];
   readonly markdown: string;
@@ -125,6 +145,10 @@ export type Memory = {
   readonly shelves: () => readonly { readonly shelf: Shelf; readonly count: number }[];
   readonly pages: (shelf: Shelf) => readonly PageSummary[];
   readonly recent: () => readonly RecentChangeBody[];
+  // The chapters of their life Kumo has noticed: still going first, then the latest to end.
+  readonly chapters: () => readonly ChapterSummary[];
+  // What Kumo learnt about them lately, newest first.
+  readonly learnt: () => readonly LearntBody[];
   readonly page: (
     address: string,
   ) => Result<PageBody, { readonly code: "invalid" | "not_found"; readonly detail: string }>;
@@ -213,6 +237,9 @@ const minimumWord = 3;
 
 const mostCopies = 20;
 
+const learntLines = (lines: readonly LearntLine[]): readonly LearntBody[] =>
+  lines.map(({ id, address, learnt, at }) => ({ text: learnt, at, address, change: id }));
+
 const fallbackTitle = (location: Location): string =>
   isInMindPage(location.shelf)
     ? inMindTitles[location.shelf]
@@ -282,13 +309,16 @@ export const createMemory = ({
   const readPage = (location: Location): ReadPage | undefined => {
     const page = readParsed(location);
     if (!page) return undefined;
-    const { title, gist, circle, aliases, links, markdown } = page;
+    const { title, gist, circle, began, ended, noticed, aliases, links, markdown } = page;
     return {
       address: location.address,
       shelf: location.shelf,
       title,
       ...(gist !== undefined && { gist }),
       ...(circle !== undefined && { circle }),
+      ...(began !== undefined && { began }),
+      ...(ended !== undefined && { ended }),
+      ...(noticed !== undefined && { noticed }),
       aliases,
       links,
       markdown,
@@ -326,12 +356,41 @@ export const createMemory = ({
     return new Map(photos.map((photo) => [photo.source, photo])).values().toArray();
   };
 
-  const toPageBody = (page: ReadPage): PageBody => {
+  const readAt = (address: string): ReadPage | undefined => {
+    const location = toLocation(address);
+    return location.ok ? readPage(location.value) : undefined;
+  };
+
+  const chapters = createChapters({
+    pages: () =>
+      opened()
+        .files()
+        .filter((file) => file.startsWith(`${chaptersShelf}/`))
+        .map((file) => readAt(toAddress(file)))
+        .filter((page) => page !== undefined),
+    photosOf: (address) => {
+      const page = readAt(address);
+      return page ? photosOf(page) : [];
+    },
+    exists: (address) => readAt(address) !== undefined,
+  });
+
+  const toPageBody = ({ began, ended, noticed, ...page }: ReadPage): PageBody => {
     const photos = photosOf(page);
+    const chapter =
+      page.shelf === chaptersShelf
+        ? chapters.factsOf({
+            ...page,
+            ...(began !== undefined && { began }),
+            ...(ended !== undefined && { ended }),
+            ...(noticed !== undefined && { noticed }),
+          })
+        : undefined;
     return {
       ...page,
       links: page.links.map((address) => toLink(address)).filter((link) => link !== undefined),
       ...(photos.length > 0 && { photos }),
+      ...(chapter && { chapter }),
     };
   };
 
@@ -415,8 +474,9 @@ export const createMemory = ({
     message: string,
     note: string | undefined,
     media: readonly MediaFile[] = [],
+    learnt?: string,
   ): Promise<Result<string, string>> => {
-    const full = note ? `${message}\n\n${note}` : message;
+    const full = withLearnt(note ? `${message}\n\n${note}` : message, learnt);
     const committed =
       text === undefined || media.length === 0
         ? await opened().write(location.path, text, full)
@@ -431,6 +491,7 @@ export const createMemory = ({
       file: location.path,
       commit: committed.value,
       ...(note !== undefined && { note }),
+      ...(learnt !== undefined && { learnt }),
       at,
     });
     settings.setSetting(indexedSetting, committed.value);
@@ -496,6 +557,8 @@ export const createMemory = ({
       const note = toOneLine(textOf(input, "note")) || undefined;
       const circle = toOneLine(textOf(input, "circle")) || existing?.circle;
       const contact = toOneLine(textOf(input, "contact")) || readParsed(location.value)?.contact;
+      // Seeded as given, noticed day and all: a chapter from elsewhere keeps its own.
+      const [began, ended, noticed] = ["began", "ended", "noticed"].map((field) => textOf(input, field).trim());
       const text =
         markdown === ""
           ? undefined
@@ -504,13 +567,17 @@ export const createMemory = ({
               ...(gist !== undefined && { gist }),
               ...(circle !== undefined && { circle }),
               ...(contact !== undefined && { contact }),
+              ...(began && { began }),
+              ...(ended && { ended }),
+              ...(noticed && { noticed }),
               aliases: stringsOf(input, "aliases"),
               links: stringsOf(input, "links"),
               markdown,
             });
       if (text === opened().read(location.value.path)) return fail(`${title} already says exactly that.`);
       const verb = text === undefined ? "Delete" : existing ? "Update" : "Add";
-      const committed = await commit(location.value, title, text, `${verb} ${title}`, note);
+      const learnt = toOneLine(textOf(input, "learnt")) || undefined;
+      const committed = await commit(location.value, title, text, `${verb} ${title}`, note, [], learnt);
       return committed.ok ? ok({ title, change: committed.value }) : committed;
     });
 
@@ -530,6 +597,8 @@ export const createMemory = ({
       const isTheirReading = fieldOf(input, "reading") === true;
       if (isYours && isTheirReading)
         return fail("Their own words aren't your reading: give yours or reading, not both.");
+      const learnt = toLearnt(input);
+      if (!learnt.ok) return learnt;
       const entry = toJournalEntry(
         words.value.markdown,
         isYours ? "yours" : isTheirReading ? "reading" : "account",
@@ -549,6 +618,7 @@ export const createMemory = ({
         `Journal ${day}`,
         toOneLine(textOf(input, "note")),
         words.value.files,
+        learnt.value,
       );
       return committed.ok ? ok({ address: location.value.address, title, photos: words.value.count }) : committed;
     });
@@ -587,6 +657,10 @@ export const createMemory = ({
         );
       }
       if (location.value.shelf !== "journal" && isReading(textOf(input, "new_text"))) return fail(readingOnPage);
+      const dates = toChapterDates(input, location.value.shelf, existing, toDay(clock.now(), timeZone()));
+      if (!dates.ok) return dates;
+      const learnt = toLearnt(input);
+      if (!learnt.ok) return learnt;
       const replacement = await keep(textOf(input, "new_text"), location.value);
       if (!replacement.ok) return replacement;
       const bodyEdit = toBodyEdit(input, replacement.value.markdown);
@@ -609,11 +683,12 @@ export const createMemory = ({
       const listOr = (field: string, fallback: readonly string[]): readonly string[] =>
         Array.isArray(fieldOf(input, field)) ? stringsOf(input, field) : fallback;
       const text = formatPage({
-        ...existing,
+        ...withoutChapterDates(existing),
         title,
         ...(gist !== undefined && { gist }),
         ...(circle !== "" && { circle }),
         ...(contact !== "" && { contact }),
+        ...dates.value,
         aliases: listOr("aliases", existing.aliases),
         links: listOr("links", existing.links),
         markdown: markdown.value,
@@ -626,6 +701,7 @@ export const createMemory = ({
         `Update ${title}`,
         toOneLine(textOf(input, "note")),
         replacement.value.files,
+        learnt.value,
       );
       if (!committed.ok) return committed;
       const copies = await copiesOf(stringsOf(input, "corrects"), location.value.address);
@@ -650,6 +726,10 @@ export const createMemory = ({
       }
       if (toMarkdown(textOf(input, "body")) === "") return fail("A new page needs a body.");
       if (location.value.shelf !== "journal" && isReading(textOf(input, "body"))) return fail(readingOnPage);
+      const dates = toChapterDates(input, location.value.shelf, undefined, toDay(clock.now(), timeZone()));
+      if (!dates.ok) return dates;
+      const learnt = toLearnt(input);
+      if (!learnt.ok) return learnt;
       const body = await keep(textOf(input, "body"), location.value);
       if (!body.ok) return body;
       const markdown = toMarkdown(body.value.markdown);
@@ -665,6 +745,7 @@ export const createMemory = ({
         gist: toOneLine(textOf(input, "gist")),
         ...(circle !== "" && { circle }),
         ...(contact !== "" && { contact }),
+        ...dates.value,
         aliases: stringsOf(input, "aliases"),
         links: stringsOf(input, "links"),
         markdown,
@@ -676,6 +757,7 @@ export const createMemory = ({
         `Add ${title}`,
         toOneLine(textOf(input, "note")),
         body.value.files,
+        learnt.value,
       );
       const long = isInMindPage(location.value.shelf) ? longNote(title, markdown) : undefined;
       return committed.ok
@@ -689,8 +771,13 @@ export const createMemory = ({
         : committed;
     });
 
+  // A forgotten page takes what Kumo learnt from it out of the Library too.
   const forgetPage = (location: Location, title: string, reason: string): Promise<Result<string, string>> =>
-    serially(() => commit(location, title, undefined, `Forget ${title}`, reason));
+    serially(async () => {
+      const forgotten = await commit(location, title, undefined, `Forget ${title}`, reason);
+      if (forgotten.ok) store.withdrawLearnt({ address: location.address });
+      return forgotten;
+    });
 
   const restorePage = (location: Location, version: string, note: string): Promise<Result<Saved, string>> =>
     serially(async () => {
@@ -812,8 +899,19 @@ export const createMemory = ({
     restore: restorePage,
     journal: writeJournal,
     findCopies,
+    findLearnt: (words) => learntLines(store.findLearnt(words)),
     recordStep,
     approve,
+  });
+
+  const learntTools = createLearntTools({
+    whenReady,
+    find: (words) => learntLines(store.findLearnt(words)),
+    withdraw: (words) => {
+      const found = learntLines(store.findLearnt(words));
+      store.withdrawLearnt({ words });
+      return found;
+    },
   });
 
   const shelvedPages = (): readonly (Page & {
@@ -872,12 +970,15 @@ export const createMemory = ({
 
   return {
     ready,
-    tools,
+    tools: [...tools, ...learntTools],
     inMindText,
     inMind,
+    // Chapters are the Library's own row, from chapters(), rather than a shelf among the others.
     shelves: () => {
       const files = thread.get()?.files() ?? [];
-      return shelves.map((shelf) => ({ shelf, count: files.filter((file) => file.startsWith(`${shelf}/`)).length }));
+      return shelves
+        .filter((shelf) => shelf !== chaptersShelf)
+        .map((shelf) => ({ shelf, count: files.filter((file) => file.startsWith(`${shelf}/`)).length }));
     },
     pages: (shelf) => {
       const summaries = summariesOf((thread.get()?.files() ?? []).filter((file) => file.startsWith(`${shelf}/`)));
@@ -895,6 +996,8 @@ export const createMemory = ({
         at,
         ...(note !== undefined && { note }),
       })),
+    chapters: () => (thread.get() ? chapters.list() : []),
+    learnt: () => learntLines(store.learntLines(learntShown)),
     page: (address) => {
       const location = toLocation(address);
       if (!location.ok) return fail({ code: "invalid", detail: location.failure });

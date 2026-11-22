@@ -270,4 +270,6 @@ export const migrations: readonly string[] = [
       strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AS set_at
   )
   WHERE EXISTS (SELECT 1 FROM motions);`,
+  // What Kumo learnt about them from a change to memory, in a line to them: only real learnings, never housekeeping.
+  `ALTER TABLE memory_changes ADD COLUMN learnt TEXT;`,
 ];

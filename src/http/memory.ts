@@ -52,6 +52,16 @@ export const registerMemory = (
     return { changes: memory.recent() };
   });
 
+  app.get("/v0/memory/chapters", async () => {
+    await memory.sync();
+    return { chapters: memory.chapters() };
+  });
+
+  app.get("/v0/memory/learnt", async () => {
+    await memory.sync();
+    return { lines: memory.learnt() };
+  });
+
   app.get<{ Querystring: { readonly address: string } }>(
     "/v0/memory/page",
     { schema: schemaFor("getPage") },
