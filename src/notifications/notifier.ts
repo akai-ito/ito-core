@@ -56,6 +56,9 @@ const fallbackText = (kind: Notification["kind"], agentName: string): string => 
     case "post": {
       return `${agentName} has news`;
     }
+    case "takeover": {
+      return `${agentName} needs your hand`;
+    }
   }
 };
 

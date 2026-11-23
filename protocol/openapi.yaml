@@ -30,6 +30,8 @@ info:
       once. [The push schema](push.schema.json) describes what it receives.
     - **Set up capabilities:** list what's installed with the server, switch each one on or off,
       and fill in its setup sheet, or connect it through its provider.
+    - **Kumo's browser:** follow what Kumo is doing on a site as a line in its thread, peek at the
+      live view, and take the page over when Kumo needs your hand, then hand it back.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
       journal, the photos a page keeps with its story, the chapters of your life Ari noticed, what
       it learnt about you lately, what Ari changed lately and why, and what each change changed.
@@ -96,6 +98,10 @@ tags:
     description: Reach you through push notifications.
   - name: Capabilities
     description: Switch capabilities on and off, and set them up.
+  - name: Browser
+    description: |
+      Kumo's browser on the server, a capability: what it's doing, its live view, and taking the page
+      over for a login, a code, a CAPTCHA or the pay button, then handing it back.
   - name: Memory
     description: Read what Ari remembers, and back it up. Ari writes it; apps only read.
   - name: Motion
@@ -1739,6 +1745,101 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/capabilities/browser/state:
+    get:
+      tags: [Browser]
+      operationId: getBrowser
+      summary: See what Kumo's browser is doing
+      description: |
+        The state `browser.changed` carries and the snapshot holds. Only while the browser capability
+        is on; otherwise the answer is `unavailable`.
+      responses:
+        "200":
+          description: The browser as it stands.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrowserBody" }
+              example:
+                browser:
+                  state: browsing
+                  line: "On OpenTable: choosing Sat 19:30 · step 6"
+                  thread: thr_dinner
+                  site: OpenTable
+                  url: https://www.opentable.example/booking/details
+                  title: Complete your reservation
+                  doing: choosing Sat 19:30
+                  step: 6
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/capabilities/browser/takeover:
+    post:
+      tags: [Browser]
+      operationId: takeOverBrowser
+      summary: Take the page over
+      description: |
+        You hold the page. Kumo's actions on it are refused until you hand it back, and your touches,
+        keys and text on the stream reach it. A step Kumo is in the middle of finishes first, which
+        takes a few seconds at most. Taking it again moves the lease on, as every frame up does; left
+        untouched for ten minutes, the page goes back to Kumo by itself. Sign in, enter a code, solve a
+        CAPTCHA or press the pay button here: Kumo never sees what you type. A takeover is never an
+        approval: once you hand back, Kumo reads the page again and goes on from what it finds.
+      responses:
+        "200":
+          description: The browser, now `yours`.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrowserBody" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+    delete:
+      tags: [Browser]
+      operationId: handBackBrowser
+      summary: Hand the page back to Kumo
+      description: |
+        Kumo's old view of the page is gone, so it reads the page again before it acts. When it had
+        asked for your hand, or was in the middle of a task, it's woken to carry on, in the thread the
+        task lives in. Handing back a page you don't hold changes nothing.
+      responses:
+        "200":
+          description: The browser, back with Kumo.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrowserBody" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/capabilities/browser/stream:
+    get:
+      tags: [Browser]
+      operationId: streamBrowser
+      summary: Watch the browser live, and use it in a takeover
+      description: |
+        Upgrades to a WebSocket, with the token in `Authorization` as everywhere. Several can be open
+        at once, one for each device; the page is streamed while any is.
+
+        - **Binary frames down:** the page, from Chrome's own screencast: one JPEG each, the whole
+          viewport at iPhone size, as soon as anything paints. While the page moves they come at 1x,
+          up to 60 a second; once it's still for a moment, a sharp one at 2x follows. A slow
+          connection gets fewer, never a backlog: draw the latest.
+        - **Text frames** both ways are JSON, as in [the browser stream schema](browser.schema.json):
+          `state`, `view`, `focus`, `refused` and `ended` from the server; `tap`, `touch`, `scroll`,
+          `text`, `fill`, `key` and `navigate` from the app, which reach the page only while you
+          hold it. `focus` gives the field with the focus, its kind, where it is and how long its
+          value is, so a native field laid over it can type with iOS's keyboard and fill in
+          passwords and codes, sending each change with `fill` and return as `key` Enter.
+
+        Peeking is watching: nothing you do changes the page until you take it over with
+        `POST /v0/capabilities/browser/takeover`, and Kumo carries on meanwhile.
+      responses:
+        "101":
+          description: Switching to the WebSocket.
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v0/memory/in-mind:
     get:
       tags: [Memory]
@@ -2602,6 +2703,11 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResult" }
   schemas:
+    BrowserBody:
+      type: object
+      required: [browser]
+      properties:
+        browser: { $ref: "events.schema.json#/$defs/Browser" }
     SpeechRequest:
       type: object
       required: [text]

@@ -261,6 +261,10 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
         .run(toJson(event.onboarding));
       return;
     }
+    case "browser.changed": {
+      database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('browser', ?)").run(toJson(event.browser));
+      return;
+    }
     case "problems.changed": {
       database
         .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('problems', ?)")
