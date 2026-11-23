@@ -37,7 +37,20 @@ export type Capability = {
 
 export type Offered = Capability & { readonly manifest: Manifest };
 
-export type CallContext = { readonly turn?: string; readonly signal?: AbortSignal };
+export type CallContext = {
+  readonly turn?: string;
+  readonly thread?: string;
+  readonly run?: string;
+  readonly signal?: AbortSignal;
+};
+
+// The part of Ito that follows one capability beyond its tools, such as the browser's live view: it hears what the
+// capability publishes, answers what it requests, and hears when its process stops.
+export type Companion = {
+  readonly onPublish?: (topic: string, data: unknown) => void;
+  readonly onRequest?: (name: string, data: unknown) => Promise<Result<unknown, string>>;
+  readonly onStopped?: () => void;
+};
 
 export type HostFailure = { readonly code: "not_found" | "invalid_values" | "unavailable"; readonly detail: string };
 
@@ -58,6 +71,9 @@ export type Host = {
     input: unknown,
     context?: CallContext,
   ) => Promise<Result<CallResult, string>>;
+  // A control only Ito sends, never the agent, such as the app taking over the browser's page.
+  readonly control: (id: string, name: string, input: unknown) => Promise<Result<unknown, string>>;
+  readonly attach: (id: string, companion: Companion) => void;
   readonly subscribe: (listener: () => void) => () => void;
   readonly close: () => Promise<void>;
 };
@@ -172,6 +188,7 @@ export const createHost = ({
   const connecting = createCell<ReadonlyMap<string, AbortController>>(new Map());
   const queues = createCell<ReadonlyMap<string, Promise<unknown>>>(new Map());
   const listeners = createCell<ReadonlySet<() => void>>(new Set());
+  const companions = createCell<ReadonlyMap<string, Companion>>(new Map());
   const isClosed = createCell(false);
 
   const runnerOf = (id: string): Runner => runners.get().get(id) ?? idle;
@@ -232,6 +249,12 @@ export const createHost = ({
         const approval = toApproval(given);
         return approval ? approve(approval) : Promise.resolve(fail("That isn't an approval Ito can show."));
       },
+      onPublish: (topic, data) => {
+        if (isRunner) companions.get().get(id)?.onPublish?.(topic, data);
+      },
+      onRequest: (name, data) =>
+        companions.get().get(id)?.onRequest?.(name, data) ??
+        Promise.resolve(fail(`Ito doesn't answer ${name} from ${id}.`)),
       onLog: (line) => {
         info("A capability wrote to its log", { capability: id, line });
       },
@@ -244,11 +267,16 @@ export const createHost = ({
     runner.problem === undefined &&
     (runner.manifest === undefined || isComplete(runner.manifest, valuesOf(id)));
 
+  const stopped = (id: string): void => {
+    companions.get().get(id)?.onStopped?.();
+  };
+
   const halt = async (id: string): Promise<void> => {
     const { process, restart } = runnerOf(id);
     restart?.();
     update(id, (runner) => ({ ...runner, process: undefined, restart: undefined, status: undefined }));
     await process?.stop();
+    if (process) stopped(id);
   };
 
   const onExit = (id: string, process: CapabilityProcess, description: string): void => {
@@ -257,16 +285,17 @@ export const createHost = ({
     const crashes = [...recentCrashes(runner.crashes, clock.now()), clock.now()];
     const decision = toRestartDecision(crashes);
     info("A capability stopped unexpectedly", { capability: id, description, crashes: crashes.length });
-    const stopped = { ...runner, process: undefined, status: undefined, crashes };
+    stopped(id);
+    const ended = { ...runner, process: undefined, status: undefined, crashes };
     if (decision.giveUp) {
-      update(id, () => ({ ...stopped, problem: description }));
+      update(id, () => ({ ...ended, problem: description }));
       return;
     }
     const restart = clock.after(decision.delayMs, () => {
       update(id, (waiting) => ({ ...waiting, restart: undefined }));
       void serially(id, () => reconcile(id));
     });
-    update(id, () => ({ ...stopped, restart }));
+    update(id, () => ({ ...ended, restart }));
   };
 
   const launch = async (id: string): Promise<void> => {
@@ -400,7 +429,7 @@ export const createHost = ({
       await started.value.stop();
       return ok(toCheckResult(checked));
     },
-    call: async (id, operation, input, { turn, signal } = {}) => {
+    call: async (id, operation, input, { turn, thread, run, signal } = {}) => {
       const capability = view(id);
       const { process } = runnerOf(id);
       const title = capability.manifest?.title ?? id;
@@ -408,7 +437,22 @@ export const createHost = ({
       if (!process || capability.state !== "on") return fail(unavailable(title, capability));
       if (process.manifest.operations.every(({ name }) => name !== operation))
         return fail(`${title} has no operation called ${operation}.`);
-      return process.call(operation, input, turn, signal);
+      const where = {
+        ...(turn !== undefined && { turn }),
+        ...(thread !== undefined && { thread }),
+        ...(run !== undefined && { run }),
+      };
+      return process.call(operation, input, where, signal);
+    },
+    control: async (id, name, input) => {
+      const capability = view(id);
+      const { process } = runnerOf(id);
+      if (!isInstalled(id)) return fail(`No capability called ${id} is installed.`);
+      if (!process || capability.state !== "on") return fail(unavailable(capability.manifest?.title ?? id, capability));
+      return process.control(name, input);
+    },
+    attach: (id, companion) => {
+      companions.update((current) => new Map([...current, [id, companion]]));
     },
     connect,
     subscribe: (listener) => {

@@ -779,7 +779,16 @@ export const createServer = (options: ServerOptions): Server => {
     if ("error" in details || "reason" in details) app.log.warn(details, message);
     else app.log.info(details, message);
   });
-  const doors = createDoors({ host, currentTurn: () => store.runningTurn(contextThread())?.id, command: launcher });
+  const doors = createDoors({
+    host,
+    currentTurn: () => store.runningTurn(contextThread())?.id,
+    currentPlace: () => {
+      const thread = contextThread();
+      const run = contextRun();
+      return { ...(thread !== undefined && { thread }), ...(run !== undefined && { run }) };
+    },
+    command: launcher,
+  });
   const imageTool = createImageTool({
     attachments,
     keep: (id) => {

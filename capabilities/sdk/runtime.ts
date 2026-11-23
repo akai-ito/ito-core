@@ -25,6 +25,8 @@ const processStreams: Streams = {
   },
 };
 
+const textOf = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+
 const parametersOf = (value: unknown): Parameters =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Parameters) : {};
 
@@ -36,7 +38,23 @@ export const runCapability = (capability: Capability, { input, output, onClose }
     connection.notify("status", given);
   };
 
-  const contextOf = ({ values, folder, server }: Started): Context => ({ values, folder, server, status });
+  const publish = (topic: string, data: unknown): void => {
+    connection.notify("publish", { topic, data });
+  };
+
+  const request = async (name: string, data: unknown): Promise<Result<unknown, string>> => {
+    const answered = await connection.request("request", { name, data });
+    return answered.ok ? ok(answered.value) : fail(answered.failure.message);
+  };
+
+  const contextOf = ({ values, folder, server }: Started): Context => ({
+    values,
+    folder,
+    server,
+    status,
+    publish,
+    request,
+  });
 
   const approve = async (approval: Approval): Promise<Result<boolean, string>> => {
     const answered = await connection.request("approve", approval);
@@ -74,10 +92,14 @@ export const runCapability = (capability: Capability, { input, output, onClose }
     const controller = new AbortController();
     calls.update((current) => new Map([...current, [id, controller]]));
     try {
-      const turn = typeof parameters.turn === "string" ? parameters.turn : undefined;
+      const turn = textOf(parameters.turn);
+      const thread = textOf(parameters.thread);
+      const run = textOf(parameters.run);
       const result = await operation.run(given.data, {
         ...contextOf(current),
         ...(turn !== undefined && { turn }),
+        ...(thread !== undefined && { thread }),
+        ...(run !== undefined && { run }),
         signal: controller.signal,
         approve,
       });
@@ -86,6 +108,17 @@ export const runCapability = (capability: Capability, { input, output, onClose }
     } finally {
       calls.update((current) => new Map([...current].filter(([key]) => key !== id)));
     }
+  };
+
+  const control = async (parameters: Parameters): Promise<Result<unknown, RpcFailure>> => {
+    const current = started.get();
+    if (!current) return refused(`${capability.title} hasn't started.`);
+    const found = capability.controls?.find((candidate) => candidate.name === parameters.name);
+    if (!found) return refused(`${capability.title} has no control ${String(parameters.name)}.`);
+    const given = found.input.safeParse(parameters.input ?? {});
+    if (!given.success) return refused(`That control's input doesn't fit: ${given.error.message}`);
+    const result = await found.run(given.data, contextOf(current));
+    return result.ok ? ok(result.value) : refused(result.failure);
   };
 
   const answer = async ({ id, method, parameters: given }: IncomingRequest): Promise<Result<unknown, RpcFailure>> => {
@@ -103,6 +136,9 @@ export const runCapability = (capability: Capability, { input, output, onClose }
         }
         case "call": {
           return await call(id, parameters);
+        }
+        case "control": {
+          return await control(parameters);
         }
         default: {
           return fail({ code: -32_601, message: `${capability.title} doesn't handle ${method}.` });
@@ -133,6 +169,11 @@ export const runCapability = (capability: Capability, { input, output, onClose }
 
   void (async () => {
     await connection.closed;
+    try {
+      await capability.stop?.();
+    } catch (error) {
+      process.stderr.write(`${capability.title} couldn't stop cleanly: ${describe(error)}\n`);
+    }
     onClose?.();
   })();
 };
