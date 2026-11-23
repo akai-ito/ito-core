@@ -689,12 +689,18 @@ paths:
         `desk.changed` says which. Once Kumo has acted on an answer to a question, an offer or
         times, the Done list says what you answered and what followed. If Kumo couldn't act, the
         card comes back to answer again, and Done says why. The same answer sent again while the
-        card is working, such as a retry, is taken once; a different one is refused.
+        card is working, such as a retry, is taken once; a different one is refused. Answered on
+        its card in a side thread, `thread` says which, so anything Kumo says about it goes there.
       parameters:
         - name: card
           in: path
           required: true
           schema: { $ref: "events.schema.json#/$defs/CardId" }
+        - name: thread
+          in: query
+          required: false
+          description: The thread whose card you answered it on; leave it out on the Desk or in the main chat.
+          schema: { $ref: "events.schema.json#/$defs/ThreadId" }
       requestBody:
         required: true
         content:
