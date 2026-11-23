@@ -71,7 +71,7 @@ const siteName = (): string => {
 };
 
 const providers =
-  /stripe\.com|braintree|adyen|paypal\.com|klarna|checkout\.com|worldpay|squareup|recurly|chargebee|mollie|pay\.google\.com|apple-pay|payments?\.|\/pay(?:ment)?s?\//iu;
+  /stripe\.com|braintree|adyen|paypal\.com|klarna|checkout\.com|worldpay|squareup|recurly|chargebee|mollie|pay\.google\.com|apple-pay|payments?\.|\/(?:pay|payment|payments)\//iu;
 
 const captchas = /recaptcha|hcaptcha|challenges\.cloudflare\.com|turnstile|arkoselabs|funcaptcha/iu;
 

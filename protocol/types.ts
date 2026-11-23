@@ -6742,7 +6742,7 @@ export interface operations {
            *       "browser": {
            *         "state": "browsing",
            *         "line": "On OpenTable: choosing Sat 19:30 · step 6",
-           *         "thread": "thr_dinner",
+           *         "thread": "h_7f9q7h33a4pb",
            *         "site": "OpenTable",
            *         "url": "https://www.opentable.example/booking/details",
            *         "title": "Complete your reservation",
