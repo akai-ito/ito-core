@@ -466,7 +466,8 @@ export interface paths {
      *     `desk.changed` says which. Once Kumo has acted on an answer to a question, an offer or
      *     times, the Done list says what you answered and what followed. If Kumo couldn't act, the
      *     card comes back to answer again, and Done says why. The same answer sent again while the
-     *     card is working, such as a retry, is taken once; a different one is refused.
+     *     card is working, such as a retry, is taken once; a different one is refused. Answered on
+     *     its card in a side thread, `thread` says which, so anything Kumo says about it goes there.
      */
     post: operations["answerCard"];
     delete?: never;
@@ -3241,6 +3242,11 @@ export interface components {
       /** @description Why Kumo thinks so, in a line, such as "Your usual weekday at the desk, from the last four weeks." */
       why: string;
     };
+    /** @description Why Kumo's block overlaps something on purpose, and how you'll settle it. Each item keeps its own status: a hold stays a hold. */
+    Overlap: {
+      /** @description In a line, such as "Both stand until Dana confirms the call; the walk gives way if it's on." */
+      reason: string;
+    };
     /** @description An event on one of your calendars, as the box reads it from iCloud. Open it with the event whose `uid` matches, in Apple's own views. */
     CalendarItem: {
       id: components["schemas"]["CalendarItemId"];
@@ -3267,6 +3273,8 @@ export interface components {
       status?: "hold" | "tentative" | "confirmed";
       /** @description Only on Kumo's guesses at your day, on its own calendar: draw it as a guess, with why on a tap, and answer it with `POST /v0/desk/guesses/{item}/answer`. Kumo's plan for your day (a run, prep, a proper lunch, winding down) is on its calendar too, without it. */
       guess?: components["schemas"]["Guess"];
+      /** @description Only on Kumo's blocks it put over something else on purpose, such as a soft plan beside a call that's only held. Show what it overlaps, and why on a tap. */
+      overlap?: components["schemas"]["Overlap"];
     };
     /** @description Getting started: Kumo reads your recent mail and calendar and talks with you briefly in the conversation, then shows what it found: beliefs to confirm, bookings it added and what it put in motion. */
     Onboarding: {
@@ -4503,6 +4511,7 @@ export type When = components["schemas"]["When"];
 export type MotionId = components["schemas"]["MotionId"];
 export type Activity = components["schemas"]["Activity"];
 export type Guess = components["schemas"]["Guess"];
+export type Overlap = components["schemas"]["Overlap"];
 export type CalendarItem = components["schemas"]["CalendarItem"];
 export type Onboarding = components["schemas"]["Onboarding"];
 export type MessageId = components["schemas"]["MessageId"];
@@ -5239,7 +5248,10 @@ export interface operations {
   };
   answerCard: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description The thread whose card you answered it on; leave it out on the Desk or in the main chat. */
+        thread?: components["schemas"]["ThreadId"];
+      };
       header?: never;
       path: {
         card: components["schemas"]["CardId"];

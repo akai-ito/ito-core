@@ -2203,6 +2203,24 @@
         "guess": {
           "$ref": "#/$defs/Guess",
           "description": "Only on Kumo's guesses at your day, on its own calendar: draw it as a guess, with why on a tap, and answer it with `POST /v0/desk/guesses/{item}/answer`. Kumo's plan for your day (a run, prep, a proper lunch, winding down) is on its calendar too, without it."
+        },
+        "overlap": {
+          "$ref": "#/$defs/Overlap",
+          "description": "Only on Kumo's blocks it put over something else on purpose, such as a soft plan beside a call that's only held. Show what it overlaps, and why on a tap."
+        }
+      }
+    },
+    "Overlap": {
+      "description": "Why Kumo's block overlaps something on purpose, and how you'll settle it. Each item keeps its own status: a hold stays a hold.",
+      "type": "object",
+      "required": ["reason"],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "description": "In a line, such as \"Both stand until Dana confirms the call; the walk gives way if it's on.\"",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
         }
       }
     },

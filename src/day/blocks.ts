@@ -59,6 +59,9 @@ export type Block = {
   readonly at: string;
   // When they last moved it, or put it back, from Ito.
   readonly changedAt?: string;
+  // Placed over something else on purpose, such as a soft plan beside a call that's only held: why, and how they'll
+  // settle it.
+  readonly overlap?: { readonly reason: string };
 };
 
 export type BlockStore = {

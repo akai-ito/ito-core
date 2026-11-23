@@ -181,7 +181,12 @@ describe("Kumo's picture of the day", () => {
 
     expect(guessed.isError).toBeUndefined();
     expect(unexplained.text).toBe("Say why you guess so, in a line.");
-    expect(clash.text).toBe("That clashes with Quillfield Dental on their calendar: fit it around.");
+    expect(clash.text).toBe(
+      "That overlaps “Quillfield Dental” (dentist@icloud, 13:00–13:30, confirmed on their calendar). Fit it around " +
+        "what's confirmed. Only if they've told you both stand, call again with overlap \"intended\" and " +
+        "overlap_reason saying why.",
+    );
+    expect(clash.isError).toBe(true);
     expect(meals.isError).toBe(true);
     const [, written] = memory.items.get();
     expect(written?.title).toBe(`Working${guessMark}`);
@@ -189,6 +194,59 @@ describe("Kumo's picture of the day", () => {
       title: "Working",
       guess: { activity: "working", why: "Your usual weekday at the desk." },
     });
+  });
+
+  it("puts a soft plan over a hold only when Kumo means it, keeping why and each one's status", async () => {
+    const hold: CalendarItem = {
+      id: "v_hold",
+      uid: "hold-call",
+      title: "Call with Dana",
+      start: "2026-11-15T09:30:00.000Z",
+      end: "2026-11-15T10:00:00.000Z",
+      all_day: false,
+      calendar: kumo,
+      status: "hold",
+    };
+    const { picture, tool, memory } = pictureWith("overlaps", [hold]);
+    const walk = {
+      kind: "plan",
+      title: "Morning walk",
+      start: "2026-11-15T09:00:00.000Z",
+      end: "2026-11-15T10:30:00.000Z",
+      activity: "rest",
+    };
+    const reason = "Both stand until Dana confirms the call; the walk gives way if it's on.";
+
+    const refused = await tool("plan_block").call(walk);
+    const bare = await tool("plan_block").call({ ...walk, overlap: "intended" });
+    const unasked = await tool("plan_block").call({ ...walk, overlap_reason: reason });
+    const placed = await tool("plan_block").call({ ...walk, overlap: "intended", overlap_reason: reason });
+    // A guess over the walk and the hold, both soft, goes on the same way.
+    const guessed = await tool("plan_block").call({
+      ...working,
+      start: "2026-11-15T10:00:00.000Z",
+      overlap: "intended",
+      overlap_reason: "They may work through the walk; the guess says so.",
+    });
+
+    expect(refused).toEqual({
+      isError: true,
+      text:
+        "That overlaps the hold “Call with Dana” (hold-call, 09:30–10:00, not settled). Fit it around, or move " +
+        "what's there; if they mean both to stand while it's decided, such as a soft plan beside a call that's only " +
+        'held, call again with overlap "intended" and overlap_reason saying why and how they\'ll settle it.',
+    });
+    expect(bare.text).toBe('Give overlap "intended" with overlap_reason, or neither.');
+    expect(unasked.text).toBe('Give overlap "intended" with overlap_reason, or neither.');
+    expect(placed.isError).toBeUndefined();
+    expect(placed.text).toMatch(
+      /^Planned Morning walk \(block-[\w-]+\)\. It overlaps the hold “Call with Dana” \(hold-call, 09:30–10:00, not settled\) on purpose: Both stand until Dana confirms the call; the walk gives way if it's on\. Each keeps its own status; the day view shows the overlap\.$/u,
+    );
+    expect(guessed.isError).toBeUndefined();
+    expect(guessed.text).toContain("your plan “Morning walk”");
+    const [held, written] = memory.items.get();
+    expect(held).toEqual(hold);
+    expect(written && picture.enrich(written)).toMatchObject({ title: "Morning walk", overlap: { reason } });
   });
 
   it("takes your answers to its guesses: right, what it really was, or your words", async () => {
