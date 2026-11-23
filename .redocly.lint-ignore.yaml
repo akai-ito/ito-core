@@ -3,3 +3,4 @@
 protocol/openapi.yaml:
   operation-2xx-response:
     - "#/paths/~1v0~1calls~1{call}~1stream/get/responses"
+    - "#/paths/~1v0~1capabilities~1browser~1stream/get/responses"

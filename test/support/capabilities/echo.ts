@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { z } from "zod";
-import { defineCapability, defineOperation, fail, ok } from "#sdk/capability.ts";
+import { defineCapability, defineControl, defineOperation, fail, ok } from "#sdk/capability.ts";
 import { runCapability } from "#sdk/runtime.ts";
 
 const nothing = z.object({});
@@ -98,6 +98,29 @@ const ask = defineOperation({
   },
 });
 
+const place = defineOperation({
+  name: "place",
+  title: "Say where it was called from",
+  running: "Looking around",
+  done: "Looked around",
+  description: "Says the turn, thread and run the call came from, and asks Ito to note them.",
+  input: nothing,
+  run: async (_input, { turn, thread, run, publish, request }) => {
+    publish("called", { turn, thread, run });
+    const noted = await request("note", { thread });
+    return noted.ok ? ok({ text: "Noted.", data: { turn, thread, run, noted: noted.value } }) : noted;
+  },
+});
+
+const shout = defineControl({
+  name: "shout",
+  input: z.object({ text: z.string() }),
+  run: ({ text }, { publish }) => {
+    publish("shouted", { text: text.toUpperCase() });
+    return Promise.resolve(ok({ shouted: text.toUpperCase() }));
+  },
+});
+
 const heartbeat = setInterval(Date.now, 60_000);
 
 runCapability(
@@ -122,7 +145,8 @@ runCapability(
       },
       { name: "loud", kind: "toggle", title: "Loud", optional: true },
     ],
-    operations: [say, inspect, crash, wait, complain, ask],
+    operations: [say, inspect, crash, wait, complain, ask, place],
+    controls: [shout],
     skill: "Use echo to hear yourself.",
     uses: { hosts: [], folders: [] },
     start: ({ values }) => {

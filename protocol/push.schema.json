@@ -23,7 +23,7 @@
                   "type": "string"
                 },
                 "body": {
-                  "description": "Plain words for when decryption fails, by kind: \"Kumo replied\", \"Kumo couldn't finish\", \"Kumo asked you something\" or \"Kumo has news\", with the agent's name.",
+                  "description": "Plain words for when decryption fails, by kind: \"Kumo replied\", \"Kumo couldn't finish\", \"Kumo asked you something\", \"Kumo has news\" or \"Kumo needs your hand\", with the agent's name.",
                   "type": "string"
                 }
               }
@@ -67,8 +67,8 @@
       }
     },
     "NotificationKind": {
-      "description": "Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or Kumo sent a `post` outside a turn.",
-      "enum": ["reply", "failed", "ask", "post"]
+      "description": "Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, Kumo sent a `post` outside a turn, or Kumo's browser needs your hand, a `takeover`.",
+      "enum": ["reply", "failed", "ask", "post", "takeover"]
     },
     "Notification": {
       "description": "What the device shows, once decrypted.",
@@ -79,7 +79,7 @@
           "$ref": "#/$defs/NotificationKind"
         },
         "text": {
-          "description": "`reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: \"Couldn't finish: \" and the error's message. `ask`: the question. `post`: its first line.",
+          "description": "`reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: \"Couldn't finish: \" and the error's message. `ask`: the question. `post`: its first line. `takeover`: what Kumo needs you to do, such as \"Sign in to OpenTable so I can book Saturday\".",
           "type": "string",
           "minLength": 1
         },
@@ -108,6 +108,21 @@
             },
             "allows_text": {
               "type": "boolean"
+            }
+          }
+        },
+        "takeover": {
+          "description": "`takeover`: a tap opens the live view of Kumo's browser straight into a takeover (`POST /v0/capabilities/browser/takeover`). The turn that asked, if one did, doesn't also notify its reply.",
+          "type": "object",
+          "required": ["need"],
+          "properties": {
+            "need": {
+              "$ref": "events.schema.json#/$defs/BrowserNeedKind"
+            },
+            "site": {
+              "description": "The site it's on, such as \"OpenTable\".",
+              "type": "string",
+              "minLength": 1
             }
           }
         },

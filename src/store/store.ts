@@ -19,6 +19,7 @@ import type { Identifiers } from "#identifiers.ts";
 import type {
   Ask,
   Attachment,
+  Browser,
   Call,
   Desk,
   DoneEntry,
@@ -132,6 +133,8 @@ export const onboardingSetting = "onboarding";
 
 export const problemsSetting = "problems";
 
+export const browserSetting = "browser";
+
 export type DonePage = { readonly entries: readonly DoneEntry[]; readonly hasMore: boolean };
 
 export type SpokenInput = { readonly call: string; readonly audio?: string };
@@ -184,6 +187,9 @@ export type Store = Settings & {
   readonly setOnboarding: (onboarding: Onboarding) => void;
   readonly problems: () => readonly Problem[];
   readonly setProblems: (problems: readonly Problem[]) => void;
+  // Kumo's browser as it stands; idle until it does something.
+  readonly browser: () => Browser;
+  readonly setBrowser: (browser: Browser) => void;
   readonly addDone: (entry: DoneEntry, undoWith?: unknown) => void;
   readonly listDone: (before: string | undefined, limit: number) => DonePage;
   readonly doneSince: (at: string) => readonly DoneEntry[];
@@ -369,7 +375,7 @@ const snapshotSize = 50;
 const compactedSetting = "compacted_through_seq";
 
 const compactedTypes =
-  "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed', 'recording.changed')";
+  "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed', 'recording.changed', 'browser.changed')";
 
 const parseIds = (json: string): readonly string[] => JSON.parse(json) as readonly string[];
 
@@ -721,6 +727,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     return stored === undefined ? [] : (JSON.parse(stored) as Problem[]);
   };
 
+  const currentBrowser = (): Browser => {
+    const stored = readSetting(browserSetting);
+    return stored === undefined ? { state: "idle" } : (JSON.parse(stored) as Browser);
+  };
+
   const currentDesk = (): Desk => {
     const row = database.prepare("SELECT body FROM desk WHERE id = 1").get() as { readonly body: string } | undefined;
     return row ? (JSON.parse(row.body) as Desk) : { plans: [], coming_up: [], waiting: [], handled: 0 };
@@ -771,6 +782,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           desk: currentDesk(),
           ...(currentOnboarding().state !== "done" && { onboarding: currentOnboarding() }),
           ...(currentProblems().length > 0 && { problems: [...currentProblems()] }),
+          ...(currentBrowser().state !== "idle" && { browser: currentBrowser() }),
         },
       };
     },
@@ -876,6 +888,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     },
 
     problems: () => currentProblems(),
+
+    browser: () => currentBrowser(),
+
+    setBrowser: (browser) => {
+      transaction(() => {
+        if (JSON.stringify(browser) === JSON.stringify(currentBrowser())) return;
+        append({ id: identifiers.event(), type: "browser.changed", at: now(), browser });
+      });
+    },
 
     setProblems: (problems) => {
       transaction(() => {

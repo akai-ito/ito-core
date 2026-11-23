@@ -67,8 +67,12 @@ jobs:
       - uses: ./.github/actions/node
       - name: Let Codex's sandbox run the agent's commands
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Install Chromium for the browser capability
+        run: npx playwright install --with-deps chromium
       - name: Replay the transcripts, crash the server, drive the pinned Codex, run the commands
         run: npm test
+        env:
+          ITO_REQUIRE_BROWSER: "1"
 
   codex-bindings:
     name: Codex bindings are current

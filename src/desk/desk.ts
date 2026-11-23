@@ -74,7 +74,9 @@ export type DeskOptions = {
 };
 
 const quoted = (card: Card): string =>
-  [card.title, card.question?.text, card.offer?.text, card.times?.purpose].filter(Boolean).join(": ");
+  [card.title, card.question?.text, card.offer?.text, card.times?.purpose, card.commit?.summary]
+    .filter(Boolean)
+    .join(": ");
 
 const doneLineLimit = 200;
 
@@ -136,6 +138,9 @@ export const stillActing = (card: Card): string =>
 export const ownCardChange = (card: Card): string => {
   if (card.kind === "draft") return `Change a draft by drafting it again with --replaces ${card.id}.`;
   if (card.kind === "invite") return "An invite can't be changed: answer it for them, or clear it.";
+  if (card.kind === "commit") {
+    return "A commit card is bound to the page as it was: to change it, change the page and put it to them again.";
+  }
   return `${card.title} is Ito's own and acts on its options: answer it for them, or clear it.`;
 };
 
@@ -212,6 +217,8 @@ const describeCard = (card: Card, now: number, timeZone: string): string => {
     }
     if (card.draft)
       return `to ${card.draft.to.join(", ")}, “${card.draft.subject}”, in their ${card.draft.account} Drafts.`;
+    if (card.commit)
+      return `pressing “${card.commit.button}” on ${card.commit.site}: ${shortened(card.commit.summary)}`;
     return card.invite ? `${card.invite.event.calendar.name} calendar.` : "";
   })();
   const options = card.options.length === 0 ? "" : ` Options: ${card.options.map(({ label }) => label).join(", ")}.`;

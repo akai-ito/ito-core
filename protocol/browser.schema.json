@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://akai-ito.github.io/ito-core/protocol/v0/browser.schema.json",
+  "title": "Ito browser stream",
+  "description": "The JSON text frames on `GET /v0/capabilities/browser/stream`, the live view of Kumo's browser. Binary frames down are the page itself: each one JPEG of the whole viewport, newest last; draw each as it comes, scaled to fit the view's `width` by `height`. While the page moves they come quickly at 1x, and once it's still a sharp one at 2x follows. Coordinates in frames up are CSS pixels in the viewport, from its top left: map a touch on the picture by the view's size, never by the picture's own pixels. Both sides ignore frame types they don't recognise.",
+  "$defs": {
+    "FromApp": {
+      "description": "A text frame the app sends. Only while you hold the page in a takeover (`POST /v0/capabilities/browser/takeover`); before that the server answers `refused`, and the live view is only to watch. Each one moves the takeover's lease on.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Tap"
+        },
+        {
+          "$ref": "#/$defs/Touch"
+        },
+        {
+          "$ref": "#/$defs/Scroll"
+        },
+        {
+          "$ref": "#/$defs/Text"
+        },
+        {
+          "$ref": "#/$defs/Fill"
+        },
+        {
+          "$ref": "#/$defs/Key"
+        },
+        {
+          "$ref": "#/$defs/Navigate"
+        }
+      ]
+    },
+    "FromServer": {
+      "description": "A text frame the server sends.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/State"
+        },
+        {
+          "$ref": "#/$defs/View"
+        },
+        {
+          "$ref": "#/$defs/Focus"
+        },
+        {
+          "$ref": "#/$defs/Refused"
+        },
+        {
+          "$ref": "#/$defs/Ended"
+        }
+      ]
+    },
+    "Point": {
+      "description": "CSS pixels in the viewport.",
+      "type": "number",
+      "minimum": 0
+    },
+    "Tap": {
+      "title": "tap",
+      "description": "A tap at one point, as a finger: touch start and end there.",
+      "type": "object",
+      "required": ["type", "x", "y"],
+      "properties": {
+        "type": {
+          "const": "tap"
+        },
+        "x": {
+          "$ref": "#/$defs/Point"
+        },
+        "y": {
+          "$ref": "#/$defs/Point"
+        }
+      }
+    },
+    "Touch": {
+      "title": "touch",
+      "description": "One finger, phase by phase, for a drag, a long press or a slider: `start`, any `move`s, then `end` or `cancel`.",
+      "type": "object",
+      "required": ["type", "phase", "x", "y"],
+      "properties": {
+        "type": {
+          "const": "touch"
+        },
+        "phase": {
+          "enum": ["start", "move", "end", "cancel"]
+        },
+        "x": {
+          "$ref": "#/$defs/Point"
+        },
+        "y": {
+          "$ref": "#/$defs/Point"
+        }
+      }
+    },
+    "Scroll": {
+      "title": "scroll",
+      "description": "Scrolls whatever is under the point by `dx` and `dy` CSS pixels, positive down and right. Send your own momentum as more of them.",
+      "type": "object",
+      "required": ["type", "x", "y", "dx", "dy"],
+      "properties": {
+        "type": {
+          "const": "scroll"
+        },
+        "x": {
+          "$ref": "#/$defs/Point"
+        },
+        "y": {
+          "$ref": "#/$defs/Point"
+        },
+        "dx": {
+          "type": "number"
+        },
+        "dy": {
+          "type": "number"
+        }
+      }
+    },
+    "Text": {
+      "title": "text",
+      "description": "Text put in where the caret is, as the page would get it from a keyboard, such as a paste. A password, a card or a code goes to the page as it is: the server keeps none of it.",
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        }
+      }
+    },
+    "Fill": {
+      "title": "fill",
+      "description": "Sets the whole value of the field with the focus to `text`, as typing it would, replacing what was there; an empty `text` clears it. For a native field laid over the page's at its `focus` box: send it after each change, and when iOS fills in a password or a code from Messages. Send `key` Enter to submit, as return would.",
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": {
+        "type": {
+          "const": "fill"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 10000
+        }
+      }
+    },
+    "Key": {
+      "title": "key",
+      "description": "A key that isn't text: Backspace deletes, Enter submits, as return would, and Tab moves to the next field.",
+      "type": "object",
+      "required": ["type", "key"],
+      "properties": {
+        "type": {
+          "const": "key"
+        },
+        "key": {
+          "enum": ["Backspace", "Delete", "Enter", "Tab", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]
+        }
+      }
+    },
+    "Navigate": {
+      "title": "navigate",
+      "description": "Goes to an address you typed, such as a site to sign in to, or `back`, `forward` or `reload`.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "navigate"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "action": {
+          "enum": ["back", "forward", "reload"]
+        }
+      }
+    },
+    "State": {
+      "title": "state",
+      "description": "The browser's state, the same as `browser.changed` carries: on connecting, and whenever it changes. While it's `yours`, frames up reach the page; show Hand back to Kumo.",
+      "type": "object",
+      "required": ["type", "browser"],
+      "properties": {
+        "type": {
+          "const": "state"
+        },
+        "browser": {
+          "$ref": "events.schema.json#/$defs/Browser"
+        }
+      }
+    },
+    "View": {
+      "title": "view",
+      "description": "The page being shown: on connecting, and when it moves to another page or tab. `width` and `height` are the viewport in CSS pixels, the size to map touches by.",
+      "type": "object",
+      "required": ["type", "url", "width", "height", "tab", "tabs"],
+      "properties": {
+        "type": {
+          "const": "view"
+        },
+        "url": {
+          "type": "string"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tab": {
+          "description": "Which tab it is, counting from 1.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "tabs": {
+          "description": "How many tabs are open.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "Focus": {
+      "title": "focus",
+      "description": "In a takeover, whenever the focus moves or the page under it scrolls: the field with the focus, where it is and how much it holds, so the phone can lay a native field over it, with the keyboard it wants and iOS's own filling of passwords and codes from Messages, and send what's typed with `fill`. Without `field`, nothing editable has the focus: take the native field and the keyboard away.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "focus"
+        },
+        "field": {
+          "type": "object",
+          "required": ["kind", "label", "box", "length"],
+          "properties": {
+            "kind": {
+              "description": "What the field takes: `password`, `code` for a one-time code (iOS's `.oneTimeCode`), `email`, `number`, `tel`, `url`, `search`, or `text` for anything else. Treat a kind you don't recognise as `text`.",
+              "enum": ["text", "email", "number", "tel", "url", "search", "password", "code"]
+            },
+            "label": {
+              "description": "The field's label, which may be empty.",
+              "type": "string"
+            },
+            "box": {
+              "description": "Where the field is, in CSS pixels in the viewport, from its top left, as for touches.",
+              "type": "object",
+              "required": ["x", "y", "width", "height"],
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "width": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "height": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "length": {
+              "description": "How many characters it holds now. Its value never leaves the server.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "multiline": {
+              "description": "Present, true, for a field that takes several lines, such as a textarea.",
+              "const": true
+            }
+          }
+        }
+      }
+    },
+    "Refused": {
+      "title": "refused",
+      "description": "A frame up didn't reach the page, with why in plain words, such as needing to take over first.",
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": {
+          "const": "refused"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "Ended": {
+      "title": "ended",
+      "description": "The browser stopped, switched off or failing, with why; the server closes the stream next.",
+      "type": "object",
+      "required": ["type", "reason"],
+      "properties": {
+        "type": {
+          "const": "ended"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -191,6 +191,50 @@ describe("capability host", () => {
     ]);
   });
 
+  it("lets the part of Ito that follows a capability hear it, answer it and control it, apart from the agent", async () => {
+    const heard = createCell<readonly (readonly [string, unknown])[]>([]);
+    const stopped = createCell(0);
+    const { host } = await startHost(createMemorySettings(switchedOn({ token: "secret-1" })));
+    host.attach("echo", {
+      onPublish: (topic, data) => {
+        heard.update((current) => [...current, [topic, data]]);
+      },
+      onRequest: (name, data) => Promise.resolve(ok({ name, data })),
+      onStopped: () => {
+        stopped.update((count) => count + 1);
+      },
+    });
+
+    const placed = await host.call("echo", "place", {}, { turn: "turn-1", thread: "thread-1", run: "run-1" });
+    const shouted = await host.control("echo", "shout", { text: "hi" });
+    const unknown = await host.control("echo", "whisper", {});
+    await host.switchTo("echo", false);
+
+    expect(placed).toMatchObject({
+      ok: true,
+      value: {
+        data: {
+          turn: "turn-1",
+          thread: "thread-1",
+          run: "run-1",
+          noted: { name: "note", data: { thread: "thread-1" } },
+        },
+      },
+    });
+    expect(shouted).toEqual({ ok: true, value: { shouted: "HI" } });
+    expect(unknown).toEqual({ ok: false, failure: "Echo has no control whisper." });
+    expect(heard.get()).toEqual([
+      ["called", { turn: "turn-1", thread: "thread-1", run: "run-1" }],
+      ["shouted", { text: "HI" }],
+    ]);
+    expect(stopped.get()).toBe(1);
+    expect(host.find("echo")?.manifest?.operations.map(({ name }) => name)).not.toContain("shout");
+    expect(await host.control("echo", "shout", { text: "hi" })).toEqual({
+      ok: false,
+      failure: "Echo is off. The person can switch it on in Ari's Settings › Capabilities.",
+    });
+  });
+
   it("restarts a crashed capability with backoff, and gives up after five crashes in ten minutes", async () => {
     const clock = createVirtualClock(0);
     const { host } = await startHost(createMemorySettings(switchedOn({ token: "secret-1" })), clock);

@@ -11,6 +11,7 @@
 | [made.schema.json](made.schema.json) | What a page Kumo made holds: its sections, items to tick and pictures |
 | [motion.schema.json](motion.schema.json) | What a thing in motion holds, for each kind, and the changes Ari makes to it |
 | [stream.schema.json](stream.schema.json) | The frames on a call's stream, both ways |
+| [browser.schema.json](browser.schema.json) | The frames on the live view of Kumo's browser, both ways |
 | [guarantees.md](guarantees.md) | What the server and the protocol promise |
 | [transcripts](transcripts) | One golden transcript per scenario: what crosses the API, step by step |
 | [types.ts](types.ts) | TypeScript types generated from the spec |
@@ -65,6 +66,13 @@ sequenceDiagram
   and move a message between threads; list and search them for Threads by day.
 - **Open what Kumo made:** list the Made shelf, fetch a page with its content and your ticks, and
   tick its items.
+- **Follow Kumo's browser:** when Kumo books, fills in a form or shops for you on a site, its task
+  shows as a line in the thread it lives in (`browser.changed`), and a tap peeks at the live view
+  over a WebSocket. When Kumo needs your hand, for a login, a code, a CAPTCHA or the pay button, a
+  `takeover` notification opens straight into it: take the page over, sign in or pay with the
+  phone's own keyboard laid over the page's field, and hand it back. Kumo never presses a button
+  that pays. A free booking or form can come as a one-tap `commit` card on the Desk, pressed for
+  you only if the page is still as it was.
 
 ## Events
 
@@ -94,6 +102,52 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `made.created`, `made.changed` | Kumo made a page, or kept one current, with a note of what changed |
 | `made.state` | Your ticks on a page changed, from any device |
 | `made.removed` | You let Kumo forget a page |
+| `browser.changed` | Kumo's browser moved on: a step on a site, a takeover asked for, taken or handed back, a commit card, or the task over |
+
+## Kumo's browser
+
+The browser is a capability, so it's there only while it's on: `GET /v0/server` lists it as
+`browser`. One Chromium on the server, signed in where you signed in, always at iPhone size, so the
+page Kumo reads is the page you take over.
+
+```mermaid
+sequenceDiagram
+  participant App as Ari
+  participant Server as Ito server
+  Server-->>App: browser.changed (browsing, "On OpenTable: choosing Sat 19:30 · step 6", thread)
+  App->>Server: GET /v0/capabilities/browser/stream (WebSocket: peek)
+  Server-->>App: state, view, then JPEG frames
+  Server-->>App: browser.changed (needs_you, need: login) and a takeover notification
+  App->>Server: POST /v0/capabilities/browser/takeover
+  Server-->>App: browser.changed (yours, lease)
+  Server-->>App: focus (password field, its box, its length)
+  App->>Server: fill, key Enter (from the native field over the page's)
+  App->>Server: DELETE /v0/capabilities/browser/takeover
+  Server-->>App: browser.changed (browsing: Kumo reads the page again and carries on)
+```
+
+- **The line.** `browser.changed` carries the whole state, and the snapshot holds it while it isn't
+  idle. Show its `line` in the thread named by `thread`, or in the main chat when there's none: what
+  Kumo is doing while it browses, that it needs your hand, that you have the page, or that a card
+  waits for your OK. It never notifies, except that a need notifies once.
+- **Peek.** `GET /v0/capabilities/browser/stream` upgrades to a WebSocket that sends the page as
+  JPEG frames from Chrome's own screencast, plus `state`, `view` and `focus` text frames. Watching
+  changes nothing.
+- **Take over.** `POST /v0/capabilities/browser/takeover` gives you the page: Kumo's actions on it
+  are refused until you hand it back with `DELETE`, and your `tap`, `touch`, `scroll`, `text`,
+  `fill`, `key` and `navigate` frames reach it. Each one moves the lease on; left alone for ten
+  minutes, it goes back to Kumo by itself. When a field takes the focus, `focus` says its kind
+  (`password`, `code`, `email`, `number`…), its box in the viewport and its length, so a native field
+  laid over it can use iOS's keyboard and its filling of passwords and codes. What you type goes to
+  the page and nowhere else.
+- **Hand back.** Kumo's view of the page is gone, so it reads the page again before acting, woken
+  in the task's thread when it was waiting on you.
+- **Money is your hand.** Kumo stops on the final page and asks you to take over with need
+  `payment`; the browser refuses any press that pays, whatever Kumo declares.
+- **Commit cards.** A free booking or form can wait on the Desk as a `commit` card: a picture of the
+  page with the button outlined, Kumo's summary and the details. The option that `acts` has the box
+  press exactly that button, if the page is still as it was; otherwise nothing is pressed and Kumo
+  looks again.
 
 ## Versioning
 

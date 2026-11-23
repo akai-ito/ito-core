@@ -4,7 +4,7 @@ import { toThreadId, toTurnId } from "#conversation/ids.ts";
 import { isRefusal, type Apns } from "#notifications/apns.ts";
 import { sealNotification, type Sealed } from "#notifications/crypto.ts";
 import { toFailedText, toFirstLine } from "#notifications/text.ts";
-import type { Ask, Notification } from "#protocol/types.ts";
+import type { Ask, Browser, Notification } from "#protocol/types.ts";
 import type { Health } from "#problems/problems.ts";
 import type { LogEntry, Store, StoredDevice } from "#store/store.ts";
 import type { Log } from "#turns/turns.ts";
@@ -56,6 +56,9 @@ const fallbackText = (kind: Notification["kind"], agentName: string): string => 
     case "post": {
       return `${agentName} has news`;
     }
+    case "takeover": {
+      return `${agentName} needs your hand`;
+    }
   }
 };
 
@@ -88,7 +91,9 @@ export const createNotifier = ({
   log,
   onHealth = ignore,
 }: NotifierOptions): Notifier => {
+  // Turns that asked, or asked for a takeover: that notification stands for their reply.
   const askingTurns = createCell<ReadonlySet<string>>(new Set());
+  const lastNeed = createCell<string | undefined>(undefined);
   const deliveries = createCell<Promise<void>>(Promise.resolve());
 
   const deliver = async (notification: Notification, level: PushLevel): Promise<void> => {
@@ -149,6 +154,21 @@ export const createNotifier = ({
     }
   };
 
+  // Kumo's browser needs his hand: one notification for each need, which opens straight into the takeover.
+  const onBrowser = ({ state, need, site, thread }: Browser): void => {
+    const key = need && `${need.kind} ${need.why} ${need.turn ?? ""}`;
+    const isNew = key !== undefined && key !== lastNeed.get() && state === "needs_you";
+    lastNeed.set(key);
+    if (!need || !isNew) return;
+    if (need.turn !== undefined) askingTurns.update((current) => new Set([...current, need.turn ?? ""]));
+    notify({
+      kind: "takeover",
+      text: toFirstLine(need.why),
+      takeover: { need: need.kind, ...(site !== undefined && { site }) },
+      ...placeOf(thread),
+    });
+  };
+
   const onEvent = ({ event }: LogEntry): void => {
     if (event.type === "message.posted") {
       notify(
@@ -165,6 +185,10 @@ export const createNotifier = ({
     if (event.type === "ask.started") {
       askingTurns.update((current) => new Set([...current, event.ask.turn]));
       notify({ kind: "ask", text: event.ask.question, ask: toAskPart(event.ask), ...placeOf(event.ask.thread) });
+      return;
+    }
+    if (event.type === "browser.changed") {
+      onBrowser(event.browser);
       return;
     }
     if (event.type === "turn.ended") onTurnEnded(event);

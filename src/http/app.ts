@@ -43,6 +43,8 @@ import type { VoiceLoop } from "#voice/loop.ts";
 import type { Calls } from "#voice/calls.ts";
 import type { Voiceprints } from "#voice/voiceprints.ts";
 import { registerStream } from "#http/stream.ts";
+import { registerBrowser } from "#http/browser.ts";
+import type { BrowserHand } from "#hands/browser.ts";
 import { registerThreads } from "#http/threads.ts";
 import { createEventStream } from "#http/events.ts";
 import { inlineDisposition, parseRange } from "#http/ranges.ts";
@@ -92,6 +94,8 @@ export type AppOptions = {
   // You moved a message between the main chat and a thread, or between threads.
   readonly moved: (message: MessageId, from: ThreadId | undefined, to: ThreadId | undefined) => void;
   readonly gettingStarted: GettingStarted;
+  // Kumo's browser, when the server has one.
+  readonly browser?: BrowserHand;
   readonly logger: FastifyServerOptions["logger"];
 };
 
@@ -157,6 +161,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     onLeadRenamed,
     gettingStarted,
     moved,
+    browser,
     logger,
   } = options;
   const protocol = protocolVersion(schemas.document);
@@ -270,7 +275,8 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerMade(app, made, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
   registerTalk(app, { store, attachments, voice, calls, voiceprints, schemaFor });
-  registerStream(app, { store, calls, voice, protocol });
+  registerStream(app, { store, calls, voice, protocol, ...(browser && { browser }) });
+  if (browser) registerBrowser(app, { hand: browser, schemaFor });
   registerThreads(app, { store, moved, schemaFor });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {

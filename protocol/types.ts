@@ -1161,6 +1161,93 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/capabilities/browser/state": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * See what Kumo's browser is doing
+     * @description The state `browser.changed` carries and the snapshot holds. Only while the browser capability
+     *     is on; otherwise the answer is `unavailable`.
+     */
+    get: operations["getBrowser"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/capabilities/browser/takeover": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Take the page over
+     * @description You hold the page. Kumo's actions on it are refused until you hand it back, and your touches,
+     *     keys and text on the stream reach it. A step Kumo is in the middle of finishes first, which
+     *     takes a few seconds at most. Taking it again moves the lease on, as every frame up does; left
+     *     untouched for ten minutes, the page goes back to Kumo by itself. Sign in, enter a code, solve a
+     *     CAPTCHA or press the pay button here: Kumo never sees what you type. A takeover is never an
+     *     approval: once you hand back, Kumo reads the page again and goes on from what it finds.
+     */
+    post: operations["takeOverBrowser"];
+    /**
+     * Hand the page back to Kumo
+     * @description Kumo's old view of the page is gone, so it reads the page again before it acts. When it had
+     *     asked for your hand, or was in the middle of a task, it's woken to carry on, in the thread the
+     *     task lives in. Handing back a page you don't hold changes nothing.
+     */
+    delete: operations["handBackBrowser"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/capabilities/browser/stream": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Watch the browser live, and use it in a takeover
+     * @description Upgrades to a WebSocket, with the token in `Authorization` as everywhere. Several can be open
+     *     at once, one for each device; the page is streamed while any is.
+     *
+     *     - **Binary frames down:** the page, from Chrome's own screencast: one JPEG each, the whole
+     *       viewport at iPhone size, as soon as anything paints. While the page moves they come at 1x,
+     *       up to 60 a second; once it's still for a moment, a sharp one at 2x follows. A slow
+     *       connection gets fewer, never a backlog: draw the latest.
+     *     - **Text frames** both ways are JSON, as in [the browser stream schema](browser.schema.json):
+     *       `state`, `view`, `focus`, `refused` and `ended` from the server; `tap`, `touch`, `scroll`,
+     *       `text`, `fill`, `key` and `navigate` from the app, which reach the page only while you
+     *       hold it. `focus` gives the field with the focus, its kind, where it is and how long its
+     *       value is, so a native field laid over it can type with iOS's keyboard and fill in
+     *       passwords and codes, sending each change with `fill` and return as `key` Enter.
+     *
+     *     Peeking is watching: nothing you do changes the page until you take it over with
+     *     `POST /v0/capabilities/browser/takeover`, and Kumo carries on meanwhile.
+     */
+    get: operations["streamBrowser"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/memory/in-mind": {
     parameters: {
       query?: never;
@@ -1762,6 +1849,9 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    BrowserBody: {
+      browser: components["schemas"]["Browser"];
+    };
     SpeechRequest: {
       /** @description What to say, as it should be spoken. */
       text: string;
@@ -2219,7 +2309,8 @@ export interface components {
       | components["schemas"]["ThreadStarted"]
       | components["schemas"]["ThreadChanged"]
       | components["schemas"]["MessageMoved"]
-      | components["schemas"]["RecordingChanged"];
+      | components["schemas"]["RecordingChanged"]
+      | components["schemas"]["BrowserChanged"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation and of the Desk with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -2255,6 +2346,8 @@ export interface components {
       onboarding?: components["schemas"]["Onboarding"];
       /** @description What's wrong on the server right now, while anything is. Absent when nothing is. */
       problems?: components["schemas"]["Problem"][];
+      /** @description Kumo's browser, while it's doing something: browsing, waiting on you, or in your hands. Absent while it's idle. */
+      browser?: components["schemas"]["Browser"];
     };
     /**
      * message.accepted
@@ -2482,7 +2575,7 @@ export interface components {
     /** @description What the device shows, once decrypted. */
     Notification: {
       kind: components["schemas"]["NotificationKind"];
-      /** @description `reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: "Couldn't finish: " and the error's message. `ask`: the question. `post`: its first line. */
+      /** @description `reply`: the reply's first line, with Markdown stripped, at most 200 characters. `failed`: "Couldn't finish: " and the error's message. `ask`: the question. `post`: its first line. `takeover`: what Kumo needs you to do, such as "Sign in to OpenTable so I can book Saturday". */
       text: string;
       /** @description `reply` and `failed`: the turn. */
       turn?: components["schemas"]["TurnId"];
@@ -2494,6 +2587,12 @@ export interface components {
         /** @description The options' labels, in order. */
         options: string[];
         allows_text: boolean;
+      };
+      /** @description `takeover`: a tap opens the live view of Kumo's browser straight into a takeover (`POST /v0/capabilities/browser/takeover`). The turn that asked, if one did, doesn't also notify its reply. */
+      takeover?: {
+        need: components["schemas"]["BrowserNeedKind"];
+        /** @description The site it's on, such as "OpenTable". */
+        site?: string;
       };
       /** @description When it happened in a side thread: the thread, so that a tap opens it there. */
       thread?: components["schemas"]["ThreadId"];
@@ -3581,10 +3680,10 @@ export interface components {
     Card: {
       id: components["schemas"]["CardId"];
       /**
-       * @description `draft`, `invite`, `times`, `question` or `offer`.
+       * @description `draft`, `invite`, `times`, `question`, `offer` or `commit`.
        * @enum {unknown}
        */
-      kind: "draft" | "invite" | "times" | "question" | "offer";
+      kind: "draft" | "invite" | "times" | "question" | "offer" | "commit";
       motion?: components["schemas"]["MotionId"];
       /** @description When it began waiting, for "since Wed". */
       at: components["schemas"]["Timestamp"];
@@ -3652,6 +3751,26 @@ export interface components {
       offer?: {
         text: string;
         capability?: string;
+      };
+      /** @description A free booking or form Kumo has ready on a site, such as a table for two, for your one tap. Show the picture, the summary and the details, with the options: the one that `acts` has the box press the site's own button, exactly the one outlined in the picture, but only if the page is still as it was; if it changed, nothing is pressed and Kumo looks again. The other option, or words of your own, press nothing: Kumo hears them. Money never goes this way: where money moves, Kumo asks you to take over and press the button yourself. */
+      commit?: {
+        /** @description The site, such as "OpenTable". */
+        site: string;
+        /** @description The page's address, without its query. */
+        url: string;
+        /** @description The site's own button that a go-ahead presses, as it reads, such as "Book now". */
+        button: string;
+        /** @description What pressing it does, in Kumo's words. */
+        summary: string;
+        /** @description What matters, such as when, for how many, and the name it's under. Absent when Kumo gave none. */
+        details?: {
+          label: string;
+          value: string;
+        }[];
+        /** @description The page as Kumo left it, at iPhone size, with the button outlined. Fetch it with `GET /v0/attachments/{attachment}`. */
+        screenshot: components["schemas"]["AttachmentId"];
+        /** @description The side thread the task lives in, where Kumo tells you how it went. Absent for the main chat. */
+        thread?: components["schemas"]["ThreadId"];
       };
     } & (unknown & unknown & unknown & unknown & unknown);
     /** @description Home: Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail. */
@@ -3762,6 +3881,48 @@ export interface components {
     };
     /** @description Opaque: the id of a file Kumo showed you, which stays the same across its versions. */
     FileId: string;
+    /**
+     * @description What Kumo's browser is doing: `idle`; `browsing`, Kumo at work on a site; `needs_you`, Kumo asked you to take over, for a login, a code, a CAPTCHA or the pay button; `yours`, you hold the page in a takeover and Kumo can't touch it; `waiting`, a commit card waits for your tap. Treat a state you don't recognise as `idle`.
+     * @enum {unknown}
+     */
+    BrowserState: "idle" | "browsing" | "needs_you" | "yours" | "waiting";
+    /**
+     * @description What Kumo needs your hand for: `login` to sign in, `code` for a two-factor code, `captcha`, `payment` to press the site's pay button yourself, or `other`. Treat a kind you don't recognise as `other`.
+     * @enum {unknown}
+     */
+    BrowserNeedKind: "login" | "code" | "captcha" | "payment" | "other";
+    /** @description Kumo's browser on the server: one Chromium, signed in where you signed in, that Kumo uses for you, at iPhone size. A browsing task lives in the thread it started in: show `line` there, in the thread's view or the main chat, and a tap on it peeks at the live view (`GET /v0/capabilities/browser/stream`), which you can take over. Kumo never presses a button that pays, never types a password, card or code, and asks you instead. */
+    Browser: {
+      state: components["schemas"]["BrowserState"];
+      /** @description What to show as the task's line, plain words written by the server: "On OpenTable: choosing Sat 19:30 · step 6", "Needs your hand on OpenTable", "You have the page", "Waiting for your OK on OpenTable". Absent while it's idle. */
+      line?: string;
+      /** @description The side thread the task lives in. Absent for the main chat, and while idle. */
+      thread?: components["schemas"]["ThreadId"];
+      /** @description The site it's on, such as "OpenTable". */
+      site?: string;
+      /** @description The page's address, without its query. */
+      url?: string;
+      /** @description The page's title. */
+      title?: string;
+      /** @description `browsing` only: what Kumo is doing, in its words, such as "choosing Sat 19:30". */
+      doing?: string;
+      /** @description `browsing` only: how many steps Kumo has taken on this task. */
+      step?: number;
+      /** @description `needs_you`, and `yours` when you took over because Kumo asked: what for. The notification carried the same. */
+      need?: {
+        kind: components["schemas"]["BrowserNeedKind"];
+        /** @description What to do, in Kumo's words, such as "Sign in to OpenTable so I can book Saturday". */
+        why: string;
+        /** @description The turn that asked, when one did. */
+        turn?: components["schemas"]["TurnId"];
+      };
+      /** @description `yours` only: you hold the page until you hand it back, or until `until`, which every touch moves on; then it goes back to Kumo by itself. */
+      lease?: {
+        until: components["schemas"]["Timestamp"];
+      };
+      /** @description `waiting` only: the commit card on the Desk. */
+      card?: components["schemas"]["CardId"];
+    };
     /** @description A thing in motion: something going on that Kumo keeps for you, such as a trip being planned or a role you're interviewing for. Its content and state come from `GET /v0/motion/{id}`. */
     Motion: {
       id: components["schemas"]["MotionId"];
@@ -4135,10 +4296,21 @@ export interface components {
       recording: components["schemas"]["Recording"];
     };
     /**
-     * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, or Kumo sent a `post` outside a turn.
+     * browser.changed
+     * @description Kumo's browser changed: a step on a site, a takeover asked for, taken or handed back, a commit card put to you or settled, or the task over. It carries the whole state. These events are compacted like the Desk's, so after a `snapshot`, its `browser` is the state, or idle when absent. They never notify, except that a need notifies once, as a `takeover` notification.
+     */
+    BrowserChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "browser.changed";
+      at: components["schemas"]["Timestamp"];
+      browser: components["schemas"]["Browser"];
+    };
+    /**
+     * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, Kumo sent a `post` outside a turn, or Kumo's browser needs your hand, a `takeover`.
      * @enum {unknown}
      */
-    NotificationKind: "reply" | "failed" | "ask" | "post";
+    NotificationKind: "reply" | "failed" | "ask" | "post" | "takeover";
   };
   responses: {
     /** @description The request is malformed, or not possible in the current state (`invalid_request`). */
@@ -4372,6 +4544,7 @@ export interface components {
   };
   pathItems: never;
 }
+export type BrowserBody = components["schemas"]["BrowserBody"];
 export type SpeechRequest = components["schemas"]["SpeechRequest"];
 export type VoiceList = components["schemas"]["VoiceList"];
 export type VoiceprintState = components["schemas"]["VoiceprintState"];
@@ -4562,6 +4735,9 @@ export type LiveTurn = components["schemas"]["LiveTurn"];
 export type RecordingState = components["schemas"]["RecordingState"];
 export type Recording = components["schemas"]["Recording"];
 export type FileId = components["schemas"]["FileId"];
+export type BrowserState = components["schemas"]["BrowserState"];
+export type BrowserNeedKind = components["schemas"]["BrowserNeedKind"];
+export type Browser = components["schemas"]["Browser"];
 export type Motion = components["schemas"]["Motion"];
 export type MotionChange = components["schemas"]["MotionChange"];
 export type MadeId = components["schemas"]["MadeId"];
@@ -4594,6 +4770,7 @@ export type ThreadStarted = components["schemas"]["ThreadStarted"];
 export type ThreadChanged = components["schemas"]["ThreadChanged"];
 export type MessageMoved = components["schemas"]["MessageMoved"];
 export type RecordingChanged = components["schemas"]["RecordingChanged"];
+export type BrowserChanged = components["schemas"]["BrowserChanged"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -6542,6 +6719,109 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  getBrowser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The browser as it stands. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "browser": {
+           *         "state": "browsing",
+           *         "line": "On OpenTable: choosing Sat 19:30 · step 6",
+           *         "thread": "h_7f9q7h33a4pb",
+           *         "site": "OpenTable",
+           *         "url": "https://www.opentable.example/booking/details",
+           *         "title": "Complete your reservation",
+           *         "doing": "choosing Sat 19:30",
+           *         "step": 6
+           *       }
+           *     }
+           */
+          "application/json": components["schemas"]["BrowserBody"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  takeOverBrowser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The browser, now `yours`. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BrowserBody"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  handBackBrowser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The browser, back with Kumo. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BrowserBody"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  streamBrowser: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Switching to the WebSocket. */
+      101: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
     };
   };
   getInMind: {

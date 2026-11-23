@@ -2,6 +2,7 @@ import websocket from "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
 import type { RawData, WebSocket } from "ws";
 import { toCommandError } from "#conversation/failures.ts";
+import type { BrowserHand, BrowserSocket } from "#hands/browser.ts";
 import type { Store } from "#store/store.ts";
 import type { CallSocket, FromApp } from "#voice/call.ts";
 import type { Calls } from "#voice/calls.ts";
@@ -14,6 +15,7 @@ export type StreamOptions = {
   readonly calls: Calls;
   readonly voice: VoiceLoop;
   readonly protocol: string;
+  readonly browser?: BrowserHand;
 };
 
 const toBytes = (data: RawData): Uint8Array =>
@@ -47,7 +49,23 @@ const toCallSocket = (socket: WebSocket): CallSocket => ({
   },
 });
 
-export const registerStream = (app: FastifyInstance, { store, calls, voice, protocol }: StreamOptions): void => {
+const toBrowserSocket = (socket: WebSocket): BrowserSocket => ({
+  sendText: (frame) => {
+    socket.send(JSON.stringify(frame));
+  },
+  sendFrame: (jpeg) => {
+    socket.send(jpeg, { binary: true });
+  },
+  buffered: () => socket.bufferedAmount,
+  close: (code, reason) => {
+    socket.close(code, reason);
+  },
+});
+
+export const registerStream = (
+  app: FastifyInstance,
+  { store, calls, voice, protocol, browser }: StreamOptions,
+): void => {
   void app.register(async (scoped) => {
     await scoped.register(websocket);
     scoped.websocketServer.on("headers", (headers: string[]) => {
@@ -89,6 +107,30 @@ export const registerStream = (app: FastifyInstance, { store, calls, voice, prot
           stream.detach(callSocket);
         });
         void stream.attach(callSocket);
+      },
+    );
+    if (!browser) return;
+    scoped.get(
+      "/v0/capabilities/browser/stream",
+      {
+        websocket: true,
+        preValidation: async (_request, reply) => {
+          if (browser.isOn()) return;
+          return reply
+            .header("ito-protocol", protocol)
+            .code(503)
+            .send({ error: toCommandError("unavailable", browser.unavailable(), "Kumo's browser isn't available.") });
+        },
+      },
+      (socket) => {
+        const browserSocket = toBrowserSocket(socket);
+        socket.on("message", (data, isBinary) => {
+          if (!isBinary) browser.receive(browserSocket, Buffer.from(toBytes(data)).toString("utf8"));
+        });
+        socket.on("close", () => {
+          browser.detach(browserSocket);
+        });
+        void browser.attach(browserSocket);
       },
     );
   });

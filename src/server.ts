@@ -104,6 +104,7 @@ import { createDayPicture } from "#day/picture.ts";
 import { registerDay } from "#http/day.ts";
 import { contextRun, contextThread, inToolContext } from "#tools/context.ts";
 import { createDemoTools } from "#demo/tools.ts";
+import { createBrowserHand } from "#hands/browser.ts";
 
 export type ServerOptions = {
   readonly dataDirectory: string;
@@ -727,6 +728,16 @@ export const createServer = (options: ServerOptions): Server => {
     return store.postMessage(text, { isUrgent, ...(thread && { thread: toThreadId(thread.id) }) });
   };
 
+  // Kumo's browser beyond its tools: the line in a thread, the live view, takeovers and commit cards.
+  const browser = createBrowserHand({
+    host,
+    store,
+    desk,
+    attachments,
+    identifiers,
+    work: workFor("Pages in the browser that came back to you"),
+    info,
+  });
   const app = createApp({
     store,
     turns,
@@ -760,6 +771,7 @@ export const createServer = (options: ServerOptions): Server => {
     moved: (message, from, to) => {
       turns.moved(message, from, to);
     },
+    browser,
     logger: options.logger ?? false,
   });
   listening.set(
@@ -779,7 +791,16 @@ export const createServer = (options: ServerOptions): Server => {
     if ("error" in details || "reason" in details) app.log.warn(details, message);
     else app.log.info(details, message);
   });
-  const doors = createDoors({ host, currentTurn: () => store.runningTurn(contextThread())?.id, command: launcher });
+  const doors = createDoors({
+    host,
+    currentTurn: () => store.runningTurn(contextThread())?.id,
+    currentPlace: () => {
+      const thread = contextThread();
+      const run = contextRun();
+      return { ...(thread !== undefined && { thread }), ...(run !== undefined && { run }) };
+    },
+    command: launcher,
+  });
   const imageTool = createImageTool({
     attachments,
     keep: (id) => {
@@ -878,6 +899,7 @@ export const createServer = (options: ServerOptions): Server => {
     contacts.close();
     await mail.close();
     notifier.close();
+    browser.close();
     await app.close();
     await turns.close();
     await engine.close();

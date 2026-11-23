@@ -12,6 +12,8 @@ export type Doors = {
 export type DoorsOptions = {
   readonly host: Host;
   readonly currentTurn: () => string | undefined;
+  // The side thread and the piece of background work a call comes from, when there are.
+  readonly currentPlace?: () => { readonly thread?: string; readonly run?: string };
   readonly command: string;
 };
 
@@ -19,10 +21,15 @@ export const maxTools = 20;
 
 const isHelp = (word: string | undefined): boolean => word === undefined || word === "--help" || word === "help";
 
-export const createDoors = ({ host, currentTurn, command }: DoorsOptions): Doors => {
+const nowhere = (): { readonly thread?: string; readonly run?: string } => ({});
+
+export const createDoors = ({ host, currentTurn, currentPlace = nowhere, command }: DoorsOptions): Doors => {
   const call = async (capability: Offered, operation: Operation, input: unknown): Promise<Result<string, string>> => {
     const turn = currentTurn();
-    const called = await host.call(capability.id, operation.name, input, turn === undefined ? {} : { turn });
+    const called = await host.call(capability.id, operation.name, input, {
+      ...currentPlace(),
+      ...(turn !== undefined && { turn }),
+    });
     return called.ok ? ok(called.value.text) : called;
   };
 

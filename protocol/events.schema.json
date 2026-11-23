@@ -118,6 +118,9 @@
         },
         {
           "$ref": "#/$defs/RecordingChanged"
+        },
+        {
+          "$ref": "#/$defs/BrowserChanged"
         }
       ]
     },
@@ -944,6 +947,10 @@
           "items": {
             "$ref": "#/$defs/Problem"
           }
+        },
+        "browser": {
+          "$ref": "#/$defs/Browser",
+          "description": "Kumo's browser, while it's doing something: browsing, waiting on you, or in your hands. Absent while it's idle."
         }
       }
     },
@@ -2301,8 +2308,8 @@
           "$ref": "#/$defs/CardId"
         },
         "kind": {
-          "description": "`draft`, `invite`, `times`, `question` or `offer`.",
-          "enum": ["draft", "invite", "times", "question", "offer"]
+          "description": "`draft`, `invite`, `times`, `question`, `offer` or `commit`.",
+          "enum": ["draft", "invite", "times", "question", "offer", "commit"]
         },
         "motion": {
           "$ref": "#/$defs/MotionId"
@@ -2474,6 +2481,63 @@
             "capability": {
               "type": "string",
               "minLength": 1
+            }
+          }
+        },
+        "commit": {
+          "description": "A free booking or form Kumo has ready on a site, such as a table for two, for your one tap. Show the picture, the summary and the details, with the options: the one that `acts` has the box press the site's own button, exactly the one outlined in the picture, but only if the page is still as it was; if it changed, nothing is pressed and Kumo looks again. The other option, or words of your own, press nothing: Kumo hears them. Money never goes this way: where money moves, Kumo asks you to take over and press the button yourself.",
+          "type": "object",
+          "required": ["site", "url", "button", "summary", "screenshot"],
+          "additionalProperties": false,
+          "properties": {
+            "site": {
+              "description": "The site, such as \"OpenTable\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "url": {
+              "description": "The page's address, without its query.",
+              "type": "string",
+              "minLength": 1
+            },
+            "button": {
+              "description": "The site's own button that a go-ahead presses, as it reads, such as \"Book now\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "summary": {
+              "description": "What pressing it does, in Kumo's words.",
+              "type": "string",
+              "minLength": 1
+            },
+            "details": {
+              "description": "What matters, such as when, for how many, and the name it's under. Absent when Kumo gave none.",
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "required": ["label", "value"],
+                "additionalProperties": false,
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "screenshot": {
+              "$ref": "#/$defs/AttachmentId",
+              "description": "The page as Kumo left it, at iPhone size, with the button outlined. Fetch it with `GET /v0/attachments/{attachment}`."
+            },
+            "thread": {
+              "$ref": "#/$defs/ThreadId",
+              "description": "The side thread the task lives in, where Kumo tells you how it went. Absent for the main chat."
             }
           }
         }
@@ -3190,6 +3254,112 @@
         },
         "recording": {
           "$ref": "#/$defs/Recording"
+        }
+      }
+    },
+    "BrowserState": {
+      "description": "What Kumo's browser is doing: `idle`; `browsing`, Kumo at work on a site; `needs_you`, Kumo asked you to take over, for a login, a code, a CAPTCHA or the pay button; `yours`, you hold the page in a takeover and Kumo can't touch it; `waiting`, a commit card waits for your tap. Treat a state you don't recognise as `idle`.",
+      "enum": ["idle", "browsing", "needs_you", "yours", "waiting"]
+    },
+    "BrowserNeedKind": {
+      "description": "What Kumo needs your hand for: `login` to sign in, `code` for a two-factor code, `captcha`, `payment` to press the site's pay button yourself, or `other`. Treat a kind you don't recognise as `other`.",
+      "enum": ["login", "code", "captcha", "payment", "other"]
+    },
+    "Browser": {
+      "description": "Kumo's browser on the server: one Chromium, signed in where you signed in, that Kumo uses for you, at iPhone size. A browsing task lives in the thread it started in: show `line` there, in the thread's view or the main chat, and a tap on it peeks at the live view (`GET /v0/capabilities/browser/stream`), which you can take over. Kumo never presses a button that pays, never types a password, card or code, and asks you instead.",
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/BrowserState"
+        },
+        "line": {
+          "description": "What to show as the task's line, plain words written by the server: \"On OpenTable: choosing Sat 19:30 · step 6\", \"Needs your hand on OpenTable\", \"You have the page\", \"Waiting for your OK on OpenTable\". Absent while it's idle.",
+          "type": "string",
+          "minLength": 1
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread the task lives in. Absent for the main chat, and while idle."
+        },
+        "site": {
+          "description": "The site it's on, such as \"OpenTable\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "description": "The page's address, without its query.",
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "description": "The page's title.",
+          "type": "string"
+        },
+        "doing": {
+          "description": "`browsing` only: what Kumo is doing, in its words, such as \"choosing Sat 19:30\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "step": {
+          "description": "`browsing` only: how many steps Kumo has taken on this task.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "need": {
+          "description": "`needs_you`, and `yours` when you took over because Kumo asked: what for. The notification carried the same.",
+          "type": "object",
+          "required": ["kind", "why"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "$ref": "#/$defs/BrowserNeedKind"
+            },
+            "why": {
+              "description": "What to do, in Kumo's words, such as \"Sign in to OpenTable so I can book Saturday\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "turn": {
+              "$ref": "#/$defs/TurnId",
+              "description": "The turn that asked, when one did."
+            }
+          }
+        },
+        "lease": {
+          "description": "`yours` only: you hold the page until you hand it back, or until `until`, which every touch moves on; then it goes back to Kumo by itself.",
+          "type": "object",
+          "required": ["until"],
+          "additionalProperties": false,
+          "properties": {
+            "until": {
+              "$ref": "#/$defs/Timestamp"
+            }
+          }
+        },
+        "card": {
+          "$ref": "#/$defs/CardId",
+          "description": "`waiting` only: the commit card on the Desk."
+        }
+      }
+    },
+    "BrowserChanged": {
+      "title": "browser.changed",
+      "description": "Kumo's browser changed: a step on a site, a takeover asked for, taken or handed back, a commit card put to you or settled, or the task over. It carries the whole state. These events are compacted like the Desk's, so after a `snapshot`, its `browser` is the state, or idle when absent. They never notify, except that a need notifies once, as a `takeover` notification.",
+      "type": "object",
+      "required": ["id", "type", "at", "browser"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "browser.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "browser": {
+          "$ref": "#/$defs/Browser"
         }
       }
     }
