@@ -25,11 +25,11 @@ export const registerDesk = (
 ): void => {
   app.get("/v0/desk", { schema: schemaFor("getDesk") }, () => store.desk());
 
-  app.post<{ Params: { readonly card: string }; Body: CardAnswer }>(
+  app.post<{ Params: { readonly card: string }; Querystring: { readonly thread?: string }; Body: CardAnswer }>(
     "/v0/desk/cards/:card/answer",
     { schema: schemaFor("answerCard") },
     async (request, reply) => {
-      const answered = desk.answer(request.params.card, request.body);
+      const answered = desk.answer(request.params.card, request.body, request.query.thread);
       if (answered.ok) return reply.code(202).send({ card: answered.value });
       return answered.failure === "not_found"
         ? reply

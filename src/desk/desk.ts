@@ -2,7 +2,8 @@ import { createCell } from "#cell.ts";
 import { toTimestamp, type Cancel, type Clock } from "#clock.ts";
 import { atLocal, startOfDay, toLocal, untilMinutes } from "#desk/day.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Ambient, CalendarItem, Card, Desk, DeskLine, DoneEntry, WakeUp } from "#protocol/types.ts";
+import { toThreadId } from "#conversation/ids.ts";
+import type { Ambient, CalendarItem, Card, Desk, DeskLine, DoneEntry, Thread, WakeUp } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
 import type { Info } from "#turns/turns.ts";
@@ -27,7 +28,9 @@ export type DeskKeeper = {
   readonly addCard: (card: NewCard) => Card;
   readonly cards: () => readonly Card[];
   readonly removeCard: (id: string) => void;
-  readonly answer: (id: string, answer: CardAnswer) => Result<Card, string>;
+  // Their answer, from the Desk or from the card in the chat: in a thread, `thread` says which, so what Kumo says
+  // about it goes there.
+  readonly answer: (id: string, answer: CardAnswer, thread?: string) => Result<Card, string>;
   // Kumo answers a card for them, once they've settled it in the chat.
   readonly answerFor: (id: string, answer: CardAnswer) => Result<AnsweredFor, string>;
   // Kumo changes a question, offer or times card while it waits, under the same id, marked changed.
@@ -350,11 +353,17 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     }
   };
 
-  const askKumo = async (card: Card, answer: CardAnswer): Promise<NewCard | undefined> => {
+  const askKumo = async (card: Card, answer: CardAnswer, thread?: Thread): Promise<NewCard | undefined> => {
     const said = toAnswerText(card, answer);
     const prompt = [
       `You asked them on the Desk: ${quoted(card)}`,
       `They answered: ${said}`,
+      ...(thread
+        ? [
+            `They answered it on its card in their thread ${thread.title === undefined ? "" : `“${thread.title}” `}(${thread.id}):`,
+            "anything you tell them about it goes in that thread.",
+          ]
+        : []),
       "Act on it if anything follows, such as undoing what you did or noting their preference on How to help",
       "you. End with one line for their Done list saying what you did, or that nothing more was needed.",
     ].join("\n");
@@ -399,17 +408,19 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
 
   scheduleMidnight();
 
-  const handlerOf = (card: Card): CardHandler =>
-    cardHandlers.get().get(card.id) ?? handlers.get().get(card.kind) ?? askKumo;
+  const ownHandlerOf = (card: Card): CardHandler | undefined =>
+    cardHandlers.get().get(card.id) ?? handlers.get().get(card.kind);
 
-  const isOwnCard = (card: Card): boolean => cardHandlers.get().has(card.id) || handlers.get().has(card.kind);
+  const isOwnCard = (card: Card): boolean => ownHandlerOf(card) !== undefined;
 
-  // The card shows the answer while its handler acts, then leaves, or comes back changed.
-  const startWorking = (card: Card, answer: CardAnswer): Card => {
+  // The card shows the answer while its handler acts, then leaves, or comes back changed. Kumo, acting on it, hears
+  // which thread it was answered in.
+  const startWorking = (card: Card, answer: CardAnswer, thread?: Thread): Card => {
     const working: Card = { ...card, state: "working", answer: shownAnswer(answer) };
     changeCards((waiting) => waiting.map((waitingCard) => (waitingCard.id === card.id ? working : waitingCard)));
     background(async () => {
-      const replacement = await handlerOf(card)(card, answer);
+      const own = ownHandlerOf(card);
+      const replacement = await (own ? own(card, answer) : askKumo(card, answer, thread));
       settle(card.id, replacement);
     });
     return working;
@@ -423,12 +434,14 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     removeCard: (id) => {
       settle(id, undefined);
     },
-    answer: (id, given) => {
+    answer: (id, given, threadId) => {
       const card = findCard(id);
       if (!card) return fail("not_found");
+      const thread = threadId === undefined ? undefined : store.findThread(toThreadId(threadId));
+      if (threadId !== undefined && !thread) return fail(`No thread ${threadId}.`);
       if (card.state === "working") return isSameAnswer(card.answer, given) ? ok(card) : fail(alreadyActing);
       const answer = checked(card, given);
-      return answer.ok ? ok(startWorking(card, answer.value)) : answer;
+      return answer.ok ? ok(startWorking(card, answer.value, thread)) : answer;
     },
     // A card with its own handler is acted on as their tap would be. Any other is settled at once, since Kumo,
     // answering for them in the chat, acts on it itself; it can say what they said in words of their own.

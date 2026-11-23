@@ -232,6 +232,81 @@ describe("the Desk", () => {
     store.close();
   });
 
+  it("tells Kumo which thread a card was answered in, so what it says about it goes there", async () => {
+    const store = createStore(openDatabase(path.join(home, "thread-answer.db")), systemClock, randomIdentifiers);
+    const prompts = createCell<readonly string[]>([]);
+    const desk = createDesk({
+      store,
+      identifiers: randomIdentifiers,
+      clock: systemClock,
+      timeZone: () => "UTC",
+      work: (prompt) => {
+        prompts.update((current) => [...current, prompt]);
+        return Promise.resolve(ok("Noted."));
+      },
+      info: ignore,
+    });
+    const offer = (title: string) =>
+      desk.addCard({
+        kind: "offer",
+        title,
+        options: [{ label: "Yes" }, { label: "Not now" }],
+        allows_text: false,
+        offer: { text: "Lessons?" },
+      });
+    const thread = store.startThread("kumo", "Italian lessons");
+    const inThread = offer("Italian practice?");
+    const onDesk = offer("Spanish practice?");
+    const elsewhere = offer("French practice?");
+
+    const answered = desk.answer(inThread.id, { option: "Yes" }, thread.id);
+    desk.answer(onDesk.id, { option: "Not now" });
+    const unknown = desk.answer(elsewhere.id, { option: "Yes" }, "t_none");
+    await desk.settled();
+
+    expect(answered.ok).toBe(true);
+    expect(unknown).toEqual({ ok: false, failure: "No thread t_none." });
+    const [threaded, plain] = prompts.get();
+    expect(threaded).toContain(
+      `They answered it on its card in their thread “Italian lessons” (${thread.id}):\nanything you tell them about it goes in that thread.`,
+    );
+    expect(plain).toContain("They answered: Not now");
+    expect(plain).not.toContain("thread");
+    desk.close();
+    store.close();
+  });
+
+  it("takes the thread a card was answered in over HTTP", async () => {
+    const { server, say } = openDesk();
+    await server.app.listen({ host: "127.0.0.1", port: 0 });
+    try {
+      await say("Fill the desk");
+      const thread = server.store.startThread("kumo", "Italian lessons");
+      const card = server.store.desk().waiting.find(({ title }) => title === "Italian practice?");
+      const answer = (query: string) =>
+        server.app.inject({
+          method: "POST",
+          url: `/v0/desk/cards/${card?.id ?? "none"}/answer${query}`,
+          headers: { authorization: `Bearer ${token}` },
+          payload: { option: "Yes" },
+        });
+      const unknown = await answer("?thread=t_none");
+      const taken = await answer(`?thread=${thread.id}`);
+
+      expect(unknown.statusCode).toBe(400);
+      expect(unknown.json()).toMatchObject({ error: { detail: "No thread t_none." } });
+      expect(taken.statusCode).toBe(202);
+      await vi.waitFor(
+        () => {
+          expect(server.store.desk().waiting.some(({ title }) => title === "Italian practice?")).toBe(false);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
   it("undoes an entry once, when Undo is tapped twice", async () => {
     const store = createStore(openDatabase(path.join(home, "undo-twice.db")), systemClock, randomIdentifiers);
     const desk = createDesk({

@@ -66,6 +66,7 @@ export const blockPrefix = "block-";
 export const guessMark = " · guess";
 
 const longestTitle = 40;
+const longestReason = 160;
 const longestBlockMs = 12 * hourMs;
 const keptMs = 35 * dayMs;
 const lookbackMs = 28 * dayMs;
@@ -107,14 +108,32 @@ const spanOf = (start: string, end: string, zone: string): string =>
   )}, ${clockOf(Date.parse(start), zone)}–${clockOf(Date.parse(end), zone)}`;
 
 const notesOf = (block: Block, lead: string): string => {
-  if (block.answer !== undefined) return `${lead}'s picture of your day, as you told it.`;
+  const overlap = block.overlap === undefined ? "" : ` Overlaps on purpose: ${block.overlap.reason}`;
+  if (block.answer !== undefined) return `${lead}'s picture of your day, as you told it.${overlap}`;
   return block.kind === "guess"
-    ? `${lead}'s guess: ${block.why ?? ""} Tell ${lead} if it's wrong, on the Desk in Ito.`
-    : `${lead}'s plan${block.why === undefined ? "" : `: ${block.why}`}. ${lead} moves it as your day changes.`;
+    ? `${lead}'s guess: ${block.why ?? ""} Tell ${lead} if it's wrong, on the Desk in Ito.${overlap}`
+    : `${lead}'s plan${block.why === undefined ? "" : `: ${block.why}`}. ${lead} moves it as your day changes.${overlap}`;
 };
 
 const overlaps = (start: number, end: number, item: CalendarItem): boolean =>
   !item.all_day && Date.parse(item.start) < end && start < Date.parse(item.end);
+
+// A confirmed event of theirs, rather than something soft: a hold, a maybe, or one of Kumo's own blocks.
+const isFirm = (item: CalendarItem): boolean =>
+  !item.calendar.kumo && item.status !== "hold" && item.status !== "tentative";
+
+// What a block would overlap, as Kumo reads it: what it is, when, and how settled it is.
+const clashOf = (item: CalendarItem, block: Block | undefined, zone: string): string => {
+  const title = withoutMark(item.title);
+  const span = `${clockOf(Date.parse(item.start), zone)}–${clockOf(Date.parse(item.end), zone)}`;
+  if (block) return `your ${block.kind} “${title}” (${item.uid}, ${span}, soft)`;
+  if (item.status === "hold") return `the hold “${title}” (${item.uid}, ${span}, not settled)`;
+  const whose = item.calendar.kumo ? "on your calendar" : "on their calendar";
+  return `“${title}” (${item.uid}, ${span}, ${item.status === "tentative" ? "tentative" : "confirmed"} ${whose})`;
+};
+
+const listOf = (parts: readonly string[]): string =>
+  parts.length < 2 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1) ?? ""}`;
 
 const answerOf = (input: unknown): BlockAnswer | string => {
   const right = fieldOf(input, "right") === true;
@@ -143,7 +162,12 @@ export const createDayPicture = ({
     if (!item.calendar.kumo) return item;
     const block = blocks.find(item.uid);
     if (!block) return item;
-    const withMotion = { ...item, title: block.title, ...(block.motion !== undefined && { motion: block.motion }) };
+    const withMotion = {
+      ...item,
+      title: block.title,
+      ...(block.motion !== undefined && { motion: block.motion }),
+      ...(block.overlap !== undefined && { overlap: block.overlap }),
+    };
     const isGuess = block.kind === "guess" && block.answer === undefined && isGuessActivity(block.activity);
     return isGuess
       ? {
@@ -372,13 +396,26 @@ export const createDayPicture = ({
       return failed(`Nothing in motion is ${motion}.`);
     const track = lineOf(input, "track");
     if (track !== "" && !tracks.find(track)) return failed(`There's no track ${track}.`);
+    const overlap = lineOf(input, "overlap");
+    if (overlap !== "" && overlap !== "intended") return failed(`overlap is "intended", or left out.`);
+    const reason = lineOf(input, "overlap_reason");
+    if ((overlap === "") !== (reason === "")) return failed(`Give overlap "intended" with overlap_reason, or neither.`);
+    if (reason.length > longestReason)
+      return failed(`Keep overlap_reason to ${String(longestReason)} characters or fewer.`);
     if (!calendar.isConnected()) return failed("iCloud isn't set up, so there's no calendar for your blocks.");
-    const clash = calendar.listItems().find((item) => overlaps(start, end, item));
-    if (clash) {
+    // Overlaps are refused unless Kumo says it means one, with why: accidental clashes stay caught.
+    const zone = timeZone();
+    const clashes = calendar.listItems().filter((item) => overlaps(start, end, item));
+    const clashText = listOf(clashes.map((item) => clashOf(item, blocks.find(item.uid), zone)));
+    const isIntended = clashes.length > 0 && overlap === "intended";
+    if (!isIntended && clashes.length > 0) {
       return failed(
-        clash.calendar.kumo
-          ? `That overlaps your ${withoutMark(clash.title)} (${clash.uid}): move or remove it first.`
-          : `That clashes with ${clash.title} on their calendar: fit it around.`,
+        clashes.some(isFirm)
+          ? `That overlaps ${clashText}. Fit it around what's confirmed. Only if they've told you both stand, call ` +
+              `again with overlap "intended" and overlap_reason saying why.`
+          : `That overlaps ${clashText}. Fit it around, or move what's there; if they mean both to stand while it's ` +
+              `decided, such as a soft plan beside a call that's only held, call again with overlap "intended" and ` +
+              `overlap_reason saying why and how they'll settle it.`,
       );
     }
     const uid = `${blockPrefix}${randomUUID()}`;
@@ -392,6 +429,7 @@ export const createDayPicture = ({
       ...(why !== "" && { why }),
       ...(motion !== "" && { motion }),
       ...(track !== "" && { track }),
+      ...(isIntended && { overlap: { reason } }),
       at: toTimestamp(clock.now()),
     };
     blocks.save(block);
@@ -409,7 +447,13 @@ export const createDayPicture = ({
       blocks.remove(uid);
       return failed(added.failure);
     }
-    return { text: `${kind === "guess" ? "Guessed" : "Planned"} ${title} (${uid}).` };
+    const placed = `${kind === "guess" ? "Guessed" : "Planned"} ${title} (${uid}).`;
+    return {
+      text: isIntended
+        ? `${placed} It overlaps ${clashText} on purpose: ${reason} Each keeps its own status; the day view shows ` +
+          "the overlap."
+        : placed,
+    };
   };
 
   const tools: readonly Tool[] = [
@@ -421,7 +465,9 @@ export const createDayPicture = ({
         "or agree with them (the run from their training block, interview prep, a proper meal, winding down), or " +
         "kind guess for your guess at what they'll be doing (working, building, training, seeing people, " +
         "studying, chilling), with why. They see both in Coming up and iOS Calendar, guesses marked as guesses, " +
-        "and can correct a guess. Move or remove a block with change_event or delete_event.",
+        "and can correct a guess. Move or remove a block with change_event or delete_event. It's refused if it " +
+        "overlaps anything; when they mean both to stand, such as a soft plan beside a call that's only held, give " +
+        'overlap "intended" and overlap_reason, and each keeps its own status.',
       inputSchema: {
         type: "object",
         properties: {
@@ -452,6 +498,17 @@ export const createDayPicture = ({
           track: {
             type: "string",
             description: "The learning track it's part of, by id: if they remove it, that's a correction there.",
+          },
+          overlap: {
+            enum: ["intended"],
+            description:
+              "Put it over what's there on purpose, only once you know what it overlaps and they mean both to stand.",
+          },
+          overlap_reason: {
+            type: "string",
+            description:
+              "With overlap: why both stand and how they'll settle it, in a line, such as “Both stand until Dana " +
+              "confirms the call; the walk gives way if it's on”.",
           },
         },
         required: ["kind", "title", "start", "end", "activity"],
