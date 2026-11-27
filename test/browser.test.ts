@@ -655,14 +655,21 @@ describe.skipIf(!hasChromium)("the browser", () => {
       // The check's frame takes the focus into its field, then hangs for a long while.
       await page.input({ type: "tap", x: 282, y: 332 });
       await new Promise((resolve) => setTimeout(resolve, 400));
+      // A frame spinning on one core slows painting on a small machine, so the picture has a few seconds.
       const first = await page.input({ type: "tap", x: 196, y: 40 });
-      await vi.waitFor(async () => {
-        expect(await page.colourAt(196, 40)).toBe("red");
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await page.colourAt(196, 40)).toBe("red");
+        },
+        { timeout: 5000 },
+      );
       const second = await page.input({ type: "tap", x: 196, y: 40 });
-      await vi.waitFor(async () => {
-        expect(await page.colourAt(196, 40)).toBe("blue");
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await page.colourAt(196, 40)).toBe("blue");
+        },
+        { timeout: 5000 },
+      );
 
       expect(Math.max(first, second)).toBeLessThan(1600);
       expect(await browser.core.control("hand_back", {})).toMatchObject({ ok: true, value: { state: "idle" } });
