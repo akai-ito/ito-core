@@ -73,6 +73,8 @@ import type { ThreadRealtimeStartedNotification } from "./v2/ThreadRealtimeStart
 import type { ThreadRealtimeTranscriptDeltaNotification } from "./v2/ThreadRealtimeTranscriptDeltaNotification.ts";
 import type { ThreadRealtimeTranscriptDoneNotification } from "./v2/ThreadRealtimeTranscriptDoneNotification.ts";
 import type { ThreadRevertedNotification } from "./v2/ThreadRevertedNotification.ts";
+import type { ThreadSearchPartialNotification } from "./v2/ThreadSearchPartialNotification.ts";
+import type { ThreadSectionChangedNotification } from "./v2/ThreadSectionChangedNotification.ts";
 import type { ThreadSettingsUpdatedNotification } from "./v2/ThreadSettingsUpdatedNotification.ts";
 import type { ThreadStartedNotification } from "./v2/ThreadStartedNotification.ts";
 import type { ThreadStatusChangedNotification } from "./v2/ThreadStatusChangedNotification.ts";
@@ -102,6 +104,7 @@ export type ServerNotification =
   | { method: "thread/reverted"; params: ThreadRevertedNotification }
   | { method: "skills/changed"; params: SkillsChangedNotification }
   | { method: "thread/name/updated"; params: ThreadNameUpdatedNotification }
+  | { method: "thread/section/changed"; params: ThreadSectionChangedNotification }
   | { method: "thread/attachment/updated"; params: ThreadAttachmentUpdatedNotification }
   | { method: "thread/goal/updated"; params: ThreadGoalUpdatedNotification }
   | { method: "thread/prediction/updated"; params: ThreadPredictionUpdatedNotification }
@@ -130,6 +133,7 @@ export type ServerNotification =
   | { method: "item/plan/delta"; params: PlanDeltaNotification }
   | { method: "command/exec/outputDelta"; params: CommandExecOutputDeltaNotification }
   | { method: "process/outputDelta"; params: ProcessOutputDeltaNotification }
+  | { method: "thread/search/partial"; params: ThreadSearchPartialNotification }
   | { method: "process/exited"; params: ProcessExitedNotification }
   | { method: "item/commandExecution/outputDelta"; params: CommandExecutionOutputDeltaNotification }
   | { method: "item/commandExecution/terminalInteraction"; params: TerminalInteractionNotification }

@@ -13,6 +13,7 @@ import type { ComputerUseRequirements } from "./ComputerUseRequirements.ts";
 import type { FeedbackRequirements } from "./FeedbackRequirements.ts";
 import type { InAppBrowserRequirements } from "./InAppBrowserRequirements.ts";
 import type { ModelsRequirements } from "./ModelsRequirements.ts";
+import type { OtelRequirements } from "./OtelRequirements.ts";
 import type { ResidencyRequirement } from "./ResidencyRequirement.ts";
 import type { SandboxMode } from "./SandboxMode.ts";
 import type { WindowsSandboxImplementation } from "./WindowsSandboxImplementation.ts";
@@ -55,4 +56,5 @@ export type ConfigRequirements = {
   checkForUpdateOnStartup: boolean | null;
   allowLoginShell: boolean | null;
   feedback: FeedbackRequirements | null;
+  otel: OtelRequirements | null;
 };

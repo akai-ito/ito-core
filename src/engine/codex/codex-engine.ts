@@ -127,7 +127,8 @@ const toAccount = (account: Account): Readonly<Record<string, string>> => {
     case "apiKey": {
       return { kind: "api_key" };
     }
-    case "amazonBedrock": {
+    case "amazonBedrock":
+    case "gcp": {
       return { kind: "other" };
     }
   }

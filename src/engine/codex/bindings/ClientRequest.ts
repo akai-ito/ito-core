@@ -35,6 +35,8 @@ import type { FsRemoveParams } from "./v2/FsRemoveParams.ts";
 import type { FsUnwatchParams } from "./v2/FsUnwatchParams.ts";
 import type { FsWatchParams } from "./v2/FsWatchParams.ts";
 import type { FsWriteFileParams } from "./v2/FsWriteFileParams.ts";
+import type { GatewayOAuthLoginParams } from "./v2/GatewayOAuthLoginParams.ts";
+import type { GatewayOAuthReadParams } from "./v2/GatewayOAuthReadParams.ts";
 import type { GetAccountParams } from "./v2/GetAccountParams.ts";
 import type { GetAccountRateLimitsParams } from "./v2/GetAccountRateLimitsParams.ts";
 import type { GetAccountTokenUsageParams } from "./v2/GetAccountTokenUsageParams.ts";
@@ -49,6 +51,9 @@ import type { McpServerOauthLoginParams } from "./v2/McpServerOauthLoginParams.t
 import type { McpServerToolCallParams } from "./v2/McpServerToolCallParams.ts";
 import type { ModelListParams } from "./v2/ModelListParams.ts";
 import type { ModelProviderCapabilitiesReadParams } from "./v2/ModelProviderCapabilitiesReadParams.ts";
+import type { ModelProviderConfigWriteParams } from "./v2/ModelProviderConfigWriteParams.ts";
+import type { ModelProviderDefaultSetParams } from "./v2/ModelProviderDefaultSetParams.ts";
+import type { ModelProviderListParams } from "./v2/ModelProviderListParams.ts";
 import type { PermissionProfileListParams } from "./v2/PermissionProfileListParams.ts";
 import type { PluginInstallParams } from "./v2/PluginInstallParams.ts";
 import type { PluginInstalledParams } from "./v2/PluginInstalledParams.ts";
@@ -175,9 +180,12 @@ export type ClientRequest =
   | { method: "turn/interrupt"; id: RequestId; params: TurnInterruptParams }
   | { method: "review/start"; id: RequestId; params: ReviewStartParams }
   | { method: "model/list"; id: RequestId; params: ModelListParams }
-  | { method: "account/gatewayOAuth/read"; id: RequestId; params: undefined }
-  | { method: "account/gatewayOAuth/login"; id: RequestId; params: undefined }
+  | { method: "account/gatewayOAuth/read"; id: RequestId; params?: GatewayOAuthReadParams | null | undefined }
+  | { method: "account/gatewayOAuth/login"; id: RequestId; params?: GatewayOAuthLoginParams | null | undefined }
   | { method: "account/gatewayOAuth/cancel"; id: RequestId; params: undefined }
+  | { method: "modelProvider/list"; id: RequestId; params: ModelProviderListParams }
+  | { method: "modelProvider/config/write"; id: RequestId; params: ModelProviderConfigWriteParams }
+  | { method: "modelProvider/default/set"; id: RequestId; params: ModelProviderDefaultSetParams }
   | { method: "modelProvider/capabilities/read"; id: RequestId; params: ModelProviderCapabilitiesReadParams }
   | { method: "experimentalFeature/list"; id: RequestId; params: ExperimentalFeatureListParams }
   | { method: "permissionProfile/list"; id: RequestId; params: PermissionProfileListParams }
@@ -192,6 +200,7 @@ export type ClientRequest =
   | { method: "account/login/start"; id: RequestId; params: LoginAccountParams }
   | { method: "account/login/cancel"; id: RequestId; params: CancelLoginAccountParams }
   | { method: "account/logout"; id: RequestId; params: undefined }
+  | { method: "account/securitySetup/read"; id: RequestId; params: undefined }
   | { method: "account/rateLimits/read"; id: RequestId; params?: GetAccountRateLimitsParams | undefined }
   | { method: "account/rateLimitResetCredit/consume"; id: RequestId; params: ConsumeAccountRateLimitResetCreditParams }
   | { method: "account/usage/read"; id: RequestId; params?: GetAccountTokenUsageParams | undefined }
