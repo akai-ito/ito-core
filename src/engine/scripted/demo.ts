@@ -645,9 +645,10 @@ export const demoWork =
 
 export const demoAnswers: Complete = (_prompt, schema) => {
   const fields = Object.keys(schema.properties ?? {});
-  return Promise.resolve(
-    fields.includes("changed") ? ok({ changed: false, label: "" }) : fail("The demo answers nothing for that."),
-  );
+  if (fields.includes("changed")) return Promise.resolve(ok({ changed: false, label: "" }));
+  // A share goes in a thread of its own.
+  if (fields.includes("thread")) return Promise.resolve(ok({ thread: "", title: "Something you shared" }));
+  return Promise.resolve(fail("The demo answers nothing for that."));
 };
 
 const motionScript = (text: string, start: readonly TimedEvent[]): Script | undefined => {

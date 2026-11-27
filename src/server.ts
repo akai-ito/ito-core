@@ -24,6 +24,7 @@ import { createCapabilityApprovals } from "#capabilities/approvals.ts";
 import { createNaming } from "#threads/naming.ts";
 import { createThreads } from "#threads/threads.ts";
 import { createLanes, type Lanes } from "#threads/lanes.ts";
+import { createShares, type Shares } from "#shares/shares.ts";
 import { toThreadId, type ThreadId } from "#conversation/ids.ts";
 import { createMemoryStore } from "#store/memory.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
@@ -149,6 +150,7 @@ export type Server = {
   readonly app: FastifyInstance;
   readonly store: Store;
   readonly turns: Lanes;
+  readonly shares: Shares;
   readonly attachments: Attachments;
   readonly recordings: Recordings;
   readonly files: ShownFiles;
@@ -438,15 +440,28 @@ export const createServer = (options: ServerOptions): Server => {
     complete: (prompt, schema) => engine.complete(prompt, schema),
   });
   const made = createMadePages({ store, schemas, clock, timeZone, approve: (fields) => turns.approve(fields) });
-  const quickComplete: Engine["complete"] = async (prompt, schema, choice) => {
+  const quickComplete: Engine["complete"] = async (prompt, schema, choice, images) => {
     await listening.get();
-    return engine.complete(prompt, schema, choice);
+    return engine.complete(prompt, schema, choice, images);
   };
   const listedModels = async (): ReturnType<Engine["models"]> => {
     await listening.get();
     return engine.models();
   };
   const naming = createNaming({ store, complete: quickComplete, models: listedModels, info });
+  // What they share from their phone's share sheet: Kumo puts each in the thread it belongs in, which answers it.
+  const shares = createShares({
+    store,
+    fetch: fetcher,
+    complete: quickComplete,
+    quickChoice: createQuickChoice(listedModels),
+    attachmentPath: attachments.pathOf,
+    spoken: (at) => toSpoken(Date.parse(at), timeZone()),
+    route: (message, text) => {
+      turns.route(message, text);
+    },
+    info,
+  });
   // Kumo's work in the background: a backstop on silence, one retry, and a pause through a usage limit with one
   // catch-up after. When the model can't act, nothing stands in for it: the problem shows until work goes through.
   const background = createBackground({
@@ -771,6 +786,7 @@ export const createServer = (options: ServerOptions): Server => {
     moved: (message, from, to) => {
       turns.moved(message, from, to);
     },
+    shares,
     browser,
     logger: options.logger ?? false,
   });
@@ -880,6 +896,7 @@ export const createServer = (options: ServerOptions): Server => {
   };
   compact();
   turns.recover();
+  shares.recover();
   problems.start();
   backup.start();
 
@@ -889,6 +906,7 @@ export const createServer = (options: ServerOptions): Server => {
     await backup.close();
     motions.close();
     naming.close();
+    shares.close();
     desk.close();
     background.close();
     wakeUps.close();
@@ -917,6 +935,7 @@ export const createServer = (options: ServerOptions): Server => {
     app,
     store,
     turns,
+    shares,
     attachments,
     recordings,
     files,

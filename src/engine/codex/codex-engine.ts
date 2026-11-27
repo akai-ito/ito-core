@@ -746,7 +746,7 @@ export const createCodexEngine = ({
 
     usageResetsAt: () => resetOf(usage.get()),
 
-    complete: async (prompt, schema, choice) => {
+    complete: async (prompt, schema, choice, images = []) => {
       const opened = await ensureSession();
       if (!opened.ok) return fail(opened.failure.detail);
       const { process } = opened.value;
@@ -756,7 +756,10 @@ export const createCodexEngine = ({
       const finished = addSideJob(threadId);
       const turn = await process.call("turn/start", {
         threadId,
-        input: [{ type: "text", text: prompt, text_elements: [] }],
+        input: [
+          { type: "text", text: prompt, text_elements: [] },
+          ...images.map((image): UserInput => ({ type: "localImage", path: image })),
+        ],
         outputSchema: schema as JsonValue,
         ...(choice ?? readChoice(settings.setting)),
       });

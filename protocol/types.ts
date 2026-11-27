@@ -547,6 +547,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/shares": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Share something with Kumo
+     * @description What the share sheet sends: any mix of a link, text from another app, photos and files, and
+     *     a note you add. Upload photos and files first with `PUT /v0/attachments/{attachment}` (or
+     *     in chunks, for big ones), then name them in `attachments`, as a message does.
+     *
+     *     Answers as soon as the share is on the server's disk, with `state` `sorting`. The server
+     *     then reads the link's page for its title and summary, where it can, and Kumo decides
+     *     where the share belongs: one of your open side threads when it clearly belongs to that
+     *     thread's subject, or a new thread of its own that Kumo names (`thread.started`, by
+     *     `kumo`, comes first). The share becomes your message there, under the share's id, with
+     *     `share` holding the link and text, and arrives as `message.accepted`. Kumo answers it in
+     *     that thread's own turn, saying what it made of it and what it did with it, and its reply
+     *     notifies like any other.
+     *
+     *     Sending the same id again returns the share as it stands, `placed` once it's a message,
+     *     and changes nothing. The same id with anything different is an `id_conflict`.
+     */
+    post: operations["sendShare"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/threads": {
     parameters: {
       query?: never;
@@ -2638,6 +2672,8 @@ export interface components {
       thread?: components["schemas"]["ThreadId"];
       /** @description User messages only: inside a thread, the message you replied to. */
       quotes?: components["schemas"]["Quote"];
+      /** @description User messages only: on something you shared from your phone's share sheet, what you shared besides your note, which is the `text`, and the photos and files, which are the `attachments`. Kumo puts a share in the side thread it belongs in, or in a new one it names, and answers it there. */
+      share?: components["schemas"]["Shared"];
     } & unknown;
     /** @description One thing the agent did while working on a turn: thinking, a web search, a command, an edit, a tool, a plan, a wait. Its title is plain words written by the server, safe to show as it is. Its other fields carry the specifics exactly as the agent used them (commands, paths, queries, URLs, output); show what you choose. Fields beyond the common ones belong to particular kinds, and a step carries those its kind has. */
     Step: {
@@ -2997,6 +3033,54 @@ export interface components {
       next: components["schemas"]["MessageId"][];
       /** @description Whether older messages exist in the thread. */
       has_more: boolean;
+    };
+    SendShare:
+      | {
+          /**
+           * Format: uuid
+           * @description A random UUID the app makes for the share. It is the share's retry key, and the id of the message it becomes.
+           */
+          id: string;
+          /**
+           * Format: uri
+           * @description The link you shared, `http` or `https`.
+           */
+          url?: string;
+          /** @description Text you shared from another app, such as a passage you selected. */
+          text?: string;
+          /** @description What you added in the share sheet, as plain text or Markdown. A quick thought can be a note alone. */
+          note?: string;
+          /** @description The screenshots, photos and files you shared, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`; naming one a message or another share already carries is an `invalid_request`. */
+          attachments?: components["schemas"]["UploadId"][];
+        }
+      | {
+          url: string;
+        }
+      | {
+          text: string;
+        }
+      | {
+          note: string;
+        }
+      | {
+          attachments: unknown[];
+        };
+    ShareResult: {
+      share: components["schemas"]["Share"];
+    };
+    /** @description A share and where it stands. */
+    Share: {
+      /** @description The share's id, which its message takes once Kumo has placed it. */
+      id: components["schemas"]["MessageId"];
+      /**
+       * @description `sorting` while the server reads it and Kumo decides which thread it belongs in; `placed` once it's your message in that thread.
+       * @enum {string}
+       */
+      state: "sorting" | "placed";
+      /** @description When the server accepted it. */
+      at: components["schemas"]["Timestamp"];
+      /** @description Once it's placed, the thread it's in. */
+      thread?: components["schemas"]["ThreadId"];
     };
     ThreadResult: {
       thread: components["schemas"]["Thread"];
@@ -3441,6 +3525,26 @@ export interface components {
       message: components["schemas"]["MessageId"];
       /** @description A line of the quoted message, at most 200 characters, safe to show as it is. */
       text: string;
+    };
+    /** @description A link you shared, with what the server read from the page where it could, so the app can show it as a card without going to the site. */
+    SharedLink: {
+      /**
+       * Format: uri
+       * @description The link, exactly as you shared it.
+       */
+      url: string;
+      /** @description The page's title. */
+      title?: string;
+      /** @description The page's summary of itself, as it gives one to link previews. */
+      description?: string;
+      /** @description The site's name, such as "Halcyon Careers", or else its host. */
+      site?: string;
+    };
+    /** @description What you shared from your phone's share sheet, besides your note and its photos and files: a link, and text from another app. */
+    Shared: {
+      link?: components["schemas"]["SharedLink"];
+      /** @description Text you shared from another app, such as a passage you selected, exactly as it came. */
+      text?: string;
     };
     /** @description Opaque. The server makes it when a step starts. */
     StepId: string;
@@ -4628,6 +4732,9 @@ export type MessageResult = components["schemas"]["MessageResult"];
 export type MessagePage = components["schemas"]["MessagePage"];
 export type ThreadList = components["schemas"]["ThreadList"];
 export type ThreadPage = components["schemas"]["ThreadPage"];
+export type SendShare = components["schemas"]["SendShare"];
+export type ShareResult = components["schemas"]["ShareResult"];
+export type Share = components["schemas"]["Share"];
 export type ThreadResult = components["schemas"]["ThreadResult"];
 export type ThreadChange = components["schemas"]["ThreadChange"];
 export type MoveMessage = components["schemas"]["MoveMessage"];
@@ -4700,6 +4807,8 @@ export type Outcome = components["schemas"]["Outcome"];
 export type DoneId = components["schemas"]["DoneId"];
 export type ThreadId = components["schemas"]["ThreadId"];
 export type Quote = components["schemas"]["Quote"];
+export type SharedLink = components["schemas"]["SharedLink"];
+export type Shared = components["schemas"]["Shared"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
 export type MemoryPageRef = components["schemas"]["MemoryPageRef"];
@@ -5590,6 +5699,61 @@ export interface operations {
       };
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
+    };
+  };
+  sendShare: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "id": "0f9b4c2e-6a71-4d3b-8e25-9c1a7d4e3b60",
+         *       "url": "https://careers.halcyon.example/jobs/platform-engineer",
+         *       "note": "This is the one Sam mentioned"
+         *     }
+         */
+        "application/json": components["schemas"]["SendShare"];
+      };
+    };
+    responses: {
+      /** @description Already accepted earlier; nothing changed. This is where it stands. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ShareResult"];
+        };
+      };
+      /** @description Accepted for the first time; Kumo is sorting it. */
+      201: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ShareResult"];
+        };
+      };
+      /** @description The request is malformed or not possible now (`invalid_request`), such as an attachment that belongs to a message already, or an attachment it names isn't on the server (`attachment_missing`). */
+      400: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      409: components["responses"]["IdConflict"];
+      429: components["responses"]["SlowDown"];
     };
   };
   listThreads: {

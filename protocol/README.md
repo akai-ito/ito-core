@@ -45,6 +45,10 @@ sequenceDiagram
   with a `snapshot` instead.
 - **Send** messages under an id the app chooses, so retrying is always safe. The server answers
   once the message is on disk; what it does next arrives on the stream.
+- **Share** from the phone's share sheet: any mix of a link, text, photos and files and a note, under
+  an id the app makes, so a retry never makes a second. The server reads the link's page for its
+  title and summary; Kumo puts the share in the open side thread it belongs in, or a new one it
+  names, where it becomes your message with `share` on it, and answers it in that thread's turn.
 - **Stop** a turn, or **try again** after one failed, with commands addressed to the turn.
 - **Attach** photos and files: upload each under an id the app makes, then name them in a message.
   Anything over 20 MB, such as a recording, goes up in chunks that resume after any drop; `GET

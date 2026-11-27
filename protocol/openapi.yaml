@@ -14,6 +14,9 @@ info:
       server says. Resume with `Last-Event-ID` after any disconnect.
     - **Send** with `POST /v0/messages`. The app chooses the message id, so retrying is always
       safe.
+    - **Share** a link, a screenshot, a photo or a quick thought from the phone's share sheet with
+      `POST /v0/shares`. Kumo puts it in the side thread it belongs in, or a new one it names, and
+      answers it there.
     - **Stop** a turn, or **try again** after one failed, with commands on the turn.
     - **Pair** a new app by exchanging the short-lived code in the QR code `ito pair` shows for a
       token of its own.
@@ -80,6 +83,10 @@ tags:
     description: |
       Side threads beside the main chat, each with its own conversation: list and search them, open
       one, rename it, mark it done or open, and move a message between them.
+  - name: Sharing
+    description: |
+      What you share with Kumo from the phone's share sheet: links, screenshots, photos and quick
+      thoughts. Kumo answers each in a side thread.
   - name: Recordings
     description: |
       The recordings you send, transcribed on the server for Kumo to read, with times and, as a best
@@ -821,6 +828,64 @@ paths:
               schema: { $ref: "#/components/schemas/Lead" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/shares:
+    post:
+      tags: [Sharing]
+      operationId: sendShare
+      summary: Share something with Kumo
+      description: |
+        What the share sheet sends: any mix of a link, text from another app, photos and files, and
+        a note you add. Upload photos and files first with `PUT /v0/attachments/{attachment}` (or
+        in chunks, for big ones), then name them in `attachments`, as a message does.
+
+        Answers as soon as the share is on the server's disk, with `state` `sorting`. The server
+        then reads the link's page for its title and summary, where it can, and Kumo decides
+        where the share belongs: one of your open side threads when it clearly belongs to that
+        thread's subject, or a new thread of its own that Kumo names (`thread.started`, by
+        `kumo`, comes first). The share becomes your message there, under the share's id, with
+        `share` holding the link and text, and arrives as `message.accepted`. Kumo answers it in
+        that thread's own turn, saying what it made of it and what it did with it, and its reply
+        notifies like any other.
+
+        Sending the same id again returns the share as it stands, `placed` once it's a message,
+        and changes nothing. The same id with anything different is an `id_conflict`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendShare" }
+            example:
+              id: 0f9b4c2e-6a71-4d3b-8e25-9c1a7d4e3b60
+              url: https://careers.halcyon.example/jobs/platform-engineer
+              note: This is the one Sam mentioned
+      responses:
+        "201":
+          description: Accepted for the first time; Kumo is sorting it.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareResult" }
+        "200":
+          description: Already accepted earlier; nothing changed. This is where it stands.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareResult" }
+        "400":
+          description: >-
+            The request is malformed or not possible now (`invalid_request`), such as an attachment
+            that belongs to a message already, or an attachment it names isn't on the server
+            (`attachment_missing`).
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "429": { $ref: "#/components/responses/SlowDown" }
   /v0/threads:
     get:
       tags: [Threads]
@@ -3635,6 +3700,73 @@ components:
         has_more:
           description: Whether older messages exist in the thread.
           type: boolean
+    SendShare:
+      type: object
+      required: [id]
+      anyOf:
+        - required: [url]
+          properties:
+            url: { type: string }
+        - required: [text]
+          properties:
+            text: { type: string }
+        - required: [note]
+          properties:
+            note: { type: string }
+        - required: [attachments]
+          properties:
+            attachments: { type: array }
+      properties:
+        id:
+          description: A random UUID the app makes for the share. It is the share's retry key, and the id of the message it becomes.
+          type: string
+          format: uuid
+        url:
+          description: The link you shared, `http` or `https`.
+          type: string
+          format: uri
+          pattern: ^https?://
+          maxLength: 2048
+        text:
+          description: Text you shared from another app, such as a passage you selected.
+          type: string
+          pattern: \S
+          maxLength: 32000
+        note:
+          description: What you added in the share sheet, as plain text or Markdown. A quick thought can be a note alone.
+          type: string
+          pattern: \S
+          maxLength: 32000
+        attachments:
+          description: The screenshots, photos and files you shared, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`; naming one a message or another share already carries is an `invalid_request`.
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items: { $ref: "events.schema.json#/$defs/UploadId" }
+    ShareResult:
+      type: object
+      required: [share]
+      properties:
+        share: { $ref: "#/components/schemas/Share" }
+    Share:
+      description: A share and where it stands.
+      type: object
+      required: [id, state, at]
+      properties:
+        id:
+          description: The share's id, which its message takes once Kumo has placed it.
+          $ref: "events.schema.json#/$defs/MessageId"
+        state:
+          description: "`sorting` while the server reads it and Kumo decides which thread it belongs in; `placed` once it's your message in that thread."
+          type: string
+          enum: [sorting, placed]
+        at:
+          description: When the server accepted it.
+          $ref: "events.schema.json#/$defs/Timestamp"
+        thread:
+          description: Once it's placed, the thread it's in.
+          $ref: "events.schema.json#/$defs/ThreadId"
     ThreadResult:
       type: object
       required: [thread]

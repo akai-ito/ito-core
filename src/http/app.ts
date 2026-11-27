@@ -46,6 +46,8 @@ import { registerStream } from "#http/stream.ts";
 import { registerBrowser } from "#http/browser.ts";
 import type { BrowserHand } from "#hands/browser.ts";
 import { registerThreads } from "#http/threads.ts";
+import { registerShares } from "#http/shares.ts";
+import type { Shares } from "#shares/shares.ts";
 import { createEventStream } from "#http/events.ts";
 import { inlineDisposition, parseRange } from "#http/ranges.ts";
 import { registerUploads, tooLargeChunk } from "#http/uploads.ts";
@@ -94,6 +96,8 @@ export type AppOptions = {
   // You moved a message between the main chat and a thread, or between threads.
   readonly moved: (message: MessageId, from: ThreadId | undefined, to: ThreadId | undefined) => void;
   readonly gettingStarted: GettingStarted;
+  // What they share from their phone's share sheet.
+  readonly shares: Pick<Shares, "accept">;
   // Kumo's browser, when the server has one.
   readonly browser?: BrowserHand;
   readonly logger: FastifyServerOptions["logger"];
@@ -161,6 +165,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     onLeadRenamed,
     gettingStarted,
     moved,
+    shares,
     browser,
     logger,
   } = options;
@@ -278,6 +283,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerStream(app, { store, calls, voice, protocol, ...(browser && { browser }) });
   if (browser) registerBrowser(app, { hand: browser, schemaFor });
   registerThreads(app, { store, moved, schemaFor });
+  registerShares(app, { shares, schemaFor });
 
   app.post<{ Body: PairBody }>("/v0/pair", { schema: schemaFor("pair") }, async (request, reply) => {
     if (gate.isSlowedDown()) return slowDown(reply);

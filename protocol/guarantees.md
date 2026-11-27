@@ -60,6 +60,7 @@ where the protocol has to make it possible, marked *App*.
 | G57 | **Paused at a usage limit, then caught up once.** When the model provider's usage limit is reached, Kumo's background work pauses until the limit resets, with nothing retried meanwhile, and the pause shows at once as a problem that says when it ends. Once the limit resets, or a turn in the chat goes through, Kumo catches up once on what it missed, each wake-up and kind of work counted once, and tells you in one message. Background work with nobody watching that shows no sign of life for 15 minutes is stopped and tried once more. | 86 |
 | G58 | **Chapters and what Kumo learnt come from memory.** A chapter is a page Kumo writes and keeps on its own shelf: a story with the day it began, the day it ended once it's over, and the day Kumo noticed it, which the server stamps; what it drew on is counted by the server, never said by Kumo. A line Kumo learnt about you comes only with a change that taught it, never with one that tidies or fixes records, is kept in the Thread with that change, and leaves the Library when Kumo takes it back or forgets its page. | 87 |
 | G59 | **Pages Kumo makes stay current, and your ticks are yours.** A rich, lasting answer can come as a page Kumo made: a card in the reply that opens it, and a place on the Made shelf. Kumo makes a page whole, with pictures it kept and blocks the app draws, then changes it only from the version it read, with a note that says what changed; a change never notifies. Your ticks carry when you ticked, every app hears them, and a change that drops an item lets its tick go. Forgetting a page asks you first. | 91 |
+| G64 | **A share lands where it belongs.** What you share from the share sheet, a link, text, photos and files and a note, is on the server's disk before it answers, once per id the app chose: sharing again never makes a second. The server reads a link's page for its title and summary, where it can, and the app never contacts the site. Kumo puts the share in the open side thread it clearly belongs to, or else a new thread it names, where it becomes your message under the share's id; the main chat never holds it. That thread's own turn answers it, with what Kumo made of it and what it did, and the reply notifies like any other. | 98 |
 
 ## How Kumo decides to speak
 
@@ -637,6 +638,18 @@ catches up once (G57).
   message comes with it. (G59)
 - A tick carries when you ticked, and every app hears the whole state in `made.state`. (G59)
 - The Made shelf comes from `GET /v0/made`, most recently changed first. (G59)
+
+### 98 · [Sharing with Kumo](transcripts/98-sharing-with-kumo.jsonl)
+
+- `POST /v0/shares` answers as soon as the share is on disk, `sorting`. (G64)
+- The server reads the link's page for its title, summary and site name, and Kumo puts the share in
+  the open thread about the role: it arrives there as your message under the share's id, with the
+  note as its text and the link in `share`, and that thread's turn answers it. (G64)
+- A screenshot that belongs to no open thread starts a thread Kumo names (`thread.started`, by
+  `kumo`), where it's your message with its attachment, and is answered there. (G64)
+- Each reply notifies, naming its thread. (G64, G15)
+- Sharing again under the same id answers `200` with the share `placed` and its thread, and changes
+  nothing. (G64)
 
 ## Not in this version
 
