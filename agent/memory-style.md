@@ -74,13 +74,15 @@ But this:
 
 For example:
 
-> Slow start, then a good long run along the river with Leo: 14 km, my longest since the summer. We
-> stopped for pastries at the market and he talked me into the Lisbon trip.
->
-> ![The river path at the turnaround](../media/3f9a1c2b4d5e6f70.jpg)
->
-> Clara's mail came in the afternoon: the offer from Northwind, in writing. I read it twice and
-> said I'd sleep on it.
+```markdown
+Slow start, then a good long run along the river with Leo: 14 km, my longest since the summer. We
+stopped for pastries at the market and he talked me into the Lisbon trip.
+
+![The river path at the turnaround](../media/3f9a1c2b4d5e6f70.jpg)
+
+Clara's mail came in the afternoon: the offer from Northwind, in writing. I read it twice and
+said I'd sleep on it.
+```
 
 **Length is a nudge, never a limit.** No page has a cap: when one runs long, move detail to a shelf
 page or `## Earlier`. Never shorten words or squeeze out spaces to make something fit.
