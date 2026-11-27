@@ -32,6 +32,9 @@ info:
       and fill in its setup sheet, or connect it through its provider.
     - **Kumo's browser:** follow what Kumo is doing on a site as a line in its thread, peek at the
       live view, and take the page over when Kumo needs your hand, then hand it back.
+    - **Kumo's dream:** once a day Kumo looks back over the whole day and puts it in order; read the
+      latest dream's record of what it planned, tidied, noticed and saved for you, mark it seen, ask
+      for one now, and set the dream time.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
       journal, the photos a page keeps with its story, the chapters of your life Ari noticed, what
       it learnt about you lately, what Ari changed lately and why, and what each change changed.
@@ -74,6 +77,10 @@ tags:
     description: Getting started, with what Kumo found and the beliefs it checks with you.
   - name: Desk
     description: Home, with Kumo's plans, Coming up, Waiting on you, Kumo's work and the calendar.
+  - name: Dream
+    description: |
+      Kumo's dream: once a day, at a time you set, Kumo looks back over the whole day and puts
+      everything in order, then leaves a record of what it planned, tidied, noticed and saved for you.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
   - name: Threads
@@ -682,6 +689,86 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Work" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/dream:
+    get:
+      tags: [Dream]
+      operationId: getDream
+      summary: Read Kumo's dream
+      description: |
+        Kumo's dream: the time it dreams each night, when the next one is, whether one is under way,
+        and the latest dream's record with what it planned, tidied, noticed and saved for you. Show
+        the latest as new (a moon on the Desk) until its `seen_at` is set.
+      responses:
+        "200":
+          description: The dream.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DreamState" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+    post:
+      tags: [Dream]
+      operationId: dreamNow
+      summary: Dream now
+      description: |
+        Kumo dreams now, in the background, instead of waiting for the dream time; `dream.finished`
+        follows when it's done, often many minutes later. One dream runs at a time: while one is
+        under way this answers with it and starts nothing. A dream in the 12 hours before the dream
+        time stands in for that night's, which then doesn't run.
+      responses:
+        "202":
+          description: Dreaming.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DreamState" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/dream/time:
+    put:
+      tags: [Dream]
+      operationId: setDreamTime
+      summary: Set the dream time
+      description: |
+        When Kumo dreams each night, on your local clock wherever you are; 04:00 until you choose
+        another. The next dream moves at once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DreamTime" }
+            example: { time: "03:30" }
+      responses:
+        "200":
+          description: Set.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DreamState" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/dreams/{dream}/seen:
+    post:
+      tags: [Dream]
+      operationId: seeDream
+      summary: Mark a dream seen
+      description: |
+        You've seen a dream's record, so it's no longer new: the moon on the Desk becomes the sun.
+        Seeing it again keeps the first time.
+      parameters:
+        - $ref: "#/components/parameters/Dream"
+      responses:
+        "200":
+          description: Seen.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DreamResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/desk/cards/{card}/answer:
     post:
       tags: [Desk]
@@ -2561,6 +2648,12 @@ components:
       in: path
       required: true
       schema: { $ref: "events.schema.json#/$defs/WakeUpId" }
+    Dream:
+      name: dream
+      in: path
+      required: true
+      description: The dream's id, from its `Dream`.
+      schema: { $ref: "events.schema.json#/$defs/DreamId" }
     Call:
       name: call
       in: path
@@ -3311,6 +3404,42 @@ components:
       required: [entry]
       properties:
         entry: { $ref: "events.schema.json#/$defs/DoneEntry" }
+    DreamState:
+      description: Kumo's dream as it stands.
+      type: object
+      required: [time, next_at]
+      properties:
+        time:
+          description: When Kumo dreams each night, on your local clock, such as `04:00`.
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        next_at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When the next dream is due, in your time zone now.
+        dreaming:
+          description: A dream under way, while there is one.
+          type: object
+          required: [since, trigger]
+          properties:
+            since: { $ref: "events.schema.json#/$defs/Timestamp" }
+            trigger: { enum: [scheduled, manual] }
+        latest:
+          $ref: "events.schema.json#/$defs/Dream"
+          description: The latest dream, until there's been none.
+    DreamTime:
+      type: object
+      required: [time]
+      additionalProperties: false
+      properties:
+        time:
+          description: Such as `04:00`, on your local clock.
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+    DreamResult:
+      type: object
+      required: [dream]
+      properties:
+        dream: { $ref: "events.schema.json#/$defs/Dream" }
     WakeUpList:
       type: object
       required: [wake_ups]

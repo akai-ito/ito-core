@@ -18,7 +18,6 @@ import { applyEdit, isSameVersion, isSharplyShorter, toVersion, type BodyEdit } 
 import { toOneLine } from "#memory/gists.ts";
 import { createLearntTools, learntShown, toLearnt, withLearnt, type LearntBody } from "#memory/learnt.ts";
 import {
-  appendEntry,
   dayTitle,
   formatPage,
   inMindPages,
@@ -30,10 +29,8 @@ import {
   shelves,
   toAddress,
   toDay,
-  toJournalEntry,
   toLocation,
   toMarkdown,
-  toTimeOfDay,
   wordsIn,
   type InMindPage,
   type Location,
@@ -165,6 +162,10 @@ export type Memory = {
   readonly boostedNames: () => Promise<readonly string[]>;
   readonly withThread: <Value>(work: (thread: Thread) => Promise<Value>) => Promise<Value>;
   readonly indexText: (address: string, title: string, text: string | undefined) => Promise<void>;
+  // A page's version now, or undefined when there's no page there, such as before a dream changes it.
+  readonly versionOf: (address: string) => Promise<string | undefined>;
+  // Puts a page back as it was at a version, or takes it away when it had none, such as undoing a dream's change.
+  readonly revert: (address: string, version: string | undefined, note: string) => Promise<Result<undefined, string>>;
   readonly close: () => Promise<void>;
 };
 
@@ -230,8 +231,8 @@ const longNote = (title: string, markdown: string): string | undefined => {
 };
 
 const readingOnPage =
-  "That's your reading of them, and a page keeps what they told you and what happened. A reading stays in the " +
-  "journal, marked as yours; ask them before anything like it becomes part of a page.";
+  "That's your reading of them, and a page keeps what they told you and what happened: say what they said, or ask " +
+  "them before anything like it becomes part of a page.";
 
 const minimumWord = 3;
 
@@ -239,6 +240,33 @@ const mostCopies = 20;
 
 const learntLines = (lines: readonly LearntLine[]): readonly LearntBody[] =>
   lines.map(({ id, address, learnt, at }) => ({ text: learnt, at, address, change: id }));
+
+const readingInJournal =
+  "The journal is their own diary, in their words: it keeps what happened and what they said. Leave your reading " +
+  "of them out.";
+
+const noTimeHeadings = "Write the day as one flowing entry in short paragraphs, without time headings.";
+
+const timeHeading = /^#{1,6}\s*\d{1,2}:\d{2}\s*$/mu;
+
+const journalDayPattern = /^\d{4}-\d{2}-\d{2}$/u;
+
+const isJournalDay = (text: string): boolean => {
+  const at = Date.parse(`${text}T00:00:00.000Z`);
+  return journalDayPattern.test(text) && !Number.isNaN(at) && new Date(at).toISOString().startsWith(text);
+};
+
+// The photos a page keeps that new words would leave out: never dropped, only moved.
+const droppedPhotos = (before: string, after: string): readonly string[] => {
+  const kept = new Set(imagesIn(after).map(({ source }) => path.basename(source)));
+  return imagesIn(before)
+    .map(({ source }) => path.basename(source))
+    .filter((name) => !kept.has(name));
+};
+
+const keepEveryPhoto = (dropped: readonly string[]): string =>
+  `That leaves out ${dropped.length === 1 ? "a photo" : `${String(dropped.length)} photos`} the day keeps ` +
+  `(${dropped.join(", ")}): keep every photo, where it belongs in the story.`;
 
 const fallbackTitle = (location: Location): string =>
   isInMindPage(location.shelf)
@@ -581,36 +609,38 @@ export const createMemory = ({
       return committed.ok ? ok({ title, change: committed.value }) : committed;
     });
 
+  // One day's journal entry, written whole: the dream writes it in their own voice from the day's notes and
+  // everything else it read, and rewrites it when it learns more, such as something they mention days later.
   const writeJournal = (
     input: unknown,
   ): Promise<Result<{ readonly address: string; readonly title: string; readonly photos: number }, string>> =>
     serially(async () => {
-      if (textOf(input, "text").trim() === "") return fail("A journal entry needs text.");
-      const day = toDay(clock.now(), timeZone());
+      const today = toDay(clock.now(), timeZone());
+      const day = textOf(input, "day").trim();
+      if (!isJournalDay(day)) return fail("Give the day it's about, as YYYY-MM-DD.");
+      if (day > today) return fail("A journal entry is for a day that's happened: not a later day.");
       const location = toLocation(`memory:journal/${day}`);
       if (!location.ok) return location;
-      const words = await keep(textOf(input, "text"), location.value);
-      if (!words.ok) return words;
-      const title = dayTitle(day);
-      const existing = readPage(location.value);
-      const isYours = fieldOf(input, "yours") === true;
-      const isTheirReading = fieldOf(input, "reading") === true;
-      if (isYours && isTheirReading)
-        return fail("Their own words aren't your reading: give yours or reading, not both.");
+      const given = textOf(input, "text").trim();
+      if (given === "") return fail("A journal entry needs text.");
+      if (isReading(given)) return fail(readingInJournal);
+      if (timeHeading.test(given)) return fail(noTimeHeadings);
       const learnt = toLearnt(input);
       if (!learnt.ok) return learnt;
-      const entry = toJournalEntry(
-        words.value.markdown,
-        isYours ? "yours" : isTheirReading ? "reading" : "account",
-        toTimeOfDay(clock.now(), timeZone()),
-      );
+      const words = await keep(given, location.value);
+      if (!words.ok) return words;
+      const existing = readPage(location.value);
+      const dropped = droppedPhotos(existing?.markdown ?? "", words.value.markdown);
+      if (dropped.length > 0) return fail(keepEveryPhoto(dropped));
+      const title = dayTitle(day);
       const text = formatPage({
         title,
         gist: toOneLine(textOf(input, "gist")),
         aliases: [],
-        links: [],
-        markdown: appendEntry(existing?.markdown ?? "", entry),
+        links: stringsOf(input, "links"),
+        markdown: toMarkdown(words.value.markdown),
       });
+      if (text === opened().read(location.value.path)) return fail(`${title} already says exactly that.`);
       const committed = await commit(
         location.value,
         title,
@@ -1080,6 +1110,33 @@ export const createMemory = ({
         (name) => written.has(name.address) || mentions(name.text).test(lately),
       );
     },
+    versionOf: async (address) => {
+      await ready;
+      const location = toLocation(address);
+      return location.ok ? currentVersion(location.value) : undefined;
+    },
+    revert: (address, version, note) =>
+      whenReady(() =>
+        serially(async () => {
+          const location = toLocation(address);
+          if (!location.ok) return location;
+          const current = opened().read(location.value.path);
+          const text = version === undefined ? undefined : await opened().readAt(version, location.value.path);
+          if (version !== undefined && text === undefined) return fail(`${address} has no version ${version}.`);
+          if (text === current) return ok(undefined);
+          const title = parsePage(text ?? current ?? "", fallbackTitle(location.value)).title;
+          const committed = await commit(
+            location.value,
+            title,
+            text,
+            `${text === undefined ? "Forget" : "Restore"} ${title}`,
+            note,
+          );
+          if (!committed.ok) return committed;
+          if (text === undefined) store.withdrawLearnt({ address: location.value.address });
+          return ok(undefined);
+        }),
+      ),
     withThread: async (work) => {
       await ready;
       return serially(async () => {

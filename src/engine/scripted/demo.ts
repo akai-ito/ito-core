@@ -28,7 +28,7 @@ const shortReply = [
   "- It streams a reply in small pieces, the way a real model does.",
   "- Send a message while it writes to try **steering**.",
   "- Include *busy* for a trail of steps, *long* for a long reply to stop, *fail* for a failure, *silent* for a quiet turn that works until you stop it, *ask* for a question, or *approve* for an approval.",
-  "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and adds to today's journal; *recall* looks Alex up.",
+  "- *remember* writes Alex's page in memory (again: edits it, and the old state moves to Earlier) and keeps a note for tonight's journal; *recall* looks Alex up.",
   "- *trip* starts Florence with Mira in In motion, *training* a sub-20 5K block, and *booked* books the trip's Uffizi.",
   "- *motion* fills In motion with a role, a hybrid block, a project and a goal that ended unmet.",
   "- *plan* lays out a day with Kumo's plan and guesses.",
@@ -191,11 +191,7 @@ const rememberAlex =
           gist: "Someone you're seeing a lot; going really well",
           note: "Seeing each other a lot now",
         }));
-    await callTool("journal", {
-      text: "Talked about Alex; things are going well.",
-      gist: "Things going well with Alex",
-      note: "Talked about Alex",
-    });
+    await callTool("note_day", { text: "Talked about Alex; things are going well." });
   };
 
 const recallAlex: Act["act"] = async (callTool) => {
@@ -669,7 +665,9 @@ const memoryScript = (text: string, start: readonly TimedEvent[], now: number): 
   const actAt = lastAt(start) + 300;
   const reply = writeMessage(
     "reply",
-    isRemembering ? "I've updated Alex's page, and added to today's journal." : "Here's what I remember about Alex.",
+    isRemembering
+      ? "I've updated Alex's page, and noted it for tonight's journal."
+      : "Here's what I remember about Alex.",
     actAt + 1200,
   );
   return {

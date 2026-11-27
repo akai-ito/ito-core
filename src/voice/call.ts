@@ -249,7 +249,8 @@ export const createCallStream = (options: CallOptions): CallStream => {
         case "onboarding.changed":
         case "problems.changed":
         case "recording.changed":
-        case "browser.changed": {
+        case "browser.changed":
+        case "dream.finished": {
           return;
         }
       }

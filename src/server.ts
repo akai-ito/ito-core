@@ -102,9 +102,13 @@ import { createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
 import { createBlockStore } from "#day/blocks.ts";
 import { createDayPicture } from "#day/picture.ts";
 import { registerDay } from "#http/day.ts";
-import { contextRun, contextThread, inToolContext } from "#tools/context.ts";
+import { contextRun, contextThread, inToolContext, isDreamRun } from "#tools/context.ts";
 import { createDemoTools } from "#demo/tools.ts";
 import { createBrowserHand } from "#hands/browser.ts";
+import { createDayNotes } from "#dream/notes.ts";
+import { createDreams, dreamInstructions, type Dreams } from "#dream/dream.ts";
+import { createDreamStore } from "#store/dreams.ts";
+import { registerDream } from "#http/dream.ts";
 
 export type ServerOptions = {
   readonly dataDirectory: string;
@@ -129,6 +133,8 @@ export type ServerOptions = {
   // The largest big upload of each kind, and the largest chunk; ITO_MAX_RECORDING_MB and ITO_MAX_FILE_MB set them.
   readonly uploadLimits?: Partial<UploadLimits>;
   readonly freeBytes?: (directory: string) => number;
+  // Whether Kumo dreams by itself each night at the dream time; `ito serve` turns it on. Dream now works either way.
+  readonly dreams?: boolean;
 };
 
 export type PushOptions = { readonly hosts: ApnsHosts };
@@ -164,6 +170,7 @@ export type Server = {
   readonly mail: Mailbox;
   readonly problems: Problems;
   readonly background: Background;
+  readonly dreams: Dreams;
   readonly callTool: (name: string, input: unknown, run?: string, thread?: string) => Promise<ToolResult>;
   readonly close: () => Promise<void>;
 };
@@ -200,7 +207,15 @@ const reviewSkill: OwnSkill = {
   text: readFileSync(new URL("../agent/review.md", import.meta.url), "utf8"),
 };
 
-const ownSkills: readonly OwnSkill[] = [motionSkill, chaptersSkill, reviewSkill];
+const memoryStyleSkill: OwnSkill = {
+  id: "memory-style",
+  summary:
+    "how memory pages and the journal should read: second person on pages, first person in the journal, no " +
+    "disclaimers or process notes, and summaries rather than raw data",
+  text: readFileSync(new URL("../agent/memory-style.md", import.meta.url), "utf8"),
+};
+
+const ownSkills: readonly OwnSkill[] = [motionSkill, chaptersSkill, reviewSkill, memoryStyleSkill];
 
 const dayMs = 24 * 60 * 60 * 1000;
 
@@ -208,6 +223,8 @@ const textRetentionMs = 30 * dayMs;
 const latelyMessages = 6;
 const latelyLength = 280;
 const defaultHeartbeatMs = 15_000;
+// A dream is a background run with time to think: up to an hour, as long as it shows life.
+const dreamBudgetMs = 60 * 60 * 1000;
 
 export const databaseFile = (dataDirectory: string): string => path.join(dataDirectory, "ito.db");
 
@@ -298,7 +315,9 @@ export const createServer = (options: ServerOptions): Server => {
     identifiers,
     embedder: options.embedder,
     recordStep: (facts) => turns.recordStep("memory", facts),
-    approve: (fields) => turns.approve(fields),
+    // A dream has full authority over memory, such as forgetting a page it merged into another: Done can bring it
+    // back. Anywhere else, forgetting a page asks them.
+    approve: (fields) => (isDreamRun(contextRun()) ? Promise.resolve(true) : turns.approve(fields)),
     info,
     timeZone,
     workspace: path.join(options.dataDirectory, "workspace"),
@@ -642,8 +661,9 @@ export const createServer = (options: ServerOptions): Server => {
     enrich: (item) => picture.enrich(item),
   });
   const tracks = createTracks({ database, clock, identifiers, info });
+  const blocks = createBlockStore(database);
   const picture = createDayPicture({
-    blocks: createBlockStore(database),
+    blocks,
     calendar,
     motions,
     desk,
@@ -696,6 +716,48 @@ export const createServer = (options: ServerOptions): Server => {
       );
     },
   });
+  // Kumo's dream: once a day it looks back over everything since the last one and puts it in order. During the day
+  // Kumo only keeps notes for it.
+  const dayNotes = createDayNotes({ database, clock, timeZone });
+  const dreams = createDreams({
+    store: createDreamStore(database),
+    settings: store,
+    clock,
+    timeZone,
+    newId: () => identifiers.dream(),
+    work: (prompt, run) => background.work(prompt, { run, budgetMs: dreamBudgetMs }),
+    notes: dayNotes,
+    sources: {
+      messagesSince: (at, limit) => store.messagesSince(at, limit),
+      thread: (id) => store.findThread(toThreadId(id)),
+      doneSince: (at) => store.doneSince(at),
+      mailSince: (since) => mail.readSince(since),
+      calendar: () => calendar.listItems().map((item) => picture.enrich(item)),
+      tracks: () => tracks.list(),
+      attachmentPath: (id) => attachments.pathOf(id),
+    },
+    changes: {
+      versionOf: (address) => memory.versionOf(address),
+      titleOf: (address) => {
+        const page = memory.page(address);
+        return page.ok ? page.value.title : undefined;
+      },
+      revert: (address, version, note) => memory.revert(address, version, note),
+      wakeUps: () => wakeUps.list(),
+      putWakeUp: (wakeUp) => wakeUps.put(wakeUp),
+      cancelWakeUp: (id) => wakeUps.cancel(id),
+      block: (uid) => blocks.find(uid),
+    },
+    desk,
+    findDone: (id) => store.findDone(id),
+    publish: (dream) => {
+      store.recordDream(dream);
+    },
+    instructions: dreamInstructions,
+    workspace: path.join(options.dataDirectory, "workspace"),
+    info,
+    isScheduled: options.dreams === true,
+  });
   const corrections = createCorrections({
     store,
     desk,
@@ -708,6 +770,7 @@ export const createServer = (options: ServerOptions): Server => {
   // Their phone moved to another time zone: repeating wake-ups follow at once, and Kumo looks at the rest.
   places.onMoved((from, to) => {
     wakeUps.refit();
+    dreams.refit();
     void background.work(
       [
         `Their phone moved from ${from} to ${to}; it's ${toSpoken(clock.now(), to)} there.`,
@@ -725,7 +788,9 @@ export const createServer = (options: ServerOptions): Server => {
     const thread = place.newThread === undefined ? existing : store.startThread("kumo", place.newThread);
     const run = contextRun();
     if (run !== undefined) postedRuns.update((runs) => new Set([...runs, run]));
-    return store.postMessage(text, { isUrgent, ...(thread && { thread: toThreadId(thread.id) }) });
+    const message = store.postMessage(text, { isUrgent, ...(thread && { thread: toThreadId(thread.id) }) });
+    dreams.posted(run, message);
+    return message;
   };
 
   // Kumo's browser beyond its tools: the line in a thread, the live view, takeovers and commit cards.
@@ -827,6 +892,8 @@ export const createServer = (options: ServerOptions): Server => {
     ...gettingStarted.tools,
     ...createRecordingTools(recordings),
     files.tool,
+    dayNotes.tool,
+    ...dreams.tools,
     ...createDemoTools({
       store,
       desk,
@@ -845,8 +912,10 @@ export const createServer = (options: ServerOptions): Server => {
       return tool.call(input);
     },
   });
+  // Each tool checks its input first, then, in a dream, keeps what it changed.
+  const prepared = (tool: Tool): Tool => withCheckedInput(dreams.watch(tool));
   const allTools = (): readonly Tool[] =>
-    [...coreTools, ...doors.tools()].map((tool) => groups.reporting(noteRun(withCheckedInput(tool))));
+    [...coreTools, ...doors.tools()].map((tool) => groups.reporting(noteRun(prepared(tool))));
   const callTool = async (name: string, input: unknown, run?: string, thread?: string): Promise<ToolResult> => {
     const tool = allTools().find((candidate) => candidate.name === name);
     return tool
@@ -863,6 +932,7 @@ export const createServer = (options: ServerOptions): Server => {
     if (event.error?.code === "usage_limit") background.limitReached();
   });
   registerWakeUps(app, { wakeUps, schemas });
+  registerDream(app, { dreams, schemas });
   registerDay(app, { picture, schemas });
   registerTools(app, {
     token: toolsToken,
@@ -891,6 +961,7 @@ export const createServer = (options: ServerOptions): Server => {
     naming.close();
     desk.close();
     background.close();
+    dreams.close();
     wakeUps.close();
     calendarChanges.close();
     places.close();
@@ -932,6 +1003,7 @@ export const createServer = (options: ServerOptions): Server => {
     mail,
     problems,
     background,
+    dreams,
     callTool,
     close: () => {
       const pending = closing.get() ?? shutdown();

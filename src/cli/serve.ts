@@ -121,6 +121,8 @@ export const serve = async (flags: readonly string[], io: Io): Promise<number> =
     uploadLimits: uploadLimits.value,
     capabilities: engine === "demo" ? demoInstalled : installed,
     ...(engine === "demo" && { fetch: withDemoPictures(fetch) }),
+    // The demo's scripted engine has nothing to dream about.
+    dreams: engine !== "demo",
     logger: {
       level: "info",
       redact: ["req.headers.authorization"],

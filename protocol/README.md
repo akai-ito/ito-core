@@ -61,6 +61,12 @@ sequenceDiagram
 - **Say where you are:** the phone sends its time zone and, roughly, its place. Kumo lives by that
   time zone, and the Desk shows the weather there.
 - **Plan with Kumo:** list, move and cancel the wake-ups Kumo set, which the Desk shows as its plans.
+- **Kumo's dream:** once a day, at a time you set (04:00 until you choose another), Kumo looks back
+  over the whole day and puts it in order: memory, tomorrow's blocks and wake-ups, and your journal,
+  written as your own diary. Read the latest dream's record with `GET /v0/dream` (what it planned,
+  tidied, noticed and saved for you, each line pointing at what it changed, with an undo through
+  Kumo's work), mark it seen, ask for one now, and set the dream time. `dream.finished` says when one
+  is done; it never notifies.
 - **Talk in threads:** a side thread is a conversation of its own beside the main chat. Send into
   one, reply to a message to start one, open one with its messages, rename it, mark it done or open,
   and move a message between threads; list and search them for Threads by day.
@@ -103,6 +109,7 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `made.state` | Your ticks on a page changed, from any device |
 | `made.removed` | You let Kumo forget a page |
 | `browser.changed` | Kumo's browser moved on: a step on a site, a takeover asked for, taken or handed back, a commit card, or the task over |
+| `dream.finished` | Kumo finished a dream, with its record |
 
 ## Kumo's browser
 

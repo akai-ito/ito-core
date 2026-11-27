@@ -448,6 +448,77 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/dream": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Kumo's dream
+     * @description Kumo's dream: the time it dreams each night, when the next one is, whether one is under way,
+     *     and the latest dream's record with what it planned, tidied, noticed and saved for you. Show
+     *     the latest as new (a moon on the Desk) until its `seen_at` is set.
+     */
+    get: operations["getDream"];
+    put?: never;
+    /**
+     * Dream now
+     * @description Kumo dreams now, in the background, instead of waiting for the dream time; `dream.finished`
+     *     follows when it's done, often many minutes later. One dream runs at a time: while one is
+     *     under way this answers with it and starts nothing. A dream in the 12 hours before the dream
+     *     time stands in for that night's, which then doesn't run.
+     */
+    post: operations["dreamNow"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/dream/time": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set the dream time
+     * @description When Kumo dreams each night, on your local clock wherever you are; 04:00 until you choose
+     *     another. The next dream moves at once.
+     */
+    put: operations["setDreamTime"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/dreams/{dream}/seen": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Mark a dream seen
+     * @description You've seen a dream's record, so it's no longer new: the moon on the Desk becomes the sun.
+     *     Seeing it again keeps the first time.
+     */
+    post: operations["seeDream"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/desk/cards/{card}/answer": {
     parameters: {
       query?: never;
@@ -2310,7 +2381,8 @@ export interface components {
       | components["schemas"]["ThreadChanged"]
       | components["schemas"]["MessageMoved"]
       | components["schemas"]["RecordingChanged"]
-      | components["schemas"]["BrowserChanged"];
+      | components["schemas"]["BrowserChanged"]
+      | components["schemas"]["DreamFinished"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation and of the Desk with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -2794,6 +2866,28 @@ export interface components {
     };
     DoneResult: {
       entry: components["schemas"]["DoneEntry"];
+    };
+    /** @description Kumo's dream as it stands. */
+    DreamState: {
+      /** @description When Kumo dreams each night, on your local clock, such as `04:00`. */
+      time: string;
+      /** @description When the next dream is due, in your time zone now. */
+      next_at: components["schemas"]["Timestamp"];
+      /** @description A dream under way, while there is one. */
+      dreaming?: {
+        since: components["schemas"]["Timestamp"];
+        /** @enum {unknown} */
+        trigger: "scheduled" | "manual";
+      };
+      /** @description The latest dream, until there's been none. */
+      latest?: components["schemas"]["Dream"];
+    };
+    DreamTime: {
+      /** @description Such as `04:00`, on your local clock. */
+      time: string;
+    };
+    DreamResult: {
+      dream: components["schemas"]["Dream"];
     };
     WakeUpList: {
       wake_ups: components["schemas"]["WakeUp"][];
@@ -3564,6 +3658,8 @@ export interface components {
     UploadId: string;
     /** @description Opaque. The server makes it when Kumo opens a track. */
     TrackId: string;
+    /** @description Opaque. The server makes it when a dream finishes. */
+    DreamId: string;
     /** @description One thing Kumo did without you, for the Done list. Reply to it with a message whose `done` names it, and the correction becomes a preference. */
     DoneEntry: {
       id: components["schemas"]["DoneId"];
@@ -3590,6 +3686,8 @@ export interface components {
       corrected_at?: components["schemas"]["Timestamp"];
       /** @description The track this call belongs to, when it's in an area Kumo is learning. "That was wrong" on it steps the track back. */
       track?: components["schemas"]["TrackId"];
+      /** @description The dream that did it: show it with that dream rather than as the day's work. It doesn't count in the Desk's `handled`. */
+      dream?: components["schemas"]["DreamId"];
     };
     /** @description Opaque. The server makes it when a wake-up is set. */
     WakeUpId: string;
@@ -3823,6 +3921,52 @@ export interface components {
       corrected: number;
       /** @description What it stands on, newest first, the latest ten. */
       evidence: components["schemas"]["TrackEvidence"][];
+    };
+    /**
+     * @description Where a line of a dream belongs: `planned`, tomorrow put in order (Kumo's blocks and guesses, wake-ups set, moved or dropped); `tidied`, memory tended (pages rewritten, merged, Now kept to what's live); `noticed`, what Kumo noticed or learnt (a lasting lesson on How to help you, a pattern, a chapter); `saved`, kept for you (the day's journal, a message or a question for the morning). Show a group you don't recognise under Noticed.
+     * @enum {unknown}
+     */
+    DreamGroup: "planned" | "tidied" | "noticed" | "saved";
+    /** @description One short line of what a dream did, pointing at what it changed or is about. Lines are in the order Kumo wrote them; group them by `group`. */
+    DreamLine: {
+      group: components["schemas"]["DreamGroup"];
+      /** @description Plain words, such as "Moved tomorrow's run to 07:30, before the 09:00 call". */
+      text: string;
+      /** @description The entry in Kumo's work for the change this line made, when it made one. Undo it with `POST /v0/done/{entry}/undo` while `undo` is true. */
+      done?: components["schemas"]["DoneId"];
+      /** @description Whether `POST /v0/done/{entry}/undo` can take the change back now: it puts the page, the wake-up or the block back as it was before the dream. */
+      undo?: boolean;
+      /**
+       * @description You took the change back.
+       * @constant
+       */
+      undone?: true;
+      /** @description The memory page it changed or is about, such as `memory:journal/2026-11-26`. */
+      page?: string;
+      /** @description The wake-up it set, moved or dropped; one it dropped is no longer in the plans. */
+      wake_up?: components["schemas"]["WakeUpId"];
+      /** @description The item on Kumo's calendar it planned, moved or removed; one it removed is no longer in Coming up. */
+      event?: components["schemas"]["CalendarItemId"];
+      /** @description A message it posted to you. */
+      message?: components["schemas"]["MessageId"];
+    };
+    /** @description One of Kumo's dreams: once a day, at the dream time, Kumo looks back over everything since the last one and puts it in order, then leaves this record. Show it from when it finishes until you've seen it (a moon on the Desk), then as seen. */
+    Dream: {
+      id: components["schemas"]["DreamId"];
+      /** @description The local day it mostly looked back on, such as `2026-11-26` for a dream at 04:00 on the 27th. */
+      day: string;
+      /**
+       * @description `scheduled`, at the dream time (or as soon as the server was back, if it was off then); `manual`, from Dream now.
+       * @enum {unknown}
+       */
+      trigger: "scheduled" | "manual";
+      started_at: components["schemas"]["Timestamp"];
+      ended_at: components["schemas"]["Timestamp"];
+      /** @description The night in a line, in Kumo's words, such as "A quiet Wednesday: journal written, Thursday planned". */
+      headline?: string;
+      lines: components["schemas"]["DreamLine"][];
+      /** @description When you saw it, with `POST /v0/dreams/{dream}/seen`. Until then it's new. */
+      seen_at?: components["schemas"]["Timestamp"];
     };
     /**
      * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
@@ -4307,6 +4451,17 @@ export interface components {
       browser: components["schemas"]["Browser"];
     };
     /**
+     * dream.finished
+     * @description Kumo finished a dream, and left its record. It never notifies: Kumo messages you itself when something from the night is worth it.
+     */
+    DreamFinished: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "dream.finished";
+      at: components["schemas"]["Timestamp"];
+      dream: components["schemas"]["Dream"];
+    };
+    /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, Kumo sent a `post` outside a turn, or Kumo's browser needs your hand, a `takeover`.
      * @enum {unknown}
      */
@@ -4530,6 +4685,8 @@ export interface components {
     /** @description A random UUID the app makes once per install, and keeps. */
     Device: string;
     WakeUp: components["schemas"]["WakeUpId"];
+    /** @description The dream's id, from its `Dream`. */
+    Dream: components["schemas"]["DreamId"];
     /** @description The id the app chose when it started the call. */
     Call: components["schemas"]["CallId"];
     /** @description The capability's id, such as `reports`. */
@@ -4610,6 +4767,9 @@ export type Discovery = components["schemas"]["Discovery"];
 export type BeliefAnswer = components["schemas"]["BeliefAnswer"];
 export type DonePage = components["schemas"]["DonePage"];
 export type DoneResult = components["schemas"]["DoneResult"];
+export type DreamState = components["schemas"]["DreamState"];
+export type DreamTime = components["schemas"]["DreamTime"];
+export type DreamResult = components["schemas"]["DreamResult"];
 export type WakeUpList = components["schemas"]["WakeUpList"];
 export type WakeUpResult = components["schemas"]["WakeUpResult"];
 export type WakeUpChange = components["schemas"]["WakeUpChange"];
@@ -4713,6 +4873,7 @@ export type ThreadDone = components["schemas"]["ThreadDone"];
 export type Thread = components["schemas"]["Thread"];
 export type UploadId = components["schemas"]["UploadId"];
 export type TrackId = components["schemas"]["TrackId"];
+export type DreamId = components["schemas"]["DreamId"];
 export type DoneEntry = components["schemas"]["DoneEntry"];
 export type WakeUpId = components["schemas"]["WakeUpId"];
 export type Weekday = components["schemas"]["Weekday"];
@@ -4728,6 +4889,9 @@ export type Desk = components["schemas"]["Desk"];
 export type TrackStage = components["schemas"]["TrackStage"];
 export type TrackEvidence = components["schemas"]["TrackEvidence"];
 export type Track = components["schemas"]["Track"];
+export type DreamGroup = components["schemas"]["DreamGroup"];
+export type DreamLine = components["schemas"]["DreamLine"];
+export type Dream = components["schemas"]["Dream"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
 export type StatusDetail = components["schemas"]["StatusDetail"];
@@ -4771,6 +4935,7 @@ export type ThreadChanged = components["schemas"]["ThreadChanged"];
 export type MessageMoved = components["schemas"]["MessageMoved"];
 export type RecordingChanged = components["schemas"]["RecordingChanged"];
 export type BrowserChanged = components["schemas"]["BrowserChanged"];
+export type DreamFinished = components["schemas"]["DreamFinished"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -4799,6 +4964,7 @@ export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
 export type ParameterDevice = components["parameters"]["Device"];
 export type ParameterWakeUp = components["parameters"]["WakeUp"];
+export type ParameterDream = components["parameters"]["Dream"];
 export type ParameterCall = components["parameters"]["Call"];
 export type ParameterCapability = components["parameters"]["Capability"];
 export type HeaderItoProtocol = components["headers"]["ItoProtocol"];
@@ -5421,6 +5587,108 @@ export interface operations {
         };
       };
       401: components["responses"]["TokenRejected"];
+    };
+  };
+  getDream: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The dream. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DreamState"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  dreamNow: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Dreaming. */
+      202: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DreamState"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  setDreamTime: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "time": "03:30"
+         *     }
+         */
+        "application/json": components["schemas"]["DreamTime"];
+      };
+    };
+    responses: {
+      /** @description Set. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DreamState"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  seeDream: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The dream's id, from its `Dream`. */
+        dream: components["parameters"]["Dream"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Seen. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DreamResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
     };
   };
   answerCard: {

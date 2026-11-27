@@ -25,15 +25,13 @@ export type LearntBody = {
   readonly change: string;
 };
 
-const readingLearnt =
-  "That's your reading of them, not something you learnt: keep it in the journal with reading: true, and leave " +
-  "learnt out.";
+const readingLearnt = "That's your reading of them, not something you learnt: leave learnt out.";
 
 // The line a write gives, as one line; none when it gives none, and a refusal for a reading of them.
 export const toLearnt = (input: unknown): Result<string | undefined, string> => {
   const line = toOneLine(textOf(input, "learnt"));
   if (line === "") return ok(undefined);
-  return isReading(line) || fieldOf(input, "reading") === true ? fail(readingLearnt) : ok(line);
+  return isReading(line) ? fail(readingLearnt) : ok(line);
 };
 
 // A commit message with what Kumo learnt as its trailer, so the Thread keeps it too.

@@ -54,6 +54,9 @@ pages.</sub></p>
 - **Follow-through.** Kumo sets itself wake-ups, wakes on new mail and calendar changes, and
   messages you when something is worth saying. Every action it takes is recorded, with an undo
   where there can be one.
+- **The dream.** Once a day, at a time you set, Kumo looks back over the whole day and puts it in
+  order: it tends memory, plans tomorrow, and writes your journal as your own diary, then leaves a
+  record of what it did that you can take back line by line.
 - **In motion.** Roles you're pursuing, training blocks, trips, projects and other things you're
   doing, kept as structured documents that Kumo changes a part at a time as you talk, and ended
   with an honest outcome.

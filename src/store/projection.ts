@@ -261,6 +261,14 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
         .run(toJson(event.onboarding));
       return;
     }
+    // A dream's record, kept by the dream itself first; from the log too, so a restored server still has it.
+    case "dream.finished": {
+      const { dream } = event;
+      database
+        .prepare("INSERT OR IGNORE INTO dreams (id, slot, started_at, body) VALUES (?, ?, ?, ?)")
+        .run(dream.id, dream.started_at, dream.started_at, toJson(dream));
+      return;
+    }
     case "browser.changed": {
       database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('browser', ?)").run(toJson(event.browser));
       return;

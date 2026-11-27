@@ -28,7 +28,13 @@ export type Background = {
   readonly close: () => void;
 };
 
-export type BackgroundWork = { readonly run?: string; readonly choice?: ModelChoice; readonly missed?: string };
+export type BackgroundWork = {
+  readonly run?: string;
+  readonly choice?: ModelChoice;
+  readonly missed?: string;
+  // The longest it may take in all, such as a dream's hour; however long it takes otherwise, while it shows life.
+  readonly budgetMs?: number;
+};
 
 export type Pause = {
   readonly since: number;
@@ -96,6 +102,9 @@ type Saved = {
 
 const silentDetail = (silence: number): string =>
   `The model showed no sign of life for ${String(Math.round(silence / 60_000))} minutes, so the work was stopped.`;
+
+const overBudgetDetail = (budget: number): string =>
+  `The work ran past its ${String(Math.round(budget / 60_000))} minutes, so it was stopped.`;
 
 const retryNote =
   "(An earlier try at this went quiet for a long while and was stopped. It may have done part of it already: look " +
@@ -213,17 +222,28 @@ export const createBackground = ({
     prompt: string,
     run: string,
     choice: ModelChoice | undefined,
+    budget: number | undefined,
   ): Promise<Result<string, WorkFailure>> =>
     new Promise((resolve) => {
       const controller = new AbortController();
       const silenceTimer = createCell<Cancel | undefined>(undefined);
+      const budgetTimer = createCell<Cancel | undefined>(undefined);
       const isSettled = createCell(false);
       const settle = (done: Result<string, WorkFailure>): void => {
         if (isSettled.get()) return;
         isSettled.set(true);
         silenceTimer.get()?.();
+        budgetTimer.get()?.();
         resolve(done);
       };
+      if (budget !== undefined) {
+        budgetTimer.set(
+          clock.after(budget, () => {
+            controller.abort();
+            settle(fail({ code: "model_timeout", detail: overBudgetDetail(budget) }));
+          }),
+        );
+      }
       const arm = (): void => {
         if (isSettled.get()) return;
         silenceTimer.get()?.();
@@ -256,19 +276,20 @@ export const createBackground = ({
     prompt: string,
     run: string,
     choice: ModelChoice | undefined,
+    budget?: number,
     restarts = 2,
     isRetry = false,
   ): Promise<Result<string, WorkFailure>> => {
-    const done = await tryOnce(isRetry ? `${retryNote}\n\n${prompt}` : prompt, run, choice);
+    const done = await tryOnce(isRetry ? `${retryNote}\n\n${prompt}` : prompt, run, choice, budget);
     if (done.ok) return done;
     const isCutOff = done.failure.detail === restartedDetail && !touched.get().has(run);
-    if (isCutOff && restarts > 0) return attempt(prompt, run, choice, restarts - 1, isRetry);
+    if (isCutOff && restarts > 0) return attempt(prompt, run, choice, budget, restarts - 1, isRetry);
     if (!isRetry && done.failure.code === "model_timeout" && done.failure.detail === silentDetail(silence)) {
       info("Kumo's background work went quiet, so it was stopped and is tried once more", {
         run,
         silent_minutes: Math.round(silence / 60_000),
       });
-      return attempt(prompt, run, choice, restarts, true);
+      return attempt(prompt, run, choice, budget, restarts, true);
     }
     return done;
   };
@@ -352,7 +373,7 @@ export const createBackground = ({
 
   const work = async (
     prompt: string,
-    { run: given, choice, missed }: BackgroundWork = {},
+    { run: given, choice, missed, budgetMs }: BackgroundWork = {},
   ): Promise<Result<string, string>> => {
     await ready();
     const current = state.get();
@@ -362,7 +383,7 @@ export const createBackground = ({
       return fail(pausedDetail);
     }
     const run = given ?? randomUUID();
-    const done = await attempt(prompt, run, choice);
+    const done = await attempt(prompt, run, choice, budgetMs);
     forget(run);
     if (done.ok) {
       report({ ok: true });

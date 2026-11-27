@@ -21,8 +21,8 @@ Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code inste
 redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new` makes
 another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
 in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a quiet turn
-that works until you stop it, *ask* a question, *approve* an approval, *remember* writes a page and
-the journal in memory, *recall* looks it up, *trip* and *training* start things in motion, *motion*
+that works until you stop it, *ask* a question, *approve* an approval, *remember* writes a page in
+memory and a note for tonight's journal, *recall* looks it up, *trip* and *training* start things in motion, *motion*
 fills In motion with every kind (a role, a hybrid block, a project and a goal that ended unmet),
 *booked* books the trip's Uffizi, *mail* reads a sample mail, puts a draft on the Desk and messages
 you about it, and *plan* lays out a sample day of Kumo's plan and guesses in Coming up.
@@ -98,8 +98,9 @@ Ari remembers you in the Thread, a git repository of Markdown pages in `~/.ito/t
 read without Ito: your portrait, what's going on now, how you like to be helped, pages on people,
 goals, projects, places and topics, and a journal. Ari writes it as you talk, and finds things in it
 and in past conversations with a small embedding model it downloads once and runs on the CPU.
-Your own words stay apart from Kumo's reading of you: a reading lives only in the journal, marked as
-Kumo's, and when you correct something, Kumo finds every copy, journal previews included.
+Pages say what you told Kumo and what happened, never Kumo's reading of you, and when you correct
+something, Kumo finds every copy, journal previews included. The journal is your own diary, in the
+first person: during the day Kumo only keeps notes for it, and its nightly dream writes each day.
 A photo you share in the chat can stay with the story: Kumo puts it where it belongs in the journal
 or on a page, and the Thread keeps a copy in its `media` folder, scaled down to at most 2,000 pixels
 on the long edge as JPEG, without its location or camera details, so it goes to the backup too.
@@ -107,6 +108,22 @@ Kumo also notices the chapters of your life, such as a trip or a training block,
 short story with its photos on `chapters/`, with when it began and ended. When a change teaches it
 something about you, it says so in a line to you, kept with the change (in the Thread too, as a
 `Learnt:` line in its commit); the Library shows the newest few, and tidying a page adds none.
+
+### The nightly dream
+
+Once a day, at the dream time (04:00 on your phone's clock until you change it in Ari's Settings),
+Kumo dreams: a background run of up to an hour that looks back over everything since the last one,
+every thread and the main chat, the wake-ups that ran, the mail you read or sent, your calendar, the
+photos you shared (by the day each was taken) and its own notes from the day, and puts it in order.
+It rewrites memory pages rather than adding to them, keeps Now to what's live and How to help you to
+lasting preferences, reconciles tomorrow's blocks, guesses and wake-ups, writes each day's journal in
+the first person (filling in earlier days with what you mentioned later), and folds lasting lessons
+from your corrections into How to help you. It leaves a record on the Desk of what it planned,
+tidied, noticed and saved for you; each change is in Kumo's work with an undo that puts it back as it
+was before the dream. If the box was off at the dream time, it dreams as soon as it's back; if the
+model couldn't, it tries again every half hour until the next one is due. *Dream now* runs one at
+once, and one in the 12 hours before the dream time stands in for that night's. A dream never
+notifies; Kumo messages you only when something from the night is worth it.
 
 To back it up, tap *Back up to GitHub* in Ari's Settings › Memory and approve the code on GitHub.
 Your server finds your private `ito-thread` repository, or makes one, and GitHub asks you to install
