@@ -9,6 +9,7 @@ import type { CalendarItem, Repeat, WakeUp, WakeUpChange, WakeUpSource, Weekday 
 import { fail, ok, type Result } from "#result.ts";
 import type { WakeUpStore } from "#store/wakeups.ts";
 import { fieldOf, stringsOf, textOf } from "#tools/input.ts";
+import { missingSpaces } from "#tools/spacing.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 
@@ -363,6 +364,8 @@ export const createWakeUps = ({
     const what = lineOf(input, "what");
     const why = textOf(input, "why").trim();
     if (what === "" || why === "") return fail("Say what it's for in a line, and why.");
+    const glued = missingSpaces([what, why]);
+    if (glued !== undefined) return fail(glued);
     const repeat = toRepeat(fieldOf(input, "repeat"));
     if (typeof repeat === "string") return fail(repeat);
     const given = lineOf(input, "at");
@@ -485,6 +488,8 @@ export const createWakeUps = ({
         const id = lineOf(input, "id");
         const current = wakeUps.get().get(id);
         if (!current) return Promise.resolve(failed(`There's no wake-up ${id || "with that id"}.`));
+        const glued = missingSpaces([textOf(input, "what"), textOf(input, "why")]);
+        if (glued !== undefined) return Promise.resolve(failed(glued));
         const repeat = toRepeat(fieldOf(input, "repeat"));
         if (typeof repeat === "string") return Promise.resolve(failed(repeat));
         const given = lineOf(input, "at");

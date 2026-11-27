@@ -39,7 +39,10 @@ export const inMindTitles: Readonly<Record<InMindPage, string>> = {
 // Past this, a page in mind gets a gentle note to move detail out: never a limit, so nothing is ever squeezed in.
 export const inMindWords = 450;
 
-export const wordsIn = (markdown: string): number => markdown.split(/\s+/u).filter(Boolean).length;
+// Words as a reader counts them, each run of letters and each number on its own, so that text with its spaces
+// squeezed out ("As of4 Dec") counts the same as the text it should be.
+export const wordsIn = (markdown: string): number =>
+  markdown.match(/\p{L}+(?:['’]\p{L}+)*|\p{N}+(?:[.,:]\p{N}+)*/gu)?.length ?? 0;
 
 // How Kumo's own reading of them is marked, in the journal only: never a fact, and never on a page.
 export const readingMark = "_My reading:_";

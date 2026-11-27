@@ -16,6 +16,7 @@ import {
 import type { Embedder } from "#memory/embedder.ts";
 import { applyEdit, isSameVersion, isSharplyShorter, toVersion, type BodyEdit } from "#memory/edits.ts";
 import { toOneLine } from "#memory/gists.ts";
+import { missingSpaces } from "#tools/spacing.ts";
 import { createLearntTools, learntShown, toLearnt, withLearnt, type LearntBody } from "#memory/learnt.ts";
 import {
   appendEntry,
@@ -232,6 +233,10 @@ const longNote = (title: string, markdown: string): string | undefined => {
 const readingOnPage =
   "That's your reading of them, and a page keeps what they told you and what happened. A reading stays in the " +
   "journal, marked as yours; ask them before anything like it becomes part of a page.";
+
+// Why the words given can't be saved, when spaces are missing next to their numbers.
+const unspaced = (input: unknown, fields: readonly string[]): string | undefined =>
+  missingSpaces(fields.map((field) => textOf(input, field)));
 
 const minimumWord = 3;
 
@@ -586,6 +591,8 @@ export const createMemory = ({
   ): Promise<Result<{ readonly address: string; readonly title: string; readonly photos: number }, string>> =>
     serially(async () => {
       if (textOf(input, "text").trim() === "") return fail("A journal entry needs text.");
+      const glued = unspaced(input, ["text", "gist", "learnt"]);
+      if (glued !== undefined) return fail(glued);
       const day = toDay(clock.now(), timeZone());
       const location = toLocation(`memory:journal/${day}`);
       if (!location.ok) return location;
@@ -657,6 +664,8 @@ export const createMemory = ({
         );
       }
       if (location.value.shelf !== "journal" && isReading(textOf(input, "new_text"))) return fail(readingOnPage);
+      const glued = unspaced(input, ["new_text", "gist", "title", "learnt"]);
+      if (glued !== undefined) return fail(glued);
       const dates = toChapterDates(input, location.value.shelf, existing, toDay(clock.now(), timeZone()));
       if (!dates.ok) return dates;
       const learnt = toLearnt(input);
@@ -726,6 +735,8 @@ export const createMemory = ({
       }
       if (toMarkdown(textOf(input, "body")) === "") return fail("A new page needs a body.");
       if (location.value.shelf !== "journal" && isReading(textOf(input, "body"))) return fail(readingOnPage);
+      const glued = unspaced(input, ["body", "gist", "title", "learnt"]);
+      if (glued !== undefined) return fail(glued);
       const dates = toChapterDates(input, location.value.shelf, undefined, toDay(clock.now(), timeZone()));
       if (!dates.ok) return dates;
       const learnt = toLearnt(input);
