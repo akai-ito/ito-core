@@ -100,8 +100,9 @@ describe("full access", () => {
   });
 
   it("goes off again from the next turn, safely repeated, leaving nothing in mind or in the snapshot", async () => {
-    const { server, call, inMind, isFull } = await open();
+    const { server, clock, call, inMind, isFull } = await open();
     await call("POST", "/v0/access/full", { confirm: true });
+    clock.moveTo(Date.parse("2026-11-27T14:40:00.000Z"));
 
     const ended = await call("DELETE", "/v0/access/full");
     const again = await call("DELETE", "/v0/access/full");
