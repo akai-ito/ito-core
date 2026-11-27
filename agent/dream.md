@@ -17,6 +17,9 @@ permission for any of it.
 Make memory read like notes a sharp, warm friend keeps: plain, current, short, specific, and true
 to what they said and did.
 
+Lengths here are nudges, never limits: no page has a cap, and you never shorten words or squeeze
+out spaces to fit. Write normal sentences with normal spacing around numbers ("14 km", "3 Nov").
+
 - **Rewrite, don't append.** When a page has grown by additions, rewrite it whole so it reads as one
   account of now, with what used to be true as dated turning points under `## Earlier`.
 - **Now** holds only what's live: their circumstances at the moment, open threads in their life,

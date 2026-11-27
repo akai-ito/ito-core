@@ -132,6 +132,8 @@ const clockPattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
 const groups: readonly DreamGroup[] = ["planned", "tidied", "noticed", "saved"];
 
+// What the app shows of a line and the headline: a longer one is cut at a word, never refused, so nothing is
+// squeezed to fit.
 const longestLine = 200;
 
 const longestHeadline = 160;
@@ -255,8 +257,10 @@ const isSameWakeUp = (left: WakeUp | undefined, right: WakeUp | undefined): bool
 const isSameItem = (left: CalendarItem | undefined, right: CalendarItem | undefined): boolean =>
   left?.title === right?.title && left?.start === right?.start && left?.end === right?.end;
 
-const quoted = (text: string, most = 60): string =>
+const shortened = (text: string, most: number): string =>
   text.length <= most ? text : `${text.slice(0, most - 1).replace(/\s+\S*$/u, "")}…`;
+
+const quoted = (text: string): string => shortened(text, 60);
 
 const withoutGuessMark = (title: string): string => title.replace(/ · guess$/u, "");
 
@@ -761,7 +765,6 @@ export const createDreams = ({
     if (group === undefined || text === "") {
       return `${where} needs a group (planned, tidied, noticed or saved) and its text.`;
     }
-    if (text.length > longestLine) return `${where} is longer than ${String(longestLine)} characters.`;
     const page = lineOf(item, "page");
     if (page !== "" && !toLocation(page).ok) return `${where}: ${page} isn't a memory address.`;
     const wakeUp = lineOf(item, "wake_up");
@@ -794,7 +797,7 @@ export const createDreams = ({
             : `event:${uid}`
           : `wake_up:${wakeUp}`
         : `page:${page}`;
-    return { group, text, ...pointer, ...(key !== undefined && { key }) };
+    return { group, text: shortened(text, longestLine), ...pointer, ...(key !== undefined && { key }) };
   };
 
   const recordTool: Tool = {
@@ -842,10 +845,7 @@ export const createDreams = ({
       const read = items.map((item, index) => readLine(item, `Line ${String(index + 1)}`, current, onCalendar));
       const problems = read.filter((line): line is string => typeof line === "string");
       if (problems.length > 0) return Promise.resolve(failed(problems.join(" ")));
-      const headline = lineOf(input, "headline");
-      if (headline.length > longestHeadline) {
-        return Promise.resolve(failed(`Keep the headline to ${String(longestHeadline)} characters.`));
-      }
+      const headline = shortened(lineOf(input, "headline"), longestHeadline);
       const lines = read.filter((line): line is Written => typeof line !== "string");
       setRunning((ongoing) => ({ ...ongoing, lines, ...(headline !== "" && { headline }) }));
       return Promise.resolve({

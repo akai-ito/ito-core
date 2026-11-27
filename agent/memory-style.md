@@ -34,13 +34,13 @@ pages have is the style you'll imitate later, so every page you write is the exa
 6. **Closed things condensed.** A finished role, trip or project becomes a short paragraph: what
    happened, how it ended and what's worth remembering. On a living page it goes under `## Earlier`.
 7. **Research condensed.** Keep the findings and decisions that still matter (what they decided and
-   why, the shortlist, facts they'd need again); drop superseded analysis. About 600 words at most,
-   unless it's genuine reference material.
+   why, the shortlist, facts they'd need again); drop superseded analysis. Around 600 words is
+   plenty, unless it's genuine reference material.
 8. **One page per subject.** When two pages repeat each other, merge them into the one that owns the
    subject, fix the links that pointed at the other, and forget it.
 9. **`## Earlier`** keeps turning points only (decisions, outcomes, real changes), one dated line
    each, newest first; never rescheduling back and forth or proposals that were superseded.
-10. **Gists** state the current state in one line, 120 characters at most, with no disclaimers.
+10. **Gists** state the current state in one line, about 120 characters, with no disclaimers.
 11. **Keep** facts worth remembering, their own words when meaningful (short quotes), preferences,
     people's context, links that still resolve, and every photo: never drop one.
 12. **Facts, not readings.** Say what they said ("you said you felt better"); never your guess at
@@ -81,6 +81,9 @@ For example:
 >
 > Clara's mail came in the afternoon: the offer from Northwind, in writing. I read it twice and
 > said I'd sleep on it.
+
+**Length is a nudge, never a limit.** No page has a cap: when one runs long, move detail to a shelf
+page or `## Earlier`. Never shorten words or squeeze out spaces to make something fit.
 
 ## Format (the server parses it)
 

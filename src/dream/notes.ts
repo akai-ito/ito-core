@@ -42,8 +42,6 @@ const keptMs = 30 * 24 * 60 * 60 * 1000;
 // A dream digests at most this many, newest kept; more than this in a day is a log, not notes.
 const mostWaiting = 200;
 
-const longestNote = 4000;
-
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/u;
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
@@ -84,7 +82,6 @@ export const createDayNotes = ({ database, clock, timeZone }: DayNotesOptions): 
     call: (input) => {
       const text = textOf(input, "text").trim();
       if (text === "") return Promise.resolve(failed("Give the note's text."));
-      if (text.length > longestNote) return Promise.resolve(failed("Keep a note short: it's for you, not the entry."));
       const today = toDay(clock.now(), timeZone());
       const given = textOf(input, "day").trim();
       if (given !== "" && !isDay(given)) return Promise.resolve(failed(`${given} isn't a day: give it as YYYY-MM-DD.`));
