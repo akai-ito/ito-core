@@ -16,14 +16,17 @@ import {
 } from "#sdk/capability.ts";
 import { createFinals, type Final, type Finals } from "./finals.ts";
 import { isSubmitKey, judgeClick, moneyRefusal, type ClickKind } from "./gate.ts";
-import { createLive, inputSchema, toUrl, type Live } from "./live.ts";
+import { createLive, inputSchema, toUrl, type Live, type MarkTarget } from "./live.ts";
 import { isSecretField, readPage, stateOf, targetText, withOutline, type Line, type Reading } from "./page.ts";
+import type { Display } from "./display.ts";
 import { createSession, keepDownload, missingChromium, type Navigation, type Session } from "./session.ts";
 import { quietly } from "./quietly.ts";
 import { skill } from "./skill.ts";
 
 export type BrowserOptions = {
   readonly executablePath?: string;
+  // Where Chromium draws; by default, headful on a virtual display where there's one (see display.ts).
+  readonly display?: () => Promise<Display>;
   // How long he holds the page without touching it before it goes back to Kumo by itself.
   readonly leaseMs?: number;
   // How long a browsing task goes without an action before it ends, when nothing waits on him.
@@ -64,6 +67,10 @@ type Task = {
 
 type Read = { readonly page: Page; readonly navigation: Navigation; readonly revision: number };
 
+// The press the gate refused because money moves there: the button he's asked to press himself, for the takeover to
+// ring.
+type PayButton = { readonly page: Page; readonly ref: string; readonly navigation: Navigation; readonly label: string };
+
 type Place = { readonly thread?: string; readonly turn?: string };
 
 // The browser's state as Ito shows it: what Kumo is doing on which site, what it needs from him, and who has the page.
@@ -82,6 +89,8 @@ export type BrowserState = {
 
 export type HandedBack = {
   readonly lapsed: boolean;
+  // He stopped the task: nothing wakes Kumo.
+  readonly stopped?: true;
   readonly thread?: string;
   readonly need?: { readonly kind: NeedKind; readonly why: string };
   readonly site?: string;
@@ -192,6 +201,7 @@ const watchRequests = (page: Page) => {
 
 export const createBrowser = ({
   executablePath,
+  display,
   leaseMs = 10 * 60_000,
   taskIdleMs = 3 * 60_000,
   idleMs = 15 * 60_000,
@@ -210,6 +220,9 @@ export const createBrowser = ({
   const queue = createCell<Promise<unknown>>(Promise.resolve());
   const leaseTimer = createCell<NodeJS.Timeout | undefined>(undefined);
   const ticker = createCell<NodeJS.Timeout | undefined>(undefined);
+  const payButton = createCell<PayButton | undefined>(undefined);
+  // The turns whose task he stopped: they can't use the browser again, so a new ask starts afresh.
+  const stoppedTurns = createCell<ReadonlySet<string>>(new Set());
   const parts = createCell<
     { readonly session: Session; readonly live: Live; readonly finals: Finals; readonly folder: string } | undefined
   >(undefined);
@@ -313,6 +326,12 @@ export const createBrowser = ({
   // A call from Kumo claims the browser for its thread. Calls from the main chat or from background work carry on
   // the task there is, so the work Ito wakes after a takeover continues it in its thread.
   const claim = ({ thread, turn }: Place): Result<Task, string> => {
+    if (turn !== undefined && stoppedTurns.get().has(turn)) {
+      return fail(
+        "He stopped this task, and the page stays as it is. Don't use the browser again in this turn: tell him in a " +
+          "line where you'd got to.",
+      );
+    }
     if (lease.get()) return fail(hisPage);
     const current = task.get();
     const isOther = current !== undefined && thread !== undefined && current.thread !== thread;
@@ -496,7 +515,10 @@ export const createBrowser = ({
       case "click": {
         const text = await targetText(locator);
         const verdict = judgeClick({ ...line, text }, input.kind ?? ("browse" satisfies ClickKind), reading.signals);
-        if (verdict.kind === "money") return fail(moneyRefusal(verdict.why));
+        if (verdict.kind === "money") {
+          rememberPay(page, input.ref, line.name || text);
+          return fail(moneyRefusal(verdict.why));
+        }
         if (verdict.kind === "browse") {
           await locator.click();
           return afterAction(`Clicked ${line.name || input.ref}.`);
@@ -573,6 +595,22 @@ export const createBrowser = ({
     }
   };
 
+  const rememberPay = (page: Page, reference: string, label: string): void => {
+    payButton.set({ page, ref: reference, navigation: required().session.navigation(page), label: label.slice(0, 80) });
+  };
+
+  // The button a payment waits on, while it's still on the page Kumo stopped at.
+  const payMark = (): MarkTarget | undefined => {
+    const button = payButton.get();
+    const { session } = required();
+    const isOn =
+      button !== undefined &&
+      task.get()?.need?.kind === "payment" &&
+      !button.page.isClosed() &&
+      sameNavigation(session.navigation(button.page), button.navigation, button.ref);
+    return isOn ? { page: button.page, locator: button.page.getByRef(button.ref), label: button.label } : undefined;
+  };
+
   const withBrowser = async (
     given: CallContext,
     work: (page: Page) => Promise<Result<{ readonly text: string }, string>>,
@@ -619,15 +657,19 @@ export const createBrowser = ({
     leaseTimer.set(setTimeout(lapse, wait));
   };
 
-  const handBack = (lapsed: boolean): BrowserState => {
+  const handBack = (lapsed: boolean, stopped = false): BrowserState => {
     if (!lease.get()) return toState();
     clearTimeout(leaseTimer.get());
     lease.set(undefined);
     revision.update((count) => count + 1);
     lastRead.set(undefined);
+    const { live } = required();
+    live.track(undefined);
+    void live.hold(false);
     const current = task.get();
     const handed: HandedBack = {
       lapsed,
+      ...(stopped && { stopped: true as const }),
       hadTask: current !== undefined,
       ...(current?.thread !== undefined && { thread: current.thread }),
       ...(current?.need && { need: { kind: current.need.kind, why: current.need.why } }),
@@ -665,7 +707,7 @@ export const createBrowser = ({
     done: "Opened a page",
     description:
       "Open a page in the browser on the server, which you use for him: a URL in this tab or a new one, back, or " +
-      "another tab. It browses at iPhone size, signed in wherever he's signed in. Returns the page as browser_read " +
+      "another tab. It browses at his phone's size, signed in wherever he's signed in. Returns the page as browser_read " +
       "does. Say what you're doing in `step`, in a few plain words he sees live in the thread.",
     input: z.object({
       url: z.string().optional().describe("The address to open."),
@@ -828,7 +870,10 @@ export const createBrowser = ({
         const { locator, line, reading } = resolved.value;
         const text = await targetText(locator);
         const verdict = judgeClick({ ...line, text }, "final", reading.signals);
-        if (verdict.kind === "money") return fail(moneyRefusal(verdict.why));
+        if (verdict.kind === "money") {
+          rememberPay(page, input.ref, line.name || text);
+          return fail(moneyRefusal(verdict.why));
+        }
         const uncertain = finals.uncertainOn(new URL(page.url()).origin);
         if (uncertain) return fail(uncertainText(uncertain));
         const digest = await stateOf(page, line);
@@ -878,28 +923,38 @@ export const createBrowser = ({
 
   const settle = defineOperation({
     name: "settle",
-    title: "Settle an uncertain step",
-    running: "Settling an uncertain step",
-    done: "Settled an uncertain step",
+    title: "Settle a final step",
+    running: "Settling a final step",
+    done: "Settled a final step",
     description:
-      "Settle a final step that came back uncertain, once you've looked on the site, such as at its bookings, its " +
-      "orders or a confirmation: went_through or not_through, with how you know. Until it's settled, nothing on that " +
-      "site can be committed again, so nothing is booked twice.",
+      "Say how a final step went, once you've looked on the site, such as at its bookings, its orders or the " +
+      "confirmation page: went_through or not_through, with how you know, and the site's reference when it shows " +
+      "one, such as a booking number. Do it for a step that came back uncertain, as until then nothing on that site " +
+      "can be committed again, so nothing is booked twice; and for one the site answered, once you've read its " +
+      "confirmation, so his trail shows it confirmed with its reference. Never mark anything confirmed, such as a " +
+      "calendar event, before this.",
     input: z.object({
-      final: z.string().describe("The uncertain step's id, such as final-1764000000000-3."),
+      final: z.string().describe("The final step's id, such as final-1764000000000-3."),
       outcome: z.enum(["went_through", "not_through"]),
       how: z.string().min(1).max(200).describe("How you know, such as “It's listed under Upcoming bookings”."),
+      reference: z
+        .string()
+        .min(1)
+        .max(40)
+        .optional()
+        .describe("The site's reference for it, as the confirmation shows it, such as “TW-48KQ”."),
     }),
     tool: "browser_settle",
-    run: ({ final, outcome, how }) =>
+    run: ({ final, outcome, how, reference }) =>
       serially((): Promise<Result<{ readonly text: string }, string>> => {
-        const settled = required().finals.settle(final, outcome, how, lastReadAt.get());
+        const settled = required().finals.settle(final, outcome, how, lastReadAt.get(), reference);
         if (!settled.ok) return Promise.resolve(settled);
+        publish("settled", { final, outcome, ...(settled.value.reference !== undefined && { reference }) });
         return Promise.resolve(
           ok({
             text:
               outcome === "went_through"
-                ? `Settled: “${settled.value.button}” went through. Don't press it again.`
+                ? `Settled: “${settled.value.button}” went through${reference === undefined ? "" : ` (${reference})`}. Don't press it again.`
                 : `Settled: “${settled.value.button}” didn't go through, so it can be tried again.`,
           }),
         );
@@ -924,6 +979,9 @@ export const createBrowser = ({
         lease.set({ until: now() + leaseMs });
         lastActive.set(now());
         scheduleLease();
+        const { live } = required();
+        await live.hold(true);
+        live.track(payMark());
         publishState();
         return ok(toState());
       }),
@@ -935,37 +993,39 @@ export const createBrowser = ({
     run: () => serially(() => Promise.resolve(ok(handBack(false)))),
   });
 
+  // His input goes straight to the live view's own lane, never behind Kumo's work or anything else here.
   const input = defineControl({
     name: "input",
     input: z.object({ input: inputSchema }),
-    run: ({ input: given }) =>
-      serially(async () => {
-        if (!lease.get()) return fail("Take over first: until then the live view is only to watch.");
-        lease.set({ until: now() + leaseMs });
-        scheduleLease();
-        lastActive.set(now());
-        const page = await activePage();
-        if (!page.ok) return page;
-        const done = await required().live.input(page.value, given);
-        return done.ok ? ok({}) : done;
-      }),
+    run: async ({ input: given }) => {
+      if (!lease.get()) return fail("Take over first: until then the live view is only to watch.");
+      lease.set({ until: now() + leaseMs });
+      scheduleLease();
+      lastActive.set(now());
+      const { session, live } = required();
+      const page = session.active();
+      if (!page || page.isClosed()) return fail("The page has closed: hand it back to Kumo.");
+      const done = await live.input(page, given);
+      return done.ok ? ok({}) : done;
+    },
   });
 
   const watch = defineControl({
     name: "watch",
     input: z.object({ on: z.boolean() }),
-    run: ({ on }) =>
-      serially(async () => {
-        const { live, session } = required();
-        if (on) {
-          const page = await activePage();
-          if (!page.ok) return page;
-          publishView(page.value);
-        }
-        lastActive.set(now());
-        await live.watch(on);
-        return ok({ watching: live.isWatching(), open: session.isOpen() });
-      }),
+    // Watching never waits for Kumo's step: the view is of the page as it is now, whatever Kumo is doing on it.
+    run: async ({ on }) => {
+      const { live, session } = required();
+      if (on) {
+        const page = await activePage();
+        if (!page.ok) return page;
+        publishView(page.value);
+      }
+      lastActive.set(now());
+      await live.watch(on);
+      if (on) publish("link", { state: live.link() });
+      return ok({ watching: live.isWatching(), open: session.isOpen() });
+    },
   });
 
   const commitControl = defineControl({
@@ -1040,6 +1100,27 @@ export const createBrowser = ({
       }),
   });
 
+  // He stopped the task. It's settled at once, ahead of anything queued: a step Kumo is in the middle of finishes,
+  // then nothing more of the task is done. A takeover he holds ends without waking Kumo, a need and a card waiting
+  // for him are dropped, and the page stays exactly as it is, unpressed.
+  const stopControl = defineControl({
+    name: "stop",
+    input: z.object({}),
+    run: async (_input, given) => {
+      const current = task.get();
+      const turns = [current?.turn, current?.need?.turn].filter((turn): turn is string => turn !== undefined);
+      stoppedTurns.update((known) => new Set([...known, ...turns].slice(-50)));
+      if (lease.get()) handBack(false, true);
+      const card = current?.card?.id;
+      if (card !== undefined) await given.request("drop_card", { card });
+      payButton.set(undefined);
+      task.set(undefined);
+      saveTask();
+      publishState();
+      return ok(toState());
+    },
+  });
+
   const turnEnded = defineControl({
     name: "turn_ended",
     input: z.object({ turn: z.string() }),
@@ -1058,13 +1139,15 @@ export const createBrowser = ({
 
   const publishView = (page: Page): void => {
     const { session } = required();
-    const viewport = page.viewportSize() ?? { width: 393, height: 659 };
+    const viewport = page.viewportSize() ?? session.room();
+    const mode = session.mode()?.mode;
     publish("view", {
       url: page.url(),
       width: viewport.width,
       height: viewport.height,
       tab: Math.max(session.tabs().indexOf(page) + 1, 1),
       tabs: Math.max(session.tabs().length, 1),
+      ...(mode !== undefined && { display: mode }),
     });
   };
 
@@ -1081,7 +1164,7 @@ export const createBrowser = ({
     uses: { hosts: ["*"], folders: ["browser"] },
     setup: [],
     operations: [open, readOperation, actOperation, takeover, commit, settle],
-    controls: [take, handBackControl, input, watch, commitControl, drop, turnEnded, stateControl],
+    controls: [take, handBackControl, input, watch, commitControl, drop, stopControl, turnEnded, stateControl],
     check: () => Promise.resolve(missingChromium(executablePath)),
     stop: async () => {
       clearInterval(ticker.get());
@@ -1095,7 +1178,9 @@ export const createBrowser = ({
       const session = createSession({
         profile: path.join(given.folder, "profile"),
         downloads: () => workspaceDirectory("downloads"),
+        roomFile: path.join(given.folder, "room.json"),
         ...(executablePath !== undefined && { executablePath }),
+        ...(display !== undefined && { display }),
         onTabs: () => {
           const page = parts.get()?.session.active();
           if (page) publishView(page);
@@ -1112,6 +1197,16 @@ export const createBrowser = ({
         },
         onFocus: (field) => {
           publish("focus", field ?? {});
+        },
+        onLink: (state) => {
+          publish("link", { state });
+        },
+        onMark: (mark) => {
+          publish("mark", mark ?? {});
+        },
+        onResize: () => {
+          const page = parts.get()?.session.active();
+          if (page) publishView(page);
         },
       });
       parts.set({ session, live, finals: createFinals(given.folder, now), folder: given.folder });

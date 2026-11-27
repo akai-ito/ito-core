@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://akai-ito.github.io/ito-core/protocol/v0/browser.schema.json",
   "title": "Ito browser stream",
-  "description": "The JSON text frames on `GET /v0/capabilities/browser/stream`, the live view of Kumo's browser. Binary frames down are the page itself: each one JPEG of the whole viewport, newest last; draw each as it comes, scaled to fit the view's `width` by `height`. While the page moves they come quickly at 1x, and once it's still a sharp one at 2x follows. Coordinates in frames up are CSS pixels in the viewport, from its top left: map a touch on the picture by the view's size, never by the picture's own pixels. Both sides ignore frame types they don't recognise.",
+  "description": "The JSON text frames on `GET /v0/capabilities/browser/stream`, the live view of Kumo's browser. Binary frames down are the page itself: each one JPEG of the whole viewport as the screen shows it, zoomed or not, newest last; draw each as it comes, scaled to fit the view's `width` by `height`. While the page moves they come quickly at 1x, and once it's still a sharp one at 2x follows. Coordinates in frames up are CSS pixels in the viewport as drawn, from its top left: map a touch on the picture by the view's size, never by the picture's own pixels, and the server turns it into the page's own, so a touch lands on what's under your finger even on a zoomed page or in a frame from another site. Frames up reach the page at once, in the order sent, each never waiting on another or on anything the server reads from the page: send them as they happen, without waiting for an answer. Both sides ignore frame types they don't recognise.",
   "$defs": {
     "FromApp": {
       "description": "A text frame the app sends. Only while you hold the page in a takeover (`POST /v0/capabilities/browser/takeover`); before that the server answers `refused`, and the live view is only to watch. Each one moves the takeover's lease on.",
@@ -27,6 +27,9 @@
         },
         {
           "$ref": "#/$defs/Navigate"
+        },
+        {
+          "$ref": "#/$defs/Viewport"
         }
       ]
     },
@@ -47,6 +50,12 @@
         },
         {
           "$ref": "#/$defs/Ended"
+        },
+        {
+          "$ref": "#/$defs/Mark"
+        },
+        {
+          "$ref": "#/$defs/Link"
         }
       ]
     },
@@ -179,6 +188,30 @@
         }
       }
     },
+    "Viewport": {
+      "title": "viewport",
+      "description": "The room the page has on your screen, in CSS pixels (iOS points): as wide as the page is drawn, and as tall as the space between the takeover's header and the Hand back bar, which is already inside the screen's safe area, and `keyboard`, how much of that height the keyboard covers from the bottom while it's up. The server makes the page's viewport the room above the keyboard, as a phone's browser does when its bars or keyboard come and go, so nothing on the page sits under the bar or the keyboard, and a field with the focus is scrolled back into view; it answers with `view`, the size to draw and map touches by from then on. Send it once you hold the page and whenever the room or the keyboard changes; ones sent quickly in a row count as the last. Widths are kept between 280 and 600 and heights between 200 and 1400. The room without the keyboard is remembered as your phone's, so Kumo browses at that size too, across restarts; when the takeover ends, the keyboard's share goes back to the page.",
+      "type": "object",
+      "required": ["type", "width", "height"],
+      "properties": {
+        "type": {
+          "const": "viewport"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "keyboard": {
+          "description": "How much of `height` the keyboard covers, from the bottom; absent or 0 while it's down.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
     "State": {
       "title": "state",
       "description": "The browser's state, the same as `browser.changed` carries: on connecting, and whenever it changes. While it's `yours`, frames up reach the page; show Hand back to Kumo.",
@@ -195,7 +228,7 @@
     },
     "View": {
       "title": "view",
-      "description": "The page being shown: on connecting, and when it moves to another page or tab. `width` and `height` are the viewport in CSS pixels, the size to map touches by.",
+      "description": "The page being shown: on connecting, when it moves to another page or tab, and when its viewport changes size after a `viewport` frame or the takeover's end. `width` and `height` are the viewport in CSS pixels, the size to map touches by.",
       "type": "object",
       "required": ["type", "url", "width", "height", "tab", "tabs"],
       "properties": {
@@ -222,6 +255,10 @@
           "description": "How many tabs are open.",
           "type": "integer",
           "minimum": 1
+        },
+        "display": {
+          "description": "How Chromium runs on the server: `headful`, as a person's browser does, on a virtual display, which sites trust more; or `headless`, the fallback when no display could start, where some logins and CAPTCHAs refuse it. The server's log says why it's headless and how to fix it. Absent until Chromium has started.",
+          "enum": ["headful", "headless"]
         }
       }
     },
@@ -277,6 +314,63 @@
               "const": true
             }
           }
+        }
+      }
+    },
+    "Mark": {
+      "title": "mark",
+      "description": "The site's own button Kumo stopped at for you to press, on a `payment` need: its box in the viewport, in CSS pixels from its top left as for touches, and its label, such as \"Pay £58.40\". Draw a ring around it. It comes on connecting and again whenever the box moves, such as when the page scrolls or the viewport changes size, so keep the ring where the latest one says. Without `mark`, there's nothing to ring: the button is off the page, the page moved on, or the need is over.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "mark"
+        },
+        "mark": {
+          "type": "object",
+          "required": ["box", "label"],
+          "properties": {
+            "box": {
+              "description": "Where the button is, in CSS pixels in the viewport, from its top left. It can reach past the viewport's edges while the button is partly scrolled away.",
+              "type": "object",
+              "required": ["x", "y", "width", "height"],
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "width": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "height": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "label": {
+              "description": "The button's words, as it reads.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "Link": {
+      "title": "link",
+      "description": "Whether the picture is live: `live`, or `reconnecting` when the page should have painted and couldn't be shown, such as while it's frozen, busy or between documents. On connecting, and whenever it changes. While it's `reconnecting`, say so quietly over the last picture rather than leaving it up as if it were live; the server keeps trying by itself, starting the screencast again or sending stills in its place, and says `live` once a picture comes.",
+      "type": "object",
+      "required": ["type", "state"],
+      "properties": {
+        "type": {
+          "const": "link"
+        },
+        "state": {
+          "description": "Treat one you don't recognise as `live`.",
+          "enum": ["live", "reconnecting"]
         }
       }
     },

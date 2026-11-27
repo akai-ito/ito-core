@@ -3,6 +3,8 @@ Description=Ito server
 Documentation=https://github.com/akai-ito/ito-core#run-the-server
 
 [Service]
+# Kumo's browser runs headful on a virtual display it starts itself, so the box needs Xvfb
+# (sudo apt install xvfb) and Playwright's Chromium (npx playwright install --with-deps chromium).
 WorkingDirectory=%h/ito-core
 ExecStart=/usr/bin/env node bin/ito.ts serve
 Restart=on-failure

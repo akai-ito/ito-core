@@ -380,7 +380,7 @@
       }
     },
     "StepKind": {
-      "description": "What kind of thing the agent did. Show the title of a kind you don't recognise.",
+      "description": "What kind of thing the agent did. `handoff` and `commit` are written by the server, not the agent: a time Kumo's browser needed your hand, and how a one-tap card you answered went. Show the title of a kind you don't recognise.",
       "enum": [
         "thinking",
         "web_search",
@@ -392,7 +392,9 @@
         "image_view",
         "compacting",
         "memory",
-        "motion"
+        "motion",
+        "handoff",
+        "commit"
       ]
     },
     "Step": {
@@ -663,6 +665,76 @@
         "path": {
           "description": "`image_view`: the image looked at.",
           "type": "string"
+        },
+        "handoff": {
+          "description": "`handoff`: a time Kumo's browser needed your hand, or you took the page over, kept in the trail of the thread its task lives in so it outlasts a relaunch. Its `title` says what for, such as \"Needed you to log in\", or \"You took over\" when Kumo hadn't asked; draw `answer` under it, such as \"You logged in and handed back · 17:21\". It ends at once, as it's written, and `step.updated` adds the answer when the page comes back, even after its turn has ended.",
+          "type": "object",
+          "required": ["site"],
+          "additionalProperties": false,
+          "properties": {
+            "need": {
+              "$ref": "#/$defs/BrowserNeedKind",
+              "description": "What Kumo asked your hand for. Absent when you took the page over without being asked."
+            },
+            "why": {
+              "description": "What Kumo asked, in its words, such as \"Sign in to Railway so I can get the tickets\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "site": {
+              "description": "The site, such as \"Railway\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "answer": {
+              "description": "How the page came back: `handed_back` by you, `lapsed` when you left it untouched until it went back by itself, or `stopped` when you stopped the task. Absent while Kumo still waits on you, or you still hold the page. Treat one you don't recognise as handed back.",
+              "enum": ["handed_back", "lapsed", "stopped"]
+            },
+            "answered_at": {
+              "$ref": "#/$defs/Timestamp",
+              "description": "When it came back, with `answer`."
+            }
+          }
+        },
+        "commit": {
+          "description": "`commit`: how a one-tap card you answered went, kept in the trail of the thread its task lives in, so the card can be drawn as it settled after it has left the Desk and after a relaunch. Its `title` says it in a line, such as \"Pressed “Book now”\". When Kumo settles an uncertain press, or reads the site's reference on the confirmation page, `step.updated` brings the new `outcome` or the `reference`.",
+          "type": "object",
+          "required": ["card", "title", "verb", "outcome", "page"],
+          "additionalProperties": false,
+          "properties": {
+            "card": {
+              "$ref": "#/$defs/CardId",
+              "description": "The card, as it was on the Desk."
+            },
+            "title": {
+              "description": "The card's title, such as \"Table for two at Kiln\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "verb": {
+              "description": "The card's option that acts, such as \"Book\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "outcome": {
+              "$ref": "#/$defs/CommitOutcome"
+            },
+            "answer": {
+              "description": "`declined`: what you tapped or wrote instead, such as \"Not now\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "reference": {
+              "description": "`done`: the site's reference for it, as Kumo read it on the confirmation page, such as \"TW-48KQ\". Absent until Kumo reads one, and when the site gave none.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "page": {
+              "$ref": "#/$defs/CommitCard",
+              "description": "The card's page as you saw it: its picture, summary and details."
+            }
+          }
         }
       }
     },
@@ -2485,61 +2557,7 @@
           }
         },
         "commit": {
-          "description": "A free booking or form Kumo has ready on a site, such as a table for two, for your one tap. Show the picture, the summary and the details, with the options: the one that `acts` has the box press the site's own button, exactly the one outlined in the picture, but only if the page is still as it was; if it changed, nothing is pressed and Kumo looks again. The other option, or words of your own, press nothing: Kumo hears them. Money never goes this way: where money moves, Kumo asks you to take over and press the button yourself.",
-          "type": "object",
-          "required": ["site", "url", "button", "summary", "screenshot"],
-          "additionalProperties": false,
-          "properties": {
-            "site": {
-              "description": "The site, such as \"OpenTable\".",
-              "type": "string",
-              "minLength": 1
-            },
-            "url": {
-              "description": "The page's address, without its query.",
-              "type": "string",
-              "minLength": 1
-            },
-            "button": {
-              "description": "The site's own button that a go-ahead presses, as it reads, such as \"Book now\".",
-              "type": "string",
-              "minLength": 1
-            },
-            "summary": {
-              "description": "What pressing it does, in Kumo's words.",
-              "type": "string",
-              "minLength": 1
-            },
-            "details": {
-              "description": "What matters, such as when, for how many, and the name it's under. Absent when Kumo gave none.",
-              "type": "array",
-              "minItems": 1,
-              "maxItems": 8,
-              "items": {
-                "type": "object",
-                "required": ["label", "value"],
-                "additionalProperties": false,
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "value": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                }
-              }
-            },
-            "screenshot": {
-              "$ref": "#/$defs/AttachmentId",
-              "description": "The page as Kumo left it, at iPhone size, with the button outlined. Fetch it with `GET /v0/attachments/{attachment}`."
-            },
-            "thread": {
-              "$ref": "#/$defs/ThreadId",
-              "description": "The side thread the task lives in, where Kumo tells you how it went. Absent for the main chat."
-            }
-          }
+          "$ref": "#/$defs/CommitCard"
         }
       },
       "allOf": [
@@ -2634,6 +2652,67 @@
           }
         }
       ]
+    },
+    "CommitCard": {
+      "description": "A free booking or form Kumo has ready on a site, such as a table for two, for your one tap. Show the picture, the summary and the details, with the options: the one that `acts` has the box press the site's own button, exactly the one outlined in the picture, but only if the page is still as it was; if it changed, nothing is pressed and Kumo looks again. The other option, or words of your own, press nothing: Kumo hears them. Money never goes this way: where money moves, Kumo asks you to take over and press the button yourself.",
+      "type": "object",
+      "required": ["site", "url", "button", "summary", "screenshot"],
+      "additionalProperties": false,
+      "properties": {
+        "site": {
+          "description": "The site, such as \"OpenTable\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "description": "The page's address, without its query.",
+          "type": "string",
+          "minLength": 1
+        },
+        "button": {
+          "description": "The site's own button that a go-ahead presses, as it reads, such as \"Book now\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "description": "What pressing it does, in Kumo's words.",
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "description": "What matters, such as when, for how many, and the name it's under. Absent when Kumo gave none.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["label", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "screenshot": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "The page as Kumo left it, at iPhone size, with the button outlined. Fetch it with `GET /v0/attachments/{attachment}`."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread the task lives in, where Kumo tells you how it went. Absent for the main chat."
+        }
+      }
+    },
+    "CommitOutcome": {
+      "description": "How a one-tap card settled. `done`: the box pressed the site's button and the site answered. `uncertain`: it pressed, but the site's answer was lost, and Kumo checks on the site before anything is pressed again. `failed`: Kumo checked an uncertain press and it didn't go through. `changed`: the page had moved on before your tap, so nothing was pressed. `declined`: you said not now, or asked for a change, so nothing was pressed. `refused`: nothing was pressed, such as because money moves there or you held the page. Treat one you don't recognise as `refused`.",
+      "enum": ["done", "uncertain", "failed", "changed", "declined", "refused"]
     },
     "Desk": {
       "description": "Home: Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail.",

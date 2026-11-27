@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Frame, Locator, Page } from "playwright";
 import type { PageSignals } from "./gate.ts";
-import { quietly } from "./quietly.ts";
+import { inTime, quietly } from "./quietly.ts";
 
 // Reading a page: its accessibility snapshot with refs, as Playwright gives it for agents, with what's secret taken
 // out, and the signs of a login, a code, a CAPTCHA or money that tell Kumo when the page is his to finish.
@@ -220,15 +220,55 @@ export const stateOf = async (page: Page, target: Line): Promise<string> => {
 export type Field = {
   readonly kind: string;
   readonly label: string;
-  readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+  readonly box: Box;
   readonly length: number;
   readonly multiline?: true;
 };
 
-// Runs in a frame: the field with the focus there, if it's one to type in.
-export const focusedField = (): Field | undefined => {
-  const element = document.activeElement;
-  if (!element) return undefined;
+export type Box = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+
+// How the page is zoomed and panned on screen, from Chrome: `scale` screen pixels to each of the page's CSS pixels,
+// with the part on screen starting `x` and `y` CSS pixels into the viewport. Without zoom, it's 1, 0 and 0.
+export type Visual = { readonly scale: number; readonly x: number; readonly y: number };
+
+export const unzoomed: Visual = { scale: 1, x: 0, y: 0 };
+
+// A point on screen, as the phone sends it, to the page's own CSS pixels, which Chrome's input takes.
+export const toPagePoint = ({ scale, x, y }: Visual, point: { readonly x: number; readonly y: number }) => ({
+  x: x + point.x / scale,
+  y: y + point.y / scale,
+});
+
+// A box on the page to where it's drawn on screen, for the phone.
+export const toScreenBox = ({ scale, x, y }: Visual, box: Box): Box => ({
+  x: (box.x - x) * scale,
+  y: (box.y - y) * scale,
+  width: box.width * scale,
+  height: box.height * scale,
+});
+
+// Runs in a frame: what has the focus there, following it into shadow roots. A field to type in comes back as one; a
+// frame holding the focus comes back as where its content starts, in this frame's viewport, for the next frame down.
+export const frameFocus = (): {
+  readonly field?: Field;
+  readonly frame?: { readonly x: number; readonly y: number };
+} => {
+  const deepest = (element: Element | null): Element | null => {
+    const inner = element?.shadowRoot?.activeElement ?? null;
+    return inner ? deepest(inner) : element;
+  };
+  const element = deepest(document.activeElement);
+  if (!element || element === document.body) return {};
+  if (element instanceof HTMLIFrameElement || element.tagName === "FRAME") {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      frame: {
+        x: rect.left + element.clientLeft + (Number(style.paddingLeft.replace("px", "")) || 0),
+        y: rect.top + element.clientTop + (Number(style.paddingTop.replace("px", "")) || 0),
+      },
+    };
+  }
   const input = element as HTMLInputElement;
   const isArea = element instanceof HTMLTextAreaElement;
   const uneditable = ["button", "submit", "reset", "checkbox", "radio", "file", "image", "range", "color", "hidden"];
@@ -236,7 +276,7 @@ export const focusedField = (): Field | undefined => {
     (element instanceof HTMLInputElement && !uneditable.includes(input.type)) ||
     isArea ||
     (element as HTMLElement).isContentEditable;
-  if (!isEditable) return undefined;
+  if (!isEditable) return {};
   const hint = `${input.autocomplete || ""} ${input.getAttribute("inputmode") ?? ""} ${input.name || ""}`.toLowerCase();
   const kind =
     input.type === "password"
@@ -254,72 +294,86 @@ export const focusedField = (): Field | undefined => {
                 : input.type === "search"
                   ? "search"
                   : "text";
-  const label = input.getAttribute("aria-label") ?? input.labels?.[0]?.textContent.trim() ?? input.placeholder;
+  // A contenteditable has no labels or placeholder.
+  const labels = input.labels as NodeListOf<HTMLLabelElement> | null | undefined;
+  const placeholder = input.placeholder as string | undefined;
+  const label = input.getAttribute("aria-label") ?? labels?.[0]?.textContent.trim() ?? placeholder ?? "";
   const { x, y, width, height } = element.getBoundingClientRect();
   const value = typeof input.value === "string" ? input.value : element.textContent;
   return {
-    kind,
-    label: label.slice(0, 80),
-    box: { x, y, width, height },
-    length: value.length,
-    ...((isArea || (element as HTMLElement).isContentEditable) && { multiline: true as const }),
+    field: {
+      kind,
+      label: label.slice(0, 80),
+      box: { x, y, width, height },
+      length: value.length,
+      ...((isArea || (element as HTMLElement).isContentEditable) && { multiline: true as const }),
+    },
   };
 };
 
-// Runs on a frame's element: whether its document's focus is in it.
-const isActiveFrame = (element: Element): boolean => element.ownerDocument.activeElement === element;
-
-type Focused = {
-  readonly frame: Frame;
-  readonly field: Field;
-  readonly offset: { readonly x: number; readonly y: number };
+// Runs on a frame's element: whether the focus in its document, or the shadow root it's in, is on it.
+const isActiveFrame = (element: Element): boolean => {
+  const root = element.getRootNode() as Document | ShadowRoot;
+  return root.activeElement === element;
 };
 
-// Follows the focus from the page down through the frames that hold it, to the field, if any, with where its frame
-// sits in the page's viewport. A headless page never has the window's focus, so this follows the documents' own.
-const findFocus = async (frame: Frame, offset: Focused["offset"]): Promise<Focused | undefined> => {
-  const field = await quietly(frame.evaluate(focusedField));
-  if (field) return { frame, field, offset };
+// Runs in a frame: brings what has the focus there into view, if it's out of it, such as after the viewport shrank
+// for the keyboard. In a frame above, that's the frame holding the field.
+const revealActive = (): void => {
+  const deepest = (element: Element | null): Element | null => {
+    const inner = element?.shadowRoot?.activeElement ?? null;
+    return inner ? deepest(inner) : element;
+  };
+  const element = deepest(document.activeElement);
+  if (element instanceof HTMLElement && element !== document.body) element.scrollIntoView({ block: "nearest" });
+};
+
+// How long one step of following the focus may take before it's given up.
+const stepMs = 600;
+
+type Focused = { readonly frames: readonly Frame[]; readonly field?: Field };
+
+// Follows the focus from the page down through the frames that hold it, cross-origin ones included, to the field, if
+// any, its box in the page's viewport. A headless page never has the window's focus, so this follows the documents'
+// own. Every step is given a moment at most: a frame holding the focus that hangs, such as a busy one, is an error,
+// so whoever asked keeps what it knew and asks again later, rather than waiting for ever.
+const findFocus = async (
+  frame: Frame,
+  offset: { readonly x: number; readonly y: number },
+  frames: readonly Frame[],
+): Promise<Focused> => {
+  const here = [...frames, frame];
+  const found = await inTime(frame.evaluate(frameFocus), stepMs);
+  // Not knowing isn't nothing: the field he's typing in stays where it was until the frame answers.
+  if (!found) throw new Error("A frame on the page didn't say in time where the focus is.");
+  if (found.field) {
+    const { box } = found.field;
+    return { frames: here, field: { ...found.field, box: { ...box, x: box.x + offset.x, y: box.y + offset.y } } };
+  }
+  const inner = found.frame;
+  if (!inner) return { frames: here };
   const children = await Promise.all(
     frame.childFrames().map(async (child) => {
-      const element = await quietly(child.frameElement());
-      const isActive = element && (await quietly(element.evaluate(isActiveFrame)));
-      const box = isActive === true ? await quietly(element.boundingBox()) : undefined;
-      return isActive === true ? { child, at: box ? { x: box.x, y: box.y } : offset } : undefined;
+      const element = await inTime(child.frameElement(), stepMs);
+      const isActive = element ? await inTime(element.evaluate(isActiveFrame), stepMs) : undefined;
+      return isActive === true ? child : undefined;
     }),
   );
-  const active = children.find((candidate) => candidate !== undefined);
-  return active && findFocus(active.child, active.at);
+  const active = children.find((child) => child !== undefined);
+  return active ? findFocus(active, { x: offset.x + inner.x, y: offset.y + inner.y }, here) : { frames: here };
 };
 
-// The field with the focus, its box in the page's viewport.
-export const focusOf = async (page: Page): Promise<Field | undefined> => {
-  const found = await findFocus(page.mainFrame(), { x: 0, y: 0 });
-  if (!found) return undefined;
-  const { field, offset } = found;
-  return { ...field, box: { ...field.box, x: field.box.x + offset.x, y: field.box.y + offset.y } };
+// The field with the focus, its box where it's drawn on screen.
+export const focusOf = async (page: Page, visual: Visual = unzoomed): Promise<Field | undefined> => {
+  const { field } = await findFocus(page.mainFrame(), { x: 0, y: 0 }, []);
+  return field && { ...field, box: toScreenBox(visual, field.box) };
 };
 
-// Runs in a frame: selects all of the field with the focus, so text typed next replaces it.
-const selectAll = (): boolean => {
-  const element = document.activeElement;
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-    element.select();
-    return true;
-  }
-  if (!(element as HTMLElement | null)?.isContentEditable) return false;
-  const range = document.createRange();
-  range.selectNodeContents(element as Node);
-  const selection = globalThis.getSelection();
-  selection?.removeAllRanges();
-  selection?.addRange(range);
-  return true;
-};
-
-// Selects all of the field with the focus, wherever it is, so text typed next replaces it.
-export const selectFocused = async (page: Page): Promise<boolean> => {
-  const found = await findFocus(page.mainFrame(), { x: 0, y: 0 });
-  return found !== undefined && (await quietly(found.frame.evaluate(selectAll))) === true;
+// Brings the field with the focus into view, frame by frame from the inside out.
+export const revealFocus = async (page: Page): Promise<void> => {
+  const found = await quietly(findFocus(page.mainFrame(), { x: 0, y: 0 }, []));
+  const insideOut = found?.frames.toReversed() ?? [];
+  for (const frame of insideOut) await inTime(frame.evaluate(revealActive), stepMs);
 };
 
 const outline = (element: Element): void => {

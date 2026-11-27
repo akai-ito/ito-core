@@ -39,6 +39,7 @@ import type {
   Snapshot,
   Status,
   Step,
+  StepId,
   StepKind,
   Thread,
   Quote,
@@ -281,6 +282,8 @@ export type Store = Settings & {
   // The threads where something waits to be answered.
   readonly waitingThreads: () => readonly ThreadId[];
   readonly findTurn: (turn: TurnId) => StoredTurn | undefined;
+  // The latest turn in the main chat, or in a thread, running or not.
+  readonly latestTurn: (thread?: ThreadId) => StoredTurn | undefined;
   readonly openMessage: (turn: TurnId) => OpenMessage | undefined;
   readonly retryFor: (failed: TurnId) => TurnId | undefined;
   readonly requestRetry: (failed: TurnId, turn: TurnId) => TurnId;
@@ -293,6 +296,7 @@ export type Store = Settings & {
   readonly updateStep: (step: Step) => void;
   readonly endStep: (step: Step) => void;
   readonly openSteps: (turn: TurnId) => readonly Step[];
+  readonly findStep: (step: StepId) => Step | undefined;
   readonly appendText: (message: MessageId, text: string) => void;
   readonly endMessage: (message: MessageId, outcome: Outcome, length: number, error?: ErrorBody) => void;
   readonly endTurn: (turn: TurnId, outcome: Outcome, error?: ErrorBody) => void;
@@ -1406,6 +1410,13 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       return row ? toStoredTurn(row) : undefined;
     },
 
+    latestTurn: (thread) => {
+      const row = database
+        .prepare("SELECT * FROM turns WHERE thread IS ? ORDER BY position DESC LIMIT 1")
+        .get(placeOf(thread)) as TurnRow | undefined;
+      return row ? toStoredTurn(row) : undefined;
+    },
+
     openMessage: (turn) => {
       const row = database
         .prepare("SELECT id, text FROM messages WHERE turn = ? AND outcome IS NULL ORDER BY position DESC LIMIT 1")
@@ -1483,6 +1494,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     endStep: (step) => {
       record((stamp) => ({ ...stamp, type: "step.ended", step }));
+    },
+
+    findStep: (step) => {
+      const row = database.prepare("SELECT body FROM steps WHERE id = ?").get(step) as StepRow | undefined;
+      return row ? toStep(row) : undefined;
     },
 
     openSteps: (turn) =>

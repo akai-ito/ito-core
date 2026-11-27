@@ -3,11 +3,13 @@ import type { BrowserState, CommitOutcome, HandedBack } from "#browser/browser.t
 import { createCell } from "#cell.ts";
 import type { Host } from "#capabilities/host.ts";
 import { toTimestamp } from "#clock.ts";
-import { toThreadId } from "#conversation/ids.ts";
+import { toThreadId, toTurnId } from "#conversation/ids.ts";
+import { toEndedStep, toStepTitle } from "#conversation/steps.ts";
 import type { DeskKeeper } from "#desk/desk.ts";
+import type { StepFacts } from "#engine/engine.ts";
 import type { Attachments } from "#attachments/attachments.ts";
 import type { Identifiers } from "#identifiers.ts";
-import type { Browser, Card } from "#protocol/types.ts";
+import type { Browser, Card, CommitOutcome as StepOutcome, Step } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
 import type { Info } from "#turns/turns.ts";
@@ -32,6 +34,8 @@ export type BrowserHand = {
   readonly state: () => Promise<Result<Browser, string>>;
   readonly take: () => Promise<Result<Browser, string>>;
   readonly handBack: () => Promise<Result<Browser, string>>;
+  // He stopped the task: nothing more of it is done, and the page stays as it is.
+  readonly stop: () => Promise<Result<Browser, string>>;
   readonly attach: (socket: BrowserSocket) => Promise<void>;
   readonly detach: (socket: BrowserSocket) => void;
   readonly receive: (socket: BrowserSocket, text: string) => void;
@@ -54,6 +58,15 @@ type View = {
   readonly height: number;
   readonly tab: number;
   readonly tabs: number;
+  readonly display?: "headful" | "headless";
+};
+
+// What the capability says once Kumo has looked on the site after a final press: how it went, and the site's
+// reference for it when Kumo read one.
+type Settled = {
+  readonly final: string;
+  readonly outcome: "went_through" | "not_through";
+  readonly reference?: string;
 };
 
 type CardRequest = {
@@ -206,14 +219,17 @@ const commitPrompt = (store: Store, card: Card, said: string, outcome?: CommitOu
     switch (outcome.outcome) {
       case "done": {
         return [
-          `He tapped “${said}”, and Ito pressed it: the site answered, and it's now on “${outcome.title ?? ""}”.`,
-          "Read the page to be sure it went through, then tell him in a line what's booked or sent, and anything he " +
-            "needs to know, such as a confirmation number.",
+          `He tapped “${said}”, and Ito pressed it (${outcome.final ?? "a final step"}): the site answered, and ` +
+            `it's now on “${outcome.title ?? ""}”.`,
+          "Read the page to be sure it went through, then settle it with browser_settle, went_through and the site's " +
+            "reference if it shows one, before you mark anything confirmed, such as a calendar event. Then tell him " +
+            "in a line what's booked or sent, and anything he needs to know, such as that reference.",
         ];
       }
       case "uncertain": {
         return [
-          `He tapped “${said}”, and Ito pressed it, but the site's answer was lost (${outcome.detail}).`,
+          `He tapped “${said}”, and Ito pressed it (${outcome.final ?? "a final step"}), but the site's answer was ` +
+            `lost (${outcome.detail}).`,
           "Don't press it again. Look on the site, such as its bookings, orders or a confirmation mail, settle it with " +
             "browser_settle, and tell him how it stands.",
         ];
@@ -262,6 +278,13 @@ export const createBrowserHand = ({
   const pending = createCell<ReadonlyMap<BrowserSocket, Buffer>>(new Map());
   const view = createCell<View | undefined>(undefined);
   const flusher = createCell<NodeJS.Timeout | undefined>(undefined);
+  const link = createCell<"live" | "reconnecting">("live");
+  const mark = createCell<unknown>(undefined);
+  // The hand-off step waiting to hear how the page came back, and the need it was for.
+  const handoff = createCell<Step | undefined>(undefined);
+  const lastNeed = createCell("");
+  // Each final press a card made, to the step that tells how it went.
+  const commits = createCell<ReadonlyMap<string, Step["id"]>>(new Map());
 
   const isOn = (): boolean => host.find(browserId)?.state === "on";
 
@@ -295,6 +318,7 @@ export const createBrowserHand = ({
   };
 
   const setState = (given: BrowserState): void => {
+    noteHandoff(given);
     const before = JSON.stringify(store.browser());
     store.setBrowser(toBrowser(given));
     const after = store.browser();
@@ -311,10 +335,84 @@ export const createBrowserHand = ({
   // Wakes Kumo when he hands the page back after it asked, or mid-task, unless a turn there is still running: that
   // turn reads the page again on its next step.
   const onHandedBack = (handed: HandedBack): void => {
-    if (!handed.need && !handed.hadTask) return;
+    answerHandoff(handed.stopped === true ? "stopped" : handed.lapsed ? "lapsed" : "handed_back");
+    if (handed.stopped === true || (!handed.need && !handed.hadTask)) return;
     const thread = handed.thread === undefined ? undefined : toThreadId(handed.thread);
     if (store.runningTurn(thread)) return;
     wake(handedBackPrompt(store, handed), "handed back");
+  };
+
+  // A time Kumo needed his hand, or he took the page over, written into the trail of the thread the task lives in,
+  // ended at once; how the page came back is added when it does.
+  const writeStep = (
+    thread: string | undefined,
+    asked: string | undefined,
+    kind: "handoff" | "commit",
+    facts: StepFacts,
+  ): Step | undefined => {
+    const place = thread === undefined ? undefined : toThreadId(thread);
+    const turn = (asked === undefined ? undefined : store.findTurn(toTurnId(asked))) ?? store.latestTurn(place);
+    if (!turn) return undefined;
+    const started = store.startStep(turn.id, kind, toStepTitle(kind, facts, "present"), facts);
+    const ended = toEndedStep(started, "completed", {}, Date.now());
+    store.endStep(ended);
+    return ended;
+  };
+
+  const noteHandoff = (given: BrowserState): void => {
+    const { need } = given;
+    const site = given.site === undefined || given.site === "" ? "the site" : given.site;
+    const key = need ? `${need.kind}|${need.why}|${need.turn ?? ""}` : "";
+    if (need && given.state === "needs_you" && key !== lastNeed.get()) {
+      lastNeed.set(key);
+      handoff.set(writeStep(given.thread, need.turn, "handoff", { handoff: { need: need.kind, why: need.why, site } }));
+      return;
+    }
+    const isUnasked = given.state === "yours" && handoff.get() === undefined;
+    if (isUnasked && (given.thread !== undefined || given.site !== undefined)) {
+      handoff.set(writeStep(given.thread, undefined, "handoff", { handoff: { site } }));
+    }
+    if (given.state === "idle") lastNeed.set("");
+  };
+
+  const answerHandoff = (answer: "handed_back" | "lapsed" | "stopped"): void => {
+    const step = handoff.get();
+    handoff.set(undefined);
+    lastNeed.set("");
+    const found = step && store.findStep(step.id);
+    if (!found?.handoff) return;
+    store.updateStep({ ...found, handoff: { ...found.handoff, answer, answered_at: toTimestamp(Date.now()) } });
+  };
+
+  // How a one-tap card he answered went, in the trail of the thread its task lives in.
+  const noteCommit = (card: Card, outcome: StepOutcome, answer?: string, final?: string): void => {
+    const page = card.commit;
+    if (!page) return;
+    const verb = card.options.find(({ acts }) => acts === true)?.label ?? "Go ahead";
+    const step = writeStep(page.thread, undefined, "commit", {
+      commit: {
+        card: card.id,
+        title: card.title,
+        verb,
+        outcome,
+        ...(answer !== undefined && answer !== "" && { answer }),
+        page,
+      },
+    });
+    if (step && final !== undefined) commits.update((known) => new Map([...known, [final, step.id]]));
+  };
+
+  const onSettled = ({ final, outcome, reference }: Settled): void => {
+    const id = commits.get().get(final);
+    const step = id === undefined ? undefined : store.findStep(id);
+    if (!step?.commit) return;
+    const commit = {
+      ...step.commit,
+      outcome: outcome === "went_through" ? ("done" as const) : ("failed" as const),
+      ...(reference !== undefined && reference !== "" && { reference: reference.slice(0, 40) }),
+    };
+    const facts = { commit };
+    store.updateStep({ ...step, commit, title: toStepTitle("commit", facts, "past") });
   };
 
   const addCard = (data: unknown): Result<unknown, string> => {
@@ -371,6 +469,22 @@ export const createBrowserHand = ({
           onHandedBack(data as HandedBack);
           return;
         }
+        case "link": {
+          const state = textField(data, "state") === "reconnecting" ? "reconnecting" : "live";
+          link.set(state);
+          broadcast({ type: "link", state });
+          return;
+        }
+        case "mark": {
+          const given = data && typeof data === "object" && "box" in data ? data : undefined;
+          mark.set(given);
+          broadcast({ type: "mark", ...(given && { mark: given }) });
+          return;
+        }
+        case "settled": {
+          onSettled(data as Settled);
+          return;
+        }
         default: {
           info("The browser published something Ito doesn't follow", { topic });
         }
@@ -394,6 +508,8 @@ export const createBrowserHand = ({
     onStopped: () => {
       setState({ state: "idle" });
       view.set(undefined);
+      link.set("live");
+      mark.set(undefined);
       for (const socket of sockets.get()) {
         socket.sendText({ type: "ended", reason: "Kumo's browser stopped." });
         socket.close(1001, "The browser stopped.");
@@ -413,6 +529,7 @@ export const createBrowserHand = ({
         ...(answer.text !== undefined && { reason: answer.text }),
         quiet: false,
       });
+      noteCommit(card, "declined", said);
       wake(commitPrompt(store, card, said), "commit declined");
       return;
     }
@@ -421,6 +538,7 @@ export const createBrowserHand = ({
       ? (pressed.value as CommitOutcome)
       : { outcome: "refused", detail: pressed.failure };
     desk.addDone({ text: doneText(card, outcome), reason: outcome.detail, quiet: false });
+    noteCommit(card, outcome.outcome, undefined, outcome.final);
     wake(commitPrompt(store, card, said, outcome), `commit ${outcome.outcome}`);
     return;
   });
@@ -449,12 +567,21 @@ export const createBrowserHand = ({
     },
     take: () => control("take"),
     handBack: () => control("hand_back"),
+    stop: async () => {
+      const stopped = await control("stop");
+      // A need he never took over is answered here: no hand-back tells it.
+      if (stopped.ok) answerHandoff("stopped");
+      return stopped;
+    },
     attach: async (socket) => {
       const isFirst = sockets.get().size === 0;
       sockets.update((current) => new Set([...current, socket]));
       socket.sendText({ type: "state", browser: store.browser() });
       const shown = view.get();
       if (shown) socket.sendText({ type: "view", ...shown });
+      socket.sendText({ type: "link", state: link.get() });
+      const ringed = mark.get();
+      if (ringed !== undefined) socket.sendText({ type: "mark", mark: ringed });
       if (!flusher.get()) {
         const timer = setInterval(flush, flushMs);
         timer.unref();

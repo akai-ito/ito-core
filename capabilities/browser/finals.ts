@@ -18,6 +18,8 @@ export type Final = {
   readonly state: FinalState;
   readonly reason?: string;
   readonly how?: string;
+  // The site's own reference for what went through, such as a booking number, as Kumo read it on the confirmation.
+  readonly reference?: string;
 };
 
 export type Finals = {
@@ -29,6 +31,7 @@ export type Finals = {
     outcome: "went_through" | "not_through",
     how: string,
     lastRead: number,
+    reference?: string,
   ) => Result<Final, string>;
   readonly find: (id: string) => Final | undefined;
 };
@@ -81,18 +84,25 @@ export const createFinals = (folder: string, now: () => number): Finals => {
       change(id, (final) => ({ ...final, state, ...(reason !== undefined && { reason }) }));
     },
     uncertainOn: (origin) => finals.get().find((final) => final.state === "uncertain" && final.origin === origin),
-    settle: (id, outcome, how, lastRead) => {
+    // An uncertain step is settled either way; one the site answered can be confirmed, with its reference, or found
+    // not to have gone through after all.
+    settle: (id, outcome, how, lastRead, reference) => {
       const final = finals.get().find((candidate) => candidate.id === id);
       if (!final) return fail(`There's no final step ${id}.`);
-      if (final.state !== "uncertain")
-        return fail(`${final.button} on ${final.site} isn't uncertain: it's ${final.state}.`);
+      if (final.state === "pending" || final.state === "not_through")
+        return fail(`${final.button} on ${final.site} can't be settled: it's ${final.state}.`);
       if (lastRead <= final.at) {
         return fail(
           `Look on ${final.site} first: read the page that shows whether “${final.button}” went through, such as ` +
             "its bookings or orders, then settle it.",
         );
       }
-      const settled: Final = { ...final, state: outcome, how };
+      const settled: Final = {
+        ...final,
+        state: outcome,
+        how,
+        ...(reference !== undefined && outcome === "went_through" && { reference }),
+      };
       change(id, () => settled);
       return ok(settled);
     },

@@ -1813,6 +1813,28 @@ paths:
               schema: { $ref: "#/components/schemas/BrowserBody" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/capabilities/browser/task:
+    delete:
+      tags: [Browser]
+      operationId: stopBrowserTask
+      summary: Stop Kumo's browsing task
+      description: |
+        Stops what Kumo is doing in the browser, for "Stop the task": a step it's in the middle of
+        finishes first, then nothing more of the task is done. A takeover you hold ends, without
+        waking Kumo; a need it was waiting on, and a one-tap card waiting for your tap, are dropped;
+        and the page stays exactly as it is, unpressed. The turn that was browsing can't use the
+        browser again, so a new ask starts afresh. The trail's hand-off says you stopped it.
+        Stopping with no task changes nothing. The answer is the browser, now `idle`.
+      responses:
+        "200":
+          description: Stopped; the browser, now `idle`.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrowserBody" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v0/capabilities/browser/stream:
     get:
       tags: [Browser]
@@ -1823,15 +1845,24 @@ paths:
         at once, one for each device; the page is streamed while any is.
 
         - **Binary frames down:** the page, from Chrome's own screencast: one JPEG each, the whole
-          viewport at iPhone size, as soon as anything paints. While the page moves they come at 1x,
-          up to 60 a second; once it's still for a moment, a sharp one at 2x follows. A slow
+          viewport at your phone's size, as soon as anything paints. While the page moves they come
+          at 1x, up to 60 a second; once it's still for a moment, a sharp one at 2x follows. A slow
           connection gets fewer, never a backlog: draw the latest.
         - **Text frames** both ways are JSON, as in [the browser stream schema](browser.schema.json):
-          `state`, `view`, `focus`, `refused` and `ended` from the server; `tap`, `touch`, `scroll`,
-          `text`, `fill`, `key` and `navigate` from the app, which reach the page only while you
-          hold it. `focus` gives the field with the focus, its kind, where it is and how long its
-          value is, so a native field laid over it can type with iOS's keyboard and fill in
-          passwords and codes, sending each change with `fill` and return as `key` Enter.
+          `state`, `view`, `focus`, `mark`, `link`, `refused` and `ended` from the server; `tap`,
+          `touch`, `scroll`, `text`, `fill`, `key`, `navigate` and `viewport` from the app, which
+          reach the page only while you hold it. What you send reaches the page at once, in order,
+          never waiting on anything else: moves and scrolls sent faster than the page takes them
+          join up. `focus` gives the field with the focus, its kind, where it is and how long its
+          value is, in frames from other sites too, so a native field laid over it can type with
+          iOS's keyboard and fill in passwords and codes, sending each change with `fill` and
+          return as `key` Enter; it comes by itself when a new page puts the focus in a field.
+          `mark` gives the site's own pay button on a `payment` need, to ring, and follows it as
+          the page scrolls. `viewport` tells the server how much room the page has between the
+          header and the Hand back bar, and how much the keyboard covers, and the page's viewport
+          is made the room above the keyboard, so nothing sits under the bar or the keyboard.
+          `link` says `reconnecting` while the page should have painted and couldn't be shown, and
+          `live` again once it can.
 
         Peeking is watching: nothing you do changes the page until you take it over with
         `POST /v0/capabilities/browser/takeover`, and Kumo carries on meanwhile.

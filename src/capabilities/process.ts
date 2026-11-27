@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import type { CallResult, Manifest, Server, Status, Values } from "#capabilities/manifest.ts";
+import { createCell } from "#cell.ts";
 import { describeExit, passedEnvironment, startChild } from "#child.ts";
 import type { RpcFailure } from "#json-rpc.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -37,6 +38,33 @@ export type CapabilityProcessOptions = {
 
 const answerMs = 30_000;
 
+// How long a capability that stopped as it started has to finish writing why.
+const lastWordsMs = 2000;
+
+// The lines it wrote last, to say why it stopped.
+const keptLines = 60;
+
+// Why a capability stopped, as it started or later, from what it wrote last, in plain words with the fix when there's
+// a known one: a package missing because the server skipped `npm ci`, or the error it threw. Nothing when it wrote
+// nothing that says.
+export const explainStop = (id: string, lines: readonly string[], isStarting = true): string | undefined => {
+  const text = lines.join("\n");
+  const stopped = isStarting ? `${id} couldn't start` : `${id} stopped`;
+  const missing = /Cannot find (?:package|module) '(?<name>[^']+)'/u.exec(text)?.groups?.name;
+  if (missing !== undefined && /ERR_MODULE_NOT_FOUND|Cannot find (?:package|module)/u.test(text)) {
+    const name = missing.startsWith("/") || missing.startsWith(".") ? missing.split("/").at(-1) : missing;
+    return (
+      `${stopped}: the ${String(name)} package isn't installed on the server. To fix it, run ` +
+      `npm ci --omit=dev in the ito-core folder, then switch ${id} off and on.`
+    );
+  }
+  const error = lines.find((line) => /^\s*(?:[A-Z]\w*)?Error(?: \[[A-Z_]+\])?: /u.test(line));
+  return error === undefined ? undefined : `${stopped}: ${error.trim().slice(0, 300)}`;
+};
+
+// Node ends what it writes for an error nothing caught with its version.
+const isUncaught = (line: string | undefined): boolean => line !== undefined && /^Node\.js v\d/u.test(line);
+
 const withinTime = async <Value>(answer: Promise<Value>, timedOut: Value): Promise<Value> =>
   Promise.race([answer, delay(answerMs, timedOut, { ref: false })]);
 
@@ -65,11 +93,19 @@ export const startCapabilityProcess = async ({
   onLog,
 }: CapabilityProcessOptions): Promise<Result<CapabilityProcess, string>> => {
   mkdirSync(folder, { recursive: true });
+  const written = createCell<readonly string[]>([]);
   const { connection, exited, stop, kill } = startChild({
     command: process.execPath,
     arguments: [entry],
     cwd: folder,
-    environment: passedEnvironment(["NODE_EXTRA_CA_CERTS", "PLAYWRIGHT_BROWSERS_PATH"]),
+    environment: passedEnvironment([
+      "NODE_EXTRA_CA_CERTS",
+      "PLAYWRIGHT_BROWSERS_PATH",
+      // Where the browser draws: a display such as xvfb-run's, and a choice of headful or headless.
+      "DISPLAY",
+      "XAUTHORITY",
+      "ITO_BROWSER",
+    ]),
     onNotification: ({ method, parameters }) => {
       if (method === "status") {
         onStatus(parameters as Status);
@@ -88,7 +124,10 @@ export const startCapabilityProcess = async ({
       const approved = await onApprove(parameters);
       return approved.ok ? ok({ approved: approved.value }) : fail({ code: 1, message: approved.failure });
     },
-    onLine: onLog,
+    onLine: (line) => {
+      written.update((lines) => [...lines, line].slice(-keptLines));
+      onLog(line);
+    },
     closedMessage: `${id} stopped.`,
   });
 
@@ -96,13 +135,19 @@ export const startCapabilityProcess = async ({
   const initialized = await withinTime(connection.request("initialize", {}), notAnswered);
   const manifest = toManifest(id, initialized);
   if (!manifest.ok) {
+    // It may have stopped as it started, such as on a missing package: its last words say why better than "stopped".
+    await Promise.race([exited, delay(lastWordsMs, undefined, { ref: false })]);
     await kill();
-    return manifest;
+    return fail(explainStop(id, written.get()) ?? manifest.failure);
   }
 
   return ok({
     manifest: manifest.value,
-    exited: (async () => describeExit(id, await exited))(),
+    exited: (async () => {
+      const exit = await exited;
+      const said = isUncaught(exit.lastLine) ? explainStop(id, written.get().slice(-30), false) : undefined;
+      return said ?? describeExit(id, exit);
+    })(),
     stop,
     start: async (values, server) => {
       const started = await withinTime(connection.request("start", { values, folder, server }), notAnswered);
