@@ -121,6 +121,9 @@
         },
         {
           "$ref": "#/$defs/BrowserChanged"
+        },
+        {
+          "$ref": "#/$defs/AccessChanged"
         }
       ]
     },
@@ -951,6 +954,10 @@
         "browser": {
           "$ref": "#/$defs/Browser",
           "description": "Kumo's browser, while it's doing something: browsing, waiting on you, or in your hands. Absent while it's idle."
+        },
+        "access": {
+          "$ref": "#/$defs/Access",
+          "description": "How Kumo runs on the server, while it has full access. Absent while it runs in its sandbox."
         }
       }
     },
@@ -3360,6 +3367,41 @@
         },
         "browser": {
           "$ref": "#/$defs/Browser"
+        }
+      }
+    },
+    "Access": {
+      "description": "How Kumo runs on the server. `sandboxed`, the default: Kumo's commands run in Codex's sandbox, free to write only in Kumo's workspace and to reach the network, and to read the rest of the server. `full`: no sandbox, so its commands can install, restart and change anything the server's user can, Ito's own checkout included, with no approval asked. Either applies from the next turn or piece of work that starts, never to one already running. While it's `full`, show a marker on the chat.",
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": ["sandboxed", "full"]
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "`full` only: when you turned it on."
+        }
+      }
+    },
+    "AccessChanged": {
+      "title": "access.changed",
+      "description": "You turned full access on or off, from any device. It carries the whole state. After a `snapshot`, its `access` is the state, or `sandboxed` when absent. It never notifies.",
+      "type": "object",
+      "required": ["id", "type", "at", "access"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "access.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "access": {
+          "$ref": "#/$defs/Access"
         }
       }
     }

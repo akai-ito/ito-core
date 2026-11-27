@@ -33,7 +33,7 @@ const checkHeader = (file: string, header: Line | undefined): Line => {
   if (!header) throw failure(file, "empty");
   const name = file.replace(/\.jsonl$/, "");
   if (header.transcript !== name) throw failure(file, `header names ${String(header.transcript)}, not ${name}`);
-  if (header.scenario !== Number(name.slice(0, 2))) {
+  if (header.scenario !== Number(/^\d+/u.exec(name)?.[0])) {
     throw failure(file, "header scenario doesn't match the file number");
   }
   const missing = (["title", "summary"] as const).find((field) => !hasText(header[field]));

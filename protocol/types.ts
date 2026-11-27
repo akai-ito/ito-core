@@ -1661,6 +1661,59 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/access": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read how Kumo runs on the server
+     * @description Whether Kumo runs in its sandbox, as it does unless you change it, or with full access, and
+     *     since when. `access.changed` carries every change, and the snapshot holds it while it's full.
+     */
+    get: operations["getAccess"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/access/full": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Give Kumo full access to the server
+     * @description From the next turn or piece of work that starts, in the chat, in the background and in the
+     *     night's dream, Kumo runs without Codex's sandbox: its commands can install, restart and
+     *     change anything the server's user can, Ito's own checkout included, with nothing asked
+     *     first. A turn already running keeps the sandbox it started with. Nothing else turns it on:
+     *     the body must say `confirm: true`, so a stray call can't, and the app asks for Face ID
+     *     before it sends it. Turning it on when it's already on changes nothing. Kumo's work notes
+     *     each change, and every app hears `access.changed`.
+     */
+    post: operations["giveFullAccess"];
+    /**
+     * Put Kumo back in its sandbox
+     * @description From the next turn or piece of work that starts, Kumo runs in its sandbox again: free to
+     *     write in its workspace and reach the network, and to read the rest of the server. Safe to
+     *     repeat. Kumo's work notes the change, and every app hears `access.changed`.
+     */
+    delete: operations["endFullAccess"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/calls/{call}": {
     parameters: {
       query?: never;
@@ -1886,6 +1939,13 @@ export interface components {
     };
     CallResult: {
       call: components["schemas"]["Call"];
+    };
+    FullAccessConsent: {
+      /**
+       * @description You mean it, having confirmed it on the phone, such as with Face ID.
+       * @constant
+       */
+      confirm: true;
     };
     ModelChoice: {
       /** @description The model's id. */
@@ -2310,7 +2370,8 @@ export interface components {
       | components["schemas"]["ThreadChanged"]
       | components["schemas"]["MessageMoved"]
       | components["schemas"]["RecordingChanged"]
-      | components["schemas"]["BrowserChanged"];
+      | components["schemas"]["BrowserChanged"]
+      | components["schemas"]["AccessChanged"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation and of the Desk with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -2348,6 +2409,8 @@ export interface components {
       problems?: components["schemas"]["Problem"][];
       /** @description Kumo's browser, while it's doing something: browsing, waiting on you, or in your hands. Absent while it's idle. */
       browser?: components["schemas"]["Browser"];
+      /** @description How Kumo runs on the server, while it has full access. Absent while it runs in its sandbox. */
+      access?: components["schemas"]["Access"];
     };
     /**
      * message.accepted
@@ -4030,6 +4093,13 @@ export interface components {
       /** @description The position of your message Ari was answering when it made the change. */
       position: components["schemas"]["Position"];
     };
+    /** @description How Kumo runs on the server. `sandboxed`, the default: Kumo's commands run in Codex's sandbox, free to write only in Kumo's workspace and to reach the network, and to read the rest of the server. `full`: no sandbox, so its commands can install, restart and change anything the server's user can, Ito's own checkout included, with no approval asked. Either applies from the next turn or piece of work that starts, never to one already running. While it's `full`, show a marker on the chat. */
+    Access: {
+      /** @enum {unknown} */
+      mode: "sandboxed" | "full";
+      /** @description `full` only: when you turned it on. */
+      since?: components["schemas"]["Timestamp"];
+    };
     /**
      * @description Whether the server can hold a call: `ready` once it can both listen and speak, with memory's vocabulary loaded; `loading` while it starts; `failed` when it can't, until the server restarts.
      * @enum {unknown}
@@ -4307,6 +4377,17 @@ export interface components {
       browser: components["schemas"]["Browser"];
     };
     /**
+     * access.changed
+     * @description You turned full access on or off, from any device. It carries the whole state. After a `snapshot`, its `access` is the state, or `sandboxed` when absent. It never notifies.
+     */
+    AccessChanged: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "access.changed";
+      at: components["schemas"]["Timestamp"];
+      access: components["schemas"]["Access"];
+    };
+    /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, Kumo sent a `post` outside a turn, or Kumo's browser needs your hand, a `takeover`.
      * @enum {unknown}
      */
@@ -4551,6 +4632,7 @@ export type VoiceprintState = components["schemas"]["VoiceprintState"];
 export type VoiceChoice = components["schemas"]["VoiceChoice"];
 export type Voice = components["schemas"]["Voice"];
 export type CallResult = components["schemas"]["CallResult"];
+export type FullAccessConsent = components["schemas"]["FullAccessConsent"];
 export type ModelChoice = components["schemas"]["ModelChoice"];
 export type ModelList = components["schemas"]["ModelList"];
 export type ModelOption = components["schemas"]["ModelOption"];
@@ -4746,6 +4828,7 @@ export type Made = components["schemas"]["Made"];
 export type MadeItemId = components["schemas"]["MadeItemId"];
 export type MadeState = components["schemas"]["MadeState"];
 export type MadeChange = components["schemas"]["MadeChange"];
+export type Access = components["schemas"]["Access"];
 export type VoiceState = components["schemas"]["VoiceState"];
 export type VoiceReason = components["schemas"]["VoiceReason"];
 export type MessageAmended = components["schemas"]["MessageAmended"];
@@ -4771,6 +4854,7 @@ export type ThreadChanged = components["schemas"]["ThreadChanged"];
 export type MessageMoved = components["schemas"]["MessageMoved"];
 export type RecordingChanged = components["schemas"]["RecordingChanged"];
 export type BrowserChanged = components["schemas"]["BrowserChanged"];
+export type AccessChanged = components["schemas"]["AccessChanged"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -7352,6 +7436,98 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       503: components["responses"]["Unavailable"];
+    };
+  };
+  getAccess: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description How Kumo runs. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "mode": "sandboxed"
+           *     }
+           */
+          "application/json": components["schemas"]["Access"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  giveFullAccess: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "confirm": true
+         *     }
+         */
+        "application/json": components["schemas"]["FullAccessConsent"];
+      };
+    };
+    responses: {
+      /** @description Full access is on. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "mode": "full",
+           *       "since": "2026-11-27T14:02:00.000Z"
+           *     }
+           */
+          "application/json": components["schemas"]["Access"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  endFullAccess: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Kumo runs in its sandbox. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "mode": "sandboxed"
+           *     }
+           */
+          "application/json": components["schemas"]["Access"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
     };
   };
   startCall: {

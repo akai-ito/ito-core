@@ -193,8 +193,8 @@ interrupt it, answer an approval, a structured completion, and a piece of backgr
 own protocol stops at the adapter ([codex-engine.ts](src/engine/codex/codex-engine.ts)), the words
 on Kumo's trail come from Ito's own tables rather than from Codex, and a scripted engine stands in
 for tests and the demo. The main chat and each side thread are long-lived Codex threads in a
-`workspace-write` sandbox; background work and quick judgements run in short-lived threads of their
-own.
+`workspace-write` sandbox, or none while you've given Kumo full access, set afresh on every turn;
+background work and quick judgements run in short-lived threads of their own.
 
 ### Side threads, each a conversation of its own
 
@@ -304,7 +304,9 @@ app's UI tests run locally against the demo engine, not in CI.
   `tailscale serve`. API tokens are stored as SHA-256 hashes, a pairing code works once for five
   minutes, and wrong tokens or codes are rate-limited.
 - **The agent's sandbox.** Codex runs the agent's commands in its `workspace-write` sandbox, in a
-  workspace of their own, with network access.
+  workspace of their own, with network access. Full access, which you turn on in the app's Settings,
+  lifts the sandbox from Kumo's next turn until you turn it off: its commands can then do anything
+  your user can on the machine, Ito's own checkout included, with nothing asked first.
 - **Secrets at rest.** Mail app passwords, tokens and the APNs key are stored unencrypted in
   `~/.ito/ito.db`, protected only by file permissions. Capability secrets go to the server once and
   never come back to the app. The log stays on the machine and can hold mail subjects.

@@ -7,6 +7,7 @@ import { lineOf, toFailedText, toFirstLine } from "#notifications/text.ts";
 import { mergePatch } from "#motion/changes.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import type {
+  Access,
   Ambient,
   Ask,
   AskKind,
@@ -193,6 +194,8 @@ export type Transcript = {
   readonly settleCard: (card: string, replacement?: Partial<Card>) => void;
   readonly onboarding: (state: Onboarding) => void;
   readonly problems: (problems: readonly Problem[]) => void;
+  // You turned full access on or off: every app hears the whole state.
+  readonly access: (access: Access) => void;
   readonly belief: () => string;
   readonly eventUid: () => string;
   readonly answerBelief: (belief: string, answer: Fields) => void;
@@ -575,6 +578,7 @@ export const createTranscript = (header: Header): Transcript => {
   const deskState = createCell<Desk>({ plans: [], coming_up: [], waiting: [], handled: 0 });
   const onboardingState = createCell<Onboarding>({ state: "done" });
   const problemsState = createCell<readonly Problem[]>([]);
+  const accessState = createCell<Access>({ mode: "sandboxed" });
 
   const timestamp = (): string => new Date(now.get()).toISOString();
 
@@ -707,6 +711,7 @@ export const createTranscript = (header: Header): Transcript => {
         desk: deskState.get(),
         ...(onboardingState.get().state !== "done" && { onboarding: onboardingState.get() }),
         ...(problemsState.get().length > 0 && { problems: [...problemsState.get()] }),
+        ...(accessState.get().mode !== "sandboxed" && { access: accessState.get() }),
       },
     });
     cursor.set(latest);
@@ -1935,6 +1940,11 @@ export const createTranscript = (header: Header): Transcript => {
     emit("problems.changed", { problems: [...current] });
   };
 
+  const access = (state: Access): void => {
+    accessState.set(state);
+    emit("access.changed", { access: state });
+  };
+
   const belief = (): string => newId("n");
 
   const eventUid = (): string => newId("v");
@@ -2139,6 +2149,7 @@ export const createTranscript = (header: Header): Transcript => {
     settleCard,
     onboarding,
     problems,
+    access,
     belief,
     eventUid,
     answerBelief,

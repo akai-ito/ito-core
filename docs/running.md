@@ -80,6 +80,20 @@ The agent's instructions, Ari's voice and how it works, are in
 [agent/instructions.md](../agent/instructions.md). Change them and restart: the next message picks
 them up, in the same conversation.
 
+## Full access
+
+Kumo's commands run in Codex's `workspace-write` sandbox: it writes only in its workspace,
+`~/.ito/workspace`, reads the rest of the machine and reaches the network. When you want it to fix
+the server itself, such as installing what a capability needs, turn on full access in the app's
+Settings, with Face ID. From Kumo's next turn, in the chat, in the background and in the night's
+dream, its commands run with no sandbox at all: anything your user can do, Ito's own checkout
+included, with no approval asked. Kumo is told so on every turn, and says what it's about to do
+before it does it. A turn already running keeps the sandbox it started with.
+
+The chat shows a marker while it's on, and Kumo's work notes each change. Turn it off in Settings
+once you're done: the sandbox is back from the next turn. From the machine, the same switch is
+`POST /v0/access/full` with `{"confirm": true}` and `DELETE /v0/access/full`.
+
 ## Capabilities and Reports
 
 Capabilities, such as Reports, live in [capabilities](../capabilities) and start switched off;

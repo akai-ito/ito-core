@@ -1,0 +1,40 @@
+{"transcript":"100-full-access","start":"2026-11-27T14:00:00.000Z","scenario":100,"title":"Full access","summary":"Kumo can't install what the browser needs from inside its sandbox, so you give it full access in Settings, with Face ID. The command that turns it on says it's meant; every app hears the change, Kumo's work notes it, and from its next turn Kumo runs without the sandbox, saying what it's about to do. You turn it off again once it's done, and the sandbox is back from the turn after.","guarantees":["G66"],"app":{}}
+{"at":0,"app":{"method":"GET","path":"/v0/events"}}
+{"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
+{"at":0,"event":{"type":"snapshot","at":"2026-11-27T14:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"threads":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
+{"at":2000,"app":{"method":"GET","path":"/v0/access"}}
+{"at":2040,"server":{"status":200,"headers":{"Ito-Protocol":"0.19"},"body":{"mode":"sandboxed"}}}
+{"at":6040,"app":{"method":"POST","path":"/v0/access/full","body":{"confirm":true}}}
+{"at":6040,"event":{"id":"e_0001_25556","type":"access.changed","at":"2026-11-27T14:00:06.040Z","access":{"mode":"full","since":"2026-11-27T14:00:06.040Z"}}}
+{"at":6040,"event":{"id":"e_0002_51044","type":"desk.changed","at":"2026-11-27T14:00:06.040Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":1}}}
+{"at":6080,"server":{"status":200,"headers":{"Ito-Protocol":"0.19"},"body":{"mode":"full","since":"2026-11-27T14:00:06.040Z"}}}
+{"at":11080,"app":{"method":"POST","path":"/v0/messages","body":{"id":"49c23b38-1127-4963-9eee-12b827a18777","text":"The browser won't start. Install what it needs and get it going."}}}
+{"at":11080,"event":{"id":"e_0003_05150","type":"message.accepted","at":"2026-11-27T14:00:11.080Z","message":{"id":"49c23b38-1127-4963-9eee-12b827a18777","role":"user","text":"The browser won't start. Install what it needs and get it going.","at":"2026-11-27T14:00:11.080Z","position":3}}}
+{"at":11080,"server":{"status":201,"body":{"message":{"id":"49c23b38-1127-4963-9eee-12b827a18777","role":"user","text":"The browser won't start. Install what it needs and get it going.","at":"2026-11-27T14:00:11.080Z","position":3}}}}
+{"at":11080,"event":{"id":"e_0004_01704","type":"turn.started","at":"2026-11-27T14:00:11.080Z","turn":"t_0001_68705","inputs":["49c23b38-1127-4963-9eee-12b827a18777"]}}
+{"at":11380,"event":{"id":"e_0005_26942","type":"step.started","at":"2026-11-27T14:00:11.380Z","step":{"id":"s_0001_86999","turn":"t_0001_68705","kind":"thinking","title":"Thinking it through","at":"2026-11-27T14:00:11.380Z","position":5}}}
+{"at":11380,"event":{"id":"e_0006_20884","type":"turn.status","at":"2026-11-27T14:00:11.380Z","turn":"t_0001_68705","kind":"thinking","label":"Thinking it through"}}
+{"at":12280,"event":{"id":"e_0007_56630","type":"step.ended","at":"2026-11-27T14:00:12.280Z","step":{"id":"s_0001_86999","turn":"t_0001_68705","kind":"thinking","title":"Thought it through","at":"2026-11-27T14:00:11.380Z","position":5,"ended_at":"2026-11-27T14:00:12.280Z","outcome":"completed","duration_ms":900}}}
+{"at":12280,"event":{"id":"e_0008_83280","type":"message.started","at":"2026-11-27T14:00:12.280Z","message":{"id":"m_0001_72964","role":"agent","kind":"note","turn":"t_0001_68705","text":"","at":"2026-11-27T14:00:12.280Z","position":8}}}
+{"at":12280,"event":{"id":"e_0009_17705","type":"message.delta","at":"2026-11-27T14:00:12.280Z","message":"m_0001_72964","offset":0,"text":"I'll install Ito's packages in its "}}
+{"at":12400,"event":{"id":"e_0010_17386","type":"message.delta","at":"2026-11-27T14:00:12.400Z","message":"m_0001_72964","offset":35,"text":"checkout, then Chromium for the "}}
+{"at":12520,"event":{"id":"e_0011_70420","type":"message.delta","at":"2026-11-27T14:00:12.520Z","message":"m_0001_72964","offset":67,"text":"browser."}}
+{"at":12520,"event":{"id":"e_0012_40765","type":"message.ended","at":"2026-11-27T14:00:12.520Z","message":"m_0001_72964","outcome":"completed","length":75}}
+{"at":12560,"event":{"id":"e_0013_52112","type":"step.started","at":"2026-11-27T14:00:12.560Z","step":{"id":"s_0002_91633","turn":"t_0001_68705","kind":"command","title":"Installing packages","at":"2026-11-27T14:00:12.560Z","position":13,"command":"npm ci --omit=dev","cwd":"/home/you/ito-core","actions":[{"type":"run"}]}}}
+{"at":12560,"event":{"id":"e_0014_77138","type":"turn.status","at":"2026-11-27T14:00:12.560Z","turn":"t_0001_68705","kind":"working","label":"Installing packages"}}
+{"at":30560,"event":{"id":"e_0015_14723","type":"step.ended","at":"2026-11-27T14:00:30.560Z","step":{"id":"s_0002_91633","turn":"t_0001_68705","kind":"command","title":"Installed packages","at":"2026-11-27T14:00:12.560Z","position":13,"command":"npm ci --omit=dev","cwd":"/home/you/ito-core","actions":[{"type":"run"}],"exit_code":0,"output":"added 412 packages in 18s\n","ended_at":"2026-11-27T14:00:30.560Z","outcome":"completed","duration_ms":18000}}}
+{"at":30560,"event":{"id":"e_0016_37587","type":"step.started","at":"2026-11-27T14:00:30.560Z","step":{"id":"s_0003_27693","turn":"t_0001_68705","kind":"command","title":"Running a command","at":"2026-11-27T14:00:30.560Z","position":16,"command":"npx playwright install chromium","cwd":"/home/you/ito-core","actions":[{"type":"run"}]}}}
+{"at":30560,"event":{"id":"e_0017_03679","type":"turn.status","at":"2026-11-27T14:00:30.560Z","turn":"t_0001_68705","kind":"working","label":"Running a command"}}
+{"at":54560,"event":{"id":"e_0018_08374","type":"step.ended","at":"2026-11-27T14:00:54.560Z","step":{"id":"s_0003_27693","turn":"t_0001_68705","kind":"command","title":"Ran a command","at":"2026-11-27T14:00:30.560Z","position":16,"command":"npx playwright install chromium","cwd":"/home/you/ito-core","actions":[{"type":"run"}],"exit_code":0,"output":"Chromium downloaded to ~/.cache/ms-playwright\n","ended_at":"2026-11-27T14:00:54.560Z","outcome":"completed","duration_ms":24000}}}
+{"at":54560,"event":{"id":"e_0019_74981","type":"turn.status","at":"2026-11-27T14:00:54.560Z","turn":"t_0001_68705","kind":"writing","label":"Writing"}}
+{"at":54560,"event":{"id":"e_0020_96229","type":"message.started","at":"2026-11-27T14:00:54.560Z","message":{"id":"m_0002_75245","role":"agent","kind":"reply","turn":"t_0001_68705","text":"","at":"2026-11-27T14:00:54.560Z","position":20}}}
+{"at":54560,"event":{"id":"e_0021_53587","type":"message.delta","at":"2026-11-27T14:00:54.560Z","message":"m_0002_75245","offset":0,"text":"Done: Ito's packages are installed, and "}}
+{"at":54680,"event":{"id":"e_0022_17722","type":"message.delta","at":"2026-11-27T14:00:54.680Z","message":"m_0002_75245","offset":40,"text":"Chromium with them. Switch the browser on "}}
+{"at":54800,"event":{"id":"e_0023_34422","type":"message.delta","at":"2026-11-27T14:00:54.800Z","message":"m_0002_75245","offset":82,"text":"again in Settings › Capabilities and it'll "}}
+{"at":54920,"event":{"id":"e_0024_85916","type":"message.delta","at":"2026-11-27T14:00:54.920Z","message":"m_0002_75245","offset":125,"text":"start."}}
+{"at":54920,"event":{"id":"e_0025_47489","type":"message.ended","at":"2026-11-27T14:00:54.920Z","message":"m_0002_75245","outcome":"completed","length":131}}
+{"at":54920,"event":{"id":"e_0026_07587","type":"turn.ended","at":"2026-11-27T14:00:54.920Z","turn":"t_0001_68705","outcome":"completed"}}
+{"at":654920,"app":{"method":"DELETE","path":"/v0/access/full"}}
+{"at":654920,"event":{"id":"e_0027_52506","type":"access.changed","at":"2026-11-27T14:10:54.920Z","access":{"mode":"sandboxed"}}}
+{"at":654920,"event":{"id":"e_0028_50949","type":"desk.changed","at":"2026-11-27T14:10:54.920Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":2}}}
+{"at":654960,"server":{"status":200,"headers":{"Ito-Protocol":"0.19"},"body":{"mode":"sandboxed"}}}
