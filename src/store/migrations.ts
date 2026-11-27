@@ -339,4 +339,10 @@ export const migrations: readonly string[] = [
     made TEXT PRIMARY KEY,
     state TEXT NOT NULL
   );`,
+  // Understanding you: the questions Kumo would like them to explain, on its learning tracks.
+  `CREATE TABLE questions (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL
+  );`,
 ];

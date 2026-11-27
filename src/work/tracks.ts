@@ -14,6 +14,8 @@ export type Tracks = {
   readonly find: (id: string) => Track | undefined;
   // "That was wrong" on a call that belongs to a track: it steps back, with the call as evidence.
   readonly corrected: (entry: DoneEntry, text: string) => void;
+  // They answered one of Kumo's questions on a track, in Understanding you: the answer is evidence on it.
+  readonly answered: (id: string, text: string, question: string) => void;
   readonly tools: readonly Tool[];
   readonly inMindText: () => string;
 };
@@ -200,6 +202,10 @@ export const createTracks = ({ database, clock, identifiers, info }: TracksOptio
     corrected: (entry, text) => {
       const track = entry.track === undefined ? undefined : find(entry.track);
       if (track) save(correct(track, text, entry.id));
+    },
+    answered: (id, text, question) => {
+      const track = find(id);
+      if (track) save(withEvidence(track, { at: now(), kind: "answered", text, question }));
     },
     tools,
     inMindText: () => {

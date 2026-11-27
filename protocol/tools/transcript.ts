@@ -175,6 +175,11 @@ export type Transcript = {
   readonly listWakeUps: () => void;
   // A learning track's id, as the server makes it.
   readonly track: () => string;
+  // A question's id in Understanding you, as the server makes it.
+  readonly questionId: () => string;
+  // A question was added or moved on: every app hears it whole, and it never notifies.
+  readonly question: (question: Fields) => void;
+  readonly getUnderstanding: (understanding: Fields) => void;
   // Answers one of Kumo's guesses in Coming up; the item comes back as `after`.
   readonly answerGuess: (item: CalendarItem, answer: Fields, after: CalendarItem) => void;
   // Kumo did one more thing without you today: its Done entry.
@@ -246,7 +251,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "h" | "k" | "d" | "w" | "l" | "v" | "n";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "h" | "k" | "d" | "w" | "l" | "v" | "n" | "q";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -477,7 +482,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacfhkdwlvn]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfhkdwlvnq]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -501,6 +506,7 @@ const toCounters = (log: readonly Event[]): Counters => {
     l: highest("l"),
     v: highest("v"),
     n: highest("n"),
+    q: highest("q"),
   };
 };
 
@@ -521,7 +527,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({
     boot: 1,
-    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, h: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0 },
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, h: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0, q: 0 },
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
@@ -2126,6 +2132,14 @@ export const createTranscript = (header: Header): Transcript => {
     plans,
     listWakeUps,
     track: () => newId("l"),
+    questionId: () => newId("q"),
+    question: (question) => {
+      emit("question.changed", { question });
+    },
+    getUnderstanding: (understanding) => {
+      request("GET", "/v0/understanding");
+      response(200, understanding);
+    },
     answerGuess,
     handled,
     mailRead,

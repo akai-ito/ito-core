@@ -66,6 +66,11 @@ sequenceDiagram
   and move a message between threads; list and search them for Threads by day.
 - **Open what Kumo made:** list the Made shelf, fetch a page with its content and your ticks, and
   tick its items.
+- **Understanding you:** what Kumo would like you to explain waits quietly as questions on its
+  learning tracks (`GET /v0/understanding`), each with what Kumo already understands, the missing
+  piece and why it would help. Answer with taps, your own words or a recording you uploaded, or say
+  none fit, not sure or not now; `question.changed` follows each one. Nothing there is due, and
+  nothing notifies.
 - **Follow Kumo's browser:** when Kumo books, fills in a form or shops for you on a site, its task
   shows as a line in the thread it lives in (`browser.changed`), and a tap peeks at the live view
   over a WebSocket. When Kumo needs your hand, for a login, a code, a CAPTCHA or the pay button, a
@@ -103,6 +108,7 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `made.state` | Your ticks on a page changed, from any device |
 | `made.removed` | You let Kumo forget a page |
 | `browser.changed` | Kumo's browser moved on: a step on a site, a takeover asked for, taken or handed back, a commit card, or the task over |
+| `question.changed` | A question in Understanding you was added, answered, filed, heard, set aside, settled or dropped |
 
 ## Kumo's browser
 

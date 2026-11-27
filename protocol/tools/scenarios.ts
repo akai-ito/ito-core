@@ -5013,6 +5013,141 @@ const scenarios: readonly (() => Transcript)[] = [
     memoryCall(transcript, "/v0/made", { made: [changed.made] });
     return transcript;
   },
+
+  () => {
+    const transcript = createTranscript({
+      name: "97-understanding-you",
+      scenario: 97,
+      title: "Understanding you",
+      summary:
+        "Kumo asks two things it would like you to explain, on its Planning with you track, each with what it " +
+        "already understands, the missing piece and why it would help. They wait quietly in Understanding you: no " +
+        "Desk card, no notification. You say Not now to one. You answer the other with two taps and a line: it's " +
+        "evidence on the track, and Kumo files what it learned in the background, with no follow-up. Kumo settles " +
+        "the one you set aside once you answer it in the chat, and never asks the same thing twice.",
+      guarantees: ["G63"],
+    });
+    transcript.begin("2026-11-27T09:00:00.000Z");
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.time("2026-11-27T09:00:01.000Z");
+    const name = "Planning with you";
+    const trackNote = "How you like your days and weekends planned.";
+    agentCalls(transcript, "open_track", { name, note: trackNote });
+    const track = {
+      id: transcript.track(),
+      name,
+      stage: "learning",
+      since: "2026-11-27T09:00:01.000Z",
+      note: trackNote,
+      confirmed: 0,
+      corrected: 0,
+      evidence: [] as readonly Readonly<Record<string, unknown>>[],
+    };
+    transcript.wait(500);
+    transcript.getUnderstanding({ tracks: [track], questions: [], recent: [] });
+    const ask = (
+      at: string,
+      fields: {
+        readonly understood: string;
+        readonly missing: string;
+        readonly why: string;
+        readonly options: readonly string[];
+      },
+    ) => {
+      transcript.time(at);
+      agentCalls(transcript, "add_question", { track: track.id, ...fields });
+      const question = {
+        id: transcript.questionId(),
+        track: track.id,
+        state: "open",
+        ...fields,
+        asked_at: at,
+        changed_at: at,
+      };
+      transcript.question(question);
+      return question;
+    };
+    const restful = ask("2026-11-27T09:00:02.000Z", {
+      understood: "You keep Sunday mornings free, and your long run is on Saturdays.",
+      missing: "What makes a weekend feel restful rather than busy?",
+      why: "So the weekends I plan leave you rested, not just full.",
+      options: ["Unplanned time", "Seeing friends", "Being outdoors", "A long lie-in"],
+    });
+    const packed = ask("2026-11-27T09:00:03.000Z", {
+      understood: "Packed weeks are when your runs slip first, and you've said you sleep badly after late calls.",
+      missing: "When a week is packed, what should I protect first?",
+      why: "So I know what to keep when something has to give.",
+      options: ["Training", "Sleep", "Evenings with friends"],
+    });
+    transcript.time("2026-11-27T09:01:03.000Z");
+    transcript.getUnderstanding({ tracks: [track], questions: [restful, packed], recent: [] });
+
+    transcript.time("2026-11-27T09:01:08.000Z");
+    transcript.request("POST", `/v0/understanding/questions/${packed.id}/not-now`);
+    const later = { ...packed, changed_at: "2026-11-27T09:01:08.000Z", later_at: "2026-11-27T09:01:08.000Z" };
+    transcript.question(later);
+    transcript.wait(60);
+    transcript.response(200, { question: later });
+
+    transcript.time("2026-11-27T09:01:30.000Z");
+    const filed = "Weekends start slow: nothing booked before noon, and time outdoors.";
+    transcript.world("kumo_works", { calls: [], answer: filed });
+    const answer = {
+      picked: ["Unplanned time", "Being outdoors"],
+      text: "A slow morning and a long walk, with nothing booked before noon.",
+    };
+    transcript.request("POST", `/v0/understanding/questions/${restful.id}/answer`, { body: answer });
+    const answeredAt = "2026-11-27T09:01:30.000Z";
+    const answered = { ...restful, state: "answered", changed_at: answeredAt, answer: { at: answeredAt, ...answer } };
+    transcript.question(answered);
+    const kept = { ...answered, filed };
+    transcript.question(kept);
+    transcript.wait(60);
+    transcript.response(202, { question: answered });
+
+    transcript.time("2026-11-27T09:02:00.000Z");
+    const evidence = {
+      at: answeredAt,
+      kind: "answered",
+      text:
+        "You answered “What makes a weekend feel restful rather than busy?”: Unplanned time, Being outdoors; " +
+        "“A slow morning and a long walk, with nothing booked before noon.”",
+      question: restful.id,
+    };
+    const answeredTrack = { ...track, evidence: [evidence] };
+    transcript.getWork({ handled: [], cleared: [], tracks: [answeredTrack] });
+    transcript.wait(1000);
+    transcript.getUnderstanding({ tracks: [answeredTrack], questions: [later], recent: [kept] });
+
+    const settledAt = "2026-11-27T12:40:00.000Z";
+    transcript.time(settledAt);
+    const note = "You said in the chat that sleep comes first when a week is packed.";
+    agentCalls(transcript, "settle_question", { question: packed.id, note });
+    const settled = {
+      id: packed.id,
+      track: track.id,
+      state: "settled",
+      understood: packed.understood,
+      missing: packed.missing,
+      why: packed.why,
+      options: packed.options,
+      asked_at: packed.asked_at,
+      changed_at: settledAt,
+      note,
+    };
+    transcript.question(settled);
+    transcript.time("2026-11-28T04:10:00.000Z");
+    agentCalls(transcript, "add_question", {
+      track: track.id,
+      understood: "You run long on Saturdays.",
+      missing: "What makes a weekend restful for you, rather than busy?",
+      why: "So I plan weekends that rest you.",
+    });
+    transcript.time("2026-11-28T08:30:00.000Z");
+    transcript.getUnderstanding({ tracks: [answeredTrack], questions: [], recent: [settled, kept] });
+    return transcript;
+  },
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

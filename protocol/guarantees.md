@@ -60,6 +60,7 @@ where the protocol has to make it possible, marked *App*.
 | G57 | **Paused at a usage limit, then caught up once.** When the model provider's usage limit is reached, Kumo's background work pauses until the limit resets, with nothing retried meanwhile, and the pause shows at once as a problem that says when it ends. Once the limit resets, or a turn in the chat goes through, Kumo catches up once on what it missed, each wake-up and kind of work counted once, and tells you in one message. Background work with nobody watching that shows no sign of life for 15 minutes is stopped and tried once more. | 86 |
 | G58 | **Chapters and what Kumo learnt come from memory.** A chapter is a page Kumo writes and keeps on its own shelf: a story with the day it began, the day it ended once it's over, and the day Kumo noticed it, which the server stamps; what it drew on is counted by the server, never said by Kumo. A line Kumo learnt about you comes only with a change that taught it, never with one that tidies or fixes records, is kept in the Thread with that change, and leaves the Library when Kumo takes it back or forgets its page. | 87 |
 | G59 | **Pages Kumo makes stay current, and your ticks are yours.** A rich, lasting answer can come as a page Kumo made: a card in the reply that opens it, and a place on the Made shelf. Kumo makes a page whole, with pictures it kept and blocks the app draws, then changes it only from the version it read, with a note that says what changed; a change never notifies. Your ticks carry when you ticked, every app hears them, and a change that drops an item lets its tick go. Forgetting a page asks you first. | 91 |
+| G63 | **Understanding you is quiet, and an answer is enough.** What Kumo would like you to explain is a question on one of its learning tracks, saying what it already understands, the missing piece and why it would help, with honest options to tap. A question has no due date and is never overdue, never waits on the Desk and never notifies; Kumo doesn't ask what it's already asking, or what you answered lately. You answer with taps, your own words or your voice, or say none fit or not sure, and Not now leaves it open. An answer becomes evidence on its track and Kumo files what it learned in the background, with no follow-up; a question answered elsewhere is settled, with where. | 97 |
 
 ## How Kumo decides to speak
 
@@ -637,6 +638,17 @@ catches up once (G57).
   message comes with it. (G59)
 - A tick carries when you ticked, and every app hears the whole state in `made.state`. (G59)
 - The Made shelf comes from `GET /v0/made`, most recently changed first. (G59)
+
+### 97 · [Understanding you](transcripts/97-understanding-you.jsonl)
+
+- Kumo asks with `add_question` on a track: what it understands, the missing piece, why it would help and a
+  few options. Every app hears `question.changed`; no card reaches the Desk and nothing notifies. (G63)
+- `GET /v0/understanding` has every track, the open questions and what you answered lately. (G63)
+- Not now leaves a question open, with `later_at`, and moves it after the rest. (G63)
+- An answer of taps and your words is `answered` at once, evidence on its track in `GET /v0/work`; Kumo
+  files what it learned in the background, and the question gains `filed`, with nothing more asked. (G63)
+- Kumo settles a question it learned the answer to elsewhere, with a note on where, and asking the same
+  thing again adds nothing. (G63)
 
 ## Not in this version
 

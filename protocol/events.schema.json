@@ -121,6 +121,9 @@
         },
         {
           "$ref": "#/$defs/BrowserChanged"
+        },
+        {
+          "$ref": "#/$defs/QuestionChanged"
         }
       ]
     },
@@ -2874,7 +2877,7 @@
       }
     },
     "TrackEvidence": {
-      "description": "One thing a track stands on: a time you `confirmed` Kumo got it right, `corrected` it, or Kumo `moved` it to another stage, with why.",
+      "description": "One thing a track stands on: a time you `confirmed` Kumo got it right, `corrected` it, `answered` one of its questions in Understanding you, or Kumo `moved` it to another stage, with why. Show the text alone for a kind you don't recognise.",
       "type": "object",
       "required": ["at", "kind", "text"],
       "additionalProperties": false,
@@ -2883,7 +2886,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "kind": {
-          "enum": ["confirmed", "corrected", "moved"]
+          "enum": ["confirmed", "corrected", "moved", "answered"]
         },
         "text": {
           "description": "In a line, such as \"You sent the Tess draft as I wrote it\".",
@@ -2897,6 +2900,127 @@
         "done": {
           "$ref": "#/$defs/DoneId",
           "description": "The call it was about, in Done."
+        },
+        "question": {
+          "$ref": "#/$defs/QuestionId",
+          "description": "`answered` only: the question you answered."
+        }
+      }
+    },
+    "QuestionId": {
+      "description": "Opaque. The server makes it when Kumo adds a question.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "QuestionState": {
+      "description": "Where a question stands: `open`, waiting quietly for you for as long as it takes; `answered`, by you; `settled`, Kumo learned the answer elsewhere, such as in the chat, and `note` says where; `dropped`, Kumo let it go because it no longer helps. Treat a state you don't recognise as `dropped`.",
+      "enum": ["open", "answered", "settled", "dropped"]
+    },
+    "Question": {
+      "description": "Something Kumo would like you to explain, in Understanding you, on one of its learning tracks: what it already understands, the missing piece and why it would help. It's optional and quiet: it has no due date, is never overdue, never waits on the Desk and never notifies you. Answer it with a tap on one or more of its `options`, in your own words, written or spoken, or say none fit or you're not sure; \"Not now\" leaves it open. An answer is enough: Kumo files what it learned in the background and asks nothing more about it.",
+      "type": "object",
+      "required": ["id", "track", "state", "understood", "missing", "why", "options", "asked_at", "changed_at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/QuestionId"
+        },
+        "track": {
+          "$ref": "#/$defs/TrackId",
+          "description": "The learning track it belongs to, such as Planning with you."
+        },
+        "state": {
+          "$ref": "#/$defs/QuestionState"
+        },
+        "understood": {
+          "description": "What Kumo already understands, from your conversations, memory and sources, in a sentence or two, such as \"You keep Sunday mornings free and run long on Saturdays.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "missing": {
+          "description": "The missing piece, asked as one question, such as \"What makes a weekend feel restful rather than busy?\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "why": {
+          "description": "Why it would help, in a line, such as \"So the weekends I plan leave you rested, not just full.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "description": "Quick answers to tap: Kumo's honest possibilities, a few words each, for you to recognise or correct. Tap one or several. Empty when only your own words will do.",
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "asked_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "changed_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "later_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "`open` only: the last time you said \"Not now\". It stays open, with no reminder; show it after the rest."
+        },
+        "unheard": {
+          "description": "`open` only: your spoken answer couldn't be heard, and why, so the question is open for you to answer again.",
+          "type": "string",
+          "minLength": 1
+        },
+        "answer": {
+          "$ref": "#/$defs/QuestionAnswer",
+          "description": "`answered` only: what you said."
+        },
+        "filed": {
+          "description": "`answered` only, once Kumo has filed it: what it took from your answer, in a line, such as \"Weekends start slow: nothing booked before noon.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "note": {
+          "description": "`settled`: where Kumo learned the answer, such as \"You said in the chat that sleep comes first.\" `dropped`: why Kumo let it go.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "QuestionAnswer": {
+      "description": "Your answer to a question: the options you tapped, your own words, written or spoken, and whether none fit or you're not sure, alone or together.",
+      "type": "object",
+      "required": ["at"],
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "picked": {
+          "description": "The options you tapped.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "text": {
+          "description": "Your own words. For a spoken answer, what the server heard, once it has: until then a spoken answer has `audio` and no `text`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "audio": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "A spoken answer: the recording you uploaded, which the server transcribes on its own GPU."
+        },
+        "none_fit": {
+          "description": "None of Kumo's options fit.",
+          "const": true
+        },
+        "not_sure": {
+          "description": "You're not sure.",
+          "const": true
         }
       }
     },
@@ -3254,6 +3378,26 @@
         },
         "recording": {
           "$ref": "#/$defs/Recording"
+        }
+      }
+    },
+    "QuestionChanged": {
+      "title": "question.changed",
+      "description": "A question in Understanding you was added or moved on: answered, filed by Kumo, set aside with \"Not now\", heard, settled or dropped. It carries the whole question, and never notifies. These events are compacted like the Desk's, so after a `snapshot`, fetch `GET /v0/understanding`.",
+      "type": "object",
+      "required": ["id", "type", "at", "question"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "question.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "question": {
+          "$ref": "#/$defs/Question"
         }
       }
     },

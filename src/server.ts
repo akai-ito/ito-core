@@ -67,6 +67,8 @@ import { createWakeUpStore } from "#store/wakeups.ts";
 import { createCalendarChanges } from "#calendar/changes.ts";
 import { createPlaces } from "#places/places.ts";
 import { createTracks } from "#work/tracks.ts";
+import { createQuestions } from "#work/questions.ts";
+import { registerUnderstanding } from "#http/understanding.ts";
 import { createDeskLine } from "#desk/line.ts";
 import { createGettingStarted } from "#onboarding/onboarding.ts";
 import { createCalendar, type Calendar } from "#calendar/calendar.ts";
@@ -350,6 +352,7 @@ export const createServer = (options: ServerOptions): Server => {
       made.inMindText(),
       wakeUps.inMindText(),
       tracks.inMindText(),
+      questions.inMindText(),
       deskLine.inMindText(),
       desk.inMindText(),
       picture.inMindText(),
@@ -375,6 +378,7 @@ export const createServer = (options: ServerOptions): Server => {
         made.inMindText(),
         wakeUps.inMindText(),
         tracks.inMindText(),
+        questions.inMindText(),
         deskLine.inMindText(),
         desk.inMindText(),
         picture.inMindText(),
@@ -642,6 +646,17 @@ export const createServer = (options: ServerOptions): Server => {
     enrich: (item) => picture.enrich(item),
   });
   const tracks = createTracks({ database, clock, identifiers, info });
+  const questions = createQuestions({
+    database,
+    store,
+    attachments,
+    voice,
+    tracks,
+    clock,
+    identifiers,
+    work: workFor("Answers they gave in Understanding you"),
+    info,
+  });
   const picture = createDayPicture({
     blocks: createBlockStore(database),
     calendar,
@@ -818,6 +833,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...createWorkTools({ post, desk, isTrack: (id) => tracks.find(id) !== undefined, clock }),
     ...threads.tools,
     ...tracks.tools,
+    ...questions.tools,
     deskLine.tool,
     ...calendar.tools,
     ...picture.tools,
@@ -864,6 +880,7 @@ export const createServer = (options: ServerOptions): Server => {
   });
   registerWakeUps(app, { wakeUps, schemas });
   registerDay(app, { picture, schemas });
+  registerUnderstanding(app, { questions, tracks, schemas });
   registerTools(app, {
     token: toolsToken,
     tools: allTools,
@@ -892,6 +909,7 @@ export const createServer = (options: ServerOptions): Server => {
     desk.close();
     background.close();
     wakeUps.close();
+    questions.close();
     calendarChanges.close();
     places.close();
     gettingStarted.close();
