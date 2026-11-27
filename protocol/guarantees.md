@@ -641,14 +641,16 @@ catches up once (G57).
 
 ### 97 · [Understanding you](transcripts/97-understanding-you.jsonl)
 
-- Kumo asks with `add_question` on a track: what it understands, the missing piece, why it would help and a
-  few options. Every app hears `question.changed`; no card reaches the Desk and nothing notifies. (G63)
+- Kumo asks with `add_question` on a track: what it understands, the missing piece, why it would
+  help and a few options. Every app hears `question.changed`; no card reaches the Desk and nothing
+  notifies. (G63)
 - `GET /v0/understanding` has every track, the open questions and what you answered lately. (G63)
 - Not now leaves a question open, with `later_at`, and moves it after the rest. (G63)
-- An answer of taps and your words is `answered` at once, evidence on its track in `GET /v0/work`; Kumo
-  files what it learned in the background, and the question gains `filed`, with nothing more asked. (G63)
-- Kumo settles a question it learned the answer to elsewhere, with a note on where, and asking the same
-  thing again adds nothing. (G63)
+- An answer of taps and your words is `answered` at once, evidence on its track in `GET /v0/work`;
+  Kumo files what it learned in the background, and the question gains `filed`, with nothing more
+  asked. (G63)
+- Kumo settles a question it learned the answer to elsewhere, with a note on where, and asking the
+  same thing again adds nothing. (G63)
 
 ## Not in this version
 
