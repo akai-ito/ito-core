@@ -206,3 +206,93 @@ describe("a 0.18 database", () => {
     expect(wakeUps.count).toBe(0);
   });
 });
+
+// A database migrated up to 0.19's last migration.
+const at019 = (file: string): DatabaseSync => {
+  const version = migrations.findIndex((sql) => sql.includes("CREATE TEMP TABLE wake_up_titles"));
+  const fresh = new DatabaseSync(file);
+  for (const [index, sql] of migrations.slice(0, version).entries()) {
+    fresh.exec(sql);
+    fresh.exec(versionAfter(index));
+  }
+  return fresh;
+};
+
+// A wake-up as 0.19 kept it, with no title.
+const wakeUp019 = (id: string, what: string) => ({
+  id,
+  at: "2026-11-30T09:00:00.000Z",
+  what,
+  why: "Because.",
+  by: "kumo",
+  source: { kind: "chat", title: "Chat" },
+  set_at: "2026-11-20T09:00:00.000Z",
+});
+
+describe("a 0.19 database", () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "ito-migration-0.19-"));
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("titles every wake-up from the first clause of what it was for, and has Kumo give them plain titles", () => {
+    const file = path.join(home, "with-wake-ups.db");
+    const fresh = at019(file);
+    const long = wakeUp019(
+      "w_1",
+      "Quietly fetch and reconcile recent sleep and workouts; use real records, not guesses",
+    );
+    const short = wakeUp019("w_2", "Ask how the technical went");
+    for (const given of [long, short]) {
+      fresh
+        .prepare("INSERT INTO wake_ups (id, at, body) VALUES (?, ?, ?)")
+        .run(given.id, given.at, JSON.stringify(given));
+    }
+    fresh
+      .prepare("INSERT INTO desk (id, body) VALUES (1, ?)")
+      .run(JSON.stringify({ plans: [long, short], coming_up: [], waiting: [], handled: 0 }));
+    const gone = wakeUp019("w_0", "Check the slides went out. If not, nudge");
+    fresh
+      .prepare("INSERT INTO events (seq, id, type, at, body) VALUES (1, 'e_1', 'desk.changed', ?, ?)")
+      .run(gone.at, JSON.stringify({ type: "desk.changed", desk: { plans: [gone] } }));
+    fresh.close();
+
+    const migrated = openDatabase(file);
+    const titles = (
+      migrated.prepare("SELECT id, body FROM wake_ups ORDER BY id").all() as unknown as readonly {
+        readonly id: string;
+        readonly body: string;
+      }[]
+    ).map(({ body }) => JSON.parse(body) as { readonly id: string; readonly title: string; readonly what: string });
+    const desk = migrated.prepare("SELECT body FROM desk").get() as { readonly body: string };
+    const event = migrated.prepare("SELECT body FROM events").get() as { readonly body: string };
+    migrated.close();
+
+    expect(titles.map(({ id, title }) => [id, title])).toEqual([
+      ["w_1", "Quietly fetch and reconcile recent sleep and…"],
+      ["w_2", "Ask how the technical went"],
+      ["w_titles_0_20", "Tidy your plans"],
+    ]);
+    expect(titles[0]?.what).toBe(long.what);
+    expect(
+      (JSON.parse(desk.body) as { readonly plans: readonly { readonly title: string }[] }).plans.map(
+        ({ title }) => title,
+      ),
+    ).toEqual(["Quietly fetch and reconcile recent sleep and…", "Ask how the technical went"]);
+    expect(JSON.parse(event.body)).toMatchObject({
+      desk: { plans: [{ id: "w_0", title: "Check the slides went out" }] },
+    });
+  });
+
+  it("sets no wake-up to tidy them when there are none", () => {
+    const file = path.join(home, "empty.db");
+    at019(file).close();
+
+    const migrated = openDatabase(file);
+    const wakeUps = migrated.prepare("SELECT COUNT(*) AS count FROM wake_ups").get() as { readonly count: number };
+    migrated.close();
+
+    expect(wakeUps.count).toBe(0);
+  });
+});

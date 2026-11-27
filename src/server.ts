@@ -101,6 +101,7 @@ import {
 import { createQuickChoice, createStakesChoice } from "#engine/quick-model.ts";
 import { createBlockStore } from "#day/blocks.ts";
 import { createDayPicture } from "#day/picture.ts";
+import { createToday } from "#day/today.ts";
 import { registerDay } from "#http/day.ts";
 import { contextRun, contextThread, inToolContext } from "#tools/context.ts";
 import { createDemoTools } from "#demo/tools.ts";
@@ -205,8 +206,8 @@ const ownSkills: readonly OwnSkill[] = [motionSkill, chaptersSkill, reviewSkill]
 const dayMs = 24 * 60 * 60 * 1000;
 
 const textRetentionMs = 30 * dayMs;
-const latelyMessages = 6;
-const latelyLength = 280;
+const mailCorrectionsMs = 14 * dayMs;
+const mailCorrections = 5;
 const defaultHeartbeatMs = 15_000;
 
 export const databaseFile = (dataDirectory: string): string => path.join(dataDirectory, "ito.db");
@@ -325,26 +326,21 @@ export const createServer = (options: ServerOptions): Server => {
       ...[places.weatherText() ?? []].flat(),
       "</now>",
     ].join("\n");
-  // The end of the conversation, for background work, which doesn't see the chat: what they said lately, and when.
-  const latelyText = (): string => {
-    const latest = store.latestMessages(latelyMessages);
-    return latest.length === 0
-      ? ""
-      : [
-          "<lately>",
-          "The end of your conversation with them:",
-          ...latest.map(
-            ({ role, text, at }) =>
-              `- ${toSpoken(Date.parse(at), timeZone())}, ${role === "user" ? "they" : "you"}: ` +
-              (text.length > latelyLength ? `${text.slice(0, latelyLength)}…` : text).replaceAll(/\s+/gu, " "),
-          ),
-          "</lately>",
-        ].join("\n");
-  };
-  // What background work has in mind: the same as a turn in the chat, without the call or getting started.
+  // Today so far, across the main chat and every thread, with what Kumo did and what's next: in every turn and every
+  // piece of background work, so each joins the day up.
+  const today = createToday({
+    store,
+    clock,
+    timeZone,
+    wakeUps: () => wakeUps.list(),
+    calendar: () => calendar.listItems(),
+  });
+  // What background work has in mind: the same as a turn in the chat, without the call or getting started, and with
+  // all of today so far, since it doesn't see the chat.
   const backgroundText = (): string =>
     [
       nowText(),
+      today.text(),
       memory.inMindText(),
       motions.inMindText(),
       made.inMindText(),
@@ -354,7 +350,6 @@ export const createServer = (options: ServerOptions): Server => {
       desk.inMindText(),
       picture.inMindText(),
       recordings.inMindText(),
-      latelyText(),
       threads.backgroundText(),
     ]
       .filter(Boolean)
@@ -370,6 +365,7 @@ export const createServer = (options: ServerOptions): Server => {
       [
         threads.inMindText(thread),
         nowText(),
+        today.text({ thread }),
         memory.inMindText(),
         motions.inMindText(),
         made.inMindText(),
@@ -479,6 +475,21 @@ export const createServer = (options: ServerOptions): Server => {
   const howToHelp = (section: string): string => {
     const page = memory.page("memory:helping-you");
     return page.ok ? sectionOf(page.value.markdown, section) : "";
+  };
+  // How they like their mail sorted: How to help you's part on it, and their corrections on mail lately, which are
+  // evidence on Kumo's tracks until the dream distils what lasts into How to help you.
+  const mailPreferences = (): string => {
+    const lately = tracks
+      .evidenceSince(toTimestamp(clock.now() - mailCorrectionsMs))
+      .filter(
+        ({ evidence: { kind, done } }) =>
+          kind === "corrected" && done !== undefined && store.findDone(done)?.entry.mail !== undefined,
+      )
+      .slice(0, mailCorrections)
+      .map(({ evidence }) => `- ${evidence.text}`);
+    return [howToHelp("Sorting mail"), ...(lately.length === 0 ? [] : ["Lately they said:", ...lately])]
+      .filter(Boolean)
+      .join("\n");
   };
   const desk = createDesk({
     store,
@@ -616,7 +627,7 @@ export const createServer = (options: ServerOptions): Server => {
         .list()
         .filter(({ status }) => status === "active")
         .map(({ kind, title }) => `${title} (${kind})`),
-    preferences: () => howToHelp("Sorting mail"),
+    preferences: mailPreferences,
     info,
     comingUp: () => store.desk().coming_up,
     onHealth: (account, health) => {
@@ -641,7 +652,7 @@ export const createServer = (options: ServerOptions): Server => {
     },
     enrich: (item) => picture.enrich(item),
   });
-  const tracks = createTracks({ database, clock, identifiers, info });
+  const tracks = createTracks({ database, clock, identifiers, info, timeZone });
   const picture = createDayPicture({
     blocks: createBlockStore(database),
     calendar,

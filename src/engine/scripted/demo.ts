@@ -635,7 +635,7 @@ export const demoWork =
     if (prompt.includes("You asked them on the Desk")) {
       return ok("Noted; nothing more was needed.");
     }
-    if (prompt.includes("They told you this was wrong")) return ok("Noted on How to help you for next time.");
+    if (prompt.includes("They told you this was wrong")) return ok("Noted on your track for next time.");
     if (!prompt.includes("Post your first question")) {
       return fail({ code: "engine_failed", detail: "The demo does no background work." });
     }

@@ -67,6 +67,7 @@ request that shows its own `Authorization` header uses the token it names.
 | `inbox_holds` | how many mails from the last 90 days an `account` holds, for the catch-up to read |
 | `invite_arrives` | an invitation lands on your iCloud calendar: its `uid`, `title`, `start`, `end`, `location` and `organizer` |
 | `briefing_written` | what the quick model will write for the next briefing: its `lines` and how many things it `handled` |
+| `kumo_has_in_mind` | what Kumo has in mind of today so far: these `today` lines, in order, and none it `leaves_out`, for its next turn in the main chat or a side `thread`, or, with `background`, for its next piece of background work |
 
 ## Ids
 

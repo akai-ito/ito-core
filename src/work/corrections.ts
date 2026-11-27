@@ -7,8 +7,9 @@ import type { Store } from "#store/store.ts";
 import type { Info } from "#turns/turns.ts";
 import type { Tracks } from "#work/tracks.ts";
 
-// "That was wrong", on anything Kumo did: it's undone where it can be, the track it belongs to steps back, and Kumo
-// keeps what to do differently as a preference on How to help you, in the background.
+// "That was wrong", on anything Kumo did: it's undone where it can be, and it becomes evidence on the learning track
+// it belongs to, which steps back; Kumo files one that names no track on the right one, in the background. It's never
+// a new line on How to help you: the nightly dream distils the lasting lessons from the tracks' evidence.
 export type Corrections = {
   // Saying it again only adds words.
   readonly correct: (id: string, text?: string) => Promise<Result<DoneEntry, "not_found">>;
@@ -20,7 +21,7 @@ export type CorrectionsOptions = {
   readonly desk: Pick<DeskKeeper, "undo" | "addDone">;
   readonly clock: Clock;
   readonly work: Work;
-  readonly tracks: Pick<Tracks, "find" | "corrected">;
+  readonly tracks: Pick<Tracks, "find" | "corrected" | "addWords">;
   readonly info: Info;
 };
 
@@ -45,13 +46,15 @@ const correctionPrompt = (
     words === undefined
       ? "They didn't say why: work out what was most likely wrong from the call itself."
       : `They said: ${words}`,
-    "Keep what to do differently as a preference: a line or two on their How to help you page (memory:helping-you),",
-    "under the heading it belongs to, such as Sorting mail or Your calendar, general enough to apply next time, such",
-    "as a sender, a kind of mail or a kind of event rather than this one. If it disagrees with something already",
-    "there, change that rather than adding beside it.",
     track === undefined
-      ? "If it was part of an area you're learning, note the correction on that track with note_track."
-      : `It was part of your ${track} track, which has stepped back for it.`,
+      ? [
+          `Keep it as evidence on the track it belongs to: note_track with kind corrected and done ${entry.id}, its`,
+          "text saying what was wrong and what you'll do differently, general enough to apply next time, such as a",
+          "sender, a kind of mail or a kind of event rather than this one. If no track fits, open one for the area,",
+          "such as Sorting mail or Your calendar, first.",
+        ].join("\n")
+      : `It's evidence on your ${track} track, which has stepped back for it.`,
+    "Don't write it on How to help you: what lasts goes there from your tracks, each night.",
     "End with one line for their Done list saying what you'll do differently.",
   ].join("\n");
 };
@@ -95,7 +98,10 @@ export const createCorrections = ({ store, desk, clock, work, tracks, info }: Co
       const { entry } = found;
       const words = text?.trim() === "" ? undefined : text?.trim();
       if (entry.corrected_at !== undefined) {
-        if (words !== undefined) background(() => note(entry, words, ok(false)));
+        if (words !== undefined) {
+          tracks.addWords(entry, words);
+          background(() => note(entry, words, ok(false)));
+        }
         return ok(entry);
       }
       // Marked before undoing, so the same correction said again meanwhile only adds words.

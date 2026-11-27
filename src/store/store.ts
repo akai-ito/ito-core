@@ -239,6 +239,9 @@ export type Store = Settings & {
   readonly messageText: (message: MessageId) => string | undefined;
   // The conversation's latest messages with words in them, oldest first.
   readonly latestMessages: (limit: number) => readonly Message[];
+  // What was said since a time, in the main chat and every thread: their messages and your replies and posts,
+  // newest first, at most `limit`.
+  readonly messagesSince: (at: string, limit: number) => readonly Message[];
   readonly recordMotion: (
     type: "motion.started" | "motion.changed" | "motion.finished",
     motion: Omit<Motion, "position"> & { readonly position?: number },
@@ -1224,6 +1227,16 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       )
         .toReversed()
         .map((row) => toMessage(row)),
+
+    messagesSince: (at, limit) =>
+      (
+        database
+          .prepare(
+            `SELECT * FROM messages WHERE at >= ? AND (role = 'user' OR kind IN ('reply', 'post'))
+             AND (text != '' OR attachments IS NOT NULL) AND ${kept} ORDER BY position DESC LIMIT ?`,
+          )
+          .all(at, limit) as unknown as readonly MessageRow[]
+      ).map((row) => toMessage(row)),
 
     recordMotion: (type, given, note) =>
       transaction(() => {

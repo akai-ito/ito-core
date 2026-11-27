@@ -266,8 +266,10 @@ export const sentPrompt = (
 
 export const learnPrompt = (card: Card, sent: Mail): string =>
   [
-    "They sent a draft you wrote, after changing it. Note what to do differently next time, briefly, under",
-    '"Writing as you" on their How to help you page. If the change was only about facts, note nothing.',
+    "They sent a draft you wrote, after changing it. Keep what to do differently next time as evidence on your",
+    "Writing as you track: note_track with kind corrected, in a line general enough for next time (open the track",
+    "first if there isn't one). Not on How to help you: what lasts goes there from your tracks, each night. If the",
+    "change was only about facts, note nothing.",
     "",
     `Your draft:\n${plainOf(card.draft?.body ?? "")}`,
     "",

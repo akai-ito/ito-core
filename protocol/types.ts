@@ -329,7 +329,7 @@ export interface paths {
     /**
      * Move or change one of Kumo's plans
      * @description Moves a wake-up to another time, changes how it repeats (`null` makes it a one-off), or
-     *     rewords what it's for. The answer is the wake-up as it is now, and `desk.changed` follows.
+     *     renames or rewords it. The answer is the wake-up as it is now, and `desk.changed` follows.
      *     A time that has passed is refused.
      */
     patch: operations["changeWakeUp"];
@@ -2807,6 +2807,8 @@ export interface components {
       at?: components["schemas"]["Timestamp"];
       /** @description How it comes back, or `null` for a one-off. */
       repeat?: components["schemas"]["Repeat"] | null;
+      /** @description Its title in Kumo's plans. */
+      title?: string;
       what?: string;
       why?: string;
     };
@@ -3625,7 +3627,9 @@ export interface components {
       id: components["schemas"]["WakeUpId"];
       /** @description When it's next due, a concrete time Kumo worked out, such as the end of the event it's for. */
       at: components["schemas"]["Timestamp"];
-      /** @description What it's for, in a line, such as "Ask how the Halcyon technical went". */
+      /** @description What it is in a few plain words, as you'd say it, such as "Ask how the technical went": the line to show in Kumo's plans. A repeating one keeps one title, such as "Look at the week ahead". */
+      title: string;
+      /** @description What Kumo will do when it wakes, in its own words, such as "Ask how the Halcyon technical went and note what to work on": show it with `why` when you open a plan. */
       what: string;
       /** @description Why, in Kumo's words: what it will have in mind when it wakes, such as "It ends at 15:30, and you wanted to talk it through while it's fresh." */
       why: string;
