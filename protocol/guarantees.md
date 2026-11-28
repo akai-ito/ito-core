@@ -63,9 +63,10 @@ where the protocol has to make it possible, marked *App*.
 | G60 | **Kumo dreams once a day, reliably.** At the dream time you set, 04:00 until you choose another, on your local clock wherever you are, Kumo looks back over everything since its last dream and puts it in order: memory, its blocks and wake-ups for tomorrow, and the journal. One dream runs at a time, and every app can follow its steps as it goes, quietly. The night's dream runs once every day; Dream now starts an extra one at once and never takes its place, and each dream reads everything since the one before. A dream the server was off for runs as soon as it's back, and one the model couldn't do is tried again until the next is due. A dream never notifies: Kumo messages you only when something from the night is worth it. | 92, 93 |
 | G61 | **A dream leaves a record you can take back.** Each dream ends with a record of what it planned, tidied, noticed and saved for you, every line pointing at what it changed. Every change is one entry in Kumo's work, marked with its dream and kept out of what Kumo handled today, whose undo puts the page, the wake-up or the block back as it was before the dream, while it hasn't changed since. The record is new until you've seen it. The journal a dream writes is your own diary in the first person, from the notes Kumo kept during the day and the day itself, with what you mentioned later put in the day it happened. | 92, 93, 94 |
 | G62 | **One day, joined up.** Every turn, in the main chat or a thread, and every piece of Kumo's background work has today so far in mind: what was said in the other conversations since 04:00 where you are, each thread named, the newest first, with what Kumo did and what's still to come today. The server writes it from what it holds, with no model call, within a bounded size, and a turn leaves out its own conversation, which it has already. Kumo keeps one plan from it: what you say anywhere moves its blocks, guesses and wake-ups without being asked again, and a wake-up for something already planned is moved, never doubled, so Kumo checks in once. | 95, 96 |
-| G63 | **Understanding you is quiet, and an answer is enough.** What Kumo would like you to explain is a question on one of its learning tracks, saying what it already understands, the missing piece and why it would help, with honest options to tap. A question has no due date and is never overdue, never waits on the Desk and never notifies; Kumo doesn't ask what it's already asking, or what you answered lately. You answer with taps, your own words or your voice, or say none fit or not sure, and Not now leaves it open. An answer becomes evidence on its track and Kumo files what it learned in the background, with no follow-up; a question answered elsewhere is settled, with where. | 97 |
+| G63 | **Understanding you is quiet, and an answer is enough.** What Kumo would like you to explain is a question on one of its learning tracks, saying what it already understands, the missing piece and why it would help, with honest options to tap. A question has no due date and is never overdue, never waits on the Desk and never notifies; Kumo doesn't ask what it's already asking, or what you answered lately. You answer with taps, your own words or your voice, or say none fit or not sure, and Not now leaves it open. An answer becomes evidence on its track and Kumo files what it learned in the background, with no follow-up; a question answered elsewhere is settled, with where. | 97, 105 |
 | G64 | **A share lands where it belongs.** What you share from the share sheet, a link, text, photos and files and a note, is on the server's disk before it answers, once per id the app chose: sharing again never makes a second. The server reads a link's page for its title and summary, where it can, and the app never contacts the site. Kumo puts the share in the open side thread it clearly belongs to, or else a new thread it names, where it becomes your message under the share's id; the main chat never holds it. That thread's own turn answers it, with what Kumo made of it and what it did, and the reply notifies like any other. | 98 |
 | G66 | **Full access is yours to give, and shows while it lasts.** Kumo runs in Codex's sandbox, writing only in its workspace, until you turn on full access with a command of its own that says it's meant; nothing else turns it on. From the next turn or piece of work that starts, in the chat, in the background and in the night's dream alike, Kumo runs without the sandbox and is told so; turning it off puts the sandbox back from the next one. A turn already running keeps what it started with. Every app hears each change and the snapshot carries it while it's on, so the chat can show it, and Kumo's work notes each change. | 100 |
+| G70 | **Your people, linked only when it's sure or you say so.** A People page is linked to a card in your iCloud Contacts on its own only on sure evidence: an email or a phone number in common with one card, or a full name only one card has. When two cards could fit, or there's only a first name to go on, Kumo asks in Understanding you which card it is, with at most three candidates described only by what Contacts knows, never your mail; your answer links the page, or Kumo stops suggesting those cards. Linking changes the page, never Contacts. People lists everyone by circle in the order you keep, and their last seen, time together and what's coming up come from evidence: events with them, journal days and day notes that mention them, the chat, their card's birthday and Kumo's wake-ups, never from tracking them. | 105, 106 |
 
 ## How Kumo decides to speak
 
@@ -732,6 +733,27 @@ the dream.
   browser needs in Ito's own checkout. (G66)
 - `DELETE /v0/access/full` puts the sandbox back from the next turn, and Kumo's work notes that too.
   (G66)
+
+### 105 · [Linking your people](transcripts/105-linking-your-people.jsonl)
+
+- Kumo links its People pages to their cards: Leo's page has the email his card has and only one card
+  is Clara Voss, so both are linked on their own, and nothing in Contacts changes. (G70)
+- Two cards could be Omar, so a `contact` question waits quietly in Understanding you on the Your
+  people track, its options the candidates' uids, each candidate with its Contacts photo and a hint
+  from the card alone. No card fits Tilly, so nothing is asked about her. (G70, G63)
+- You tap Omar Haddad: the question is answered at once, his page is linked, and `filed` says so,
+  with no model and no follow-up. The answer is evidence on the track, naming the card. (G70, G63)
+
+### 106 · [Your people](transcripts/106-your-people.jsonl)
+
+- `GET /v0/people` has every circle in your order, Others last, each person with their Contacts
+  photo, when you last saw them (Mira at yesterday's dinner, from the calendar; Omar on Friday, from
+  the journal) and what's coming up, soonest first: tonight's run with Leo, then birthdays. (G70)
+- `GET /v0/people/omar` brings his card's phones, emails and address for the one-tap actions, what
+  Kumo knows from his page, moments together from the journal, newest first, the places you share
+  and time together over the last 90 days. (G70)
+- `PUT /v0/people/circles` moves Family above Friends and adds Five-a-side; the circles come back in
+  the new order with how many people each holds. (G70)
 
 ## Not in this version
 

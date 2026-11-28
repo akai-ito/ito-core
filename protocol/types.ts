@@ -640,6 +640,102 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/people": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Your people, by circle
+     * @description Everyone with a People page, grouped by circle in your order (`PUT /v0/people/circles`),
+     *     every circle there even when it's empty, with Others last unless you moved it. Within a
+     *     circle, the person you saw most lately comes first. Each person has their Contacts photo
+     *     once their page is linked to a card, when you last saw them, and what's coming up, soonest
+     *     first. `count` is how many people there are, `linked` how many are linked to a card.
+     */
+    get: operations["listPeople"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/people/circles": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Your circles, in your order
+     * @description The circles People groups by, in your order, with how many people are in each.
+     */
+    get: operations["getCircles"];
+    /**
+     * Reorder, add or rename circles
+     * @description Sends the whole list in the order you want. A new name adds a circle, which gathers everyone
+     *     whose page has that circle; `was` renames one, and every page in it follows; a circle you
+     *     leave out goes, and its people show under Others. Others stays in the list (anywhere) and
+     *     can't be renamed. Names match without case or a plural's s, so Friends gathers `friend` too.
+     */
+    put: operations["changeCircles"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/people/photos/{photo}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A Contacts photo
+     * @description The bytes of a photo on a card in your Contacts, as named in a person's `photo` or a contact
+     *     question's candidate. Its name is made from what's in it, so its bytes never change: keep it
+     *     once fetched, and a new photo on the card comes with a new name.
+     */
+    get: operations["getPersonPhoto"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/people/{person}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A person's page
+     * @description Someone's page: the person as the list shows them; their card's facts, for one-tap Call,
+     *     Message, FaceTime, Email and Directions, when the page is linked to a card; what Kumo knows,
+     *     from their People page; moments together, from journal days and day notes that mention them,
+     *     newest first; the places you share; and time together over the last 90 days.
+     */
+    get: operations["getPerson"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/calendar/events": {
     parameters: {
       query?: never;
@@ -3240,9 +3336,170 @@ export interface components {
       none_fit?: boolean;
       /** @description You're not sure. */
       not_sure?: boolean;
+      /**
+       * @description `contact` questions only: the person isn't in your Contacts at all, so Kumo stops looking
+       *     for their card. It doesn't go with `picked` or `none_fit`.
+       */
+      not_in_contacts?: boolean;
     };
     QuestionResult: {
       question: components["schemas"]["Question"];
+    };
+    People: {
+      circles: components["schemas"]["PeopleCircle"][];
+      /** @description How many people have a People page. */
+      count: number;
+      /** @description How many of them are linked to a card in your Contacts. */
+      linked: number;
+    };
+    PeopleCircle: {
+      /** @description The circle, as you named it, such as "Friends". */
+      name: string;
+      /**
+       * @description The catch-all, for anyone whose circle isn't in your list.
+       * @constant
+       */
+      others?: true;
+      people: components["schemas"]["PersonSummary"][];
+    };
+    /** @description Someone as the People list shows them. */
+    PersonSummary: {
+      id: components["schemas"]["PersonId"];
+      /** @description What Kumo calls them, from their People page. */
+      name: string;
+      gist?: components["schemas"]["Gist"];
+      /** @description The circle they're listed under, by its name in your order. */
+      circle: string;
+      /** @description The card their page is linked to, once it is. */
+      contact?: components["schemas"]["ContactUid"];
+      /** @description Their card's photo, from `GET /v0/people/photos/{photo}`. */
+      photo?: components["schemas"]["PhotoName"];
+      last_seen?: components["schemas"]["LastSeen"];
+      /** @description What's coming up with them, soonest first, at most five. */
+      coming_up: components["schemas"]["PersonComingUp"][];
+    };
+    /**
+     * @description The latest evidence of time with them: a `calendar` event with them, a visit to a `place`
+     *     named after them, a `journal` day or a `day_note` that mentions them, or a `chat` where you
+     *     named them. On one day, an event says most and a chat least.
+     */
+    LastSeen: {
+      day: components["schemas"]["Day"];
+      /** @enum {unknown} */
+      kind: "calendar" | "place" | "journal" | "day_note" | "chat";
+      /** @description When it began, when that's known, such as an event's start. */
+      at?: components["schemas"]["Timestamp"];
+      /** @description What it was, in a few words, such as an event's title or a place's name. */
+      what?: string;
+    };
+    /**
+     * @description Something coming up with them: their `birthday`, from their card; an `event` on your
+     *     calendar with them; or a `wake_up` of Kumo's that names them.
+     */
+    PersonComingUp: {
+      /** @enum {unknown} */
+      kind: "birthday" | "event" | "wake_up";
+      day: components["schemas"]["Day"];
+      /** @description When it starts, for an event at a time or a wake-up. */
+      at?: components["schemas"]["Timestamp"];
+      title: string;
+      /** @description An event's iCalendar UID, which finds it on the phone. */
+      event?: string;
+      wake_up?: components["schemas"]["WakeUpId"];
+    };
+    /** @description Someone's page. */
+    PersonPage: {
+      person: components["schemas"]["PersonSummary"];
+      page: components["schemas"]["MemoryAddress"];
+      card?: components["schemas"]["ContactCard"];
+      /** @description What Kumo knows about them, from their People page, as Markdown. */
+      markdown: string;
+      /** @description Lines from journal days and day notes that mention them, newest first, at most ten. */
+      moments: components["schemas"]["PersonMoment"][];
+      places: components["schemas"]["SharedPlace"][];
+      together: components["schemas"]["TimeTogether"];
+    };
+    /**
+     * @description The facts on their card in your iCloud Contacts, for the one-tap actions. "Contact card"
+     *     opens Apple's own card on the phone: match it there once by name, phone and email, since the
+     *     phone's contact ids differ from these.
+     */
+    ContactCard: {
+      uid: components["schemas"]["ContactUid"];
+      name: string;
+      nickname?: string;
+      organisation?: string;
+      job_title?: string;
+      phones: components["schemas"]["ContactValue"][];
+      emails: components["schemas"]["ContactValue"][];
+      addresses: components["schemas"]["ContactAddress"][];
+      /** @description Their birthday; `year` only when it's known. */
+      birthday?: {
+        month: number;
+        day: number;
+        year?: number;
+      };
+      photo?: components["schemas"]["PhotoName"];
+    };
+    ContactValue: {
+      value: string;
+      /** @description As Contacts labels it, such as `mobile`, `work` or their own words. */
+      label?: string;
+      /** @constant */
+      preferred?: true;
+    };
+    ContactAddress: {
+      label?: string;
+      street: string;
+      city: string;
+      region: string;
+      postcode: string;
+      country: string;
+    };
+    PersonMoment: {
+      day: components["schemas"]["Day"];
+      /** @description The line that mentions them. */
+      text: string;
+      /** @enum {unknown} */
+      from: "journal" | "day_note";
+      /** @description The journal day it's from. */
+      page?: components["schemas"]["MemoryAddress"];
+    };
+    /**
+     * @description A place you share with them. `place` is a reference to pass through: for now a place's page
+     *     in memory; once places have their own ids, a place's id, which the places API resolves.
+     */
+    SharedPlace: {
+      place: string;
+      title: string;
+    };
+    /** @description Time together since `since` (the last 90 days), from evidence, a chat about them aside. */
+    TimeTogether: {
+      since: components["schemas"]["Day"];
+      /** @description The days with something together on them. */
+      days: number;
+      /** @description The hours known, from events with them and visits, to the half hour. */
+      hours: number;
+    };
+    CircleOrder: {
+      circles: {
+        name: string;
+        /** @description How many people are in it. */
+        count: number;
+        /**
+         * @description The catch-all, for anyone whose circle isn't in your list.
+         * @constant
+         */
+        others?: true;
+      }[];
+    };
+    CircleOrderChange: {
+      /** @description Every circle, in the order you want, Others among them. */
+      circles: {
+        name: string;
+        /** @description Its name before, when you renamed it. */
+        was?: string;
+      }[];
     };
     /** @description What was wrong, in your words; `{}` just says it was wrong. */
     CorrectDone: {
@@ -4396,6 +4653,34 @@ export interface components {
        * @constant
        */
       not_sure?: true;
+      /**
+       * @description `contact` questions only: the person isn't in your Contacts at all.
+       * @constant
+       */
+      not_in_contacts?: true;
+    };
+    /** @description A person, by their People page's name in memory, such as `omar` for memory:people/omar. */
+    PersonId: string;
+    /** @description A card's uid in your iCloud Contacts, as the server reads them over CardDAV. The phone's own contact ids differ, so match a card on the phone once by name, phone and email. */
+    ContactUid: string;
+    /** @description A Contacts photo, named by what's in it: a name always means the same bytes, so keep it once fetched. */
+    PhotoName: string;
+    /** @description A card in your Contacts that could be the person, with only what Contacts knows about it: never anything from your mail. */
+    ContactCandidate: {
+      uid: components["schemas"]["ContactUid"];
+      name: string;
+      /** @description What tells it apart, in a few words from the card, such as "mobile · Edinburgh · in Five-a-side" or "work · Halcyon". */
+      hint: string;
+      /** @description The card's photo, from `GET /v0/people/photos/{photo}`. */
+      photo?: components["schemas"]["PhotoName"];
+    };
+    /** @description "Is this Omar from your contacts?": a People page Kumo couldn't link to a card on its own, because two could fit or it has only a first name to go on, with up to three candidate cards. Tap a card to answer with its uid in `picked` (the question's `options` are the candidates' uids, in the same order), say `none_fit` for Neither, `not_in_contacts` when they aren't in your Contacts at all, or "Not now" to skip. Answering only links the page: nothing in Contacts changes. */
+    ContactQuestion: {
+      /** @description The person, as `GET /v0/people/{person}` finds them. */
+      person: components["schemas"]["PersonId"];
+      /** @description What Kumo calls them, from their People page, such as "Omar". */
+      name: string;
+      candidates: components["schemas"]["ContactCandidate"][];
     };
     /** @description Something Kumo would like you to explain, in Understanding you, on one of its learning tracks: what it already understands, the missing piece and why it would help. It's optional and quiet: it has no due date, is never overdue, never waits on the Desk and never notifies you. Answer it with a tap on one or more of its `options`, in your own words, written or spoken, or say none fit or you're not sure; "Not now" leaves it open. An answer is enough: Kumo files what it learned in the background and asks nothing more about it. */
     Question: {
@@ -4423,6 +4708,13 @@ export interface components {
       filed?: string;
       /** @description `settled`: where Kumo learned the answer, such as "You said in the chat that sleep comes first." `dropped`: why Kumo let it go. */
       note?: string;
+      /**
+       * @description What sort of question it is, when it isn't a plain one: `contact` asks which card in your Contacts a person is, and carries `contact`. Show a kind you don't recognise as a plain question.
+       * @enum {unknown}
+       */
+      kind?: "contact";
+      /** @description `contact` questions only: who it's about and the cards that could be them. */
+      contact?: components["schemas"]["ContactQuestion"];
     };
     /**
      * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
@@ -5273,6 +5565,20 @@ export type Work = components["schemas"]["Work"];
 export type Understanding = components["schemas"]["Understanding"];
 export type QuestionReply = components["schemas"]["QuestionReply"];
 export type QuestionResult = components["schemas"]["QuestionResult"];
+export type People = components["schemas"]["People"];
+export type PeopleCircle = components["schemas"]["PeopleCircle"];
+export type PersonSummary = components["schemas"]["PersonSummary"];
+export type LastSeen = components["schemas"]["LastSeen"];
+export type PersonComingUp = components["schemas"]["PersonComingUp"];
+export type PersonPage = components["schemas"]["PersonPage"];
+export type ContactCard = components["schemas"]["ContactCard"];
+export type ContactValue = components["schemas"]["ContactValue"];
+export type ContactAddress = components["schemas"]["ContactAddress"];
+export type PersonMoment = components["schemas"]["PersonMoment"];
+export type SharedPlace = components["schemas"]["SharedPlace"];
+export type TimeTogether = components["schemas"]["TimeTogether"];
+export type CircleOrder = components["schemas"]["CircleOrder"];
+export type CircleOrderChange = components["schemas"]["CircleOrderChange"];
 export type CorrectDone = components["schemas"]["CorrectDone"];
 export type NewEvent = components["schemas"]["NewEvent"];
 export type EventMove = components["schemas"]["EventMove"];
@@ -5400,6 +5706,11 @@ export type DreamLine = components["schemas"]["DreamLine"];
 export type Dream = components["schemas"]["Dream"];
 export type QuestionState = components["schemas"]["QuestionState"];
 export type QuestionAnswer = components["schemas"]["QuestionAnswer"];
+export type PersonId = components["schemas"]["PersonId"];
+export type ContactUid = components["schemas"]["ContactUid"];
+export type PhotoName = components["schemas"]["PhotoName"];
+export type ContactCandidate = components["schemas"]["ContactCandidate"];
+export type ContactQuestion = components["schemas"]["ContactQuestion"];
 export type Question = components["schemas"]["Question"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
@@ -6346,6 +6657,154 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["QuestionResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  listPeople: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Your people. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["People"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getCircles: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Your circles. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CircleOrder"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  changeCircles: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "circles": [
+         *         {
+         *           "name": "Partner"
+         *         },
+         *         {
+         *           "name": "Family"
+         *         },
+         *         {
+         *           "name": "Friends"
+         *         },
+         *         {
+         *           "name": "Five-a-side"
+         *         },
+         *         {
+         *           "name": "Colleagues",
+         *           "was": "Work"
+         *         },
+         *         {
+         *           "name": "Others"
+         *         }
+         *       ]
+         *     }
+         */
+        "application/json": components["schemas"]["CircleOrderChange"];
+      };
+    };
+    responses: {
+      /** @description Your circles now. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CircleOrder"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getPersonPhoto: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        photo: components["schemas"]["PhotoName"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The photo. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "image/*": unknown;
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  getPerson: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        person: components["schemas"]["PersonId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Their page. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PersonPage"];
         };
       };
       400: components["responses"]["InvalidRequest"];

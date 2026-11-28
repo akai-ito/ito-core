@@ -7,6 +7,7 @@ import { demoModels } from "#engine/scripted/models.ts";
 import { defaultVoice, voices } from "#voice/voices.ts";
 import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "./florence.ts";
 import { sub20Id, sub20Training } from "./sub20.ts";
+import { peopleScenarios } from "./people.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
 const protocol = "0.20";
@@ -5977,6 +5978,8 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.response(200, { mode: "sandboxed" }, headers);
     return transcript;
   },
+
+  ...peopleScenarios,
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

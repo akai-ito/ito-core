@@ -426,4 +426,10 @@ export const migrations: readonly string[] = [
     dream TEXT
   );
   CREATE INDEX day_notes_by_dream ON day_notes (dream, id);`,
+  // 0.21: who writes from which address, as mail arrives, so a People page can be linked to the card with that email.
+  `CREATE TABLE senders (
+    address TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    at TEXT NOT NULL
+  );`,
 ];

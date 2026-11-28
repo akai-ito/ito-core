@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createCell } from "#cell.ts";
 import type { Cancel, Clock } from "#clock.ts";
 import type { Host } from "#capabilities/host.ts";
@@ -10,6 +11,7 @@ import {
   mergeCards,
   newVCard,
   parseVCard,
+  photoOf,
   sameMail,
   samePhone,
   writeVCard,
@@ -17,6 +19,7 @@ import {
   type DayOfYear,
   type Facts,
   type Labelled,
+  type Photo,
   type PostalAddress,
   type Related,
   type VCard,
@@ -41,7 +44,12 @@ export type Person = {
   readonly book: AddressBook;
   readonly etag?: string;
   readonly facts: Facts;
+  // The card's photo, named by what's in it, so a name always means the same bytes.
+  readonly photo?: Photo & { readonly name: string };
 };
+
+// Their contacts as last read: whether iCloud is connected and they could be read, and the people on the cards.
+export type ContactCards = { readonly isReadable: boolean; readonly people: readonly Person[] };
 
 // A People page in memory, and the contact it's linked to, if any.
 export type PersonPage = {
@@ -65,6 +73,16 @@ export type Contacts = {
   readonly known: (address: string) => Promise<string | undefined>;
   // The address to write to someone named, picked for the context, or why it can't be picked.
   readonly recipient: (given: string, use: AddressUse) => Promise<Result<Recipient, string>>;
+  // Every card that's a person, read lately, for linking People pages and showing them.
+  readonly cards: () => Promise<ContactCards>;
+  // The card with this uid now, following merges.
+  readonly card: (uid: string) => Person | undefined;
+  // The names of the iCloud groups a card is in, such as Five-a-side.
+  readonly groupsOf: (uid: string) => readonly string[];
+  // A card's photo by its name.
+  readonly photo: (name: string) => Photo | undefined;
+  // After each good read of Contacts.
+  readonly onRefreshed: (listener: () => void) => void;
   readonly close: () => void;
 };
 
@@ -311,13 +329,21 @@ export const createContacts = ({
     return made;
   };
 
+  const refreshedListeners = createCell<readonly (() => void)[]>([]);
+
+  // A card as Kumo knows it; an iCloud group is kept too, for who's in it, but never counts as a person.
   const toPerson = (card: StoredCard): Person | undefined => {
     const parsed = parseVCard(card.vcard);
     if (!parsed.ok) return undefined;
     const facts = factsOf(parsed.value, fileOf(card.url));
-    return facts.isGroup
-      ? undefined
-      : { url: card.url, book: card.book, ...(card.etag !== undefined && { etag: card.etag }), facts };
+    const photo = facts.isGroup ? undefined : photoOf(parsed.value);
+    return {
+      url: card.url,
+      book: card.book,
+      ...(card.etag !== undefined && { etag: card.etag }),
+      facts,
+      ...(photo && { photo: { ...photo, name: createHash("sha256").update(photo.bytes).digest("hex").slice(0, 24) } }),
+    };
   };
 
   const pull = async (): Promise<void> => {
@@ -345,6 +371,7 @@ export const createContacts = ({
     known.set(new Map([...withoutChanged, ...changed.map((person) => [person.url, person] as const)]));
     token.set(changes.value.token);
     pulledAt.set(clock.now());
+    for (const listener of refreshedListeners.get()) listener();
   };
 
   const refresh = (): Promise<void> =>
@@ -363,7 +390,12 @@ export const createContacts = ({
     else await syncing.get();
   };
 
-  const everyone = (): readonly Person[] => known.get().values().toArray();
+  const everyone = (): readonly Person[] =>
+    known
+      .get()
+      .values()
+      .filter(({ facts }) => !facts.isGroup)
+      .toArray();
 
   // Contacts that have never been read can't be searched: saying no one matches would be wrong.
   const unreadable = (): string | undefined => {
@@ -818,7 +850,7 @@ export const createContacts = ({
           return {
             text:
               found.length === 0
-                ? `No one in their Contacts matches “${query}”, out of ${String(known.get().size)} cards.`
+                ? `No one in their Contacts matches “${query}”, out of ${String(everyone().length)} cards.`
                 : [
                     `${String(found.length)} in their Contacts ${found.length === 1 ? "matches" : "match"} “${query}”:`,
                     ...found.slice(0, mostResults).map((person) => `- ${summary(person, pageFor(person))}`),
@@ -1251,6 +1283,30 @@ export const createContacts = ({
       ].join("; ");
     },
     recipient,
+    cards: async () => {
+      if (!sourceOf()) return { isReadable: false, people: [] };
+      await fresh();
+      return { isReadable: unreadable() === undefined && pulledAt.get() > 0, people: everyone() };
+    },
+    card: (uid) => byUid(uid),
+    groupsOf: (uid) =>
+      known
+        .get()
+        .values()
+        .filter(({ facts }) => facts.isGroup && (facts.members ?? []).includes(uid))
+        .map(({ facts }) => facts.name)
+        .toArray()
+        .toSorted((left, right) => left.localeCompare(right)),
+    photo: (name) => {
+      const found = known
+        .get()
+        .values()
+        .find((person) => person.photo?.name === name)?.photo;
+      return found && { bytes: found.bytes, mediaType: found.mediaType };
+    },
+    onRefreshed: (listener) => {
+      refreshedListeners.update((current) => [...current, listener]);
+    },
     close: () => {
       isClosed.set(true);
       timer.get()?.();

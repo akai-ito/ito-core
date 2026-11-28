@@ -90,6 +90,14 @@ tags:
       learning tracks (Getting to know you). Optional and quiet: a question has no due date, is never
       overdue, never waits on the Desk and never notifies. An answer is enough: it becomes evidence on
       its track, and Kumo files what it learned in the background with no follow-up.
+  - name: People
+    description: |
+      Everyone Kumo keeps a People page on, beside their card in your iCloud Contacts: the page holds
+      what Kumo knows, the card the facts (photo, birthday, phones, emails, addresses). Grouped by
+      circle in the order you keep, each with when you last saw them and what's coming up, all from
+      evidence: calendar events with them, journal days and day notes that mention them, the chat,
+      and visits to places named after them. Kumo links a page to its card on its own when it's sure
+      and otherwise asks in Understanding you; nothing in Contacts changes for it.
   - name: Dream
     description: |
       Kumo's dream: once a day, at a time you set, Kumo looks back over the whole day and puts
@@ -929,6 +937,127 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/QuestionResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/people:
+    get:
+      tags: [People]
+      operationId: listPeople
+      summary: Your people, by circle
+      description: |
+        Everyone with a People page, grouped by circle in your order (`PUT /v0/people/circles`),
+        every circle there even when it's empty, with Others last unless you moved it. Within a
+        circle, the person you saw most lately comes first. Each person has their Contacts photo
+        once their page is linked to a card, when you last saw them, and what's coming up, soonest
+        first. `count` is how many people there are, `linked` how many are linked to a card.
+      responses:
+        "200":
+          description: Your people.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/People" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/people/circles:
+    get:
+      tags: [People]
+      operationId: getCircles
+      summary: Your circles, in your order
+      description: The circles People groups by, in your order, with how many people are in each.
+      responses:
+        "200":
+          description: Your circles.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CircleOrder" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+    put:
+      tags: [People]
+      operationId: changeCircles
+      summary: Reorder, add or rename circles
+      description: |
+        Sends the whole list in the order you want. A new name adds a circle, which gathers everyone
+        whose page has that circle; `was` renames one, and every page in it follows; a circle you
+        leave out goes, and its people show under Others. Others stays in the list (anywhere) and
+        can't be renamed. Names match without case or a plural's s, so Friends gathers `friend` too.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CircleOrderChange" }
+            example:
+              circles:
+                [
+                  { name: Partner },
+                  { name: Family },
+                  { name: Friends },
+                  { name: Five-a-side },
+                  { name: Colleagues, was: Work },
+                  { name: Others },
+                ]
+      responses:
+        "200":
+          description: Your circles now.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CircleOrder" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/people/photos/{photo}:
+    get:
+      tags: [People]
+      operationId: getPersonPhoto
+      summary: A Contacts photo
+      description: |
+        The bytes of a photo on a card in your Contacts, as named in a person's `photo` or a contact
+        question's candidate. Its name is made from what's in it, so its bytes never change: keep it
+        once fetched, and a new photo on the card comes with a new name.
+      parameters:
+        - name: photo
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/PhotoName" }
+      responses:
+        "200":
+          description: The photo.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            image/*:
+              schema:
+                description: The photo's bytes.
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/people/{person}:
+    get:
+      tags: [People]
+      operationId: getPerson
+      summary: A person's page
+      description: |
+        Someone's page: the person as the list shows them; their card's facts, for one-tap Call,
+        Message, FaceTime, Email and Directions, when the page is linked to a card; what Kumo knows,
+        from their People page; moments together, from journal days and day notes that mention them,
+        newest first; the places you share; and time together over the last 90 days.
+      parameters:
+        - name: person
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/PersonId" }
+      responses:
+        "200":
+          description: Their page.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PersonPage" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -3869,11 +3998,251 @@ components:
         not_sure:
           description: You're not sure.
           type: boolean
+        not_in_contacts:
+          description: |
+            `contact` questions only: the person isn't in your Contacts at all, so Kumo stops looking
+            for their card. It doesn't go with `picked` or `none_fit`.
+          type: boolean
     QuestionResult:
       type: object
       required: [question]
       properties:
         question: { $ref: "events.schema.json#/$defs/Question" }
+    People:
+      type: object
+      required: [circles, count, linked]
+      properties:
+        circles:
+          type: array
+          items: { $ref: "#/components/schemas/PeopleCircle" }
+        count:
+          description: How many people have a People page.
+          type: integer
+          minimum: 0
+        linked:
+          description: How many of them are linked to a card in your Contacts.
+          type: integer
+          minimum: 0
+    PeopleCircle:
+      type: object
+      required: [name, people]
+      properties:
+        name:
+          description: The circle, as you named it, such as "Friends".
+          type: string
+          minLength: 1
+        others:
+          description: The catch-all, for anyone whose circle isn't in your list.
+          const: true
+        people:
+          type: array
+          items: { $ref: "#/components/schemas/PersonSummary" }
+    PersonSummary:
+      description: Someone as the People list shows them.
+      type: object
+      required: [id, name, circle, coming_up]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/PersonId" }
+        name:
+          description: What Kumo calls them, from their People page.
+          type: string
+          minLength: 1
+        gist: { $ref: "#/components/schemas/Gist" }
+        circle:
+          description: The circle they're listed under, by its name in your order.
+          type: string
+          minLength: 1
+        contact:
+          $ref: "events.schema.json#/$defs/ContactUid"
+          description: The card their page is linked to, once it is.
+        photo:
+          $ref: "events.schema.json#/$defs/PhotoName"
+          description: Their card's photo, from `GET /v0/people/photos/{photo}`.
+        last_seen: { $ref: "#/components/schemas/LastSeen" }
+        coming_up:
+          description: What's coming up with them, soonest first, at most five.
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/PersonComingUp" }
+    LastSeen:
+      description: |
+        The latest evidence of time with them: a `calendar` event with them, a visit to a `place`
+        named after them, a `journal` day or a `day_note` that mentions them, or a `chat` where you
+        named them. On one day, an event says most and a chat least.
+      type: object
+      required: [day, kind]
+      properties:
+        day: { $ref: "#/components/schemas/Day" }
+        kind: { enum: [calendar, place, journal, day_note, chat] }
+        at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When it began, when that's known, such as an event's start.
+        what:
+          description: What it was, in a few words, such as an event's title or a place's name.
+          type: string
+    PersonComingUp:
+      description: |
+        Something coming up with them: their `birthday`, from their card; an `event` on your
+        calendar with them; or a `wake_up` of Kumo's that names them.
+      type: object
+      required: [kind, day, title]
+      properties:
+        kind: { enum: [birthday, event, wake_up] }
+        day: { $ref: "#/components/schemas/Day" }
+        at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When it starts, for an event at a time or a wake-up.
+        title:
+          type: string
+          minLength: 1
+        event:
+          description: An event's iCalendar UID, which finds it on the phone.
+          type: string
+        wake_up: { $ref: "events.schema.json#/$defs/WakeUpId" }
+    PersonPage:
+      description: Someone's page.
+      type: object
+      required: [person, page, markdown, moments, places, together]
+      properties:
+        person: { $ref: "#/components/schemas/PersonSummary" }
+        page: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        card: { $ref: "#/components/schemas/ContactCard" }
+        markdown:
+          description: What Kumo knows about them, from their People page, as Markdown.
+          type: string
+        moments:
+          description: Lines from journal days and day notes that mention them, newest first, at most ten.
+          type: array
+          items: { $ref: "#/components/schemas/PersonMoment" }
+        places:
+          type: array
+          items: { $ref: "#/components/schemas/SharedPlace" }
+        together: { $ref: "#/components/schemas/TimeTogether" }
+    ContactCard:
+      description: |
+        The facts on their card in your iCloud Contacts, for the one-tap actions. "Contact card"
+        opens Apple's own card on the phone: match it there once by name, phone and email, since the
+        phone's contact ids differ from these.
+      type: object
+      required: [uid, name, phones, emails, addresses]
+      properties:
+        uid: { $ref: "events.schema.json#/$defs/ContactUid" }
+        name: { type: string }
+        nickname: { type: string }
+        organisation: { type: string }
+        job_title: { type: string }
+        phones:
+          type: array
+          items: { $ref: "#/components/schemas/ContactValue" }
+        emails:
+          type: array
+          items: { $ref: "#/components/schemas/ContactValue" }
+        addresses:
+          type: array
+          items: { $ref: "#/components/schemas/ContactAddress" }
+        birthday:
+          description: Their birthday; `year` only when it's known.
+          type: object
+          required: [month, day]
+          properties:
+            month: { type: integer, minimum: 1, maximum: 12 }
+            day: { type: integer, minimum: 1, maximum: 31 }
+            year: { type: integer }
+        photo: { $ref: "events.schema.json#/$defs/PhotoName" }
+    ContactValue:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string, minLength: 1 }
+        label:
+          description: As Contacts labels it, such as `mobile`, `work` or their own words.
+          type: string
+        preferred: { const: true }
+    ContactAddress:
+      type: object
+      required: [street, city, region, postcode, country]
+      properties:
+        label: { type: string }
+        street: { type: string }
+        city: { type: string }
+        region: { type: string }
+        postcode: { type: string }
+        country: { type: string }
+    PersonMoment:
+      type: object
+      required: [day, text, from]
+      properties:
+        day: { $ref: "#/components/schemas/Day" }
+        text:
+          description: The line that mentions them.
+          type: string
+          minLength: 1
+        from: { enum: [journal, day_note] }
+        page:
+          $ref: "events.schema.json#/$defs/MemoryAddress"
+          description: The journal day it's from.
+    SharedPlace:
+      description: |
+        A place you share with them. `place` is a reference to pass through: for now a place's page
+        in memory; once places have their own ids, a place's id, which the places API resolves.
+      type: object
+      required: [place, title]
+      properties:
+        place: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+    TimeTogether:
+      description: Time together since `since` (the last 90 days), from evidence, a chat about them aside.
+      type: object
+      required: [since, days, hours]
+      properties:
+        since: { $ref: "#/components/schemas/Day" }
+        days:
+          description: The days with something together on them.
+          type: integer
+          minimum: 0
+        hours:
+          description: The hours known, from events with them and visits, to the half hour.
+          type: number
+          minimum: 0
+    CircleOrder:
+      type: object
+      required: [circles]
+      properties:
+        circles:
+          type: array
+          items:
+            type: object
+            required: [name, count]
+            properties:
+              name: { type: string, minLength: 1 }
+              count:
+                description: How many people are in it.
+                type: integer
+                minimum: 0
+              others:
+                description: The catch-all, for anyone whose circle isn't in your list.
+                const: true
+    CircleOrderChange:
+      type: object
+      additionalProperties: false
+      required: [circles]
+      properties:
+        circles:
+          description: Every circle, in the order you want, Others among them.
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            additionalProperties: false
+            required: [name]
+            properties:
+              name: { type: string, minLength: 1, maxLength: 40 }
+              was:
+                description: Its name before, when you renamed it.
+                type: string
+                minLength: 1
+                maxLength: 40
     CorrectDone:
       description: What was wrong, in your words; `{}` just says it was wrong.
       type: object

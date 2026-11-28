@@ -22,6 +22,8 @@ export type DayNotes = {
   readonly tool: Tool;
   // The notes no dream has taken in yet, oldest first.
   readonly waiting: () => readonly DayNote[];
+  // Every note still kept about a day since this one (YYYY-MM-DD), taken in or not, oldest first.
+  readonly since: (day: string) => readonly DayNote[];
   // A dream took these in.
   readonly taken: (notes: readonly DayNote[], dream: string) => void;
 };
@@ -100,6 +102,12 @@ export const createDayNotes = ({ database, clock, timeZone }: DayNotesOptions): 
 
   return {
     tool,
+    since: (day) =>
+      (
+        database
+          .prepare("SELECT id, at, day, body FROM day_notes WHERE day >= ? ORDER BY day, id")
+          .all(day) as unknown as readonly Row[]
+      ).map((row) => toNote(row)),
     waiting: () =>
       (
         database

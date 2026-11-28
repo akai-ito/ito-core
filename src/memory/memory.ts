@@ -124,6 +124,7 @@ export type SeededPage = {
   readonly title: string;
   readonly gist?: string;
   readonly circle?: string;
+  readonly contact?: string;
   readonly note?: string;
   readonly began?: string;
   readonly ended?: string;
@@ -152,6 +153,13 @@ export type Memory = {
   readonly change: (id: string) => Promise<ChangeBody | undefined>;
   readonly media: (name: string) => MediaBody | undefined;
   readonly seed: (page: SeededPage) => Promise<Result<string, string>>;
+  // Changes a people page's circle or the contact it's linked to (null takes the link away), leaving the rest as it
+  // is, such as linking a page to their card or renaming a circle.
+  readonly setPersonFields: (
+    address: string,
+    fields: { readonly circle?: string; readonly contact?: string | null },
+    note: string,
+  ) => Promise<Result<string, string>>;
   readonly isBackedUp: () => boolean;
   readonly pushedAt: () => string | undefined;
   readonly remote: () => Promise<string | undefined>;
@@ -1056,6 +1064,34 @@ export const createMemory = ({
       const file = thread.get() ? mediaFile(name) : undefined;
       return file === undefined ? undefined : { file, mediaType: mediaTypeOf(name), size: statSync(file).size };
     },
+    setPersonFields: (address, fields, note) =>
+      whenReady(() =>
+        serially(async () => {
+          const location = toLocation(address);
+          if (!location.ok) return location;
+          if (location.value.shelf !== "people") return fail(onlyPeopleContact);
+          const existing = readParsed(location.value);
+          if (!existing) return fail(`There's no page at ${address}.`);
+          const { title, gist, began, ended, noticed, aliases, links, markdown } = existing;
+          const circle = fields.circle ?? existing.circle;
+          const contact = fields.contact === undefined ? existing.contact : (fields.contact ?? undefined);
+          const text = formatPage({
+            title,
+            ...(gist !== undefined && { gist }),
+            ...(circle !== undefined && { circle }),
+            ...(contact !== undefined && { contact }),
+            ...(began !== undefined && { began }),
+            ...(ended !== undefined && { ended }),
+            ...(noticed !== undefined && { noticed }),
+            aliases,
+            links,
+            markdown,
+          });
+          return text === opened().read(location.value.path)
+            ? ok("")
+            : commit(location.value, existing.title, text, `Update ${existing.title}`, note);
+        }),
+      ),
     seed: (page) =>
       whenReady(async () => {
         const written = await writePage({ ...page, body: page.markdown });

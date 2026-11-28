@@ -84,6 +84,12 @@ sequenceDiagram
   piece and why it would help. Answer with taps, your own words or a recording you uploaded, or say
   none fit, not sure or not now; `question.changed` follows each one. Nothing there is due, and
   nothing notifies.
+- **Your people:** `GET /v0/people` lists everyone Kumo keeps a People page on, by circle in your
+  order (change it with `PUT /v0/people/circles`), each with their Contacts photo
+  (`GET /v0/people/photos/{photo}`, never changing under its name), when you last saw them and
+  what's coming up; `GET /v0/people/{person}` adds their card's facts for one-tap actions, what Kumo
+  knows, moments together and places you share. Kumo links pages to Contacts cards when it's sure,
+  and asks a `contact` question in Understanding you when it isn't.
 - **Follow Kumo's browser:** when Kumo books, fills in a form or shops for you on a site, its task
   shows as a line in the thread it lives in (`browser.changed`), and a tap peeks at the live view
   over a WebSocket. When Kumo needs your hand, for a login, a code, a CAPTCHA or the pay button, a

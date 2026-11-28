@@ -3132,8 +3132,81 @@
           "description": "`settled`: where Kumo learned the answer, such as \"You said in the chat that sleep comes first.\" `dropped`: why Kumo let it go.",
           "type": "string",
           "minLength": 1
+        },
+        "kind": {
+          "description": "What sort of question it is, when it isn't a plain one: `contact` asks which card in your Contacts a person is, and carries `contact`. Show a kind you don't recognise as a plain question.",
+          "enum": ["contact"]
+        },
+        "contact": {
+          "$ref": "#/$defs/ContactQuestion",
+          "description": "`contact` questions only: who it's about and the cards that could be them."
         }
       }
+    },
+    "ContactQuestion": {
+      "description": "\"Is this Omar from your contacts?\": a People page Kumo couldn't link to a card on its own, because two could fit or it has only a first name to go on, with up to three candidate cards. Tap a card to answer with its uid in `picked` (the question's `options` are the candidates' uids, in the same order), say `none_fit` for Neither, `not_in_contacts` when they aren't in your Contacts at all, or \"Not now\" to skip. Answering only links the page: nothing in Contacts changes.",
+      "type": "object",
+      "required": ["person", "name", "candidates"],
+      "additionalProperties": false,
+      "properties": {
+        "person": {
+          "$ref": "#/$defs/PersonId",
+          "description": "The person, as `GET /v0/people/{person}` finds them."
+        },
+        "name": {
+          "description": "What Kumo calls them, from their People page, such as \"Omar\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/ContactCandidate"
+          }
+        }
+      }
+    },
+    "ContactCandidate": {
+      "description": "A card in your Contacts that could be the person, with only what Contacts knows about it: never anything from your mail.",
+      "type": "object",
+      "required": ["uid", "name", "hint"],
+      "additionalProperties": false,
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/ContactUid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hint": {
+          "description": "What tells it apart, in a few words from the card, such as \"mobile · Edinburgh · in Five-a-side\" or \"work · Halcyon\".",
+          "type": "string"
+        },
+        "photo": {
+          "$ref": "#/$defs/PhotoName",
+          "description": "The card's photo, from `GET /v0/people/photos/{photo}`."
+        }
+      }
+    },
+    "PersonId": {
+      "description": "A person, by their People page's name in memory, such as `omar` for memory:people/omar.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 100
+    },
+    "ContactUid": {
+      "description": "A card's uid in your iCloud Contacts, as the server reads them over CardDAV. The phone's own contact ids differ, so match a card on the phone once by name, phone and email.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "PhotoName": {
+      "description": "A Contacts photo, named by what's in it: a name always means the same bytes, so keep it once fetched.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{24}$"
     },
     "QuestionAnswer": {
       "description": "Your answer to a question: the options you tapped, your own words, written or spoken, and whether none fit or you're not sure, alone or together.",
@@ -3167,6 +3240,10 @@
         },
         "not_sure": {
           "description": "You're not sure.",
+          "const": true
+        },
+        "not_in_contacts": {
+          "description": "`contact` questions only: the person isn't in your Contacts at all.",
           "const": true
         }
       }

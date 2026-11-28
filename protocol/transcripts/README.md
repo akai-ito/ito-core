@@ -67,6 +67,7 @@ request that shows its own `Authorization` header uses the token it names.
 | `kumo_works` | what the next work thread does: the tools it `calls`, in order, and the one message it may `post` |
 | `kumo_dreams` | what Kumo's next dream does, as a work thread: the tools it `calls`, in order, and the one message it may `post`. A transcript with one has Kumo dream at the dream time |
 | `inbox_holds` | how many mails from the last 90 days an `account` holds, for the catch-up to read |
+| `contacts_hold` | their iCloud Contacts hold these `cards`, each a vCard (`vcard`) in a `file` of the Contacts address book |
 | `invite_arrives` | an invitation lands on your iCloud calendar: its `uid`, `title`, `start`, `end`, `location` and `organizer` |
 | `briefing_written` | what the quick model will write for the next briefing: its `lines` and how many things it `handled` |
 | `kumo_has_in_mind` | what Kumo has in mind of today so far: these `today` lines, in order, and none it `leaves_out`, for its next turn in the main chat or a side `thread`, or, with `background`, for its next piece of background work |

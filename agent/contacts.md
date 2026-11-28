@@ -14,6 +14,12 @@ The story about a person stays on their People page in memory: what's going on w
 met, what they care about. Link the page to their card by giving `edit_page` (or `write_page`) the
 `contact` uid, and keep facts in Contacts, not on the page.
 
+Pages are linked on their own soon after they appear: a sure match (an email or phone in common, or
+a full name only one card has) is linked quietly, and when two cards could fit Kumo asks them in
+Understanding you which card it is. `ito contacts link` runs that now, for every page or one with
+`--page memory:people/omar`. When a mail or the chat makes you sure, link it yourself with
+`edit_page`. Never add or change a card only to make a link.
+
 A flag that takes a list takes one value each time: repeat it for more.
 
 ```text

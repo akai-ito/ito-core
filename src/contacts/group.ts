@@ -8,8 +8,8 @@ export const contactsGroup: ToolGroup = {
   title: "Contacts",
   summary:
     "their iCloud Contacts, the source of truth for people's emails, phones, addresses, birthdays and work: look " +
-    "people up, read a card, add and update details you're sure of, and propose merges and deletions, with ito " +
-    "contacts commands",
+    "people up, read a card, add and update details you're sure of, link People pages to their cards, and propose " +
+    "merges and deletions, with ito contacts commands",
   skill: readFileSync(new URL("../../agent/contacts.md", import.meta.url), "utf8"),
   operations: [
     {
@@ -39,6 +39,12 @@ export const contactsGroup: ToolGroup = {
       running: "Updating a contact",
       done: "Updated a contact",
       run: { present: "Updating {count} contacts", past: "Updated {count} contacts" },
+    },
+    {
+      name: "link",
+      tool: "contacts_link",
+      running: "Linking people to their contacts",
+      done: "Linked people to their contacts",
     },
     { name: "merge", tool: "contacts_merge", running: "Asking about a merge", done: "Asked about a merge" },
     { name: "delete", tool: "contacts_delete", running: "Asking about a deletion", done: "Asked about a deletion" },

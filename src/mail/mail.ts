@@ -110,6 +110,8 @@ export type MailOptions = {
   readonly workspace?: string;
   // Their contacts: who a sender is, and the address to write to someone named.
   readonly contacts?: Pick<Contacts, "known" | "recipient">;
+  // Someone wrote from an address, under a name, as a mail arrived: for linking People pages to their cards.
+  readonly onSender?: (name: string, address: string) => void;
   // Where they are, for the date a reply's quote says the mail was written; the box's own by default.
   readonly timeZone?: string;
 };
@@ -850,6 +852,7 @@ export const createMailbox = ({
   comingUp = () => [],
   onHealth = ignore,
   onReading = ignore,
+  onSender = ignore,
   createSource = createMailSource,
   sentPollMs = 5 * 60 * 1000,
   workspace,
@@ -1200,6 +1203,7 @@ export const createMailbox = ({
       return;
     }
     onReading(toTimestamp(clock.now()));
+    if (mail.from.name !== undefined && mail.from.name.trim() !== "") onSender(mail.from.name, mail.from.address);
     if (isBlocked(mail.from.address) && (await binBlocked(connection, mail))) return;
     const judged = await judge(account, mail);
     if (await sort(connection, mail, judged)) return;
