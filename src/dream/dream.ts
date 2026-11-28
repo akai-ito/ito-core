@@ -78,6 +78,8 @@ export type DreamSources = {
   // What the learning tracks stood on since a time, as a prompt reads it, or "" when nothing.
   readonly trackEvidence: (since: string) => string;
   readonly attachmentPath: (id: string) => string;
+  // Where their phone says they went since a time, day by day, as a prompt reads it, when places are on.
+  readonly whereabouts?: (since: number) => string;
 };
 
 export type DreamChanges = {
@@ -478,6 +480,7 @@ export const createDreams = ({
         sources.calendar().filter((item) => Date.parse(item.end) >= since && Date.parse(item.start) <= until),
         zone,
       ),
+      ...(sources.whereabouts === undefined ? [] : ["", sources.whereabouts(since)]),
       "",
       sources.trackEvidence(from) ||
         "<track_evidence>\nNo corrections or confirmations since your last dream.\n</track_evidence>",

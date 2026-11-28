@@ -75,6 +75,11 @@ import { registerUnderstanding } from "#http/understanding.ts";
 import { registerPeople } from "#http/people.ts";
 import { createPeople, type PeopleKeeper } from "#people/people.ts";
 import { createSenders } from "#people/senders.ts";
+import { registerLocation } from "#http/location.ts";
+import { createLocation } from "#location/location.ts";
+import { createComingsAndGoings } from "#location/events.ts";
+import { createPlaceTools, whereaboutsText, type PlaceToolsOptions } from "#location/tools.ts";
+import { createPeoplePlaces } from "#location/people.ts";
 import { createDeskLine } from "#desk/line.ts";
 import { createGettingStarted } from "#onboarding/onboarding.ts";
 import { createCalendar, type Calendar } from "#calendar/calendar.ts";
@@ -716,6 +721,18 @@ export const createServer = (options: ServerOptions): Server => {
     enrich: (item) => picture.enrich(item),
   });
   const tracks = createTracks({ database, clock, identifiers, info, timeZone });
+  // Places: where they've been, from their phone while places are on, with the places, home, trips and heat.
+  const location = createLocation({
+    database,
+    clock,
+    timeZone,
+    newPlace: () => identifiers.place(),
+    closeQuestion: (place, note, state) => {
+      questions.closePlace(place, note, state);
+    },
+    info,
+  });
+  const placeTools: PlaceToolsOptions = { location, now: () => clock.now(), timeZone };
   const questions = createQuestions({
     database,
     store,
@@ -727,6 +744,12 @@ export const createServer = (options: ServerOptions): Server => {
     work: workFor("Answers they gave in Understanding you"),
     contactAnswered: (question) =>
       peopleCell.get()?.answered(question) ?? Promise.resolve(fail("People isn't running yet.")),
+    places: {
+      ask: (place) => location.askAbout(place),
+      named: (place, name) => {
+        location.named(place, name);
+      },
+    },
     info,
   });
   const blocks = createBlockStore(database);
@@ -750,6 +773,20 @@ export const createServer = (options: ServerOptions): Server => {
     work: workFor("Changes on their calendars"),
     wakeUps,
     describe: wakeUps.describe,
+    info,
+  });
+  // Arriving at a place and leaving it are events, as a mail is: Kumo looks, and mostly stays quiet.
+  const comingsAndGoings = createComingsAndGoings({
+    location,
+    clock,
+    timeZone,
+    work: workFor("Places they came and went"),
+    eventsDuring: (from, to) =>
+      calendar
+        .agenda()
+        .filter((entry) => !entry.allDay && Date.parse(entry.start) < to && Date.parse(entry.end) > from)
+        .map(({ title, location: at }) => ({ title, ...(at !== undefined && { location: at }) })),
+    isAsked: (place) => questions.isAsked(place),
     info,
   });
   const gettingStarted = createGettingStarted({
@@ -799,6 +836,7 @@ export const createServer = (options: ServerOptions): Server => {
     dayNotes,
     clock,
     timeZone,
+    ...createPeoplePlaces(location, clock, timeZone),
     info,
   });
   peopleCell.set(people);
@@ -818,6 +856,7 @@ export const createServer = (options: ServerOptions): Server => {
       calendar: () => calendar.listItems().map((item) => picture.enrich(item)),
       trackEvidence: (since) => tracks.evidenceText(since),
       attachmentPath: (id) => attachments.pathOf(id),
+      whereabouts: (since) => whereaboutsText(placeTools, since),
     },
     changes: {
       versionOf: (address) => memory.versionOf(address),
@@ -983,6 +1022,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...createRecordingTools(recordings),
     files.tool,
     dayNotes.tool,
+    ...createPlaceTools(placeTools),
     ...dreams.tools,
     ...createDemoTools({
       store,
@@ -1026,6 +1066,7 @@ export const createServer = (options: ServerOptions): Server => {
   registerDay(app, { picture, schemas });
   registerUnderstanding(app, { questions, tracks, schemas });
   registerPeople(app, { people, schemas });
+  registerLocation(app, { location, schemas });
   registerTools(app, {
     token: toolsToken,
     tools: allTools,
@@ -1059,6 +1100,7 @@ export const createServer = (options: ServerOptions): Server => {
     wakeUps.close();
     questions.close();
     calendarChanges.close();
+    comingsAndGoings.close();
     places.close();
     gettingStarted.close();
     calendar.close();

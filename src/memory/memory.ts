@@ -47,6 +47,8 @@ import {
   type KeptPhotos,
   type MediaFile,
 } from "#memory/photos.ts";
+import { mapsIn } from "#memory/maps.ts";
+import type { MemoryMap } from "#protocol/types.ts";
 import { mentions, toBoosted, toNames } from "#memory/vocabulary.ts";
 import { rank, toMessageChunk, toPageChunks, type Passage } from "#memory/recall.ts";
 import { openThread, type GitAccess, type Thread } from "#memory/thread.ts";
@@ -80,6 +82,8 @@ export type PageBody = {
   readonly changed_at: string;
   readonly markdown: string;
   readonly photos?: readonly PhotoBody[];
+  // The maps its story shows: a day's route or a trip.
+  readonly maps?: readonly MemoryMap[];
   // On a chapter: when it began and ended, when Kumo noticed it, and what it drew on.
   readonly chapter?: ChapterFacts;
 };
@@ -87,7 +91,7 @@ export type PageBody = {
 // A photo from the media folder, to send as it is.
 export type MediaBody = { readonly file: string; readonly mediaType: string; readonly size: number };
 
-type ReadPage = Omit<PageBody, "links" | "photos" | "chapter"> & {
+type ReadPage = Omit<PageBody, "links" | "photos" | "maps" | "chapter"> & {
   readonly links: readonly string[];
   readonly began?: string;
   readonly ended?: string;
@@ -413,6 +417,7 @@ export const createMemory = ({
 
   const toPageBody = ({ began, ended, noticed, ...page }: ReadPage): PageBody => {
     const photos = photosOf(page);
+    const maps = mapsIn(page.markdown);
     const chapter =
       page.shelf === chaptersShelf
         ? chapters.factsOf({
@@ -426,6 +431,7 @@ export const createMemory = ({
       ...page,
       links: page.links.map((address) => toLink(address)).filter((link) => link !== undefined),
       ...(photos.length > 0 && { photos }),
+      ...(maps.length > 0 && { maps }),
       ...(chapter && { chapter }),
     };
   };

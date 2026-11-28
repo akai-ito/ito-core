@@ -9,6 +9,7 @@ import { florenceId, florencePictures, florenceTrip, type FlorencePictures } fro
 import { sub20Id, sub20Training } from "./sub20.ts";
 import { peopleScenarios } from "./people.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
+import { placesScenarios } from "./places.ts";
 
 const protocol = "0.20";
 const serverVersion = "0.20.0";
@@ -5978,6 +5979,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.response(200, { mode: "sandboxed" }, headers);
     return transcript;
   },
+  ...placesScenarios,
 
   ...peopleScenarios,
 ];

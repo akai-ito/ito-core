@@ -118,6 +118,10 @@ describe("Ito's tools over MCP", () => {
           { name: "delete_recording" },
           { name: "show_file" },
           { name: "note_day" },
+          { name: "where_was_i" },
+          { name: "time_at_places" },
+          { name: "day_route" },
+          { name: "list_places" },
         ],
       },
     });

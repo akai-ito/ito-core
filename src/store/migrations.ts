@@ -432,4 +432,67 @@ export const migrations: readonly string[] = [
     name TEXT NOT NULL,
     at TEXT NOT NULL
   );`,
+  // 0.21: where they've been, from their phone while places are on, kept until they forget it: the batches taken (so a
+  // retry is taken once), live points, visits (iOS's, and stays seeded from photos), photo locations, the places
+  // visits gathered into, and each day's heat by geohash cell with what the day was (away, where).
+  `CREATE TABLE location_batches (
+    id TEXT PRIMARY KEY,
+    at TEXT NOT NULL,
+    result TEXT NOT NULL
+  );
+  CREATE TABLE location_points (
+    at INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    day TEXT NOT NULL,
+    time_zone TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    accuracy REAL NOT NULL,
+    speed REAL,
+    course REAL,
+    altitude REAL,
+    PRIMARY KEY (at, source)
+  ) WITHOUT ROWID;
+  CREATE INDEX location_points_by_day ON location_points (day);
+  CREATE TABLE location_visits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    arrived_at INTEGER,
+    departed_at INTEGER,
+    day TEXT NOT NULL,
+    until_day TEXT,
+    time_zone TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    accuracy REAL NOT NULL,
+    placemark TEXT,
+    place TEXT,
+    seeded INTEGER NOT NULL DEFAULT 0,
+    photos INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX location_visits_by_arrival ON location_visits (arrived_at);
+  CREATE INDEX location_visits_by_day ON location_visits (day);
+  CREATE INDEX location_visits_by_place ON location_visits (place);
+  CREATE TABLE location_photos (
+    taken_at INTEGER PRIMARY KEY,
+    day TEXT NOT NULL,
+    time_zone TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    placemark TEXT
+  );
+  CREATE INDEX location_photos_by_day ON location_photos (day);
+  CREATE TABLE places (
+    id TEXT PRIMARY KEY,
+    body TEXT NOT NULL
+  );
+  CREATE TABLE location_days (
+    day TEXT PRIMARY KEY,
+    body TEXT NOT NULL
+  );
+  CREATE TABLE location_heat (
+    day TEXT NOT NULL,
+    cell TEXT NOT NULL,
+    seconds REAL NOT NULL,
+    PRIMARY KEY (day, cell)
+  ) WITHOUT ROWID;`,
 ];

@@ -66,6 +66,9 @@ where the protocol has to make it possible, marked *App*.
 | G63 | **Understanding you is quiet, and an answer is enough.** What Kumo would like you to explain is a question on one of its learning tracks, saying what it already understands, the missing piece and why it would help, with honest options to tap. A question has no due date and is never overdue, never waits on the Desk and never notifies; Kumo doesn't ask what it's already asking, or what you answered lately. You answer with taps, your own words or your voice, or say none fit or not sure, and Not now leaves it open. An answer becomes evidence on its track and Kumo files what it learned in the background, with no follow-up; a question answered elsewhere is settled, with where. | 97, 105 |
 | G64 | **A share lands where it belongs.** What you share from the share sheet, a link, text, photos and files and a note, is on the server's disk before it answers, once per id the app chose: sharing again never makes a second. The server reads a link's page for its title and summary, where it can, and the app never contacts the site. Kumo puts the share in the open side thread it clearly belongs to, or else a new thread it names, where it becomes your message under the share's id; the main chat never holds it. That thread's own turn answers it, with what Kumo made of it and what it did, and the reply notifies like any other. | 98 |
 | G66 | **Full access is yours to give, and shows while it lasts.** Kumo runs in Codex's sandbox, writing only in its workspace, until you turn on full access with a command of its own that says it's meant; nothing else turns it on. From the next turn or piece of work that starts, in the chat, in the background and in the night's dream alike, Kumo runs without the sandbox and is told so; turning it off puts the sandbox back from the next one. A turn already running keeps what it started with. Every app hears each change and the snapshot carries it while it's on, so the chat can show it, and Kumo's work notes each change. | 100 |
+| G67 | **Where you've been is yours, taken once and kept until you forget it.** The phone uploads its points and visits in batches under ids it chose, and seeds the past from where photos were taken; a batch sent again answers as it did, a point or photo the box already has is skipped, and a visit sent again with its departure closes the one the box has. Photo locations are kept as seeded, never as live data. Everything stays on your box, forever, until you forget a day, a range or all of it, which takes what came from it too: the places it made, their questions, the heat and the trips. | 101, 104 |
+| G68 | **Comings and goings are events, judged quietly.** Arriving at a place and leaving it wake Kumo as a mail does, once the moment settles, with what came close together seen at once and at most every 15 minutes. Jitter makes no flurry: leaving a place and coming back within 15 minutes is no event, nor is a stop under 10 minutes, a point, a significant change, a photo seed or a visit that arrives an hour late. Kumo mostly stays silent, keeping notes for the dream, and messages you only when something matters now. | 102 |
+| G69 | **Your map, honestly lit, and named with you.** Visits within about 75 m gather into places, ranked by true hours; home is where you sleep, and stretches mostly 50 km or more from it are trips, with their countries and cities. Each day's hours are kept by geohash cell, home included, so any range is a cheap sum; a day away counts as 14 hours, and a cell glows on a saturating curve, full at 10 hours for a week, 40 for a month and 500 for a year. A day's thread gives each stop and the moves between with minutes and metres. A place Kumo can't name becomes a quiet place question with where, when and how long, and Kumo's guesses; your answer names it. | 101, 103, 104 |
 | G70 | **Your people, linked only when it's sure or you say so.** A People page is linked to a card in your iCloud Contacts on its own only on sure evidence: an email or a phone number in common with one card, or a full name only one card has. When two cards could fit, or there's only a first name to go on, Kumo asks in Understanding you which card it is, with at most three candidates described only by what Contacts knows, never your mail; your answer links the page, or Kumo stops suggesting those cards. Linking changes the page, never Contacts. People lists everyone by circle in the order you keep, and their last seen, time together and what's coming up come from evidence: events with them, journal days and day notes that mention them, the chat, their card's birthday and Kumo's wake-ups, never from tracking them. | 105, 106 |
 
 ## How Kumo decides to speak
@@ -734,6 +737,45 @@ the dream.
 - `DELETE /v0/access/full` puts the sandbox back from the next turn, and Kumo's work notes that too.
   (G66)
 
+### 101 · [A day of places](transcripts/101-a-day-of-places.jsonl)
+
+- The phone uploads what it collected with `POST /v0/location/batches`: live points and visits, under
+  a batch id it chose. The answer is lost, and the same batch sent again answers as it did, with
+  `repeated`; nothing is taken twice. (G67)
+- `GET /v0/places` ranks the places by true hours. Home is the place slept at both nights; the
+  office has Apple's name and no name of yours yet. (G69)
+- `GET /v0/location/days/{day}` threads the day: the night at home from the day before, the walk to
+  work with its minutes and metres along the points, work, the walk back, and home, `here`. (G69)
+- `GET /v0/location/days/{day}/trail` is the same day as a simplified line for the map. (G69)
+- `GET /v0/location` says what's kept, from when to when, and which place is home, for Settings. (G67)
+
+### 102 · [Arriving somewhere](transcripts/102-arriving-somewhere.jsonl)
+
+- The phone uploads leaving the office and arriving at dinner. Both are fresh, so once the moment
+  settles Kumo looks at them together, keeps a note for tonight with `note_day` and says nothing: no
+  message, no notification. (G68)
+- iOS ends the visit and starts it again three minutes later. Coming back so soon is no event, so
+  Kumo isn't woken, and the day's thread shows dinner as one stay, still going. (G68)
+
+### 103 · [Naming a place](transcripts/103-naming-a-place.jsonl)
+
+- Leaving a spot Kumo can't name wakes it, and it asks about it with `add_question` and the place: a
+  `question.changed` with `kind: place` and `place`, the spot, the stay and the time there in all,
+  on its Your places track, with its guesses as options. No Desk card, no notification. (G69, G63)
+- `GET /v0/understanding` has it with the track. *App:* Kumo on the map, at the spot, asking. (G69)
+- You tap a guess: the question is answered, Kumo files it, and `GET /v0/places/{place}` shows the
+  place with your name and a kind from it, with every visit. (G69)
+
+### 104 · [Heat and trips](transcripts/104-heat-and-trips.jsonl)
+
+- Two nights at home and a day at the office upload, then `POST /v0/location/photos` seeds four days
+  in Lisbon from photo locations; sent again under another batch, none is taken twice. (G67)
+- `GET /v0/location/trips` has the trip, with its country and cities, how far from home, and
+  `from_photos`; its id is its first day, for a journal map. (G69)
+- `GET /v0/location/heat` sums the year in coarse cells, each day away counted as 14 hours, so
+  Lisbon glows by the trip's length, full at 500 hours; the week, in fine cells, has home full at
+  10. (G69)
+- `POST /v0/location/forget` takes March: the photos, the places they made and the trip. (G67)
 ### 105 · [Linking your people](transcripts/105-linking-your-people.jsonl)
 
 - Kumo links its People pages to their cards: Leo's page has the email his card has and only one card

@@ -68,6 +68,9 @@ But this:
   mail) goes, unless it shaped the day; then one sentence.
 - Photos stay where they belong in the story, with alt text in the first person ("My flat white on
   the walk back").
+- A map of the day's route (`![My walk up the hill](route:YYYY-MM-DD)`) or of a trip
+  (`![Four days in Lisbon](trip:YYYY-MM-DD)`, the trip's first day) goes where it belongs too, only
+  when the way mattered; the app draws it.
 - Length follows the day: most entries 80 to 300 words.
 - The gist is one line in the first person ("Long lunch with Mira; I finally booked Lisbon"). The
   title stays the date.
