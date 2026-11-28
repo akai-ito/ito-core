@@ -51,6 +51,9 @@ pages.</sub></p>
 - **People.** Kumo's People pages linked to their Contacts cards (on sure evidence, or after asking
   you), listed by circle in your order with when you last saw them and what's coming up, all from
   evidence, never from tracking anyone.
+- **Life.** One search over everything, with Kumo's answer first; your days by week, month and
+  year with Kumo's line on each and the chapters of your life as spans; and Going on, one list of
+  what's in motion, your projects and your goals, with what Kumo is working on right now.
 - **Memory.** The Thread, a git repository of Markdown pages and a journal that you can read
   without Ito, with search over it and past conversations, and an optional backup to a private
   GitHub repository. Kumo keeps the chapters of your life there, and tells you what it learnt.

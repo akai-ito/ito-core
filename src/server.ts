@@ -1071,6 +1071,7 @@ export const createServer = (options: ServerOptions): Server => {
       : { text: `Ito has no tool ${name}.`, isError: true };
   };
   store.subscribe(({ event }) => {
+    if (event.type === "turn.started") busy.turnStarted();
     if (event.type !== "turn.ended") return;
     busy.turnEnded();
     memory.indexConversation();

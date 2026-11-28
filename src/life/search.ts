@@ -250,7 +250,10 @@ export const createSearch = ({
     const foundPlaces = places.find(words).slice(0, mostPlaces);
 
     const passages = [
-      ...days.map((day) => `- ${dayTitle(day.day)}: ${day.gist ?? ""} ${day.excerpt}`.trim()),
+      ...days.map(
+        (day) =>
+          `- ${dayTitle(day.day)}: ${[...new Set([day.gist, day.excerpt])].filter((text) => text !== undefined && text !== "").join(" ")}`,
+      ),
       ...foundPlaces.map((place) => `- The place ${place.name ?? place.apple_name ?? ""}`),
       ...pageHits
         .filter((hit) => shelfOf(hit.address) !== "journal")

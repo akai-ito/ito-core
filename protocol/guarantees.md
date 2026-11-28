@@ -70,6 +70,8 @@ where the protocol has to make it possible, marked *App*.
 | G68 | **Comings and goings are events, judged quietly.** Arriving at a place and leaving it wake Kumo as a mail does, once the moment settles, with what came close together seen at once and at most every 15 minutes. Jitter makes no flurry: leaving a place and coming back within 15 minutes is no event, nor is a stop under 10 minutes, a point, a significant change, a photo seed or a visit that arrives an hour late. Kumo mostly stays silent, keeping notes for the dream, and messages you only when something matters now. | 102 |
 | G69 | **Your map, honestly lit, and named with you.** Visits within about 75 m gather into places, ranked by true hours; home is where you sleep, and stretches mostly 50 km or more from it are trips, with their countries and cities. Each day's hours are kept by geohash cell, home included, so any range is a cheap sum; a day away counts as 14 hours, and a cell glows on a saturating curve, full at 10 hours for a week, 40 for a month and 500 for a year. A day's thread gives each stop and the moves between with minutes and metres. A place Kumo can't name becomes a quiet place question with where, when and how long, and Kumo's guesses; your answer names it. | 101, 103, 104 |
 | G70 | **Your people, linked only when it's sure or you say so.** A People page is linked to a card in your iCloud Contacts on its own only on sure evidence: an email or a phone number in common with one card, or a full name only one card has. When two cards could fit, or there's only a first name to go on, Kumo asks in Understanding you which card it is, with at most three candidates described only by what Contacts knows, never your mail; your answer links the page, or Kumo stops suggesting those cards. Linking changes the page, never Contacts. People lists everyone by circle in the order you keep, and their last seen, time together and what's coming up come from evidence: events with them, journal days and day notes that mention them, the chat, their card's birthday and Kumo's wake-ups, never from tracking them. | 105, 106 |
+| G71 | **Kumo's lines in Life are kept, and never made up.** The answer to a search, a range's line and its weeks' lines, and the short Portrait, How to help you and tastes are written once on the quick model from what was found or what memory holds, kept with a hash of everything they were written from, and given again as they were until that changes, with no new call to the model. A line Kumo hasn't written, can't write now or doesn't finish within a few seconds is absent, never stood in for; what was found still comes, and the next ask finds a line that finished late. | 107, 108, 109 |
+| G72 | **Going on is one list, beside time.** Things in motion and the pages on the projects and goals shelves are one list of threads in three groups, Matters, Projects and Goals, and a page that names a thing in motion (`motion:<id>`), or has its title, is one thread with it, never two. A thread's marks are its real changes, and it says Kumo is working on it only while a turn or background work that touched it with a tool is still running. | 109 |
 
 ## How Kumo decides to speak
 
@@ -797,6 +799,32 @@ the dream.
   and time together over the last 90 days. (G70)
 - `PUT /v0/people/circles` moves Family above Friends and adds Five-a-side; the circles come back in
   the new order with how many people each holds. (G70)
+
+### 107 · [Searching your life](transcripts/107-searching-your-life.jsonl)
+
+- `GET /v0/life/search` for “dinner with Omar” answers first, in Kumo's words, from what memory's
+  search found: Orrin's, last Friday, and what you wrote. (G71)
+- Then the groups: the two journal days that say it, with their lines, and Omar, with when you last
+  saw him; no place, nothing going on, no made page and no message says it. (G71)
+- The same search again gives the same answer, kept, with no new call to the model. (G71)
+
+### 108 · [Your week and month](transcripts/108-your-week-and-month.jsonl)
+
+- `GET /v0/life/days` for the week has today, with the note Kumo kept this morning, and Monday with
+  its journal line, newest first and nothing after today; the Northwind autumn as a span; and
+  Kumo's line for the week. (G71)
+- November has every day so far, its weeks from Monday to Sunday cut to the month, newest first,
+  with Kumo's lines for the two weeks its days say something about and none made up for the rest,
+  and the month's line. (G71)
+
+### 109 · [Going on, and what Kumo knows](transcripts/109-going-on-and-what-kumo-knows.jsonl)
+
+- `GET /v0/life/going-on` has Northwind under Matters; the spare room once, under Projects, with
+  its project page (which names `motion:spare-room`), its steps and the next thing; and Spring 10k,
+  a goal page alone. Each thread's marks are its changes; Kumo is working on none of them. (G72)
+- `GET /v0/life/about-you` has the Portrait and How to help you, short, and your tastes from the
+  topic pages, each naming the page it comes from, then what Kumo learnt lately and Getting to know
+  you. (G71)
 
 ## Not in this version
 
