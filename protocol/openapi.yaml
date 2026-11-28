@@ -516,7 +516,7 @@ paths:
       summary: Move or change one of Kumo's plans
       description: |
         Moves a wake-up to another time, changes how it repeats (`null` makes it a one-off), or
-        rewords what it's for. The answer is the wake-up as it is now, and `desk.changed` follows.
+        renames or rewords it. The answer is the wake-up as it is now, and `desk.changed` follows.
         A time that has passed is refused.
       parameters:
         - $ref: "#/components/parameters/WakeUp"
@@ -3411,6 +3411,11 @@ components:
           oneOf:
             - $ref: "events.schema.json#/$defs/Repeat"
             - type: "null"
+        title:
+          description: Its title in Kumo's plans.
+          type: string
+          minLength: 1
+          maxLength: 60
         what:
           type: string
           minLength: 1

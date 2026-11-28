@@ -24,11 +24,12 @@ import { apnsSettings } from "#notifications/apns.ts";
 import { openNotification } from "#notifications/crypto.ts";
 import type { Envelope } from "#notifications/notifier.ts";
 import type { SeededPage } from "#memory/memory.ts";
-import { createServer, databaseFile, type Server } from "#server.ts";
+import { createServer, databaseFile, type EngineContext, type Server } from "#server.ts";
 import { onboardingSetting } from "#store/store.ts";
 import { openEventStream, type EventStream } from "./event-stream.ts";
 import { startFakeApns, type Pushed } from "./fake-apns.ts";
 import { createIdMatcher } from "./matching.ts";
+import { toThreadId } from "#conversation/ids.ts";
 import { createScriptQueue, deriveScripts } from "./scripts.ts";
 import { testCapability } from "./test-capabilities.ts";
 import {
@@ -154,6 +155,31 @@ const fail = (message: string): never => {
 
 const isWorldStep = (step: Step): step is WorldStep => "world" in step;
 
+// What Kumo should have in mind of today so far: these lines in its <today>, in order, and none of those it leaves out.
+type InMind = { readonly today: readonly string[]; readonly leaves_out?: readonly string[] };
+
+const todayIn = (text: string): string => {
+  const start = text.indexOf("<today>");
+  const end = text.indexOf("</today>");
+  return start === -1 || end === -1 ? "" : text.slice(start, end + "</today>".length);
+};
+
+const inMindProblem = (text: string, { today, leaves_out: leftOut = [] }: InMind): string | undefined => {
+  const block = todayIn(text);
+  if (block === "") return "Kumo had no <today> in mind";
+  const found = today.reduce<{ readonly from: number; readonly missing?: string }>(
+    (sought, line) => {
+      if (sought.missing !== undefined) return sought;
+      const at = block.indexOf(line, sought.from);
+      return at === -1 ? { ...sought, missing: line } : { from: at + line.length };
+    },
+    { from: 0 },
+  );
+  if (found.missing !== undefined) return `Kumo's <today> didn't have, in order: ${found.missing}\n${block}`;
+  const present = leftOut.find((line) => block.includes(line));
+  return present === undefined ? undefined : `Kumo's <today> should leave out: ${present}\n${block}`;
+};
+
 const idsIn = (value: unknown): readonly string[] => {
   if (typeof value === "string") return /^[emstac]_\d{4}_\d{5}$/u.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap((item) => idsIn(item));
@@ -263,10 +289,19 @@ export const replay = async (name: string): Promise<void> => {
 
   const plans = createCell<readonly WorkPlan[]>([]);
   const workFailures = createCell<readonly string[]>([]);
+  const engineContext = createCell<EngineContext | undefined>(undefined);
+  // What the next pieces of background work should have in mind, in turn.
+  const workInMind = createCell<readonly InMind[]>([]);
 
   const resetsAt = createCell<number | undefined>(undefined);
 
-  const work = async (run: string): Promise<Result<string, WorkFailure>> => {
+  const work = async (prompt: string, run: string): Promise<Result<string, WorkFailure>> => {
+    const [expected] = workInMind.get();
+    if (expected) {
+      workInMind.update((current) => current.slice(1));
+      const problem = inMindProblem(prompt, expected);
+      if (problem !== undefined) workFailures.update((current) => [...current, problem]);
+    }
     const [plan] = plans.get();
     if (!plan) {
       return failed({ code: "engine_failed", detail: "The transcript has Kumo do nothing in the background here." });
@@ -333,16 +368,18 @@ export const replay = async (name: string): Promise<void> => {
           serverUrl: carddav.serverUrl,
         }),
       createMailSource: mail.create,
-      createEngine: () =>
-        createScriptEngine(
+      createEngine: (context) => {
+        engineContext.set(context);
+        return createScriptEngine(
           clock,
           scripts,
           undefined,
           demoModels,
           complete,
-          (_prompt, run) => work(run),
+          (prompt, run) => work(prompt, run),
           () => resetsAt.get(),
-        ),
+        );
+      },
       name: "studio",
 
       clock,
@@ -663,6 +700,27 @@ export const replay = async (name: string): Promise<void> => {
         await settle();
         return;
       }
+      case "kumo_has_in_mind": {
+        await advance(time);
+        const {
+          background,
+          thread,
+          today,
+          leaves_out: leftOut,
+        } = step as unknown as InMind & {
+          readonly background?: boolean;
+          readonly thread?: string;
+        };
+        const expected: InMind = ids.translate({ today, ...(leftOut && { leaves_out: leftOut }) });
+        if (background === true) {
+          workInMind.update((current) => [...current, expected]);
+          return;
+        }
+        const context = engineContext.get() ?? fail(`${name}: no engine to ask what's in Kumo's mind`);
+        const inMind = context.inMind(thread === undefined ? undefined : toThreadId(ids.translate(thread)));
+        check(inMindProblem(inMind, expected), index);
+        return;
+      }
       case "thread_named": {
         const { title } = step as unknown as { readonly title: string };
         asides.update((current) => [...current, { title }]);
@@ -800,6 +858,7 @@ export const replay = async (name: string): Promise<void> => {
     const extraPush = await apns.next(quietMs);
     if (extraPush) fail(`${name}: an unexpected push after the last step: ${JSON.stringify(extraPush.payload)}`);
     if (workFailures.get().length > 0) fail(`${name}: Kumo's planned work failed: ${workFailures.get().join("; ")}`);
+    if (workInMind.get().length > 0) fail(`${name}: background work Kumo should have had in mind never ran`);
   } finally {
     await stopServer();
     await seeded.close();

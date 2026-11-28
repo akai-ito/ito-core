@@ -9,6 +9,8 @@ import { wordEmbedder } from "#memory/embedder.ts";
 import type { Track, Work } from "#protocol/types.ts";
 import { ok } from "#result.ts";
 import { createServer, type EngineContext } from "#server.ts";
+import { openDatabase } from "#store/database.ts";
+import { createTracks } from "#work/tracks.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
 
 const home = mkdtempSync(path.join(os.tmpdir(), "ito-tracks-"));
@@ -40,7 +42,7 @@ const open = async () => {
         undefined,
         (prompt) => {
           prompts.update((current) => [...current, prompt]);
-          return Promise.resolve(ok("Noted on How to help you."));
+          return Promise.resolve(ok("Noted on your track."));
         },
       );
     },
@@ -101,12 +103,20 @@ describe("learning tracks", () => {
       const answered = await wrong(entry?.id ?? "", "Too formal for Clara");
       await vi.waitFor(() => {
         expect(prompts.get().at(-1)).toContain(
-          "It was part of your Writing as you track, which has stepped back for it.",
+          "It's evidence on your Writing as you track, which has stepped back for it.",
         );
       });
+      expect(prompts.get().at(-1)).toContain("Don't write it on How to help you");
+      const words = await wrong(entry?.id ?? "", "and Clara likes it short");
       await server.callTool("note_track", { track: id, kind: "corrected", text: "Wrong sign-off for Mira" });
       await server.callTool("note_track", { track: id, kind: "corrected", text: "Too long for Leo" });
 
+      expect(words.statusCode).toBe(200);
+      expect(inMind()).toContain(
+        `- Writing as you (${id}): learning, 1 confirmed, 3 corrected. How you write.\n` +
+          "  - Corrected 12 Nov: Too long for Leo\n" +
+          "  - Corrected 12 Nov: Wrong sign-off for Mira\n",
+      );
       expect(answered.statusCode).toBe(200);
       expect(await tracks()).toMatchObject([
         {
@@ -121,7 +131,7 @@ describe("learning tracks", () => {
             { kind: "corrected", text: "Wrong sign-off for Mira", stage: "learning" },
             {
               kind: "corrected",
-              text: "You said “Drafted a reply to Clara” was wrong: Too formal for Clara",
+              text: "You said “Drafted a reply to Clara” was wrong: Too formal for Clara; and Clara likes it short",
               stage: "spot_checks",
               done: entry?.id,
             },
@@ -144,12 +154,66 @@ describe("learning tracks", () => {
       await wrong(entry?.id ?? "", "That was my order");
       await vi.waitFor(() => {
         expect(prompts.get().at(-1)).toContain(
-          "If it was part of an area you're learning, note the correction on that track with note_track.",
+          `Keep it as evidence on the track it belongs to: note_track with kind corrected and done ${entry?.id ?? ""}`,
         );
       });
+      expect(prompts.get().at(-1)).toContain("If no track fits, open one for the area");
+      expect(prompts.get().at(-1)).not.toContain("memory:helping-you");
       expect(await tracks()).toMatchObject([{ name: "Sorting mail", stage: "learning", corrected: 0 }]);
     } finally {
       await server.close();
+    }
+  });
+});
+
+describe("track evidence for the dream", () => {
+  it("lists what every track stood on since a time, newest first, in a line each", async () => {
+    const clock = createVirtualClock(Date.parse("2026-11-26T09:00:00.000Z"));
+    const folder = mkdtempSync(path.join(home, "evidence-"));
+    const database = openDatabase(path.join(folder, "ito.db"));
+    const count = createCell(0);
+    const tracks = createTracks({
+      database,
+      clock,
+      identifiers: {
+        track: () => {
+          count.update((current) => current + 1);
+          return `l_${String(count.get())}`;
+        },
+      },
+      info: () => {
+        // Nothing to log here.
+      },
+      timeZone: () => "Europe/London",
+    });
+    const toolNamed = (name: string) => tracks.tools.find((tool) => tool.name === name);
+    const call = (name: string, input: unknown) => toolNamed(name)?.call(input) ?? Promise.reject(new Error(name));
+    try {
+      await call("open_track", { name: "Sorting mail" });
+      await call("open_track", { name: "Your calendar" });
+      await call("note_track", { track: "l_1", kind: "corrected", text: "An order from a shop isn't a promotion" });
+      clock.moveTo(Date.parse("2026-11-26T23:30:00.000Z"));
+      const since = "2026-11-26T12:00:00.000Z";
+      await call("note_track", { track: "l_2", kind: "confirmed", text: "Kept the gym block as I planned it" });
+      await call("note_track", { track: "l_1", kind: "corrected", text: "Receipts go in Money, not the bin" });
+
+      expect(tracks.evidenceSince(since).map(({ track, evidence }) => [track.name, evidence.text])).toEqual([
+        ["Sorting mail", "Receipts go in Money, not the bin"],
+        ["Your calendar", "Kept the gym block as I planned it"],
+      ]);
+      expect(tracks.evidenceText(since)).toBe(
+        [
+          "<track_evidence>",
+          "What your tracks stood on since then, newest first: corrections are what to do differently, " +
+            "confirmations what's working.",
+          "- Sorting mail (l_1), corrected 26 Nov: Receipts go in Money, not the bin",
+          "- Your calendar (l_2), confirmed 26 Nov: Kept the gym block as I planned it",
+          "</track_evidence>",
+        ].join("\n"),
+      );
+      expect(tracks.evidenceText("2026-11-27T00:00:00.000Z")).toBe("");
+    } finally {
+      database.close();
     }
   });
 });

@@ -139,6 +139,7 @@ describe("where they roughly are", () => {
     try {
       expect(await report({ time_zone: "Europe/London" })).toBe(204);
       await server.callTool("set_wake_up", {
+        title: "Look at the day with them",
         what: "Look at the day with them",
         why: "They asked for it each weekday.",
         repeat: { days: ["mon", "tue", "wed", "thu", "fri"], time: "09:00" },
@@ -146,6 +147,7 @@ describe("where they roughly are", () => {
         source: { kind: "chat", title: "Each weekday morning" },
       });
       await server.callTool("set_wake_up", {
+        title: "Ask about the Halcyon offer",
         what: "Ask about the Halcyon offer",
         why: "They said they'd hear by Monday.",
         at: "2026-11-16T18:00:00Z",

@@ -8,21 +8,33 @@ import type { Info } from "#turns/turns.ts";
 
 // Kumo's learning tracks: any area it's getting to know them in, or learning to do well, such as sorting their mail,
 // writing as them or planning their weekends. Each has a stage and what it stands on. Kumo moves a track by judgement,
-// and a correction always steps it back. Kumo reads them as context, so its judgement follows them.
+// and a correction always steps it back. Their corrections live here as evidence, not as rules on How to help you:
+// Kumo reads the recent ones as context, so its judgement follows them the same day, and the nightly dream reads
+// what came in since it last ran and distils what lasts into How to help you.
 export type Tracks = {
   readonly list: () => readonly Track[];
   readonly find: (id: string) => Track | undefined;
   // "That was wrong" on a call that belongs to a track: it steps back, with the call as evidence.
   readonly corrected: (entry: DoneEntry, text: string) => void;
+  // Said again about the same call, with words: they join its evidence, and the track stays where it is.
+  readonly addWords: (entry: DoneEntry, words: string) => void;
+  // What every track has stood on since a time, newest first, such as for the dream.
+  readonly evidenceSince: (at: string) => readonly TrackEvidenceOf[];
+  // The same, as a prompt reads it, or "" when there's none.
+  readonly evidenceText: (at: string) => string;
   readonly tools: readonly Tool[];
   readonly inMindText: () => string;
 };
+
+export type TrackEvidenceOf = { readonly track: Track; readonly evidence: TrackEvidence };
 
 export type TracksOptions = {
   readonly database: DatabaseSync;
   readonly clock: Clock;
   readonly identifiers: { readonly track: () => string };
   readonly info: Info;
+  // Where they are, for the day a line of evidence names.
+  readonly timeZone?: () => string;
 };
 
 export const stages: readonly TrackStage[] = ["learning", "spot_checks", "trusted"];
@@ -35,6 +47,10 @@ const stageWords: Readonly<Record<TrackStage, string>> = {
 
 const evidenceKept = 10;
 
+// The corrections each track shows in mind: the newest few, from the last month.
+const correctionsInMind = 2;
+const inMindMs = 30 * 24 * 60 * 60 * 1000;
+
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
@@ -43,7 +59,7 @@ const isStage = (value: unknown): value is TrackStage => stages.includes(value a
 
 const stepBack = (stage: TrackStage): TrackStage => stages[Math.max(0, stages.indexOf(stage) - 1)] ?? "learning";
 
-export const createTracks = ({ database, clock, identifiers, info }: TracksOptions): Tracks => {
+export const createTracks = ({ database, clock, identifiers, info, timeZone = () => "UTC" }: TracksOptions): Tracks => {
   const read = (): readonly Track[] =>
     (
       database.prepare("SELECT body FROM tracks ORDER BY position").all() as unknown as readonly {
@@ -69,6 +85,18 @@ export const createTracks = ({ database, clock, identifiers, info }: TracksOptio
   });
 
   const now = (): string => toTimestamp(clock.now());
+
+  // `26 Nov`, for a line of evidence.
+  const dayOf = (at: string): string =>
+    new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: timeZone() }).format(Date.parse(at));
+
+  const evidenceSince = (at: string): readonly TrackEvidenceOf[] =>
+    tracks
+      .get()
+      .flatMap((track) =>
+        track.evidence.filter((evidence) => evidence.at >= at).map((evidence) => ({ track, evidence })),
+      )
+      .toSorted((left, right) => right.evidence.at.localeCompare(left.evidence.at));
 
   // A correction always steps a track back, whatever its stage.
   const correct = (track: Track, text: string, done?: string): Track => {
@@ -160,7 +188,8 @@ export const createTracks = ({ database, clock, identifiers, info }: TracksOptio
       title: "Note what a track stands on",
       description:
         "Note a confirmation (they said or showed you got it right, such as sending your draft as you wrote it) or " +
-        "a correction (they told you it was wrong) on a track. A correction always steps the track back.",
+        "a correction (they told you it was wrong) on a track. A correction always steps the track back; its text " +
+        "says what was wrong and what you'll do differently, general enough to apply next time.",
       inputSchema: {
         type: "object",
         properties: {
@@ -201,19 +230,52 @@ export const createTracks = ({ database, clock, identifiers, info }: TracksOptio
       const track = entry.track === undefined ? undefined : find(entry.track);
       if (track) save(correct(track, text, entry.id));
     },
+    addWords: (entry, words) => {
+      const track = entry.track === undefined ? undefined : find(entry.track);
+      if (!track) return;
+      save({
+        ...track,
+        evidence: track.evidence.map((evidence) =>
+          evidence.kind === "corrected" && evidence.done === entry.id
+            ? { ...evidence, text: `${evidence.text}${evidence.text.includes(": ") ? ";" : ":"} ${words}` }
+            : evidence,
+        ),
+      });
+    },
+    evidenceSince,
+    evidenceText: (at) => {
+      const found = evidenceSince(at);
+      return found.length === 0
+        ? ""
+        : [
+            "<track_evidence>",
+            "What your tracks stood on since then, newest first: corrections are what to do differently, " +
+              "confirmations what's working.",
+            ...found.map(
+              ({ track, evidence }) =>
+                `- ${track.name} (${track.id}), ${evidence.kind} ${dayOf(evidence.at)}: ${evidence.text}`,
+            ),
+            "</track_evidence>",
+          ].join("\n");
+    },
     tools,
     inMindText: () => {
       const listed = tracks.get();
+      const recent = toTimestamp(clock.now() - inMindMs);
       return listed.length === 0
         ? ""
         : [
             "<tracks>",
-            "The areas you're learning, with each one's stage and what it stands on:",
-            ...listed.map(
-              (track) =>
-                `- ${track.name} (${track.id}): ${stageWords[track.stage]}, ${String(track.confirmed)} confirmed, ` +
+            "The areas you're learning, with each one's stage and what it stands on, and their latest corrections:",
+            "follow those until they're on How to help you.",
+            ...listed.flatMap((track) => [
+              `- ${track.name} (${track.id}): ${stageWords[track.stage]}, ${String(track.confirmed)} confirmed, ` +
                 `${String(track.corrected)} corrected${track.note === undefined ? "" : `. ${track.note}`}`,
-            ),
+              ...track.evidence
+                .filter(({ kind, at }) => kind === "corrected" && at >= recent)
+                .slice(0, correctionsInMind)
+                .map(({ at, text }) => `  - Corrected ${dayOf(at)}: ${text}`),
+            ]),
             "</tracks>",
           ].join("\n");
     },

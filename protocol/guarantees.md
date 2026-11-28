@@ -46,10 +46,10 @@ where the protocol has to make it possible, marked *App*.
 | G37 | **The calendar goes through the box.** Events, holds and invite answers are written to iCloud by the box, so they land while your phone sleeps; an invite is held on Kumo's calendar until you answer. | 67 |
 | G39 | **Getting started reads before it asks.** Kumo reads your recent mail and calendar first, every app sees how far it has got, and its few questions come as ordinary messages in the conversation. What it believes about you waits for your word, and getting started ends when you say so. | 69, 70 |
 | G40 | **Problems show until they're fixed.** Something wrong on the server that needs you (notifications it can't send, a mail or calendar account that keeps failing, a capability that needs setting up, Kumo's model not answering its work in the background, or pausing it at a usage limit) is listed with how to fix it, live on every app, and clears on its own once fixed. A blip that sorts itself out never shows. | 71, 81, 86 |
-| G43 | **"That was wrong" is taken in.** On anything Kumo did, it undoes what it can and keeps what to do differently as a preference on How to help you, and Done says so. Saying it again only adds your words. | 73, 82 |
+| G43 | **"That was wrong" is taken in.** On anything Kumo did, it undoes what it can and keeps what to do differently as evidence on the learning track it belongs to, which steps back, and Done says so; never as a new line on How to help you, where only what lasts goes, distilled from the tracks. Saying it again only adds your words. | 73, 82 |
 | G44 | **Kumo's picture of your day is on its own calendar.** Its plan for your day and its guesses at the rest are written to Kumo's calendar, never yours, and show in Coming up as they land. A guess is marked as one, with why; once you've answered it, it's yours rather than a guess, and Kumo's next guesses learn from it. | 74 |
 | G48 | **Kumo speaks in messages.** What its work in the background has to tell you, such as a mail that changes your plans, comes as Kumo's own message in the conversation: one per thing, as it happens, never batched, rewritten or stood in for by a template. A card on the Desk makes no sound of its own. | 65, 66 |
-| G49 | **Kumo's plans are concrete, quiet and yours.** A wake-up has a concrete time Kumo worked out, what it's for and why, how it repeats, who made it and where it came from. Setting one only adds it to Kumo's plans on the Desk, with no message and no notification. The app lists them, moves them and cancels them, and the Desk follows. | 78, 79 |
+| G49 | **Kumo's plans are concrete, quiet and yours.** A wake-up has a concrete time Kumo worked out, a short title of its own, what Kumo will do and why, how it repeats, who made it and where it came from. Setting one only adds it to Kumo's plans on the Desk, with no message and no notification. The app lists them, moves them and cancels them, and the Desk follows. | 78, 79 |
 | G50 | **Kumo looks before it speaks.** When a wake-up comes due, Kumo looks first, then messages you if that's useful, moves it if things changed, or drops it if it's moot, and Done says which. A repeating one comes back by itself at its time where you are. | 78, 80 |
 | G51 | **Kumo wakes on what happens.** A change on your own calendars, such as an event moving or being cancelled or an invite arriving, wakes Kumo to look and decide, as a new mail does. It hears of each change once, even across a restart, never of its own changes, and keeps its wake-ups current with them. | 80 |
 | G52 | **Nothing robotic stands in.** When Kumo's model can't act, nothing is sent in its place: what was due waits, the problem shows once it lasts, and Kumo catches up when its model answers. | 81 |
@@ -60,6 +60,7 @@ where the protocol has to make it possible, marked *App*.
 | G57 | **Paused at a usage limit, then caught up once.** When the model provider's usage limit is reached, Kumo's background work pauses until the limit resets, with nothing retried meanwhile, and the pause shows at once as a problem that says when it ends. Once the limit resets, or a turn in the chat goes through, Kumo catches up once on what it missed, each wake-up and kind of work counted once, and tells you in one message. Background work with nobody watching that shows no sign of life for 15 minutes is stopped and tried once more. | 86 |
 | G58 | **Chapters and what Kumo learnt come from memory.** A chapter is a page Kumo writes and keeps on its own shelf: a story with the day it began, the day it ended once it's over, and the day Kumo noticed it, which the server stamps; what it drew on is counted by the server, never said by Kumo. A line Kumo learnt about you comes only with a change that taught it, never with one that tidies or fixes records, is kept in the Thread with that change, and leaves the Library when Kumo takes it back or forgets its page. | 87 |
 | G59 | **Pages Kumo makes stay current, and your ticks are yours.** A rich, lasting answer can come as a page Kumo made: a card in the reply that opens it, and a place on the Made shelf. Kumo makes a page whole, with pictures it kept and blocks the app draws, then changes it only from the version it read, with a note that says what changed; a change never notifies. Your ticks carry when you ticked, every app hears them, and a change that drops an item lets its tick go. Forgetting a page asks you first. | 91 |
+| G62 | **One day, joined up.** Every turn, in the main chat or a thread, and every piece of Kumo's background work has today so far in mind: what was said in the other conversations since 04:00 where you are, each thread named, the newest first, with what Kumo did and what's still to come today. The server writes it from what it holds, with no model call, within a bounded size, and a turn leaves out its own conversation, which it has already. Kumo keeps one plan from it: what you say anywhere moves its blocks, guesses and wake-ups without being asked again, and a wake-up for something already planned is moved, never doubled, so Kumo checks in once. | 95, 96 |
 | G66 | **Full access is yours to give, and shows while it lasts.** Kumo runs in Codex's sandbox, writing only in its workspace, until you turn on full access with a command of its own that says it's meant; nothing else turns it on. From the next turn or piece of work that starts, in the chat, in the background and in the night's dream alike, Kumo runs without the sandbox and is told so; turning it off puts the sandbox back from the next one. A turn already running keeps what it started with. Every app hears each change and the snapshot carries it while it's on, so the chat can show it, and Kumo's work notes each change. | 100 |
 
 ## How Kumo decides to speak
@@ -70,9 +71,9 @@ are what the server holds it to.
 
 - **It messages you** (G48, G15). A message is the only way Kumo speaks. Every message notifies;
   your phone's Focus decides the sound, and only an urgent message breaks through it.
-- **It sets itself wake-ups** (G49, G50, G54). Each is a concrete time Kumo worked out and keeps
-  current, with what it's for and why. Setting one is quiet, and when one comes due Kumo looks
-  first.
+- **It sets itself wake-ups** (G49, G50, G54, G62). Each is a concrete time Kumo worked out and
+  keeps current, with a short title, what it will do and why; what comes round is one repeating
+  wake-up. Setting one is quiet, and when one comes due Kumo looks first, at today so far too.
 - **It wakes on what happens** (G35, G51, G54). A new mail, a change on your calendars and a move
   to another time zone each reach Kumo's judgement, never a fixed rule.
 - **It acts and records** (G34, G36, G37, G43, G44, G53, G56). Cards, its own calendar blocks,
@@ -513,7 +514,7 @@ catches up once (G57).
 
 - `GET /v0/work` has today's work: what Kumo handled and what it cleared. (G43)
 - "That was wrong" from Kumo's work undoes the call and answers with the entry, `corrected_at` set;
-  once Kumo has kept what to do differently, Done says so. (G43)
+  once Kumo has kept what to do differently on the track it belongs to, Done says so. (G43)
 
 ### 74 · [The day made visible](transcripts/74-the-day-made-visible.jsonl)
 
@@ -524,8 +525,9 @@ catches up once (G57).
 
 ### 78 · [A wake-up](transcripts/78-a-wake-up.jsonl)
 
-- Kumo sets a wake-up with a concrete time: the end of the event it's for. It joins `plans` on the
-  Desk, and nothing notifies. `GET /v0/wakeups` lists the same. (G49, G33)
+- Kumo sets a wake-up with a concrete time, the end of the event it's for, and a short title for its
+  plans. It joins `plans` on the Desk, and nothing notifies. `GET /v0/wakeups` lists the same.
+  (G49, G33)
 - When it comes due, Kumo looks and messages you, Done says so, and the one-off leaves the Desk.
   (G50)
 
@@ -638,6 +640,23 @@ catches up once (G57).
   message comes with it. (G59)
 - A tick carries when you ticked, and every app hears the whole state in `made.state`. (G59)
 - The Made shelf comes from `GET /v0/made`, most recently changed first. (G59)
+
+### 95 · [One plan across threads](transcripts/95-one-plan-across-threads.jsonl)
+
+- You tell Kumo four things in three conversations: a change of place in the main chat, a demo in
+  one thread, a finished handover in another, and a task still due back in the main chat. Each
+  turn has the others in mind, by thread, and what Kumo did since. (G62)
+- Kumo keeps one plan without being asked each time: its blocks for the slides and the review, a
+  guess at the evening marked as one, and one wake-up it moves and renames rather than doubles,
+  so `GET /v0/wakeups` lists one plan with its title. A wake-up that comes due too early looks at
+  today so far and moves itself, quietly. (G62, G49, G50)
+
+### 96 · [Today so far](transcripts/96-today-so-far.jsonl)
+
+- Background work has all of today in mind: each conversation named, the newest first, what Kumo
+  did from Done, and what's still to come today. (G62)
+- Kumo's check-in in a thread is in the main chat's mind next, with the wake-up that sent it, while
+  the main chat's own messages are left out of it. (G62)
 
 ### 100 · [Full access](transcripts/100-full-access.jsonl)
 

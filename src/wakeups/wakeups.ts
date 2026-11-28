@@ -12,9 +12,11 @@ import { fieldOf, stringsOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 
-// Wake-ups: a concrete time Kumo will wake and look at something, what it's for and why, one-off or repeating, who
-// made it and where it came from. When one comes due Kumo looks first, then messages them, moves it or drops it, and
-// Done says which. Setting one is quiet: it shows in Kumo's plans on the Desk.
+// Wake-ups: a concrete time Kumo will wake and look at something, one-off or repeating, with a short title for its
+// plans, what it will do and why, who made it and where it came from. When one comes due Kumo looks first, then
+// messages them, moves it or drops it, and Done says which. Setting one is quiet: it shows in Kumo's plans on the
+// Desk. Something that comes round is one repeating wake-up, never one per day: a second with the same title is
+// refused, pointing at the first.
 export type WakeUps = {
   readonly tools: readonly Tool[];
   readonly list: () => readonly WakeUp[];
@@ -80,9 +82,27 @@ const instantPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|
 
 const clockPattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
+const mostTitleLength = 60;
+
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
+
+// A title as it reads, whatever its case and punctuation, so two for the same thing are seen as one.
+const titleKey = (title: string): string =>
+  title
+    .toLowerCase()
+    .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+const sameTitle = (left: string, right: string): boolean => titleKey(left) === titleKey(right);
+
+const titleProblem = (title: string): string | undefined =>
+  title === ""
+    ? "Give it a title: a few plain words for their plans, such as “Ask how the technical went”."
+    : title.length > mostTitleLength
+      ? `Keep the title to a few plain words, under ${String(mostTitleLength)} characters: the rest goes in what.`
+      : undefined;
 
 const minutesOf = (time: string): number => {
   const [hours = 0, minutes = 0] = time.split(":", 2).map(Number);
@@ -261,9 +281,10 @@ export const createWakeUps = ({
   };
 
   const describe = (wakeUp: WakeUp): string =>
-    `- ${wakeUp.id}: “${wakeUp.what}” at ${whenOf(Date.parse(wakeUp.at))}` +
+    `- ${wakeUp.id}: “${wakeUp.title}” at ${whenOf(Date.parse(wakeUp.at))}` +
     (wakeUp.repeat ? `, repeating ${repeatWords(wakeUp.repeat)}` : "") +
-    `; ${wakeUp.by === "you" ? "they asked" : "yours"}, from ${sourceWords(wakeUp.source)}`;
+    `; ${wakeUp.by === "you" ? "they asked" : "yours"}, from ${sourceWords(wakeUp.source)}` +
+    (sameTitle(wakeUp.what, wakeUp.title) ? "" : `. You'll: ${wakeUp.what}`);
 
   const eventLine = (uid: string): string => {
     const found = event(uid);
@@ -276,7 +297,8 @@ export const createWakeUps = ({
 
   const promptOf = (wakeUp: WakeUp): string =>
     [
-      `It's ${toSpoken(clock.now(), timeZone())}. A wake-up you set has come due: “${wakeUp.what}”.`,
+      `It's ${toSpoken(clock.now(), timeZone())}. A wake-up you set has come due: “${wakeUp.title}”.`,
+      `What you meant to do: ${wakeUp.what}`,
       `Why: ${wakeUp.why}`,
       `${wakeUp.by === "you" ? "They asked for it" : "You set it yourself"}, from ${sourceWords(wakeUp.source)}.`,
       ...(wakeUp.source.event ? [eventLine(wakeUp.source.event.uid)] : []),
@@ -285,7 +307,8 @@ export const createWakeUps = ({
         ? [`It repeats ${repeatWords(wakeUp.repeat)} and comes back by itself; move it only if this time is wrong.`]
         : []),
       "",
-      "Look first at what's changed since you set it: the calendar, your memory, the end of the conversation.",
+      "Look first at what's changed since you set it: today so far, the calendar and your memory. If they've",
+      "already answered it, or you've already checked in on it today, don't ask again.",
       "Then do what fits:",
       "- Message them with post if it's useful now.",
       `- If now is the wrong time, such as the event moving or them being asleep, move it with move_wake_up (${wakeUp.id}).`,
@@ -299,21 +322,21 @@ export const createWakeUps = ({
     const reason = isCatchUp ? "Caught up after Kumo's pause" : lastLine(answer);
     const why = reason === "" ? {} : { reason };
     if (!after) {
-      desk.addDone({ text: `Dropped “${before.what}”`, ...why, quiet: false });
+      desk.addDone({ text: `Dropped “${before.title}”`, ...why, quiet: false });
       return;
     }
     if (after.at !== before.at && Date.parse(after.at) > clock.now()) {
-      desk.addDone({ text: `Moved “${before.what}” to ${whenOf(Date.parse(after.at))}`, ...why, quiet: false });
+      desk.addDone({ text: `Moved “${before.title}” to ${whenOf(Date.parse(after.at))}`, ...why, quiet: false });
       return;
     }
     // A catch-up's one message is for all it looked at, so its wake-ups are quiet in Done.
     const isMessaged = !isCatchUp && postedIn(run);
     desk.addDone({
       text: isCatchUp
-        ? `Woke up late for “${before.what}”`
+        ? `Woke up late for “${before.title}”`
         : isMessaged
-          ? `Woke up for “${before.what}” and messaged you`
-          : `Woke up for “${before.what}”`,
+          ? `Woke up for “${before.title}” and messaged you`
+          : `Woke up for “${before.title}”`,
       ...why,
       quiet: !isMessaged,
     });
@@ -358,11 +381,17 @@ export const createWakeUps = ({
     if (after && Date.parse(after.at) <= clock.now()) save({ ...after, at: toTimestamp(clock.now() + retryMs) });
   };
 
+  // Another wake-up already for this, by its title: the one to move, or make repeat, instead of a second.
+  const alike = (title: string): WakeUp | undefined => sorted().find((other) => sameTitle(other.title, title));
+
   const toNew = (input: unknown): Result<WakeUp, string> => {
     const now = clock.now();
+    const title = lineOf(input, "title");
+    const problem = titleProblem(title);
+    if (problem !== undefined) return fail(problem);
     const what = lineOf(input, "what");
     const why = textOf(input, "why").trim();
-    if (what === "" || why === "") return fail("Say what it's for in a line, and why.");
+    if (what === "" || why === "") return fail("Say what you'll do in a line, and why.");
     const repeat = toRepeat(fieldOf(input, "repeat"));
     if (typeof repeat === "string") return fail(repeat);
     const given = lineOf(input, "at");
@@ -373,10 +402,19 @@ export const createWakeUps = ({
     if (typeof source === "string") return fail(source);
     const motion = lineOf(input, "motion");
     if (motion !== "" && !isMotion(motion)) return fail(`There's no thing ${motion} in motion.`);
+    const same = alike(title);
+    if (same) {
+      return fail(
+        `You already have “${same.title}” (${same.id}) at ${whenOf(Date.parse(same.at))}. Move that one, or give it ` +
+          "a repeat if this comes round, rather than setting another; if it's something else, give it a title " +
+          "that tells them apart.",
+      );
+    }
     const first = at ?? nextOf(repeat ?? everyDay, now, timeZone());
     return ok({
       id: identifiers.wakeUp(),
       at: toTimestamp(first),
+      title,
       what,
       why,
       ...(repeat && { repeat }),
@@ -387,23 +425,25 @@ export const createWakeUps = ({
     });
   };
 
-  // A change, from Kumo or from the app: a new time, a new repeat or none, new words.
+  // A change, from Kumo or from the app: a new time, a new repeat or none, a new title, new words.
   const changed = (
     current: WakeUp,
     at: string | undefined,
     repeat: Repeat | null | undefined,
-    what: string,
-    why: string,
+    { title, what, why }: { readonly title: string; readonly what: string; readonly why: string },
   ): Result<WakeUp, string> => {
     const now = clock.now();
     const instant = at === undefined ? undefined : toInstant(at, now);
     if (typeof instant === "string") return fail(instant);
+    const problem = title === "" ? undefined : titleProblem(title);
+    if (problem !== undefined) return fail(problem);
     const kept = repeat === null ? withoutRepeat(current) : { ...current, ...(repeat && { repeat }) };
     const next =
       instant ?? (repeat === undefined || repeat === null ? Date.parse(current.at) : nextOf(repeat, now, timeZone()));
     return ok({
       ...kept,
       at: toTimestamp(next),
+      ...(title !== "" && { title }),
       ...(what !== "" && { what }),
       ...(why !== "" && { why }),
     });
@@ -416,13 +456,23 @@ export const createWakeUps = ({
       description:
         "Set a time to wake up and look at something, one-off or repeating, at a concrete time you've worked out, " +
         "such as when the interview ends. When it comes due you look first, then message them, move it or drop " +
-        "it. Setting one is quiet: it shows in your plans on their Desk, where they can move or cancel it.",
+        "it. Setting one is quiet: it shows in your plans on their Desk by its title, where they can move or " +
+        "cancel it. Something that comes round, such as an evening reminder or a look at each weekday, is one " +
+        "wake-up with a repeat, never one per day; and when <wake_ups> already has one for this, move it instead.",
       inputSchema: {
         type: "object",
         properties: {
+          title: {
+            type: "string",
+            description:
+              "What it is in a few plain words, as they'd say it, for their plans: such as “Ask how the technical " +
+              "went” or “Look at the week ahead”. No notes to yourself.",
+          },
           what: {
             type: "string",
-            description: "What it's for, in a line, such as “Ask how the Halcyon technical went”.",
+            description:
+              "What you'll do when you wake, in a line, such as “Ask how the Halcyon technical went and note what " +
+              "to work on”.",
           },
           why: {
             type: "string",
@@ -451,7 +501,7 @@ export const createWakeUps = ({
           },
           motion: { type: "string", description: "The thing in motion it's about, by id." },
         },
-        required: ["what", "why", "asked", "source"],
+        required: ["title", "what", "why", "asked", "source"],
         additionalProperties: false,
       },
       call: (input) => {
@@ -465,9 +515,9 @@ export const createWakeUps = ({
       name: "move_wake_up",
       title: "Move a wake-up",
       description:
-        "Move one of your wake-ups, or change how it repeats or what it's for, by its id: when life moves, such as " +
-        "the event it's for moving, them travelling, or now being the wrong moment. For a repeating one, at moves " +
-        "only its next time.",
+        "Move one of your wake-ups, or change how it repeats, its title or what it's for, by its id: when life " +
+        "moves, such as the event it's for moving, them travelling, or now being the wrong moment. For a repeating " +
+        "one, at moves only its next time.",
       inputSchema: {
         type: "object",
         properties: {
@@ -475,6 +525,7 @@ export const createWakeUps = ({
           at: { type: "string", description: "The new time, an instant with its offset." },
           repeat: repeatSchema,
           one_off: { type: "boolean", description: "True to stop it repeating." },
+          title: { type: "string" },
           what: { type: "string" },
           why: { type: "string" },
         },
@@ -492,12 +543,15 @@ export const createWakeUps = ({
           current,
           given === "" ? undefined : given,
           fieldOf(input, "one_off") === true ? null : repeat,
-          lineOf(input, "what"),
-          textOf(input, "why").trim(),
+          {
+            title: lineOf(input, "title"),
+            what: lineOf(input, "what"),
+            why: textOf(input, "why").trim(),
+          },
         );
         if (!next.ok) return Promise.resolve(failed(next.failure));
         save(next.value);
-        return Promise.resolve({ text: `${next.value.what} is at ${whenOf(Date.parse(next.value.at))} now.` });
+        return Promise.resolve({ text: `${next.value.title} is at ${whenOf(Date.parse(next.value.at))} now.` });
       },
     },
     {
@@ -517,7 +571,7 @@ export const createWakeUps = ({
         const found = wakeUps.get().get(id);
         if (!found) return Promise.resolve(failed(`There's no wake-up ${id || "with that id"}.`));
         remove(id);
-        return Promise.resolve({ text: `Dropped ${found.what}.` });
+        return Promise.resolve({ text: `Dropped ${found.title}.` });
       },
     },
   ];
@@ -531,7 +585,11 @@ export const createWakeUps = ({
     change: (id, given) => {
       const current = wakeUps.get().get(id);
       if (!current) return fail("not_found");
-      const next = changed(current, given.at, given.repeat, given.what?.trim() ?? "", given.why?.trim() ?? "");
+      const next = changed(current, given.at, given.repeat, {
+        title: given.title?.replaceAll(/\s+/gu, " ").trim() ?? "",
+        what: given.what?.trim() ?? "",
+        why: given.why?.trim() ?? "",
+      });
       if (next.ok) save(next.value);
       return next;
     },
@@ -546,7 +604,7 @@ export const createWakeUps = ({
         ? ""
         : [
             "<wake_ups>",
-            "Your wake-ups, soonest first; they can move or cancel them in Ito too:",
+            "Your wake-ups, soonest first, by their titles; they can move or cancel them in Ito too:",
             ...listed.map(describe),
             "</wake_ups>",
           ].join("\n");

@@ -80,6 +80,14 @@ const photoGuide =
   "To keep a photo they shared with it, put it where it belongs: ![what it shows](uploads/photo.jpg). Memory " +
   "keeps a copy.";
 
+// How a page reads: notes a sharp, warm friend keeps, plain, current and short.
+const writingGuide =
+  "Plain, current and short: the present first, in the present tense; date events, deadlines and changes " +
+  "(“since 16 Nov”), not every paragraph; what used to be true goes under ## Earlier, a line per turning point. No " +
+  "disclaimers (“this doesn't establish…”) or process notes (tool failures, what you checked, ids, approvals); " +
+  "summaries, not raw data. What they told you and what happened, never your guess at their feelings, " +
+  "relationships or motives as fact.";
+
 // What a write kept besides the words.
 const withPhotos = (count: number): string =>
   count === 0 ? "" : count === 1 ? ", with its photo" : `, with its ${String(count)} photos`;
@@ -226,11 +234,9 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
       "Change a page you've read, citing the version read_page gave you; if the page has changed since, read it " +
       "again. Replace a passage, old_text copied exactly from the page and there only once, with new_text; or " +
       "replace lines start_line to end_line, as read_page numbers them, with new_text. An empty new_text removes " +
-      "them. Keep the present first, in the present tense with an (as of <date>) note, and move what used to be " +
-      "true to the ## Earlier section as a dated line. Give title, gist, aliases or links to change those too. " +
-      "Write what they told you and what happened; never your guess at their feelings, relationships or motives " +
-      "as fact. Portrait, Now and How to help you are in your mind on every turn: keep them to what matters now, " +
-      "in whole sentences, and move the rest to a shelf page. Never store passwords or tokens.",
+      `them. Give title, gist, aliases or links to change those too. ${writingGuide} Portrait, Now (what's live) ` +
+      "and How to help you (lasting preferences, not one-off corrections) are in your mind on every turn: keep " +
+      "them to what matters now, and move the rest to a shelf page. Never store passwords or tokens.",
     inputSchema: {
       type: "object",
       properties: {
@@ -292,10 +298,8 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
       "Write a page that doesn't exist yet: memory:portrait, memory:now, memory:helping-you, or a page on a " +
       "shelf, memory:people/… for one person, memory:groups/… for a group of people, memory:goals/…, " +
       "memory:projects/…, memory:places/…, memory:topics/… or memory:chapters/… for a chapter of their life " +
-      "(read the chapters skill first), named with lowercase words and dashes. The present first, in the " +
-      "present tense with an (as of <date>) note, " +
-      "then an ## Earlier section of dated lines for what used to be true. To change a page that exists, read " +
-      "it and use edit_page. Never store passwords or tokens.",
+      `(read the chapters skill first), named with lowercase words and dashes. ${writingGuide} To change a page ` +
+      "that exists, read it and use edit_page. Never store passwords or tokens.",
     inputSchema: {
       type: "object",
       properties: {

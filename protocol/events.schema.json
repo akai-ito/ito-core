@@ -2914,7 +2914,7 @@
     "WakeUp": {
       "description": "A time Kumo will wake up and look at something for you: a follow-up, a look after an event, a standing job, or something you asked for. When it comes due, Kumo looks first, then messages you if that's useful, moves it if things changed, or drops it if it's moot, and Done says which. Kumo keeps it current as your life moves, such as a meeting moving or a trip; you can move, change or cancel it too.",
       "type": "object",
-      "required": ["id", "at", "what", "why", "by", "source", "set_at"],
+      "required": ["id", "at", "title", "what", "why", "by", "source", "set_at"],
       "properties": {
         "id": {
           "$ref": "#/$defs/WakeUpId"
@@ -2923,8 +2923,14 @@
           "$ref": "#/$defs/Timestamp",
           "description": "When it's next due, a concrete time Kumo worked out, such as the end of the event it's for."
         },
+        "title": {
+          "description": "What it is in a few plain words, as you'd say it, such as \"Ask how the technical went\": the line to show in Kumo's plans. A repeating one keeps one title, such as \"Look at the week ahead\".",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
         "what": {
-          "description": "What it's for, in a line, such as \"Ask how the Halcyon technical went\".",
+          "description": "What Kumo will do when it wakes, in its own words, such as \"Ask how the Halcyon technical went and note what to work on\": show it with `why` when you open a plan.",
           "type": "string",
           "minLength": 1
         },

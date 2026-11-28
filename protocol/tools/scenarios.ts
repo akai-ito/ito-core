@@ -3765,7 +3765,7 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "That was wrong",
       summary:
         "Kumo bins a mail from Acme as a promotion. You open Kumo's work and say it was wrong: the mail goes back " +
-        "to your inbox, and Kumo keeps what to do differently on How to help you, which Done says.",
+        "to your inbox, and Kumo keeps what to do differently on the track it belongs to, which Done says.",
       guarantees: ["G43"],
     });
     transcript.begin("2026-11-11T10:00:00.000Z");
@@ -3920,12 +3920,14 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.registerDevice();
     transcript.wait(1000);
+    const plain = "Ask how the technical went";
     const what = "Ask how the Halcyon technical went";
     const why = "It ends at 15:30, and you wanted to talk it through while it's fresh.";
     const title = "Halcyon technical, Thu 14:00";
     transcript.world("agent_calls", {
       tool: "set_wake_up",
       input: {
+        title: plain,
         what,
         why,
         at: "2026-11-12T15:30:00Z",
@@ -3935,6 +3937,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.wakeUp({
       at: halcyonTechnical.end,
+      title: plain,
       what,
       why,
       by: "kumo",
@@ -3946,7 +3949,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.world("kumo_works", { calls: [], post: asked });
     transcript.time(halcyonTechnical.end);
     transcript.post(asked);
-    transcript.addDone({ text: `Woke up for “${what}” and messaged you`, reason: "Done." });
+    transcript.addDone({ text: `Woke up for “${plain}” and messaged you`, reason: "Done." });
     transcript.plans([]);
     return transcript;
   },
@@ -3966,6 +3969,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.wait(1000);
     const morning = {
+      plain: "Look at the day with you",
       what: "Shape the day with you if it's unplanned",
       why: "You asked for a look at each weekday morning; your days shift a lot.",
       repeat: { days: ["mon", "tue", "wed", "thu", "fri"], time: "08:30" },
@@ -3974,6 +3978,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.world("agent_calls", {
       tool: "set_wake_up",
       input: {
+        title: morning.plain,
         what: morning.what,
         why: morning.why,
         repeat: morning.repeat,
@@ -3983,6 +3988,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     const daily = transcript.wakeUp({
       at: "2026-11-11T08:30:00.000Z",
+      title: morning.plain,
       what: morning.what,
       why: morning.why,
       repeat: { days: [...morning.repeat.days], time: morning.repeat.time },
@@ -3991,6 +3997,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.wait(1000);
     const chase = {
+      plain: "Chase Clara's reply",
       what: "See whether Clara replied about the call",
       why: "You offered Thursday or Friday; if she's quiet by Wednesday evening, a short nudge keeps it moving.",
       title: "Clara Voss: AI Engineer, FI",
@@ -3998,6 +4005,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.world("agent_calls", {
       tool: "set_wake_up",
       input: {
+        title: chase.plain,
         what: chase.what,
         why: chase.why,
         at: "2026-11-11T18:00:00Z",
@@ -4007,6 +4015,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     const followUp = transcript.wakeUp({
       at: "2026-11-11T18:00:00.000Z",
+      title: chase.plain,
       what: chase.what,
       why: chase.why,
       by: "kumo",
@@ -4060,12 +4069,14 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.registerDevice();
     transcript.wait(1000);
+    const plain = "Ask how the technical went";
     const what = "Ask how the Halcyon technical went";
     const why = "It ends at 15:30, and you wanted to talk it through while it's fresh.";
     const title = "Halcyon technical, Thu 14:00";
     transcript.world("agent_calls", {
       tool: "set_wake_up",
       input: {
+        title: plain,
         what,
         why,
         at: "2026-11-12T15:30:00Z",
@@ -4075,6 +4086,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     const wakeUp = transcript.wakeUp({
       at: halcyonTechnical.end,
+      title: plain,
       what,
       why,
       by: "kumo",
@@ -4109,14 +4121,15 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.registerDevice();
     transcript.wait(1000);
+    const plain = "Ask how the technical went";
     const what = "Ask how the Halcyon technical went";
     const why = "It ends at 15:30, and you wanted to talk it through while it's fresh.";
     const source = { kind: "chat" as const, title: "“Ask me how it went after”" };
     transcript.world("agent_calls", {
       tool: "set_wake_up",
-      input: { what, why, at: "2026-11-12T15:30:00Z", asked: true, source },
+      input: { title: plain, what, why, at: "2026-11-12T15:30:00Z", asked: true, source },
     });
-    const wakeUp = transcript.wakeUp({ at: halcyonTechnical.end, what, why, by: "you", source });
+    const wakeUp = transcript.wakeUp({ at: halcyonTechnical.end, title: plain, what, why, by: "you", source });
     const reason = "The model service answered 503 Service Unavailable.";
     transcript.world("kumo_cant_work", { reason });
     transcript.time(halcyonTechnical.end);
@@ -4136,7 +4149,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.time("2026-11-12T15:45:00.000Z");
     transcript.post(asked);
     transcript.problems([]);
-    transcript.addDone({ text: `Woke up for “${what}” and messaged you`, reason: "Done." });
+    transcript.addDone({ text: `Woke up for “${plain}” and messaged you`, reason: "Done." });
     transcript.plans([]);
     return transcript;
   },
@@ -4259,6 +4272,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.registerDevice();
     transcript.wait(1000);
     const look = {
+      plain: "Look at the day with you",
       what: "Shape the day with you if it's unplanned",
       why: "You asked for a look at each weekday morning.",
       repeat: { days: ["mon", "tue", "wed", "thu", "fri"], time: "09:00" },
@@ -4267,6 +4281,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.world("agent_calls", {
       tool: "set_wake_up",
       input: {
+        title: look.plain,
         what: look.what,
         why: look.why,
         repeat: look.repeat,
@@ -4276,6 +4291,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     const morning = transcript.wakeUp({
       at: "2026-11-16T09:00:00.000Z",
+      title: look.plain,
       what: look.what,
       why: look.why,
       repeat: { days: [...look.repeat.days], time: look.repeat.time },
@@ -4593,14 +4609,15 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.registerDevice();
     transcript.wait(1000);
+    const plain = "Ask how the technical went";
     const what = "Ask how the Halcyon technical went";
     const why = "It ends at 15:30, and you wanted to talk it through while it's fresh.";
     const source = { kind: "chat" as const, title: "“Ask me how it went after”" };
     transcript.world("agent_calls", {
       tool: "set_wake_up",
-      input: { what, why, at: "2026-11-12T15:30:00Z", asked: true, source },
+      input: { title: plain, what, why, at: "2026-11-12T15:30:00Z", asked: true, source },
     });
-    transcript.wakeUp({ at: halcyonTechnical.end, what, why, by: "you", source });
+    transcript.wakeUp({ at: halcyonTechnical.end, title: plain, what, why, by: "you", source });
     transcript.world("usage_limit_reached", { resets_at: "2026-11-12T18:00:00.000Z" });
     transcript.time(halcyonTechnical.end);
     transcript.problems([
@@ -4622,7 +4639,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.world("kumo_works", { calls: [], answer: caughtUp });
     transcript.time("2026-11-12T18:00:00.000Z");
     transcript.problems([]);
-    transcript.addDone({ text: `Woke up late for “${what}”`, reason: "Caught up after Kumo's pause", quiet: true });
+    transcript.addDone({ text: `Woke up late for “${plain}”`, reason: "Caught up after Kumo's pause", quiet: true });
     transcript.plans([]);
     transcript.post(caughtUp);
     return transcript;
@@ -5011,6 +5028,337 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.wait(60 * 60 * 1000);
     memoryCall(transcript, "/v0/made", { made: [changed.made] });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "95-one-plan-across-threads",
+      scenario: 95,
+      title: "One plan across threads",
+      summary:
+        "Over a morning you tell Kumo four things in three places: in the main chat that you're working from " +
+        "Leeds this week, in a thread that Thursday's demo has no slides yet, in another that the handover to " +
+        "Omar is done, and back in the main chat that the Kestrel review is still due. Each conversation has the " +
+        "others in mind. Kumo keeps one plan without being told each time: time for the slides once the " +
+        "afternoon frees up, the review after, a guess at your evening, and one check-in it moves rather than " +
+        "doubles.",
+      guarantees: ["G62"],
+    });
+    transcript.begin("2026-11-24T08:29:00.000Z");
+    transcript.world("capability_on", {
+      capability: "icloud",
+      values: { apple_id: "divy@icloud.com", app_password: "abcd-efgh-ijkl-mnop" },
+    });
+    transcript.connect();
+    transcript.wait(1000);
+    const kumo = { name: "Kumo", kumo: true };
+
+    transcript.time("2026-11-24T08:30:00.000Z");
+    const leeds = "Morning! Change of plan: I'm working from my sister's in Leeds this week, back Friday.";
+    const leedsReply = "Leeds it is. I'll plan your week around being there, and keep the London runs for Friday.";
+    sendAndStart(transcript, leeds);
+    transcript.wait(400);
+    writeWhole(transcript, leedsReply);
+    transcript.endTurn("completed");
+
+    transcript.time("2026-11-24T09:10:00.000Z");
+    const demo = "The Northwind demo is Thursday at 14:00 and the slides aren't started. Handover's this morning.";
+    const demoReply =
+      "Then the slides wait for the handover. I'll find you two hours once it's done, and come back to you here.";
+    const asked = transcript.send(demo, { newThread: true });
+    const demoThread = transcript.threadOf(asked) ?? "";
+    transcript.world("kumo_has_in_mind", {
+      thread: demoThread,
+      today: ["The main chat:", `- 08:30 they: ${leeds}`, `- 08:30 you: ${leedsReply}`],
+    });
+    const find = {
+      title: "Find time for the slides",
+      what: "See whether the handover's done; if it is, put two hours for the slides on my calendar",
+      why: "The Northwind demo is Thursday at 14:00 and the slides aren't started; the handover takes this morning.",
+      source: { kind: "chat" as const, title: "Thursday's demo" },
+    };
+    const findWakeUp = transcript.inThread(demoThread, () => {
+      transcript.startTurn([asked]);
+      transcript.world("thread_named", { title: "Thursday's demo" });
+      transcript.wait(300);
+      transcript.world("agent_calls", {
+        tool: "set_wake_up",
+        input: { ...find, at: "2026-11-24T11:30:00Z", asked: false },
+        thread: demoThread,
+      });
+      const set = transcript.wakeUp({ at: "2026-11-24T11:30:00.000Z", ...find, by: "kumo" });
+      transcript.wait(300);
+      writeWhole(transcript, demoReply);
+      transcript.endTurn("completed");
+      return set;
+    });
+    transcript.changeThread(demoThread, { title: "Thursday's demo" });
+
+    // It comes due before the handover's over: Kumo looks at today so far, and moves itself rather than nag.
+    const stillOn = "The handover's still going, so I'll look again at 12:30.";
+    transcript.world("kumo_has_in_mind", {
+      background: true,
+      today: [
+        `“Thursday's demo” (${demoThread}), a thread:`,
+        `- 09:10 they: ${demo}`,
+        "The main chat:",
+        `- 08:30 they: ${leeds}`,
+        "Still to come today, soonest first:",
+        "- 11:30 wake-up: Find time for the slides",
+      ],
+    });
+    transcript.world("kumo_works", {
+      calls: [{ tool: "move_wake_up", input: { id: findWakeUp.id, at: "2026-11-24T12:30:00Z" } }],
+      answer: stillOn,
+    });
+    transcript.time("2026-11-24T11:30:00.000Z");
+    const later = { ...findWakeUp, at: "2026-11-24T12:30:00.000Z" };
+    transcript.plans([later]);
+    transcript.addDone({ text: "Moved “Find time for the slides” to Tue 24 Nov, 12:30", reason: stillOn });
+
+    transcript.time("2026-11-24T11:40:00.000Z");
+    const handedOver = "Handover to Omar is done, he has everything.";
+    const handoverReply =
+      "Nicely done. That frees your afternoon: the slides' first pass is on my calendar from 2 to 4, and I'll check in after.";
+    const told = transcript.send(handedOver, { newThread: true });
+    const handoverThread = transcript.threadOf(told) ?? "";
+    transcript.world("kumo_has_in_mind", {
+      thread: handoverThread,
+      today: [
+        `“Thursday's demo” (${demoThread}), a thread:`,
+        `- 09:10 they: ${demo}`,
+        `- 09:10 you: ${demoReply}`,
+        "The main chat:",
+        `- 08:30 they: ${leeds}`,
+        "What you did today, from your Done list (written to them), newest first:",
+        `- 11:30 Moved “Find time for the slides” to Tue 24 Nov, 12:30: ${stillOn}`,
+        "Still to come today, soonest first:",
+        "- 12:30 wake-up: Find time for the slides",
+      ],
+    });
+    const slidesBlock = {
+      kind: "plan",
+      title: "Slides, first pass",
+      start: "2026-11-24T14:00:00.000Z",
+      end: "2026-11-24T16:00:00.000Z",
+      activity: "working",
+      why: "The Northwind demo is Thursday at 14:00",
+    };
+    const slides = transcript.calendarItem({
+      uid: transcript.eventUid(),
+      title: slidesBlock.title,
+      start: slidesBlock.start,
+      end: slidesBlock.end,
+      all_day: false,
+      calendar: kumo,
+      status: "confirmed",
+    });
+    const checkIn = {
+      title: "Check in on the slides",
+      what: "Ask how the first pass went, and offer a run-through if they're nearly there",
+    };
+    const result = "Handed over to Omar";
+    transcript.inThread(handoverThread, () => {
+      transcript.startTurn([told]);
+      transcript.world("thread_named", { title: "Handover" });
+      transcript.wait(300);
+      transcript.world("agent_calls", { tool: "plan_block", input: slidesBlock, thread: handoverThread });
+      transcript.comingUp([slides]);
+      transcript.world("agent_calls", {
+        tool: "move_wake_up",
+        input: { id: findWakeUp.id, ...checkIn, at: "2026-11-24T16:00:00Z" },
+        thread: handoverThread,
+      });
+      transcript.plans([{ ...later, ...checkIn, at: "2026-11-24T16:00:00.000Z" }]);
+      transcript.wait(300);
+      writeWhole(transcript, handoverReply);
+      transcript.world("agent_calls", {
+        tool: "update_thread",
+        input: { state: "done", result },
+        thread: handoverThread,
+      });
+      transcript.changeThread(handoverThread, { state: "done", result });
+      transcript.wait(200);
+      transcript.endTurn("completed");
+    });
+    transcript.changeThread(handoverThread, { title: "Handover" });
+
+    transcript.time("2026-11-24T12:30:00.000Z");
+    const review = "Still need to finish the Kestrel review today, it's due tomorrow.";
+    const reviewReply =
+      "That fits after the slides: 4:15 to 5:15 on my calendar. I've guessed your evening's with your sister, and I'll check in on both at 5:15, once.";
+    sendAndStart(transcript, review);
+    transcript.world("kumo_has_in_mind", {
+      today: [
+        `“Handover” (${handoverThread}), a thread, marked done (${result}):`,
+        `- 11:40 they: ${handedOver}`,
+        `“Thursday's demo” (${demoThread}), a thread:`,
+        "Still to come today, soonest first:",
+        "- 14:00–16:00 Slides, first pass · your block",
+        "- 16:00 wake-up: Check in on the slides",
+      ],
+      leaves_out: [`- 08:30 they: ${leeds}`],
+    });
+    transcript.wait(400);
+    const reviewBlock = {
+      kind: "plan",
+      title: "Kestrel review",
+      start: "2026-11-24T16:15:00.000Z",
+      end: "2026-11-24T17:15:00.000Z",
+      activity: "working",
+      why: "Due tomorrow; after the slides, while you're still at the desk",
+    };
+    agentCalls(transcript, "plan_block", reviewBlock);
+    const reviewItem = transcript.calendarItem({
+      uid: transcript.eventUid(),
+      title: reviewBlock.title,
+      start: reviewBlock.start,
+      end: reviewBlock.end,
+      all_day: false,
+      calendar: kumo,
+      status: "confirmed",
+    });
+    transcript.comingUp([slides, reviewItem]);
+    const eveningGuess = {
+      kind: "guess",
+      title: "With your sister",
+      start: "2026-11-24T19:00:00.000Z",
+      end: "2026-11-24T22:00:00.000Z",
+      activity: "people",
+      why: "You're staying with her this week",
+    };
+    agentCalls(transcript, "plan_block", eveningGuess);
+    const evening = transcript.calendarItem({
+      uid: transcript.eventUid(),
+      title: eveningGuess.title,
+      start: eveningGuess.start,
+      end: eveningGuess.end,
+      all_day: false,
+      calendar: kumo,
+      status: "confirmed",
+      guess: { activity: "people", why: eveningGuess.why },
+    });
+    transcript.comingUp([slides, reviewItem, evening]);
+    const both = {
+      title: "Check in on slides and review",
+      what: "Ask how the slides and the Kestrel review went; offer a run-through tonight if the slides are close",
+    };
+    agentCalls(transcript, "move_wake_up", { id: findWakeUp.id, ...both, at: "2026-11-24T17:15:00Z" });
+    const one = { ...later, ...both, at: "2026-11-24T17:15:00.000Z" };
+    transcript.plans([one]);
+    transcript.wait(300);
+    writeWhole(transcript, reviewReply);
+    transcript.endTurn("completed");
+    transcript.wait(5000);
+    transcript.listWakeUps();
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "96-today-so-far",
+      scenario: 96,
+      title: "Today so far",
+      summary:
+        "A morning across the main chat and a thread about Mira's birthday. When Kumo wakes at noon to check " +
+        "the pottery class, it has the whole day in mind: each conversation by name, what it did, and what's " +
+        "next. It checks in once, in the thread, and when you write in the main chat afterwards, Kumo has that " +
+        "check-in in mind too, without the main chat's own messages, which it already has.",
+      guarantees: ["G62"],
+    });
+    transcript.begin("2026-11-25T07:59:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+
+    transcript.time("2026-11-25T08:00:00.000Z");
+    const dentist = "Quillfield Dental moved my check-up to Friday at 10.";
+    const dentistReply = "Friday at 10 it is. I'll remind you on Thursday evening.";
+    sendAndStart(transcript, dentist);
+    transcript.wait(300);
+    const remind = {
+      title: "Remind you of the dentist",
+      what: "Remind them of Friday's 10:00 check-up at Quillfield Dental",
+      why: "They moved it to Friday at 10 and asked nothing more; the evening before is when it helps.",
+      source: { kind: "chat" as const, title: "Dentist moved to Friday" },
+    };
+    agentCalls(transcript, "set_wake_up", { ...remind, at: "2026-11-26T19:00:00Z", asked: false });
+    const reminder = transcript.wakeUp({ at: "2026-11-26T19:00:00.000Z", ...remind, by: "kumo" });
+    transcript.wait(300);
+    writeWhole(transcript, dentistReply);
+    transcript.endTurn("completed");
+
+    transcript.time("2026-11-25T09:00:00.000Z");
+    const ideas = "Ideas for Mira's birthday? She's been into pottery lately.";
+    const ideasReply =
+      "A wheel class for two at Kiln on Saturday: you'd make something together. Their bookings open at noon, so I'll look then.";
+    const asked = transcript.send(ideas, { newThread: true });
+    const thread = transcript.threadOf(asked) ?? "";
+    const look = {
+      title: "Check Kiln's Saturday places",
+      what: "See whether Kiln's Saturday wheel class has two places, and tell them in Mira's thread",
+      why: "Kiln opens bookings at noon, and Saturday is Mira's birthday.",
+      source: { kind: "chat" as const, title: "Mira's birthday" },
+    };
+    transcript.inThread(thread, () => {
+      transcript.startTurn([asked]);
+      transcript.world("thread_named", { title: "Mira's birthday" });
+      transcript.wait(300);
+      transcript.world("agent_calls", {
+        tool: "set_wake_up",
+        input: { ...look, at: "2026-11-25T12:00:00Z", asked: false },
+        thread,
+      });
+      transcript.wakeUp({ at: "2026-11-25T12:00:00.000Z", ...look, by: "kumo" });
+      transcript.wait(300);
+      writeWhole(transcript, ideasReply);
+      transcript.endTurn("completed");
+    });
+    transcript.changeThread(thread, { title: "Mira's birthday" });
+
+    transcript.time("2026-11-25T10:15:00.000Z");
+    const added = { text: "Moved your check-up to Friday on your calendar", reason: "Quillfield Dental moved it" };
+    agentCalls(transcript, "done", added);
+    transcript.addDone(added);
+
+    const places = "Kiln has two places left in Saturday's 11:00 wheel class, £38 each. Want me to hold them?";
+    transcript.world("kumo_has_in_mind", {
+      background: true,
+      today: [
+        `“Mira's birthday” (${thread}), a thread:`,
+        `- 09:00 they: ${ideas}`,
+        "The main chat:",
+        `- 08:00 they: ${dentist}`,
+        `- 08:00 you: ${dentistReply}`,
+        "What you did today, from your Done list (written to them), newest first:",
+        `- 10:15 ${added.text}: ${added.reason}`,
+        "Still to come today, soonest first:",
+        `- 12:00 wake-up: ${look.title}`,
+      ],
+      leaves_out: [`wake-up: ${remind.title}`],
+    });
+    transcript.world("kumo_works", { calls: [{ tool: "post", input: { text: places, thread } }] });
+    transcript.time("2026-11-25T12:00:00.000Z");
+    transcript.post(places, { thread });
+    transcript.addDone({ text: `Woke up for “${look.title}” and messaged you`, reason: "Done." });
+    transcript.plans([reminder]);
+
+    transcript.time("2026-11-25T12:20:00.000Z");
+    const thanks = "Thanks for sorting the dentist.";
+    sendAndStart(transcript, thanks);
+    transcript.world("kumo_has_in_mind", {
+      today: [
+        `“Mira's birthday” (${thread}), a thread:`,
+        `- 12:00 you messaged them: ${places}`,
+        "What you did today, from your Done list (written to them), newest first:",
+        `- 12:00 Woke up for “${look.title}” and messaged you: Done.`,
+        `- 10:15 ${added.text}: ${added.reason}`,
+      ],
+      leaves_out: [`- 08:00 they: ${dentist}`],
+    });
+    transcript.wait(300);
+    writeWhole(transcript, "Any time. I'll remind you on Thursday evening.");
+    transcript.endTurn("completed");
     return transcript;
   },
 

@@ -141,6 +141,7 @@ const done = (server: Server): readonly (readonly [string, string | undefined, b
   server.store.listDone(undefined, 20).entries.map(({ text, reason, quiet }) => [text, reason, quiet] as const);
 
 const interview = {
+  title: "Ask how the technical went",
   what: "Ask how the Halcyon technical went",
   why: "It ends at 15:30, and they wanted to talk it through while it's fresh.",
   at: "2026-11-02T15:30:00Z",
@@ -149,6 +150,7 @@ const interview = {
 };
 
 const weekdayRun = {
+  title: "Look at the day with you",
   what: "Plan the day with them if it's unplanned",
   why: "Their days shift a lot; a quick shape early keeps the mornings for focus.",
   repeat: { days: ["mon", "tue", "wed", "thu", "fri"], time: "09:00" },
@@ -157,7 +159,7 @@ const weekdayRun = {
 };
 
 describe("wake-ups", () => {
-  it("look with what's in Kumo's mind and the end of the conversation, which background work doesn't see", async () => {
+  it("look with what's in Kumo's mind and today so far, which background work doesn't see", async () => {
     const { open, runUntil, plan, prompts } = setUp("2026-11-02T23:30:00.000Z");
     const server = await open();
     try {
@@ -173,6 +175,7 @@ describe("wake-ups", () => {
       expect(said.ok).toBe(true);
       server.store.postMessage("Night. I'll keep your 9:00 run unless you say.");
       await server.callTool("set_wake_up", {
+        title: "Bed by 1",
         what: "See whether they made it to bed",
         why: "They chose bed by 1 this week.",
         at: "2026-11-03T00:45:00Z",
@@ -187,10 +190,17 @@ describe("wake-ups", () => {
       expect(prompt).toContain("You're working for the person in the background");
       expect(prompt).toContain("It's Tuesday 3 November at 00:45 where they are (Europe/London).");
       expect(prompt).toContain("As of 2 Nov, you're building Ito late into the night and aiming for bed by 1.");
-      expect(prompt).toContain("“See whether they made it to bed” at Tue 3 Nov, 00:45");
-      expect(prompt).toContain("- Monday 2 November at 23:30, they: one more bug and then bed");
-      expect(prompt).toContain("- Monday 2 November at 23:30, you: Night. I'll keep your 9:00 run unless you say.");
-      expect(prompt.indexOf("<lately>")).toBeLessThan(prompt.indexOf("A wake-up you set has come due"));
+      expect(prompt).toContain(
+        "“Bed by 1” at Tue 3 Nov, 00:45; yours, from your chat (“Bed by 1 this week”). You'll: See whether they " +
+          "made it to bed",
+      );
+      expect(prompt).toContain("A wake-up you set has come due: “Bed by 1”.\nWhat you meant to do: See whether");
+      expect(prompt).toContain("Today so far, since 04:00, across the main chat and their threads");
+      expect(prompt).toContain(
+        "The main chat:\n- Mon 23:30 they: one more bug and then bed\n" +
+          "- Mon 23:30 you messaged them: Night. I'll keep your 9:00 run unless you say.",
+      );
+      expect(prompt.indexOf("<today>")).toBeLessThan(prompt.indexOf("A wake-up you set has come due"));
       expect(posts(server)).toEqual(["Night. I'll keep your 9:00 run unless you say."]);
     } finally {
       await server.close();
@@ -213,8 +223,14 @@ describe("wake-ups", () => {
     expect(local.isError).toBe(true);
     expect(whenless).toEqual({ text: "Say when: at, or a repeat.", isError: true });
     expect(first.store.desk().plans).toMatchObject([
-      { what: interview.what, at: "2026-11-02T15:30:00.000Z", by: "kumo", source: { event: { uid: "halcyon-1" } } },
-      { what: weekdayRun.what, at: "2026-11-03T09:00:00.000Z", by: "you", repeat: weekdayRun.repeat },
+      {
+        title: interview.title,
+        what: interview.what,
+        at: "2026-11-02T15:30:00.000Z",
+        by: "kumo",
+        source: { event: { uid: "halcyon-1" } },
+      },
+      { title: weekdayRun.title, what: weekdayRun.what, at: "2026-11-03T09:00:00.000Z", repeat: weekdayRun.repeat },
     ]);
     expect(posts(first)).toEqual([]);
     expect(done(first)).toEqual([]);
@@ -225,11 +241,14 @@ describe("wake-ups", () => {
     });
     await runUntil("2026-11-02T16:00:00.000Z");
 
-    expect(prompts.get()[0]).toContain("A wake-up you set has come due: “Ask how the Halcyon technical went”.");
+    expect(prompts.get()[0]).toContain(
+      "A wake-up you set has come due: “Ask how the technical went”.\n" +
+        "What you meant to do: Ask how the Halcyon technical went",
+    );
     expect(prompts.get()[0]).toContain("That event is no longer on their calendar.");
     expect(posts(first)).toEqual(["How did the technical go?"]);
     expect(done(first)).toEqual([
-      ["Woke up for “Ask how the Halcyon technical went” and messaged you", "Asked how it went.", false],
+      ["Woke up for “Ask how the technical went” and messaged you", "Asked how it went.", false],
     ]);
     const left = await listed(first);
     expect(left.map(({ what }) => what)).toEqual([weekdayRun.what]);
@@ -239,7 +258,7 @@ describe("wake-ups", () => {
 
     expect(prompts.get()[1]).toContain("It repeats weekdays at 09:00 and comes back by itself");
     expect(done(first)[0]).toEqual([
-      "Woke up for “Plan the day with them if it's unplanned”",
+      "Woke up for “Look at the day with you”",
       "Tuesday's already shaped; nothing to say.",
       true,
     ]);
@@ -255,12 +274,56 @@ describe("wake-ups", () => {
     }
   });
 
+  it("carry a short title of their own, and one already set for the same thing is moved rather than doubled", async () => {
+    const { open } = setUp();
+    const server = await open();
+    try {
+      const untitled = await server.callTool("set_wake_up", { ...interview, title: undefined });
+      const long = await server.callTool("set_wake_up", { ...interview, title: "x".repeat(61) });
+      const set = await server.callTool("set_wake_up", interview);
+      const again = await server.callTool("set_wake_up", {
+        ...interview,
+        title: "ask how the technical went!",
+        at: "2026-11-02T17:00:00Z",
+      });
+      const [first] = await listed(server);
+      const evening = await server.callTool("set_wake_up", {
+        ...weekdayRun,
+        title: "Ask what's left for tomorrow",
+        repeat: { days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], time: "21:00" },
+      });
+      const renamed = await server.callTool("move_wake_up", { id: first?.id, title: "Technical debrief" });
+
+      expect(untitled).toEqual({ text: "Give title.", isError: true });
+      expect(long.isError).toBe(true);
+      expect(set.isError).toBeUndefined();
+      expect(again).toEqual({
+        text:
+          `You already have “Ask how the technical went” (${first?.id ?? ""}) at Mon 2 Nov, 15:30. Move that one, ` +
+          "or give it a repeat if this comes round, rather than setting another; if it's something else, give it " +
+          "a title that tells them apart.",
+        isError: true,
+      });
+      expect(evening.text).toMatch(/^Set w_\w+ for Mon 2 Nov, 21:00\.$/u);
+      expect(renamed.text).toBe("Technical debrief is at Mon 2 Nov, 15:30 now.");
+      const titles = await listed(server);
+      expect(titles.map(({ title }) => title)).toEqual(["Technical debrief", "Ask what's left for tomorrow"]);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("are moved or dropped by Kumo's judgement, and moved or cancelled from the app", async () => {
     const { open, runUntil, plan } = setUp();
     const server = await open();
     try {
       await server.callTool("set_wake_up", interview);
-      await server.callTool("set_wake_up", { ...interview, what: "Chase Clara's reply", at: "2026-11-02T17:00:00Z" });
+      await server.callTool("set_wake_up", {
+        ...interview,
+        title: "Chase Clara's reply",
+        what: "See whether Clara replied, and nudge if not",
+        at: "2026-11-02T17:00:00Z",
+      });
       await server.callTool("set_wake_up", weekdayRun);
       const [technical, clara, weekdays] = await listed(server);
       plan(
@@ -277,13 +340,15 @@ describe("wake-ups", () => {
 
       expect(done(server)).toEqual([
         ["Dropped “Chase Clara's reply”", "She replied already.", false],
-        ["Moved “Ask how the Halcyon technical went” to Mon 2 Nov, 18:30", "It ran late, so later.", false],
+        ["Moved “Ask how the technical went” to Mon 2 Nov, 18:30", "It ran late, so later.", false],
       ]);
 
       const moved = await request(server, "PATCH", `/v0/wakeups/${technical?.id ?? ""}`, {
         at: "2026-11-02T19:00:00.000Z",
+        title: "Technical debrief",
         what: "Ask how the technical went",
       });
+      const tooLong = await request(server, "PATCH", `/v0/wakeups/${technical?.id ?? ""}`, { title: "x".repeat(61) });
       const oneOff = await request(server, "PATCH", `/v0/wakeups/${weekdays?.id ?? ""}`, { repeat: null });
       const passed = await request(server, "PATCH", `/v0/wakeups/${technical?.id ?? ""}`, {
         at: "2026-11-01T19:00:00.000Z",
@@ -294,8 +359,11 @@ describe("wake-ups", () => {
 
       expect(moved).toMatchObject({
         status: 200,
-        body: { wake_up: { at: "2026-11-02T19:00:00.000Z", what: "Ask how the technical went" } },
+        body: {
+          wake_up: { at: "2026-11-02T19:00:00.000Z", title: "Technical debrief", what: "Ask how the technical went" },
+        },
       });
+      expect(tooLong.status).toBe(400);
       expect(oneOff.body).not.toHaveProperty("wake_up.repeat");
       expect(passed.status).toBe(400);
       expect(unknown.status).toBe(404);
@@ -311,6 +379,7 @@ describe("wake-ups", () => {
   it("wait through a usage limit without retrying, then catch up once, in one message", async () => {
     const { open, runUntil, plan, prompts, resetsAt } = setUp();
     const evening = {
+      title: "Evening check-in",
       what: "Ask what's left for tomorrow",
       why: "They like the evening to close the day's loose ends.",
       repeat: { days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], time: "16:00" },
@@ -368,8 +437,8 @@ describe("wake-ups", () => {
       expect(await listed(server)).toMatchObject([{ what: evening.what, at: "2026-11-03T16:00:00.000Z" }]);
       expect(done(server)).toEqual(
         expect.arrayContaining([
-          [`Woke up late for “${interview.what}”`, "Caught up after Kumo's pause", true],
-          [`Woke up late for “${evening.what}”`, "Caught up after Kumo's pause", true],
+          [`Woke up late for “${interview.title}”`, "Caught up after Kumo's pause", true],
+          [`Woke up late for “${evening.title}”`, "Caught up after Kumo's pause", true],
         ]),
       );
     } finally {

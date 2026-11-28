@@ -131,11 +131,11 @@ describe("the Desk", () => {
             expect.arrayContaining([
               [
                 "You said “Moved climbing with Leo to 20:00” was wrong: Leo meant next week",
-                "Noted on How to help you for next time.",
+                "Noted on your track for next time.",
               ],
               [
                 "You said “Moved climbing with Leo to 20:00” was wrong: and it's at the wall",
-                "Noted on How to help you for next time.",
+                "Noted on your track for next time.",
               ],
             ]),
           );
