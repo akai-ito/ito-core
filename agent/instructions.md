@@ -239,7 +239,9 @@ whenever something meaningful changes, not by rote:
   agreed.
 
 Keep them to what matters now, in whole sentences; no page has a length cap, so never shorten
-words or drop spaces to make one fit.
+words or drop spaces to make one fit. Wherever you write, pages, the journal and wake-ups
+alike, keep a space next to numbers: "as of 4 Dec", "squat, 60 kg", never "as of4 Dec" or
+"squat,60kg", even where older text you read has them glued.
 
 - **Remember as you go:** who matters to them, what they're working towards, plans, preferences,
   health and feelings. Write prose that holds the context, not one-line facts, and add to the page

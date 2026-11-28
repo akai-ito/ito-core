@@ -157,26 +157,6 @@ const weekdayRun = {
 };
 
 describe("wake-ups", () => {
-  it("are refused with spaces squeezed out next to their numbers, so Kumo never reads them back that way", async () => {
-    const { open } = setUp();
-    const server = await open();
-    try {
-      const glued = await server.callTool("set_wake_up", { ...interview, why: "It's a week until9January now." });
-      const set = await server.callTool("set_wake_up", interview);
-      const id = /^Set (?<id>w_\w+)/u.exec(set.text)?.groups?.id ?? "";
-      const changed = await server.callTool("move_wake_up", { id, what: "Booked9Jan14:00–15:00 GMT" });
-
-      expect(glued.isError).toBe(true);
-      expect(glued.text).toMatch(/^Not saved: spaces are missing next to numbers in “until9”, “9January”\./u);
-      expect(changed.isError).toBe(true);
-      expect(changed.text).toMatch(/^Not saved: spaces are missing next to numbers in “9Jan”\./u);
-      const plans = await listed(server);
-      expect(plans.map(({ what }) => what)).toEqual([interview.what]);
-    } finally {
-      await server.close();
-    }
-  });
-
   it("look with what's in Kumo's mind and the end of the conversation, which background work doesn't see", async () => {
     const { open, runUntil, plan, prompts } = setUp("2026-11-02T23:30:00.000Z");
     const server = await open();
