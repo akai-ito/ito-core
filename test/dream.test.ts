@@ -260,7 +260,13 @@ describe("dreams", () => {
       await runUntil("2026-11-26T23:30:00.000Z");
       const started = await request(server, "POST", "/v0/dream");
       expect(started.status).toBe(202);
-      expect(started.body).toMatchObject({ dreaming: { since: "2026-11-26T23:30:00.000Z", trigger: "manual" } });
+      expect(started.body).toMatchObject({
+        dreaming: {
+          since: "2026-11-26T23:30:00.000Z",
+          trigger: "manual",
+          steps: [{ group: "gathering", text: "Reading back over the day" }],
+        },
+      });
       await settle();
       const again = await request(server, "POST", "/v0/dream");
       expect(again.body).toMatchObject({ dreaming: { since: "2026-11-26T23:30:00.000Z" } });

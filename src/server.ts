@@ -810,6 +810,9 @@ export const createServer = (options: ServerOptions): Server => {
     publish: (dream) => {
       store.recordDream(dream);
     },
+    progress: (step) => {
+      store.recordDreamStep(step);
+    },
     instructions: dreamInstructions,
     workspace: path.join(options.dataDirectory, "workspace"),
     info,

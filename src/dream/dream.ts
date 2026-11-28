@@ -20,6 +20,7 @@ import {
   type SharedPhoto,
 } from "#dream/digest.ts";
 import type { DayNote, DayNotes } from "#dream/notes.ts";
+import { firstStep, stepOf, steppedTools, type StepLine, type StepLookups } from "#dream/steps.ts";
 import { toLocation } from "#memory/pages.ts";
 import type {
   Attachment,
@@ -29,6 +30,7 @@ import type {
   DreamGroup,
   DreamLine,
   DreamState,
+  DreamStep,
   Message,
   Thread,
   WakeUp,
@@ -102,6 +104,8 @@ export type DreamOptions = {
   readonly desk: Pick<DeskKeeper, "addDone" | "onUndo">;
   readonly findDone: (id: string) => { readonly entry: DoneEntry } | undefined;
   readonly publish: (dream: Dream) => void;
+  // A dream under way started a step, for the live view.
+  readonly progress?: (step: DreamStep) => void;
   readonly instructions: string;
   readonly workspace: string;
   readonly info: Info;
@@ -134,6 +138,9 @@ const groups: readonly DreamGroup[] = ["planned", "tidied", "noticed", "saved"];
 const longestLine = 200;
 
 const longestHeadline = 160;
+
+// The steps a dream under way keeps for an app that opens mid-dream.
+const mostSteps = 20;
 
 const headerBytes = 256 * 1024;
 
@@ -186,6 +193,8 @@ type Running = {
   readonly notes: readonly DayNote[];
   readonly touched: ReadonlyMap<string, Touched>;
   readonly lines: readonly Written[];
+  // Its latest steps, for an app that opens mid-dream.
+  readonly steps: readonly DreamStep[];
   readonly headline?: string;
 };
 
@@ -290,6 +299,7 @@ export const createDreams = ({
   desk,
   findDone,
   publish,
+  progress,
   instructions,
   workspace,
   info,
@@ -359,9 +369,38 @@ export const createDreams = ({
       time: timeOf(),
       // The next night's dream, whatever Dream now has done since.
       next_at: toTimestamp(slotAfter(clock.now())),
-      ...(current && { dreaming: { since: toTimestamp(current.startedAt), trigger: current.trigger } }),
+      ...(current && {
+        dreaming: { since: toTimestamp(current.startedAt), trigger: current.trigger, steps: [...current.steps] },
+      }),
       ...(latest && { latest: withUndo(latest) }),
     };
+  };
+
+  // A day as a step names it: its weekday within the last week, or its date.
+  const dayName = (day: string): string => {
+    const at = Date.parse(`${day}T12:00:00.000Z`);
+    if (Number.isNaN(at)) return day;
+    const today = Date.parse(`${toLocal(clock.now(), timeZone()).day}T12:00:00.000Z`);
+    const format: Intl.DateTimeFormatOptions =
+      today - at < 7 * dayMs && at <= today ? { weekday: "long" } : { day: "numeric", month: "short" };
+    return new Intl.DateTimeFormat("en-GB", { ...format, timeZone: "UTC" }).format(at);
+  };
+
+  const lookups: StepLookups = {
+    pageTitle: (address) => changes.titleOf(address),
+    threadTitle: (id) => sources.thread(id)?.title,
+    wakeUpTitle: (id) => changes.wakeUps().find((wakeUp) => wakeUp.id === id)?.title,
+    eventTitle: (uid) => sources.calendar().find((item) => item.uid === uid)?.title,
+    dayName,
+  };
+
+  // A step of the dream under way, unless it says what the last one said.
+  const addStep = (line: StepLine): void => {
+    const current = running.get();
+    if (!current || current.steps.at(-1)?.text === line.text) return;
+    const step: DreamStep = { at: toTimestamp(clock.now()), ...line };
+    running.set({ ...current, steps: [...current.steps, step].slice(-mostSteps) });
+    progress?.(step);
   };
 
   const setRunning = (change: (current: Running) => Running): void => {
@@ -704,8 +743,10 @@ export const createDreams = ({
       notes: notes.waiting(),
       touched: new Map(),
       lines: [],
+      steps: [],
     };
     running.set(current);
+    addStep(firstStep);
     info("Kumo is dreaming", { trigger, since: toTimestamp(since) });
     try {
       const done = await work(await promptOf(current, since), current.run);
@@ -901,12 +942,17 @@ export const createDreams = ({
       return withUndo(seen);
     },
     watch: (tool) =>
-      watchedMemory.has(tool.name) || watchedWakeUps.has(tool.name) || watchedCalendar.has(tool.name)
+      watchedMemory.has(tool.name) ||
+      watchedWakeUps.has(tool.name) ||
+      watchedCalendar.has(tool.name) ||
+      steppedTools.has(tool.name)
         ? {
             ...tool,
             call: async (input) => {
               const current = running.get();
               if (!current || contextRun() !== current.run) return tool.call(input);
+              const line = stepOf(tool.name, input, lookups);
+              if (line) addStep(line);
               const seen = await before(tool.name, input);
               const result = await tool.call(input);
               if (result.isError !== true) after(seen);

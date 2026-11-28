@@ -3678,10 +3678,16 @@ components:
         dreaming:
           description: A dream under way, while there is one.
           type: object
-          required: [since, trigger]
+          required: [since, trigger, steps]
           properties:
             since: { $ref: "events.schema.json#/$defs/Timestamp" }
             trigger: { enum: [scheduled, manual] }
+            steps:
+              description: |
+                Its latest steps, oldest first, up to 20, so an app that opens mid-dream catches up;
+                `dream.progress` brings each one after.
+              type: array
+              items: { $ref: "events.schema.json#/$defs/DreamStep" }
         latest:
           $ref: "events.schema.json#/$defs/Dream"
           description: The latest dream, until there's been none.

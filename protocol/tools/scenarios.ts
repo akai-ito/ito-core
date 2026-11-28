@@ -5081,8 +5081,12 @@ const scenarios: readonly (() => Transcript)[] = [
       answer: "Dreamt.",
     });
     transcript.time("2026-11-27T04:00:00.000Z");
+    transcript.dreamStep("gathering", "Reading back over the day");
+    transcript.dreamStep("journal", "Writing Thursday's journal");
+    transcript.dreamStep("planning", `Moving “${legs.title}”`);
     const later = { ...check, at: "2026-11-27T09:30:00.000Z" };
     transcript.plans([later]);
+    transcript.dreamStep("planning", `Planning “${saturday.title}”`);
     const session = transcript.wakeUp({ ...saturday, at: "2026-11-28T07:00:00.000Z", by: "kumo" });
     const dream = transcript.dreamId();
     const wrote = transcript.addDone({ text: "Wrote Thursday's journal", dream, undo: true });
@@ -5178,11 +5182,13 @@ const scenarios: readonly (() => Transcript)[] = [
       answer: "Dreamt.",
     });
     transcript.request("POST", "/v0/dream");
+    const reading = transcript.dreamStep("gathering", "Reading back over the day");
     transcript.response(202, {
       time: "04:00",
       next_at: "2026-11-27T04:00:00.000Z",
-      dreaming: { since: "2026-11-26T23:15:05.000Z", trigger: "manual" },
+      dreaming: { since: "2026-11-26T23:15:05.000Z", trigger: "manual", steps: [reading] },
     });
+    transcript.dreamStep("planning", `Moving “${planning.title}”`);
     transcript.plans([{ ...look, at: "2026-11-27T09:00:00.000Z" }]);
     const dream = transcript.dreamId();
     const done = transcript.addDone({ text: moved, dream, undo: true });
@@ -5205,6 +5211,7 @@ const scenarios: readonly (() => Transcript)[] = [
       answer: "Dreamt.",
     });
     transcript.time("2026-11-27T04:00:00.000Z");
+    transcript.dreamStep("gathering", "Reading back over the day");
     const night = transcript.dreamFinished({
       id: transcript.dreamId(),
       day: "2026-11-26",
@@ -5286,6 +5293,9 @@ const scenarios: readonly (() => Transcript)[] = [
       answer: "Dreamt.",
     });
     transcript.time("2026-11-27T04:00:00.000Z");
+    transcript.dreamStep("gathering", "Reading back over the day");
+    transcript.dreamStep("journal", "Writing Thursday's journal");
+    transcript.dreamStep("journal", "Writing Tuesday's journal");
     const dream = transcript.dreamId();
     const thursday = transcript.addDone({ text: "Wrote Thursday's journal", dream, undo: true });
     const added = transcript.addDone({ text: "Added your lunch with Mira to Tuesday", dream, undo: true });

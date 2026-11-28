@@ -19,6 +19,7 @@ import type {
   Desk,
   DeskLine,
   Dream,
+  DreamStep,
   Onboarding,
   Problem,
   Shared,
@@ -222,6 +223,8 @@ export type Transcript = {
   readonly dreamId: () => string;
   // A dream finished: every app hears its record.
   readonly dreamFinished: (dream: Dream) => Dream;
+  // A dream under way started a step, for the live view.
+  readonly dreamStep: (group: DreamStep["group"], text: string) => DreamStep;
   readonly addCard: (card: NewCard) => Card;
   readonly answerCard: (card: string, answer: Fields) => void;
   readonly settleCard: (card: string, replacement?: Partial<Card>) => void;
@@ -1978,6 +1981,12 @@ export const createTranscript = (header: Header): Transcript => {
     return dream;
   };
 
+  const dreamStep = (group: DreamStep["group"], text: string): DreamStep => {
+    const step: DreamStep = { at: timestamp(), group, text };
+    emit("dream.progress", { step });
+    return step;
+  };
+
   const addCard = (given: NewCard): Card => {
     const card: Card = { id: newId("k"), at: timestamp(), ...given };
     changeDesk((desk) => ({ ...desk, waiting: [...desk.waiting, card] }));
@@ -2240,6 +2249,7 @@ export const createTranscript = (header: Header): Transcript => {
     addDone,
     dreamId: () => newId("z"),
     dreamFinished,
+    dreamStep,
     addCard,
     answerCard,
     settleCard,

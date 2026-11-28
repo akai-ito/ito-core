@@ -130,6 +130,9 @@
         },
         {
           "$ref": "#/$defs/DreamFinished"
+        },
+        {
+          "$ref": "#/$defs/DreamProgress"
         }
       ]
     },
@@ -3746,6 +3749,45 @@
         },
         "dream": {
           "$ref": "#/$defs/Dream"
+        }
+      }
+    },
+    "DreamProgress": {
+      "title": "dream.progress",
+      "description": "While Kumo dreams, it started a step, such as reading a page or moving a wake-up: one short line for the live view. Steps come from the tools the dream calls, written by the server, a few to a few dozen a dream. They never notify, and are compacted like the Desk's: after a `snapshot`, `GET /v0/dream` gives the recent steps of a dream under way.",
+      "type": "object",
+      "required": ["id", "type", "at", "step"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "dream.progress"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "step": {
+          "$ref": "#/$defs/DreamStep"
+        }
+      }
+    },
+    "DreamStep": {
+      "description": "One step of a dream under way, as a short line such as \"Tidying Leo\" or \"Writing Monday's journal\".",
+      "type": "object",
+      "required": ["at", "group", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "group": {
+          "description": "What kind of step: `gathering`, reading back over the day; `tidying`, tending memory; `planning`, tomorrow's blocks and wake-ups; `journal`, writing a day's entry. Show a group you don't recognise as gathering.",
+          "enum": ["gathering", "tidying", "planning", "journal"]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

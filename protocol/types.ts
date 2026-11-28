@@ -2581,7 +2581,8 @@ export interface components {
       | components["schemas"]["BrowserChanged"]
       | components["schemas"]["AccessChanged"]
       | components["schemas"]["QuestionChanged"]
-      | components["schemas"]["DreamFinished"];
+      | components["schemas"]["DreamFinished"]
+      | components["schemas"]["DreamProgress"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation and of the Desk with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -3113,6 +3114,11 @@ export interface components {
         since: components["schemas"]["Timestamp"];
         /** @enum {unknown} */
         trigger: "scheduled" | "manual";
+        /**
+         * @description Its latest steps, oldest first, up to 20, so an app that opens mid-dream catches up;
+         *     `dream.progress` brings each one after.
+         */
+        steps: components["schemas"]["DreamStep"][];
       };
       /** @description The latest dream, until there's been none. */
       latest?: components["schemas"]["Dream"];
@@ -4278,6 +4284,16 @@ export interface components {
       /** @description What it stands on, newest first, the latest ten. */
       evidence: components["schemas"]["TrackEvidence"][];
     };
+    /** @description One step of a dream under way, as a short line such as "Tidying Leo" or "Writing Monday's journal". */
+    DreamStep: {
+      at: components["schemas"]["Timestamp"];
+      /**
+       * @description What kind of step: `gathering`, reading back over the day; `tidying`, tending memory; `planning`, tomorrow's blocks and wake-ups; `journal`, writing a day's entry. Show a group you don't recognise as gathering.
+       * @enum {unknown}
+       */
+      group: "gathering" | "tidying" | "planning" | "journal";
+      text: string;
+    };
     /**
      * @description Where a line of a dream belongs: `planned`, tomorrow put in order (Kumo's blocks and guesses, wake-ups set, moved or dropped); `tidied`, memory tended (pages rewritten, merged, Now kept to what's live); `noticed`, what Kumo noticed or learnt (a lasting lesson on How to help you, a pattern, a chapter); `saved`, kept for you (the day's journal, a message or a question for the morning). Show a group you don't recognise under Noticed.
      * @enum {unknown}
@@ -4894,6 +4910,17 @@ export interface components {
       dream: components["schemas"]["Dream"];
     };
     /**
+     * dream.progress
+     * @description While Kumo dreams, it started a step, such as reading a page or moving a wake-up: one short line for the live view. Steps come from the tools the dream calls, written by the server, a few to a few dozen a dream. They never notify, and are compacted like the Desk's: after a `snapshot`, `GET /v0/dream` gives the recent steps of a dream under way.
+     */
+    DreamProgress: {
+      id: components["schemas"]["EventId"];
+      /** @constant */
+      type: "dream.progress";
+      at: components["schemas"]["Timestamp"];
+      step: components["schemas"]["DreamStep"];
+    };
+    /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, Kumo sent a `post` outside a turn, or Kumo's browser needs your hand, a `takeover`.
      * @enum {unknown}
      */
@@ -5334,6 +5361,7 @@ export type TrackStage = components["schemas"]["TrackStage"];
 export type QuestionId = components["schemas"]["QuestionId"];
 export type TrackEvidence = components["schemas"]["TrackEvidence"];
 export type Track = components["schemas"]["Track"];
+export type DreamStep = components["schemas"]["DreamStep"];
 export type DreamGroup = components["schemas"]["DreamGroup"];
 export type DreamLine = components["schemas"]["DreamLine"];
 export type Dream = components["schemas"]["Dream"];
@@ -5386,6 +5414,7 @@ export type BrowserChanged = components["schemas"]["BrowserChanged"];
 export type AccessChanged = components["schemas"]["AccessChanged"];
 export type QuestionChanged = components["schemas"]["QuestionChanged"];
 export type DreamFinished = components["schemas"]["DreamFinished"];
+export type DreamProgress = components["schemas"]["DreamProgress"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];

@@ -25,6 +25,7 @@ import type {
   Desk,
   DoneEntry,
   Dream,
+  DreamStep,
   Onboarding,
   Error as ErrorBody,
   Spoken,
@@ -291,6 +292,8 @@ export type Store = Settings & {
   readonly messagesSince: (at: string, limit: number) => readonly Message[];
   // A dream finished: every app hears it.
   readonly recordDream: (dream: Dream) => void;
+  // A dream under way started a step, for the live view.
+  readonly recordDreamStep: (step: DreamStep) => void;
   readonly recordMotion: (
     type: "motion.started" | "motion.changed" | "motion.finished",
     motion: Omit<Motion, "position"> & { readonly position?: number },
@@ -434,7 +437,7 @@ const compactedSetting = "compacted_through_seq";
 
 const compactedTypes =
   "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed', 'recording.changed', 'browser.changed', " +
-  "'question.changed')";
+  "'question.changed', 'dream.progress')";
 
 const parseIds = (json: string): readonly string[] => JSON.parse(json) as readonly string[];
 
@@ -1435,6 +1438,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     recordDream: (dream) => {
       record((stamp) => ({ ...stamp, type: "dream.finished", dream }));
+    },
+
+    recordDreamStep: (step) => {
+      record((stamp) => ({ ...stamp, type: "dream.progress", step }));
     },
 
     recordMotion: (type, given, note) =>
