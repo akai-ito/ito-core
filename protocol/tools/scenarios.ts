@@ -5013,6 +5013,82 @@ const scenarios: readonly (() => Transcript)[] = [
     memoryCall(transcript, "/v0/made", { made: [changed.made] });
     return transcript;
   },
+
+  () => {
+    const transcript = createTranscript({
+      name: "100-full-access",
+      scenario: 100,
+      title: "Full access",
+      summary:
+        "Kumo can't install what the browser needs from inside its sandbox, so you give it full access in " +
+        "Settings, with Face ID. The command that turns it on says it's meant; every app hears the change, Kumo's " +
+        "work notes it, and from its next turn Kumo runs without the sandbox, saying what it's about to do. You " +
+        "turn it off again once it's done, and the sandbox is back from the turn after.",
+      guarantees: ["G66"],
+    });
+    const headers = { headers: { "Ito-Protocol": protocol } };
+    transcript.begin("2026-11-27T14:00:00.000Z");
+    transcript.connect();
+    transcript.wait(2000);
+    transcript.request("GET", "/v0/access");
+    transcript.wait(40);
+    transcript.response(200, { mode: "sandboxed" }, headers);
+    transcript.wait(4000);
+    transcript.request("POST", "/v0/access/full", { body: { confirm: true } });
+    const full = { mode: "full", since: "2026-11-27T14:00:06.040Z" } as const;
+    transcript.access(full);
+    transcript.addDone({
+      text: "Full access on: Kumo runs without its sandbox from its next turn",
+      reason: "You turned it on in Settings",
+    });
+    transcript.wait(40);
+    transcript.response(200, full, headers);
+    transcript.wait(5000);
+    sendAndStart(transcript, "The browser won't start. Install what it needs and get it going.");
+    transcript.wait(300);
+    transcript.step("thinking", thinking);
+    transcript.wait(900);
+    transcript.endStep();
+    transcript.reply("note");
+    transcript.write("I'll install Ito's packages in its checkout, then Chromium for the browser.", { pieces: 2 });
+    transcript.endMessage("completed");
+    transcript.wait(40);
+    transcript.step("command", {
+      title: "Installing packages",
+      endedTitle: "Installed packages",
+      fields: { command: "npm ci --omit=dev", cwd: "/home/you/ito-core", actions: [{ type: "run" }] },
+    });
+    transcript.wait(18_000);
+    transcript.endStep({ fields: { exit_code: 0, output: "added 412 packages in 18s\n" } });
+    transcript.step("command", {
+      title: "Running a command",
+      endedTitle: "Ran a command",
+      fields: {
+        command: "npx playwright install chromium",
+        cwd: "/home/you/ito-core",
+        actions: [{ type: "run" }],
+      },
+    });
+    transcript.wait(24_000);
+    transcript.endStep({ fields: { exit_code: 0, output: "Chromium downloaded to ~/.cache/ms-playwright\n" } });
+    writeWhole(
+      transcript,
+      "Done: Ito's packages are installed, and Chromium with them. Switch the browser on again in Settings › " +
+        "Capabilities and it'll start.",
+      3,
+    );
+    transcript.endTurn("completed");
+    transcript.wait(10 * 60 * 1000);
+    transcript.request("DELETE", "/v0/access/full");
+    transcript.access({ mode: "sandboxed" });
+    transcript.addDone({
+      text: "Full access off: Kumo's back in its sandbox from its next turn",
+      reason: "You turned it off in Settings",
+    });
+    transcript.wait(40);
+    transcript.response(200, { mode: "sandboxed" }, headers);
+    return transcript;
+  },
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

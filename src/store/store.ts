@@ -17,6 +17,7 @@ import {
 } from "#conversation/ids.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type {
+  Access,
   Ask,
   Attachment,
   Browser,
@@ -135,6 +136,11 @@ export const problemsSetting = "problems";
 
 export const browserSetting = "browser";
 
+// How Kumo runs on the server, in its sandbox or with full access, as access.changed last said.
+export const accessSetting = "access";
+
+export const sandboxed: Access = { mode: "sandboxed" };
+
 export type DonePage = { readonly entries: readonly DoneEntry[]; readonly hasMore: boolean };
 
 export type SpokenInput = { readonly call: string; readonly audio?: string };
@@ -190,6 +196,8 @@ export type Store = Settings & {
   // Kumo's browser as it stands; idle until it does something.
   readonly browser: () => Browser;
   readonly setBrowser: (browser: Browser) => void;
+  readonly access: () => Access;
+  readonly setAccess: (access: Access) => void;
   readonly addDone: (entry: DoneEntry, undoWith?: unknown) => void;
   readonly listDone: (before: string | undefined, limit: number) => DonePage;
   readonly doneSince: (at: string) => readonly DoneEntry[];
@@ -732,6 +740,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     return stored === undefined ? { state: "idle" } : (JSON.parse(stored) as Browser);
   };
 
+  const currentAccess = (): Access => {
+    const stored = readSetting(accessSetting);
+    return stored === undefined ? sandboxed : (JSON.parse(stored) as Access);
+  };
+
   const currentDesk = (): Desk => {
     const row = database.prepare("SELECT body FROM desk WHERE id = 1").get() as { readonly body: string } | undefined;
     return row ? (JSON.parse(row.body) as Desk) : { plans: [], coming_up: [], waiting: [], handled: 0 };
@@ -783,6 +796,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           ...(currentOnboarding().state !== "done" && { onboarding: currentOnboarding() }),
           ...(currentProblems().length > 0 && { problems: [...currentProblems()] }),
           ...(currentBrowser().state !== "idle" && { browser: currentBrowser() }),
+          ...(currentAccess().mode !== "sandboxed" && { access: currentAccess() }),
         },
       };
     },
@@ -895,6 +909,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       transaction(() => {
         if (JSON.stringify(browser) === JSON.stringify(currentBrowser())) return;
         append({ id: identifiers.event(), type: "browser.changed", at: now(), browser });
+      });
+    },
+
+    access: () => currentAccess(),
+
+    setAccess: (access) => {
+      transaction(() => {
+        if (JSON.stringify(access) === JSON.stringify(currentAccess())) return;
+        append({ id: identifiers.event(), type: "access.changed", at: now(), access });
       });
     },
 

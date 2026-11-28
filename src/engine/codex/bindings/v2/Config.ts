@@ -7,6 +7,7 @@ import type { ReasoningEffort } from "../ReasoningEffort.ts";
 import type { ReasoningSummary } from "../ReasoningSummary.ts";
 import type { Verbosity } from "../Verbosity.ts";
 import type { WebSearchMode } from "../WebSearchMode.ts";
+import type { WebSearchProvider } from "../WebSearchProvider.ts";
 import type { JsonValue } from "../serde_json/JsonValue.ts";
 import type { AnalyticsConfig } from "./AnalyticsConfig.ts";
 import type { ApprovalsReviewer } from "./ApprovalsReviewer.ts";
@@ -34,7 +35,10 @@ export type Config = {
   sandbox_workspace_write: SandboxWorkspaceWrite | null;
   forced_chatgpt_workspace_id: ForcedChatgptWorkspaceIds | null;
   forced_login_method: ForcedLoginMethod | null;
-  web_search: WebSearchMode | null;
+  web_search: WebSearchMode | null; /**
+   * Effective tools.client_search_provider hint. Model-selected providers take precedence.
+   */
+  client_search_provider: WebSearchProvider | null;
   tools: ToolsV2 | null;
   instructions: string | null;
   developer_instructions: string | null;

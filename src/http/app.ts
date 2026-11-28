@@ -28,6 +28,8 @@ import { registerMade } from "#http/made.ts";
 import { registerMotion } from "#http/motion.ts";
 import type { MadePages } from "#made/made.ts";
 import type { Motions } from "#motion/motion.ts";
+import type { AccessKeeper } from "#access/access.ts";
+import { registerAccess } from "#http/access.ts";
 import { registerModel, type ListModels } from "#http/model.ts";
 import { leadOf, registerSettings } from "#http/settings.ts";
 import { registerDesk } from "#http/desk.ts";
@@ -94,6 +96,8 @@ export type AppOptions = {
   // You moved a message between the main chat and a thread, or between threads.
   readonly moved: (message: MessageId, from: ThreadId | undefined, to: ThreadId | undefined) => void;
   readonly gettingStarted: GettingStarted;
+  // Whether Kumo runs in its sandbox or with full access.
+  readonly access: AccessKeeper;
   // Kumo's browser, when the server has one.
   readonly browser?: BrowserHand;
   readonly logger: FastifyServerOptions["logger"];
@@ -160,6 +164,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
     calendar,
     onLeadRenamed,
     gettingStarted,
+    access,
     moved,
     browser,
     logger,
@@ -274,6 +279,7 @@ export const createApp = (options: AppOptions): FastifyInstance => {
   registerMotion(app, motions, schemaFor);
   registerMade(app, made, schemaFor);
   registerModel(app, { settings: store, models, schemaFor });
+  registerAccess(app, { access, schemaFor });
   registerTalk(app, { store, attachments, voice, calls, voiceprints, schemaFor });
   registerStream(app, { store, calls, voice, protocol, ...(browser && { browser }) });
   if (browser) registerBrowser(app, { hand: browser, schemaFor });

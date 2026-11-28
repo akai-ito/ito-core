@@ -1,5 +1,6 @@
 import { closeSync, constants, copyFileSync, lstatSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import path from "node:path";
+import { isFullAccess } from "#access/access.ts";
 import { createAsyncQueue, type AsyncQueue } from "#async-queue.ts";
 import { createCell } from "#cell.ts";
 import type { ThreadId, TurnId } from "#conversation/ids.ts";
@@ -9,6 +10,7 @@ import type { Account } from "#engine/codex/bindings/v2/Account.ts";
 import type { Model } from "#engine/codex/bindings/v2/Model.ts";
 import type { RateLimitSnapshot } from "#engine/codex/bindings/v2/RateLimitSnapshot.ts";
 import type { RateLimitWindow } from "#engine/codex/bindings/v2/RateLimitWindow.ts";
+import type { SandboxPolicy } from "#engine/codex/bindings/v2/SandboxPolicy.ts";
 import type { ThreadStartParams } from "#engine/codex/bindings/v2/ThreadStartParams.ts";
 import type { ThreadStartResponse } from "#engine/codex/bindings/v2/ThreadStartResponse.ts";
 import type { UserInput } from "#engine/codex/bindings/v2/UserInput.ts";
@@ -127,7 +129,8 @@ const toAccount = (account: Account): Readonly<Record<string, string>> => {
     case "apiKey": {
       return { kind: "api_key" };
     }
-    case "amazonBedrock": {
+    case "amazonBedrock":
+    case "gcp": {
       return { kind: "other" };
     }
   }
@@ -280,6 +283,18 @@ const appApprovalsOnly: ThreadStartParams["approvalPolicy"] = {
   },
 };
 
+// Kumo's sandbox: its workspace to write in, the network, and the rest of the machine to read. Full access, which
+// they turn on in Settings, runs it with none.
+const workspaceSandbox: SandboxPolicy = {
+  type: "workspaceWrite",
+  writableRoots: [],
+  networkAccess: true,
+  excludeTmpdirEnvVar: false,
+  excludeSlashTmp: false,
+};
+
+const fullAccess: SandboxPolicy = { type: "dangerFullAccess" };
+
 const toModelOption = (model: Model): ModelOption => ({
   id: model.model,
   title: model.displayName,
@@ -342,10 +357,13 @@ export const createCodexEngine = ({
   const conversationOfThread = (threadId: string | undefined): string | undefined =>
     threadId === undefined ? undefined : [...codexThreads.get()].find(([, id]) => id === threadId)?.[0];
 
+  const isFull = (): boolean => isFullAccess(settings.setting);
+
+  // A conversation's thread or a piece of work starts in the sandbox that access calls for now.
   const threadOptions = (server: ToolServer | undefined): ThreadStartParams => ({
     cwd: workspace,
     approvalPolicy: appApprovalsOnly,
-    sandbox: "workspace-write",
+    sandbox: isFull() ? "danger-full-access" : "workspace-write",
     baseInstructions: instructions(),
     config: {
       sandbox_workspace_write: { network_access: true },
@@ -581,11 +599,14 @@ export const createCodexEngine = ({
       if (injecting.ok) injected.update((current) => new Map([...current, [conversation, inMind]]));
       else log("Codex didn't take what's in Ari's mind", injecting.failure.message);
     }
+    // Every turn says its sandbox, since a conversation's thread lives on across a change of access: a change applies
+    // from the next turn, and never to one already running.
     const started = await process.call("turn/start", {
       threadId: threadId.value,
       clientUserMessageId: inputs[0]?.messageId ?? null,
       input: inputs.flatMap((input) => toUserInputs(workspace, input, log)),
       summary: "auto",
+      sandboxPolicy: isFull() ? fullAccess : workspaceSandbox,
       ...readChoice(settings.setting),
     });
     if (started.ok) return { threadId: threadId.value, turnId: started.value.turn.id };

@@ -7,6 +7,7 @@ import { createCell } from "#cell.ts";
 import { toMessageId, toThreadId, toTurnId, type TurnId } from "#conversation/ids.ts";
 import { createCodexEngine, threadSetting, threadSettingFor } from "#engine/codex/codex-engine.ts";
 import { choiceSetting } from "#engine/engine.ts";
+import { accessSetting } from "#store/store.ts";
 import type { Engine, EngineEvent, Input } from "#engine/engine.ts";
 import { createAskTool } from "#asks/tool.ts";
 import { ok } from "#result.ts";
@@ -127,6 +128,10 @@ const runTurn = async (
   }
   return seen.get();
 };
+
+// The sandbox Codex last told the model it's in.
+const sandboxIn = (texts: readonly string[]): string | undefined =>
+  texts.flatMap((text) => /`sandbox_mode` is `(?<mode>[a-z-]+)`/u.exec(text)?.groups?.mode ?? []).at(-1);
 
 const textOf = (events: readonly EngineEvent[]): string =>
   events.map((event) => (event.type === "text" ? event.text : "")).join("");
@@ -512,6 +517,23 @@ describe("the Codex engine against the pinned codex app-server", () => {
     expect(done.ok).toBe(true);
     expect(light).toEqual({ model: "gpt-6-luna", effort: "medium" });
     expect(currentModel().lastRun()).toEqual({ model: "gpt-6.1-sol", effort: "low" });
+  });
+
+  it("runs without its sandbox from the turn after full access goes on, and in it again once it's off", async () => {
+    await runTurn("[[reply]] Before");
+    const before = sandboxIn(currentModel().developerTexts());
+    settings.setSetting(accessSetting, JSON.stringify({ mode: "full", since: "2026-11-27T14:02:00.000Z" }));
+    await runTurn("[[reply]] Install the browser");
+    const full = sandboxIn(currentModel().developerTexts());
+    await currentEngine().work("[[reply]] Restart the browser", "run-full");
+    const work = sandboxIn(currentModel().developerTexts());
+    settings.setSetting(accessSetting, JSON.stringify({ mode: "sandboxed" }));
+    await runTurn("[[reply]] After");
+
+    expect(before).toBe("workspace-write");
+    expect(full).toBe("danger-full-access");
+    expect(work).toBe("danger-full-access");
+    expect(sandboxIn(currentModel().developerTexts())).toBe("workspace-write");
   });
 
   it("runs a side thread's turn in a conversation of its own, beside the main chat's", async () => {

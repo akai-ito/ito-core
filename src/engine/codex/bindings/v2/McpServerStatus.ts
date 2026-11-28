@@ -12,6 +12,11 @@ import type { McpServerConnectionStatus } from "./McpServerConnectionStatus.ts";
 export type McpServerStatus = {
   name: string;
   /**
+   * Environment that contributed this registration; null for a thread-wide server.
+   * Older servers omit this field.
+   */
+  environmentId?: string | null;
+  /**
    * Current thread-runtime connection state; null when unavailable or the configuration changed.
    */
   runtimeStatus: McpServerConnectionStatus | null;

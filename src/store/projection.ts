@@ -265,6 +265,10 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('browser', ?)").run(toJson(event.browser));
       return;
     }
+    case "access.changed": {
+      database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('access', ?)").run(toJson(event.access));
+      return;
+    }
     case "problems.changed": {
       database
         .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('problems', ?)")

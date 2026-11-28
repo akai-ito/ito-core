@@ -117,6 +117,8 @@ tags:
       Ari writes and keeps them current; apps read them and tick their items.
   - name: Model
     description: Choose the model the agent runs on.
+  - name: Access
+    description: How Kumo runs on the server, in its sandbox or with full access.
   - name: Talk
     description: Call the agent and speak your messages.
   - name: Whereabouts
@@ -2281,6 +2283,72 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/access:
+    get:
+      tags: [Access]
+      operationId: getAccess
+      summary: Read how Kumo runs on the server
+      description: |
+        Whether Kumo runs in its sandbox, as it does unless you change it, or with full access, and
+        since when. `access.changed` carries every change, and the snapshot holds it while it's full.
+      responses:
+        "200":
+          description: How Kumo runs.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Access" }
+              example: { mode: sandboxed }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/access/full:
+    post:
+      tags: [Access]
+      operationId: giveFullAccess
+      summary: Give Kumo full access to the server
+      description: |
+        From the next turn or piece of work that starts, in the chat, in the background and in the
+        night's dream, Kumo runs without Codex's sandbox: its commands can install, restart and
+        change anything the server's user can, Ito's own checkout included, with nothing asked
+        first. A turn already running keeps the sandbox it started with. Nothing else turns it on:
+        the body must say `confirm: true`, so a stray call can't, and the app asks for Face ID
+        before it sends it. Turning it on when it's already on changes nothing. Kumo's work notes
+        each change, and every app hears `access.changed`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FullAccessConsent" }
+            example: { confirm: true }
+      responses:
+        "200":
+          description: Full access is on.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Access" }
+              example: { mode: full, since: "2026-11-27T14:02:00.000Z" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+    delete:
+      tags: [Access]
+      operationId: endFullAccess
+      summary: Put Kumo back in its sandbox
+      description: |
+        From the next turn or piece of work that starts, Kumo runs in its sandbox again: free to
+        write in its workspace and reach the network, and to read the rest of the server. Safe to
+        repeat. Kumo's work notes the change, and every app hears `access.changed`.
+      responses:
+        "200":
+          description: Kumo runs in its sandbox.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Access" }
+              example: { mode: sandboxed }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/calls/{call}:
     put:
       tags: [Talk]
@@ -2755,6 +2823,14 @@ components:
       required: [call]
       properties:
         call: { $ref: "events.schema.json#/$defs/Call" }
+    FullAccessConsent:
+      type: object
+      required: [confirm]
+      additionalProperties: false
+      properties:
+        confirm:
+          description: You mean it, having confirmed it on the phone, such as with Face ID.
+          const: true
     ModelChoice:
       type: object
       required: [model, effort]

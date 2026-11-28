@@ -1,6 +1,8 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { FastifyInstance, FastifyServerOptions } from "fastify";
+import { createAccess } from "#access/access.ts";
 import { createCell } from "#cell.ts";
 import { createDoors } from "#capabilities/doors.ts";
 import { createHost, type Host, type Installed } from "#capabilities/host.ts";
@@ -174,6 +176,9 @@ const talkRules = readFileSync(new URL("../agent/talk.md", import.meta.url), "ut
 
 const workRules = readFileSync(new URL("../agent/work.md", import.meta.url), "utf8").trim();
 
+// Ito's own checkout, which Kumo may change with full access.
+const checkout = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/u, "");
+
 const textValue = (values: Values, name: string): string => {
   const value = values[name];
   return typeof value === "string" ? value.trim() : "";
@@ -345,6 +350,7 @@ export const createServer = (options: ServerOptions): Server => {
   const backgroundText = (): string =>
     [
       nowText(),
+      access.inMindText(),
       memory.inMindText(),
       motions.inMindText(),
       made.inMindText(),
@@ -380,6 +386,7 @@ export const createServer = (options: ServerOptions): Server => {
         picture.inMindText(),
         recordings.inMindText(),
         gettingStarted.inMindText(),
+        access.inMindText(),
         callContext(),
       ]
         .filter(Boolean)
@@ -487,6 +494,14 @@ export const createServer = (options: ServerOptions): Server => {
     timeZone,
     work: workFor("Answers they gave on the Desk, which went back on it"),
     info,
+  });
+  const access = createAccess({
+    store,
+    addDone: (entry) => desk.addDone(entry),
+    clock,
+    info,
+    spoken: (at) => toSpoken(at, timeZone()),
+    checkout,
   });
   const wakeUps = createWakeUps({
     store: createWakeUpStore(database),
@@ -765,6 +780,7 @@ export const createServer = (options: ServerOptions): Server => {
     places,
     calendar,
     gettingStarted,
+    access,
     onLeadRenamed: () => {
       void engine.refresh();
     },
