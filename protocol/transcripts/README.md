@@ -59,6 +59,7 @@ request that shows its own `Authorization` header uses the token it names.
 | `agent_calls` | the agent calls one of Ito's tools: `tool` and `input`, what it `returns` where it matters, and the side `thread` whose conversation calls it, if any |
 | `you_approve` | you approve the `code` a capability's connection showed, at the provider; the server picks up the token at its next poll, within 5 seconds |
 | `ari_keeps_up` | what Ari will answer when the server asks it, aside, to keep a thing up with your ticks and choices: its `changes`, `summary` and `note` |
+| `life_written` | what the quick model will write for Life when the server next asks: a search's `answer`; a range's `line` and its `weeks`, each a `from` and a `line`; or the short `portrait`, the `helping` lines and the `tastes`, each a `taste` and the `page` it comes from |
 | `thread_named` | what the quick model will answer when the server asks it, after a thread you started gets its first answer, what to call it: its `title` |
 | `share_sorted` | what the quick model will answer when the server asks it where the next share belongs: the open `thread` it joins, or else the `title` of a new thread |
 | `thread_opened`, `notification_tapped` | you open a side `thread`, from the chat or from its notification; nothing changes on the wire until the app asks for it |

@@ -8,6 +8,7 @@ import { defaultVoice, voices } from "#voice/voices.ts";
 import { florenceId, florencePictures, florenceTrip, type FlorencePictures } from "./florence.ts";
 import { sub20Id, sub20Training } from "./sub20.ts";
 import { peopleScenarios } from "./people.ts";
+import { lifeScenarios } from "./life.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 import { placesScenarios } from "./places.ts";
 
@@ -5982,6 +5983,7 @@ const scenarios: readonly (() => Transcript)[] = [
   ...placesScenarios,
 
   ...peopleScenarios,
+  ...lifeScenarios,
 ];
 
 mkdirSync(transcriptDirectory, { recursive: true });

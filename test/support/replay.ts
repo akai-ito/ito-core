@@ -741,6 +741,16 @@ export const replay = async (name: string): Promise<void> => {
         check(inMindProblem(inMind, expected), index);
         return;
       }
+      case "life_written": {
+        const answer = Object.fromEntries(
+          Object.entries(step as unknown as Readonly<Record<string, unknown>>).filter(
+            ([field]) => field !== "world" && field !== "at",
+          ),
+        );
+        asides.update((current) => [...current, answer]);
+        await advance(time);
+        return;
+      }
       case "thread_named": {
         const { title } = step as unknown as { readonly title: string };
         asides.update((current) => [...current, { title }]);

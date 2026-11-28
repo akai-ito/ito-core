@@ -90,6 +90,14 @@ sequenceDiagram
   what's coming up; `GET /v0/people/{person}` adds their card's facts for one-tap actions, what Kumo
   knows, moments together and places you share. Kumo links pages to Contacts cards when it's sure,
   and asks a `contact` question in Understanding you when it isn't.
+- **Life:** `GET /v0/life/search` answers a search with Kumo's line first, then the days, places,
+  people, what's going on, made pages and messages it found. `GET /v0/life/days` gives a week,
+  month or year: each day's journal line and thread of places, a month's weeks, the chapters it
+  overlaps as spans, its trips and Kumo's line. `GET /v0/life/going-on` joins things in motion
+  with project and goal pages as threads, each with its marks, steps, next thing and whether Kumo
+  is on it right now. `GET /v0/life/about-you` is what Kumo knows about you: the Portrait and How
+  to help you, short, your tastes, what it learnt lately and Getting to know you. Kumo's lines are
+  written on the quick model and kept until what they come from changes.
 - **Follow Kumo's browser:** when Kumo books, fills in a form or shops for you on a site, its task
   shows as a line in the thread it lives in (`browser.changed`), and a tap peeks at the live view
   over a WebSocket. When Kumo needs your hand, for a login, a code, a CAPTCHA or the pay button, a

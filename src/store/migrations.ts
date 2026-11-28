@@ -495,4 +495,12 @@ export const migrations: readonly string[] = [
     seconds REAL NOT NULL,
     PRIMARY KEY (day, cell)
   ) WITHOUT ROWID;`,
+  // 0.21: Kumo's lines in Life, kept with a hash of what each was written from: a search's answer, a range's line,
+  // the short version of what Kumo knows about them.
+  `CREATE TABLE life_lines (
+    key TEXT PRIMARY KEY,
+    basis TEXT NOT NULL,
+    body TEXT NOT NULL,
+    at TEXT NOT NULL
+  );`,
 ];
