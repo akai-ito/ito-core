@@ -736,6 +736,107 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/life/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Search your life
+     * @description The search at the top of Life. Kumo answers first, in a line or two written on the quick
+     *     model over what was found, such as "Orrin's, last Friday, 19:40 to 22:10. You wrote that
+     *     the fig thing was the best you'd had all month." Then what was found, grouped, best first:
+     *     days (journal days and day notes), places, people, what's going on, pages Kumo made and chat
+     *     messages, each with enough to show its row and open it. `answer` is absent when nothing was
+     *     found, when what was found doesn't answer it, or when Kumo can't write one now; the groups
+     *     still come. The answer is kept, so asking again is quick.
+     */
+    get: operations["searchLife"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/life/days": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The days of a week, month or year
+     * @description For the Week, Month and Year sheets: every day of the range up to today, newest first, with
+     *     its journal line and, for a range of up to 31 days, its thread of places; for a range of 8
+     *     to 62 days, its weeks (Monday to Sunday, cut to the range), newest first, each with Kumo's
+     *     line; the chapters it overlaps, as spans, earliest first; its trips; and Kumo's line for the
+     *     range, such as "Home and the office, mostly. The gym four times, Leo's on Thursday." Kumo's
+     *     lines are written on the quick model and kept until what they're written from changes; a
+     *     line absent is one Kumo hasn't written (yet), never one made up.
+     */
+    get: operations["getLifeDays"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/life/going-on": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * What's going on
+     * @description Going on: things in motion, projects and goals as threads beside time, Matters, then
+     *     Projects, then Goals; within each, louder first, then the latest marked. A page on the
+     *     projects or goals shelf that names a thing in motion (`motion:<id>`), or has its title, is
+     *     one thread with it. Each has its marks (the changes of the last 120 days), its steps, the
+     *     next thing, and whether Kumo is working on it right now: a turn or background work running
+     *     that has touched it.
+     */
+    get: operations["getGoingOn"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/life/about-you": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * What Kumo knows about you
+     * @description Behind Kumo on the Desk: your Portrait and How to help you, short; your tastes, from the topic
+     *     pages; what Kumo learnt lately; and Getting to know you, with how many questions wait. The
+     *     short versions are written on the quick model and kept until the pages change; each names the
+     *     page it comes from, so a tap can ask Kumo to put it right. One that's absent is one Kumo
+     *     hasn't written (yet). The whole pages are in `GET /v0/memory/in-mind`.
+     */
+    get: operations["getAboutYou"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/calendar/events": {
     parameters: {
       query?: never;
@@ -3751,6 +3852,156 @@ export interface components {
         was?: string;
       }[];
     };
+    LifeSearch: {
+      /** @description What was searched, as the server read it. */
+      query: string;
+      /** @description Kumo's answer, in a line or two. Absent when there's none. */
+      answer?: string;
+      /** @description Journal days and days whose notes say it, best first, at most five. */
+      days: components["schemas"]["SearchDay"][];
+      /** @description Places whose names say it, most hours first, at most three. */
+      places: components["schemas"]["Place"][];
+      /** @description People it names, or whose pages say it, at most five. */
+      people: components["schemas"]["PersonSummary"][];
+      /** @description What's going on that it names, at most five. */
+      going_on: components["schemas"]["GoingOnThread"][];
+      /** @description Pages Kumo made that it names, at most five. */
+      made: components["schemas"]["Made"][];
+      /** @description Messages in the chat or a side thread that say it, best first, at most five. */
+      messages: components["schemas"]["SearchMessage"][];
+    };
+    /** @description A day the search found, to open in Days. */
+    SearchDay: {
+      day: components["schemas"]["Day"];
+      /** @description The day's journal line, once the dream has written the day. */
+      gist?: string;
+      /** @description The day's journal page, once it has one. */
+      journal?: components["schemas"]["MemoryAddress"];
+      /** @description What it says that matched: from the journal or a day note. */
+      excerpt: string;
+      /** @description The day's thread of places, when it has stops. */
+      thread?: components["schemas"]["DayThread"];
+    };
+    /** @description A message the search found; open it at its position, in its side thread if it has one. */
+    SearchMessage: {
+      message: components["schemas"]["MessageId"];
+      /** @description Absent in the main chat. */
+      thread?: components["schemas"]["ThreadId"];
+      position: components["schemas"]["Position"];
+      at: components["schemas"]["Timestamp"];
+      /** @description You sent it; otherwise it's Kumo's. */
+      yours: boolean;
+      /** @description Its words, up to 240 characters, without blocks. */
+      excerpt: string;
+    };
+    LifeDays: {
+      from: components["schemas"]["Day"];
+      to: components["schemas"]["Day"];
+      /** @description Kumo's line for the range. Absent until Kumo has written one. */
+      line?: string;
+      /** @description Every day of the range up to today, newest first. */
+      days: components["schemas"]["LifeDay"][];
+      /** @description For a range of 8 to 62 days, its weeks, newest first. */
+      weeks?: components["schemas"]["LifeWeek"][];
+      /** @description The chapters it overlaps, earliest first, to draw as spans. */
+      chapters: components["schemas"]["Chapter"][];
+      /** @description The trips in it, from places. */
+      trips: components["schemas"]["Trip"][];
+    };
+    LifeDay: {
+      day: components["schemas"]["Day"];
+      /** @description The day's journal line, once the dream has written the day. */
+      gist?: string;
+      /** @description The day's journal page, once it has one. */
+      journal?: components["schemas"]["MemoryAddress"];
+      /** @description How many notes Kumo keeps about the day, while it keeps them (30 days). */
+      notes?: number;
+      /** @description For a range of up to 31 days, the day's thread of places, when it has stops. */
+      thread?: components["schemas"]["DayThread"];
+    };
+    LifeWeek: {
+      from: components["schemas"]["Day"];
+      to: components["schemas"]["Day"];
+      /** @description Kumo's line for the week, such as "The final, and a lot of the office." */
+      line?: string;
+    };
+    GoingOn: {
+      threads: components["schemas"]["GoingOnThread"][];
+    };
+    /**
+     * @description `matters`: a thing in motion with no shape of a project or a goal, such as a role or an
+     *     occasion. `projects`: a project or a trip, or a page on the projects shelf. `goals`: training
+     *     or learning, or a page on the goals shelf. Show a group you don't recognise under Matters.
+     * @enum {unknown}
+     */
+    GoingOnGroup: "matters" | "projects" | "goals";
+    /** @description Something going on, as a thread beside time. */
+    GoingOnThread: {
+      /** @description The thing in motion's `motion:<id>`, or else the page's address. */
+      id: components["schemas"]["MemoryAddress"];
+      group: components["schemas"]["GoingOnGroup"];
+      title: string;
+      /** @description Where it stands, short, for the right of its row, such as "Final today" or "2 of 5 done". */
+      status?: string;
+      /** @description Kumo's line on it, from its page, such as "Shelves up. The desk comes on Thursday." */
+      line?: string;
+      /** @description Where its thread starts. */
+      began: components["schemas"]["Day"];
+      /** @description Its end, for a goal's ringed end or a trip's last day. Absent when it has none. */
+      ends?: components["schemas"]["Day"];
+      /** @description Its moments, the changes of the last 120 days, oldest first, at most 12. */
+      marks: {
+        at: components["schemas"]["Timestamp"];
+        /** @description What changed, such as "Booked the flights". */
+        note?: string;
+      }[];
+      /** @description A project's parts or a learning's steps, in order, filled when done. */
+      steps?: {
+        title: string;
+        /** @enum {unknown} */
+        status: "done" | "doing" | "planned";
+      }[];
+      /** @description The next thing, and when, if it has a time. */
+      next?: {
+        text: string;
+        /** @description Local time where it happens, such as 2026-12-04T19:30, or a day. */
+        at?: string;
+      };
+      /** @description Kumo is working on it right now. */
+      working: boolean;
+      /** @description The thing in motion, to open. */
+      motion?: components["schemas"]["MotionId"];
+      /** @description The thing in motion's kind, for its glyph. */
+      kind?: string;
+      /** @enum {unknown} */
+      salience?: "loud" | "normal" | "quiet";
+      /** @description The page on the projects or goals shelf, to open. */
+      page?: components["schemas"]["MemoryAddress"];
+    };
+    AboutYou: {
+      /** @description Your Portrait, in two or three sentences. Absent until Kumo has written it. */
+      portrait?: {
+        text: string;
+        address: components["schemas"]["MemoryAddress"];
+      };
+      /** @description How to help you, in a few short lines. Absent until Kumo has written them. */
+      helping?: {
+        lines: string[];
+        address: components["schemas"]["MemoryAddress"];
+      };
+      /** @description Your tastes, from the topic pages, at most eight, each with its page. */
+      tastes: {
+        /** @description Such as "Window seats" or "No musicals". */
+        text: string;
+        address: components["schemas"]["MemoryAddress"];
+      }[];
+      /** @description What Kumo learnt lately, newest first, as in `GET /v0/memory/learnt`. */
+      learnt: components["schemas"]["LearntLine"][];
+      /** @description Getting to know you, as in `GET /v0/understanding`. */
+      tracks: components["schemas"]["Track"][];
+      /** @description How many questions wait in Understanding you. */
+      to_ask: number;
+    };
     /** @description What was wrong, in your words; `{}` just says it was wrong. */
     CorrectDone: {
       text?: string;
@@ -5336,6 +5587,45 @@ export interface components {
       /** @description `place` questions only: the spot, when you were there and for how long. Answering names the place; its options are Kumo's guesses at the name. */
       place?: components["schemas"]["PlaceAsk"];
     };
+    /** @description A made page's id: readable, chosen by Ari, unique on the server, such as `va-guide`. */
+    MadeId: string;
+    /** @description A picture Ari found on the web, kept on the server as an attachment so the app never contacts its host. Never generated. */
+    Picture: {
+      /** @description Fetch it with `GET /v0/attachments/{attachment}`. */
+      attachment: components["schemas"]["AttachmentId"];
+      alt: string;
+      /**
+       * Format: uri
+       * @description The page the picture came from.
+       */
+      source_url: string;
+      /** @description Who made it, as its source asks. */
+      credit: string;
+    };
+    /** @description A page Ari made: a rich, lasting answer, such as a gallery guide, that a reply shows as an `ari:made` card, and that sits on the Made shelf. Ari keeps it current. Its content and your ticks come from `GET /v0/made/{id}`. */
+    Made: {
+      id: components["schemas"]["MadeId"];
+      /** @description Such as "Your guide to the V&A". */
+      title: string;
+      /** @description What's in it, in one line, such as "4 rooms · 9 things to spot". */
+      summary: string;
+      /** @description The picture at its top and on its card. Absent when it has none. */
+      cover?: components["schemas"]["Picture"];
+      /**
+       * Format: date
+       * @description The day it's for, such as the visit, as `YYYY-MM-DD`: "Made for Saturday". Ari keeps it current until then. Absent when it isn't for a day.
+       */
+      for_day?: string;
+      /** @description How many times it has changed, counting its making as 1. */
+      version: number;
+      made_at: components["schemas"]["Timestamp"];
+      /** @description When Ari last changed it: "Updated 2h ago", with the latest change's note. */
+      changed_at: components["schemas"]["Timestamp"];
+      /** @description The position of your message Ari was answering when it made the page: "From your chat" links back to it. */
+      position: components["schemas"]["Position"];
+      /** @description The side thread it was made in: "From your thread" opens it, with its name. Absent when it was made in the main chat. */
+      thread?: components["schemas"]["ThreadId"];
+    };
     /**
      * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
      * @enum {unknown}
@@ -5480,45 +5770,6 @@ export interface components {
       note: string;
       /** @description The position of your message Ari was answering when it made the change: link back to it. */
       position: components["schemas"]["Position"];
-    };
-    /** @description A made page's id: readable, chosen by Ari, unique on the server, such as `va-guide`. */
-    MadeId: string;
-    /** @description A picture Ari found on the web, kept on the server as an attachment so the app never contacts its host. Never generated. */
-    Picture: {
-      /** @description Fetch it with `GET /v0/attachments/{attachment}`. */
-      attachment: components["schemas"]["AttachmentId"];
-      alt: string;
-      /**
-       * Format: uri
-       * @description The page the picture came from.
-       */
-      source_url: string;
-      /** @description Who made it, as its source asks. */
-      credit: string;
-    };
-    /** @description A page Ari made: a rich, lasting answer, such as a gallery guide, that a reply shows as an `ari:made` card, and that sits on the Made shelf. Ari keeps it current. Its content and your ticks come from `GET /v0/made/{id}`. */
-    Made: {
-      id: components["schemas"]["MadeId"];
-      /** @description Such as "Your guide to the V&A". */
-      title: string;
-      /** @description What's in it, in one line, such as "4 rooms · 9 things to spot". */
-      summary: string;
-      /** @description The picture at its top and on its card. Absent when it has none. */
-      cover?: components["schemas"]["Picture"];
-      /**
-       * Format: date
-       * @description The day it's for, such as the visit, as `YYYY-MM-DD`: "Made for Saturday". Ari keeps it current until then. Absent when it isn't for a day.
-       */
-      for_day?: string;
-      /** @description How many times it has changed, counting its making as 1. */
-      version: number;
-      made_at: components["schemas"]["Timestamp"];
-      /** @description When Ari last changed it: "Updated 2h ago", with the latest change's note. */
-      changed_at: components["schemas"]["Timestamp"];
-      /** @description The position of your message Ari was answering when it made the page: "From your chat" links back to it. */
-      position: components["schemas"]["Position"];
-      /** @description The side thread it was made in: "From your thread" opens it, with its name. Absent when it was made in the main chat. */
-      thread?: components["schemas"]["ThreadId"];
     };
     /** @description Lowercase words and dashes, unique on the page, such as `trajans-column`. */
     MadeItemId: string;
@@ -6201,6 +6452,16 @@ export type SharedPlace = components["schemas"]["SharedPlace"];
 export type TimeTogether = components["schemas"]["TimeTogether"];
 export type CircleOrder = components["schemas"]["CircleOrder"];
 export type CircleOrderChange = components["schemas"]["CircleOrderChange"];
+export type LifeSearch = components["schemas"]["LifeSearch"];
+export type SearchDay = components["schemas"]["SearchDay"];
+export type SearchMessage = components["schemas"]["SearchMessage"];
+export type LifeDays = components["schemas"]["LifeDays"];
+export type LifeDay = components["schemas"]["LifeDay"];
+export type LifeWeek = components["schemas"]["LifeWeek"];
+export type GoingOn = components["schemas"]["GoingOn"];
+export type GoingOnGroup = components["schemas"]["GoingOnGroup"];
+export type GoingOnThread = components["schemas"]["GoingOnThread"];
+export type AboutYou = components["schemas"]["AboutYou"];
 export type CorrectDone = components["schemas"]["CorrectDone"];
 export type NewEvent = components["schemas"]["NewEvent"];
 export type EventMove = components["schemas"]["EventMove"];
@@ -6364,6 +6625,9 @@ export type ContactQuestion = components["schemas"]["ContactQuestion"];
 export type PlaceId = components["schemas"]["PlaceId"];
 export type PlaceAsk = components["schemas"]["PlaceAsk"];
 export type Question = components["schemas"]["Question"];
+export type MadeId = components["schemas"]["MadeId"];
+export type Picture = components["schemas"]["Picture"];
+export type Made = components["schemas"]["Made"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
 export type StatusDetail = components["schemas"]["StatusDetail"];
@@ -6375,9 +6639,6 @@ export type BrowserState = components["schemas"]["BrowserState"];
 export type Browser = components["schemas"]["Browser"];
 export type Motion = components["schemas"]["Motion"];
 export type MotionChange = components["schemas"]["MotionChange"];
-export type MadeId = components["schemas"]["MadeId"];
-export type Picture = components["schemas"]["Picture"];
-export type Made = components["schemas"]["Made"];
 export type MadeItemId = components["schemas"]["MadeItemId"];
 export type MadeState = components["schemas"]["MadeState"];
 export type MadeChange = components["schemas"]["MadeChange"];
@@ -7463,6 +7724,103 @@ export interface operations {
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
       404: components["responses"]["NotFound"];
+    };
+  };
+  searchLife: {
+    parameters: {
+      query: {
+        /** @description What you typed, such as "dinner with Omar". */
+        query: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Kumo's answer and what was found. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LifeSearch"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getLifeDays: {
+    parameters: {
+      query: {
+        from: components["schemas"]["Day"];
+        /** @description The last day, at most 366 days after `from`. */
+        to: components["schemas"]["Day"];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The range's days. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LifeDays"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getGoingOn: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The threads. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GoingOn"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getAboutYou: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description What Kumo knows about you. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AboutYou"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
     };
   };
   addEvent: {

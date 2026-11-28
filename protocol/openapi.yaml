@@ -42,6 +42,9 @@ info:
     - **Places:** while you have them on, the phone uploads where it's been, and seeds the past
       from photo locations. Read your places, trips, the lit map's heat, and a day's thread and
       trail; name a place, and forget a day, a range or everything.
+    - **Life:** search your life, with Kumo's answer first; the days of a week, month or year with
+      Kumo's lines, chapters as spans and trips; what's going on, joining things in motion with
+      projects and goals; and what Kumo knows about you.
     - **Kumo's dream:** once a day Kumo looks back over the whole day and puts it in order; read the
       latest dream's record of what it planned, tidied, noticed and saved for you, mark it seen, ask
       for one now, and set the dream time.
@@ -101,6 +104,12 @@ tags:
       evidence: calendar events with them, journal days and day notes that mention them, the chat,
       and visits to places named after them. Kumo links a page to its card on its own when it's sure
       and otherwise asks in Understanding you; nothing in Contacts changes for it.
+  - name: Life
+    description: |
+      Life, the app's third tab: the search on top, with Kumo's answer first; Days for the Week,
+      Month and Year sheets, with Kumo's lines; Going on, joining things in motion with projects and
+      goals; and what Kumo knows about you, behind Kumo on the Desk. Places and People have their own
+      routes. Kumo's lines are written on the quick model and kept until what they come from changes.
   - name: Dream
     description: |
       Kumo's dream: once a day, at a time you set, Kumo looks back over the whole day and puts
@@ -1070,6 +1079,109 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v0/life/search:
+    get:
+      tags: [Life]
+      operationId: searchLife
+      summary: Search your life
+      description: |
+        The search at the top of Life. Kumo answers first, in a line or two written on the quick
+        model over what was found, such as "Orrin's, last Friday, 19:40 to 22:10. You wrote that
+        the fig thing was the best you'd had all month." Then what was found, grouped, best first:
+        days (journal days and day notes), places, people, what's going on, pages Kumo made and chat
+        messages, each with enough to show its row and open it. `answer` is absent when nothing was
+        found, when what was found doesn't answer it, or when Kumo can't write one now; the groups
+        still come. The answer is kept, so asking again is quick.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: What you typed, such as "dinner with Omar".
+          schema: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        "200":
+          description: Kumo's answer and what was found.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LifeSearch" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/life/days:
+    get:
+      tags: [Life]
+      operationId: getLifeDays
+      summary: The days of a week, month or year
+      description: |
+        For the Week, Month and Year sheets: every day of the range up to today, newest first, with
+        its journal line and, for a range of up to 31 days, its thread of places; for a range of 8
+        to 62 days, its weeks (Monday to Sunday, cut to the range), newest first, each with Kumo's
+        line; the chapters it overlaps, as spans, earliest first; its trips; and Kumo's line for the
+        range, such as "Home and the office, mostly. The gym four times, Leo's on Thursday." Kumo's
+        lines are written on the quick model and kept until what they're written from changes; a
+        line absent is one Kumo hasn't written (yet), never one made up.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/Day" }
+        - name: to
+          in: query
+          required: true
+          description: The last day, at most 366 days after `from`.
+          schema: { $ref: "#/components/schemas/Day" }
+      responses:
+        "200":
+          description: The range's days.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LifeDays" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/life/going-on:
+    get:
+      tags: [Life]
+      operationId: getGoingOn
+      summary: What's going on
+      description: |
+        Going on: things in motion, projects and goals as threads beside time, Matters, then
+        Projects, then Goals; within each, louder first, then the latest marked. A page on the
+        projects or goals shelf that names a thing in motion (`motion:<id>`), or has its title, is
+        one thread with it. Each has its marks (the changes of the last 120 days), its steps, the
+        next thing, and whether Kumo is working on it right now: a turn or background work running
+        that has touched it.
+      responses:
+        "200":
+          description: The threads.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GoingOn" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/life/about-you:
+    get:
+      tags: [Life]
+      operationId: getAboutYou
+      summary: What Kumo knows about you
+      description: |
+        Behind Kumo on the Desk: your Portrait and How to help you, short; your tastes, from the topic
+        pages; what Kumo learnt lately; and Getting to know you, with how many questions wait. The
+        short versions are written on the quick model and kept until the pages change; each names the
+        page it comes from, so a tap can ask Kumo to put it right. One that's absent is one Kumo
+        hasn't written (yet). The whole pages are in `GET /v0/memory/in-mind`.
+      responses:
+        "200":
+          description: What Kumo knows about you.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AboutYou" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/calendar/events:
     post:
       tags: [Desk]
@@ -4606,6 +4718,230 @@ components:
                 type: string
                 minLength: 1
                 maxLength: 40
+    LifeSearch:
+      type: object
+      required: [query, days, places, people, going_on, made, messages]
+      properties:
+        query: { description: "What was searched, as the server read it.", type: string }
+        answer:
+          description: Kumo's answer, in a line or two. Absent when there's none.
+          type: string
+          minLength: 1
+        days:
+          description: Journal days and days whose notes say it, best first, at most five.
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/SearchDay" }
+        places:
+          description: Places whose names say it, most hours first, at most three.
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/Place" }
+        people:
+          description: People it names, or whose pages say it, at most five.
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/PersonSummary" }
+        going_on:
+          description: What's going on that it names, at most five.
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/GoingOnThread" }
+        made:
+          description: Pages Kumo made that it names, at most five.
+          type: array
+          maxItems: 5
+          items: { $ref: "events.schema.json#/$defs/Made" }
+        messages:
+          description: Messages in the chat or a side thread that say it, best first, at most five.
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/SearchMessage" }
+    SearchDay:
+      description: A day the search found, to open in Days.
+      type: object
+      required: [day, excerpt]
+      properties:
+        day: { $ref: "#/components/schemas/Day" }
+        gist: { description: "The day's journal line, once the dream has written the day.", type: string }
+        journal:
+          description: The day's journal page, once it has one.
+          $ref: "events.schema.json#/$defs/MemoryAddress"
+        excerpt: { description: "What it says that matched: from the journal or a day note.", type: string }
+        thread:
+          { $ref: "#/components/schemas/DayThread", description: "The day's thread of places, when it has stops." }
+    SearchMessage:
+      description: A message the search found; open it at its position, in its side thread if it has one.
+      type: object
+      required: [message, position, at, yours, excerpt]
+      properties:
+        message: { $ref: "events.schema.json#/$defs/MessageId" }
+        thread: { $ref: "events.schema.json#/$defs/ThreadId", description: Absent in the main chat. }
+        position: { $ref: "events.schema.json#/$defs/Position" }
+        at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        yours: { description: "You sent it; otherwise it's Kumo's.", type: boolean }
+        excerpt: { description: "Its words, up to 240 characters, without blocks.", type: string }
+    LifeDays:
+      type: object
+      required: [from, to, days, chapters, trips]
+      properties:
+        from: { $ref: "#/components/schemas/Day" }
+        to: { $ref: "#/components/schemas/Day" }
+        line:
+          description: Kumo's line for the range. Absent until Kumo has written one.
+          type: string
+          minLength: 1
+        days:
+          description: Every day of the range up to today, newest first.
+          type: array
+          items: { $ref: "#/components/schemas/LifeDay" }
+        weeks:
+          description: For a range of 8 to 62 days, its weeks, newest first.
+          type: array
+          items: { $ref: "#/components/schemas/LifeWeek" }
+        chapters:
+          description: The chapters it overlaps, earliest first, to draw as spans.
+          type: array
+          items: { $ref: "#/components/schemas/Chapter" }
+        trips:
+          description: The trips in it, from places.
+          type: array
+          items: { $ref: "#/components/schemas/Trip" }
+    LifeDay:
+      type: object
+      required: [day]
+      properties:
+        day: { $ref: "#/components/schemas/Day" }
+        gist: { description: "The day's journal line, once the dream has written the day.", type: string }
+        journal:
+          description: The day's journal page, once it has one.
+          $ref: "events.schema.json#/$defs/MemoryAddress"
+        notes:
+          description: How many notes Kumo keeps about the day, while it keeps them (30 days).
+          type: integer
+          minimum: 1
+        thread:
+          $ref: "#/components/schemas/DayThread"
+          description: For a range of up to 31 days, the day's thread of places, when it has stops.
+    LifeWeek:
+      type: object
+      required: [from, to]
+      properties:
+        from: { $ref: "#/components/schemas/Day" }
+        to: { $ref: "#/components/schemas/Day" }
+        line:
+          description: Kumo's line for the week, such as "The final, and a lot of the office."
+          type: string
+          minLength: 1
+    GoingOn:
+      type: object
+      required: [threads]
+      properties:
+        threads:
+          type: array
+          items: { $ref: "#/components/schemas/GoingOnThread" }
+    GoingOnGroup:
+      description: |
+        `matters`: a thing in motion with no shape of a project or a goal, such as a role or an
+        occasion. `projects`: a project or a trip, or a page on the projects shelf. `goals`: training
+        or learning, or a page on the goals shelf. Show a group you don't recognise under Matters.
+      enum: [matters, projects, goals]
+    GoingOnThread:
+      description: Something going on, as a thread beside time.
+      type: object
+      required: [id, group, title, began, marks, working]
+      properties:
+        id:
+          description: The thing in motion's `motion:<id>`, or else the page's address.
+          $ref: "events.schema.json#/$defs/MemoryAddress"
+        group: { $ref: "#/components/schemas/GoingOnGroup" }
+        title: { type: string, minLength: 1 }
+        status:
+          description: Where it stands, short, for the right of its row, such as "Final today" or "2 of 5 done".
+          type: string
+        line:
+          {
+            description: 'Kumo''s line on it, from its page, such as "Shelves up. The desk comes on Thursday."',
+            type: string,
+          }
+        began: { $ref: "#/components/schemas/Day", description: Where its thread starts. }
+        ends:
+          $ref: "#/components/schemas/Day"
+          description: Its end, for a goal's ringed end or a trip's last day. Absent when it has none.
+        marks:
+          description: Its moments, the changes of the last 120 days, oldest first, at most 12.
+          type: array
+          maxItems: 12
+          items:
+            type: object
+            required: [at]
+            properties:
+              at: { $ref: "events.schema.json#/$defs/Timestamp" }
+              note: { description: 'What changed, such as "Booked the flights".', type: string }
+        steps:
+          description: A project's parts or a learning's steps, in order, filled when done.
+          type: array
+          items:
+            type: object
+            required: [title, status]
+            properties:
+              title: { type: string, minLength: 1 }
+              status: { enum: [done, doing, planned] }
+        next:
+          description: The next thing, and when, if it has a time.
+          type: object
+          required: [text]
+          properties:
+            text: { type: string, minLength: 1 }
+            at: { description: "Local time where it happens, such as 2026-12-04T19:30, or a day.", type: string }
+        working: { description: "Kumo is working on it right now.", type: boolean }
+        motion: { $ref: "events.schema.json#/$defs/MotionId", description: "The thing in motion, to open." }
+        kind: { description: "The thing in motion's kind, for its glyph.", type: string }
+        salience: { enum: [loud, normal, quiet] }
+        page:
+          description: The page on the projects or goals shelf, to open.
+          $ref: "events.schema.json#/$defs/MemoryAddress"
+    AboutYou:
+      type: object
+      required: [tastes, learnt, tracks, to_ask]
+      properties:
+        portrait:
+          description: Your Portrait, in two or three sentences. Absent until Kumo has written it.
+          type: object
+          required: [text, address]
+          properties:
+            text: { type: string, minLength: 1 }
+            address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        helping:
+          description: How to help you, in a few short lines. Absent until Kumo has written them.
+          type: object
+          required: [lines, address]
+          properties:
+            lines:
+              type: array
+              minItems: 1
+              maxItems: 5
+              items: { type: string, minLength: 1 }
+            address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        tastes:
+          description: Your tastes, from the topic pages, at most eight, each with its page.
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            required: [text, address]
+            properties:
+              text: { description: 'Such as "Window seats" or "No musicals".', type: string, minLength: 1 }
+              address: { $ref: "events.schema.json#/$defs/MemoryAddress" }
+        learnt:
+          description: What Kumo learnt lately, newest first, as in `GET /v0/memory/learnt`.
+          type: array
+          items: { $ref: "#/components/schemas/LearntLine" }
+        tracks:
+          description: Getting to know you, as in `GET /v0/understanding`.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Track" }
+        to_ask: { description: "How many questions wait in Understanding you.", type: integer, minimum: 0 }
     CorrectDone:
       description: What was wrong, in your words; `{}` just says it was wrong.
       type: object
