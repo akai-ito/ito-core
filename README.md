@@ -1,34 +1,37 @@
 # <img src="https://raw.githubusercontent.com/akai-ito/.github/main/profile/mark.svg" width="34" alt=""> Ito
 
-**A personal agent you run on your own machine, with a native iPhone app.**
+**A companion for your whole life that you run on your own machine, with a native iPhone app.**
 
 [![CI](https://github.com/akai-ito/ito-core/actions/workflows/ci.yml/badge.svg)](https://github.com/akai-ito/ito-core/actions/workflows/ci.yml)
 
-Life admin is scattered across mail, calendars and your own head, and it needs following up
+Life is scattered across mail, calendars, places and your own head, and it needs following up
 long after any one conversation ends. Ito is an agent that lives with it. Kumo, the agent, reads
 your mail as it arrives, keeps your calendar and plans, remembers what you tell it in a git
-repository you own, and comes back to things on its own when they need you. You talk to it in one
-continuous conversation in the iPhone app, which also has a Desk for what's waiting on you. Kumo
-drafts, files and schedules, and records each action with an undo. It never sends mail, and the
-bigger steps wait for your go-ahead.
+repository you own, and comes back to things on its own when they need you. Each night it dreams
+over the day: it tidies its memory, plans tomorrow and writes your journal. If you let it, it
+learns your places from your phone's trail and links the people in your life to your contacts.
+You talk to it in one continuous conversation in the iPhone app, which also has a Desk for what's
+waiting on you and Life, for your days, places, people and what's going on. Kumo drafts, files and
+schedules, and records each action with an undo. It never sends mail, and the bigger steps wait
+for your go-ahead.
 
 This repository, **ito-core**, is the server: the agent loop, a durable event log, the client API,
-memory, mail and calendar, capabilities and the voice sidecar. The iPhone app is
-[ari-ios](https://github.com/akai-ito/ari-ios); Ari is its name in the code.
+memory and the dream, mail and calendar, places and people, capabilities and the voice sidecar. The
+iPhone app is [ari-ios](https://github.com/akai-ito/ari-ios); Ari is its name in the code.
 
 <p align="center">
-  <img width="200" alt="The Desk: Kumo, one thing waiting, and today as a dotted line"
+  <img width="200" alt="The Desk at 07:40: Kumo, the moon from last night's dream, and 2 for you"
     src="docs/images/desk.jpg">
-  <img width="200" alt="The chat: Kumo's trail, then a reply that opens a trip"
+  <img width="200" alt="The chat: a reply with Kumo's trail, two side threads and a table"
     src="docs/images/chat.jpg">
-  <img width="200" alt="A trip in motion: its to-dos and its days"
-    src="docs/images/in-motion.jpg">
-  <img width="200" alt="The Library: shelves of memory pages"
-    src="docs/images/library.jpg">
+  <img width="200" alt="The moon's page: last night's dream, replayed as a weave, line by line"
+    src="docs/images/last-night.jpg">
+  <img width="200" alt="Life, Going on: matters, projects and goals as threads beside time"
+    src="docs/images/going-on.jpg">
 </p>
-<p align="center"><sub>The Desk, a reply with Kumo's trail, a trip in motion, and the memory
-Library. Every name and detail is fictional: the server's demo engine and a few made-up memory
-pages.</sub></p>
+<p align="center"><sub>The Desk, a reply with Kumo's trail and side threads, the record of last
+night's dream, and Life's Going on. Every name and detail is fictional: the app's own samples and
+the server's demo engine.</sub></p>
 
 > [!NOTE]
 > Ito is a personal project, in use by its author on his own home server. It's single-user by
@@ -43,36 +46,58 @@ pages.</sub></p>
   that runs beside the main chat. Where an answer has shape, it shows: tables with verdicts, picks
   with pictures, cards to act on, and pages Kumo made and keeps current. Photos, files and long
   recordings go in with a message; recordings are transcribed on the server.
+- **Sharing.** What you send from the phone's share sheet (a link, text, photos or files, with your
+  thought) is on disk at once. The server reads the link's page, and Kumo puts the share in the
+  open thread it belongs to, or starts one, and answers there.
 - **Mail.** iCloud, Outlook or Gmail over IMAP. Kumo reads each new mail as it arrives, puts
   bookings on your calendar, and drafts replies in your voice into your Drafts folder. It never
   sends mail.
 - **Calendar and contacts.** iCloud over CalDAV and CardDAV: events, holds and invite answers,
   Kumo's own calendar for its plan of your day and its guesses, and contact details kept current.
-- **People.** Kumo's People pages linked to their Contacts cards (on sure evidence, or after asking
-  you), listed by circle in your order with when you last saw them and what's coming up, all from
-  evidence, never from tracking anyone.
-- **Life.** One search over everything, with Kumo's answer first; your days by week, month and
-  year with Kumo's line on each and the chapters of your life as spans; and Going on, one list of
-  what's in motion, your projects and your goals, with what Kumo is working on right now.
+- **Places.** Off until you turn them on in the app. Then the phone's trail (iOS's visits, its
+  significant changes, and GPS only while you're moving) comes to the box in batches, and your
+  photos' dates and places can seed the past. The box gathers visits into places ranked by true
+  hours, finds home and your trips, and keeps each day's hours as heat on a map grid, so a week or
+  a year is a cheap sum. Arriving and leaving wake Kumo as a new mail does; mostly it keeps a note
+  for the dream, and a place it can't name becomes a question. It all stays on your machine, and
+  you can forget a day, a range or everything.
+- **People.** Kumo's People pages linked to their iCloud Contacts cards (on sure evidence, or after
+  asking "Is this Omar from your contacts?"), listed by circle in your order with when you last
+  saw them and what's coming up, all from evidence, never from tracking anyone.
+- **Life.** One search over everything, with Kumo's answer first; your days by day, week, month
+  and year, each day a thread of places, with Kumo's line on each range and the chapters of your
+  life as spans; your places and trips; Going on, where what's in motion, your projects and your
+  goals run as threads beside time, with what Kumo is working on right now; and the pages Kumo
+  made. Things in motion (roles you're pursuing, training blocks, trips) are structured documents
+  that Kumo changes a part at a time as you talk, and ends with an honest outcome.
 - **Memory.** The Thread, a git repository of Markdown pages and a journal that you can read
   without Ito, with search over it and past conversations, and an optional backup to a private
-  GitHub repository. Kumo keeps the chapters of your life there, and tells you what it learnt.
-- **Follow-through.** Kumo sets itself wake-ups, wakes on new mail and calendar changes, and
-  messages you when something is worth saying. Every action it takes is recorded, with an undo
-  where there can be one.
+  GitHub repository. Kumo keeps the chapters of your life there, and shows what it knows about you
+  in short: your portrait, how to help you, your tastes and what it learnt lately.
+- **Understanding you.** Kumo's learning tracks, with a few quiet questions on them: what it
+  already understands, the missing piece and why it would help, answered with a tap, your words or
+  your voice. Nothing about them is due or loud, and what you correct becomes evidence there too.
+- **Follow-through.** Kumo sets itself wake-ups, wakes on new mail, calendar changes and your
+  comings and goings, and messages you when something is worth saying. Every turn and wake-up
+  starts from Today so far, one short account of the day across every conversation, so nothing is
+  asked twice. Every action it takes is recorded, with an undo where there can be one.
 - **The dream.** Once a day, at a time you set, Kumo looks back over the whole day and puts it in
   order: it tends memory, plans tomorrow, and writes your journal as your own diary, then leaves a
-  record of what it did that you can take back line by line.
-- **In motion.** Roles you're pursuing, training blocks, trips, projects and other things you're
-  doing, kept as structured documents that Kumo changes a part at a time as you talk, and ended
-  with an honest outcome.
+  record of what it planned, tidied, noticed and saved for you that you can take back line by line.
+  Dream now runs an extra one.
+- **Kumo's browser.** A Chromium on the server, headful on a virtual display, that Kumo browses
+  for you. A login, a code, a CAPTCHA or a payment streams to the phone for you to take over, and
+  money and logins always take your own tap.
+- **Full access.** Kumo's commands run in a sandbox. Turned on in the app, after Face ID, full
+  access lifts it from Kumo's next turn, in the chat, in the background and in the dream, until you
+  turn it off.
 - **Voice.** Calls with Kumo through CallKit, with speech recognition and synthesis on the server's
   own GPU.
 - **Notifications.** Every message notifies, encrypted so that Apple's push service only carries
   ciphertext.
 
-Not built yet: model-behaviour evals and tracing, local models, an on-device cache so the app
-opens instantly, a light mode and iPad layout, TestFlight builds, and clients beyond the iPhone.
+Not built yet: model-behaviour evals and tracing, local models, a light mode and iPad layout,
+TestFlight builds, and clients beyond the iPhone.
 
 ## Try it in five minutes
 
@@ -103,11 +128,13 @@ curl -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
   http://127.0.0.1:8787/v0/messages
 ```
 
-A message with *trip* in it starts a sample trip in motion, *busy* walks a trail of steps, *mail*
-puts a sample draft on the Desk, *plan* lays out a sample day, *approve* asks for an approval, and
-*fail* and *long* try a failure and Stop. To see it in the app, build
+A message with *trip* in it starts a sample trip, which shows in the app's Going on, *busy* walks
+a trail of steps, *mail* puts a sample draft on the Desk, *plan* lays out a sample day, *menu*
+answers with a table and picks, *guide* makes a page, *approve* asks for an approval, and *fail*
+and *long* try a failure and Stop. To see it in the app, build
 [ari-ios](https://github.com/akai-ito/ari-ios#build-and-run) for the Simulator and connect it to
-`http://127.0.0.1:8787` with the same token.
+`http://127.0.0.1:8787` with the same token. The demo engine doesn't dream, and it has no places or
+people; the app's own samples show those without a server.
 
 ## How it fits together
 
@@ -120,7 +147,7 @@ flowchart TB
     api["Client API<br/>commands · event stream · calls"]
     turns["Turns<br/>one conversation"]
     store[("SQLite<br/>event log · projections · wake-ups")]
-    kumo["Kumo in the background<br/>wake-ups · mail · calendar"]
+    kumo["Kumo in the background<br/>wake-ups · mail · calendar · places · the dream"]
     engine["Engine seam"]
     codex["codex app-server<br/>child process, sandboxed"]
     tools["Ito's tools<br/>MCP server · ito commands"]
@@ -163,11 +190,15 @@ each capability and the voice as child processes, each speaking JSON-RPC over it
 | [src/engine](src/engine) | The engine seam, the Codex adapter and the scripted engine for tests and the demo |
 | [src/tools](src/tools), [src/capabilities](src/capabilities) | The MCP server, the `ito` commands and skills, and the capability host |
 | [src/memory](src/memory) | The Thread, recall and backup |
+| [src/dream](src/dream), [src/day](src/day) | The night's dream and its record, Today so far, and the picture of your day |
 | [src/recordings](src/recordings), [src/files](src/files), [src/made](src/made) | Recordings transcribed on the box, files Kumo shows at one version, and pages Kumo makes |
 | [src/mail](src/mail), [src/calendar](src/calendar), [src/contacts](src/contacts) | IMAP, CalDAV and CardDAV, drafts and Kumo's calendar |
+| [src/location](src/location) | The phone's trail: visits gathered into places, home, trips, the heat by map cell, comings and goings, and Kumo's read-only tools over them |
 | [src/people](src/people) | People pages linked to Contacts cards, circles in your order, and the evidence behind last seen and time together |
+| [src/life](src/life), [src/motion](src/motion) | Life's search, days, Going on and what Kumo knows about you, and the things in motion |
 | [src/wakeups](src/wakeups), [src/desk](src/desk), [src/work](src/work) | Wake-ups, the Desk, and Kumo's work log, learning tracks and Understanding you |
-| [capabilities](capabilities) | The capability SDK, Reports and a sample |
+| [src/hands](src/hands), [src/access](src/access) | Kumo's browser beyond its tools (the live view on the phone, takeover, commit cards), and Full access |
+| [capabilities](capabilities) | The capability SDK, the Browser, Reports and a sample |
 | [agent](agent) | Kumo's instructions and the skill files it reads on demand |
 | [voice](voice) | The voice sidecar: turn detection, speech recognition and synthesis |
 
@@ -253,6 +284,9 @@ that crashes with backoff, giving up after five crashes in ten minutes
 
 ### Memory you can read without Ito
 
+<img align="right" width="200" alt="What I know about you: portrait, how to help you, tastes"
+  src="docs/images/what-i-know.jpg">
+
 The Thread is a git repository of Markdown pages with YAML front matter: people, groups, goals,
 projects, places, topics and a journal, plus a portrait of you, what's going on now and how you like
 to be helped. Each write is a commit, made one at a time through a queue, so history and diffs come
@@ -261,12 +295,12 @@ free and the app shows what changed ([memory.ts](src/memory/memory.ts),
 the CPU, merged by reciprocal rank fusion ([recall.ts](src/memory/recall.ts)). Memory stays out of
 the event log: a step names the pages Kumo used, never what they say. The backup pushes to a private
 GitHub repository through a GitHub App installed on that one repository, and it only ever
-fast-forwards, refusing rather than merging when both sides changed.
+fast-forwards, refusing rather than merging when both sides changed. What Kumo knows about you
+comes back in short, for the app: the portrait, how to help you, your tastes and what it learnt
+lately, written on the quick model and kept until the pages they come from change
+([about-you.ts](src/life/about-you.ts)).
 
 ### Follow-through from four building blocks
-
-<img align="right" width="200" alt="Your day: events, Kumo's plan and its marked guesses"
-  src="docs/images/your-day.jpg">
 
 There are no cron jobs, fixed check-in times or rules about when to speak. Kumo decides, from four
 building blocks the server holds it to ([guarantees](protocol/guarantees.md#how-kumo-decides-to-speak)):
@@ -276,13 +310,48 @@ building blocks the server holds it to ([guarantees](protocol/guarantees.md#how-
    repeats in your time zone, and where it came from. When one comes due, Kumo looks first, then
    messages you, moves it or drops it ([wakeups.ts](src/wakeups/wakeups.ts)).
 3. **It wakes on what happens:** a new mail over IMAP IDLE, a change on your calendars (polled over
-   CalDAV), or a move to another time zone.
+   CalDAV), arriving at a place or leaving it, or a move to another time zone.
 4. **It acts and records**, as above. The Desk's cards are the same in the chat: once you settle
    one there, Kumo answers, changes or clears it, and a card that only mattered until a moment
    leaves by itself then.
 
 When Kumo's model can't act, nothing templated goes out in its place: what was due waits, the
 problem shows in the app, and Kumo catches up once the model answers.
+
+### A dream each night, and the day joined up
+
+<img align="right" width="200" alt="Kumo dreaming at 04:06, a name drifting up as dots"
+  src="docs/images/dreaming.jpg">
+
+Each conversation sees only its own slice, so on its own nothing joins the day up: a check-in
+comes twice, or a question already answered in another thread is asked again. Two things join it:
+
+- **Today so far.** Every turn and every piece of background work gets one short account of the
+  day across the main chat and every side thread, with what Kumo did and what's next. It's written
+  from the store as it is, newest first and bounded, so it never goes stale and costs no model call
+  ([today.ts](src/day/today.ts)).
+- **The dream.** Once a day, at a fixed local time, Kumo looks back over everything since its last
+  dream, each source digested to a few lines ([digest.ts](src/dream/digest.ts)): the conversations,
+  the day's notes, mail you read or sent, your calendars and what it did in the background. It
+  tends memory to a style guide, reconciles tomorrow (its blocks, its guesses and its wake-ups),
+  writes each day's journal entry in your voice, and folds lasting lessons into how to help you
+  ([dream.ts](src/dream/dream.ts)). It leaves a record of what it planned, tidied, noticed and
+  saved for you, each line pointing at what it changed, with an undo in Done. One dream runs at a
+  time, a dream the server was off for runs once it's back, and Dream now never stands in for the
+  night's.
+
+### Places, worked out on the box
+
+The phone sends its trail in batches; the box does the rest
+([location.ts](src/location/location.ts)). Visits within about 75 m gather into places, ranked by
+true hours. Home is where you slept most at 03:00 over the last two months, a day mostly 50 km or
+more from home is a day away, and two or more in a row make a trip. Each day's hours are kept by
+geohash cell of about 150 m, home included; any coarser cell is a prefix of it, so a week, a month
+or a year is a cheap sum, and the map glows on a curve that saturates, so home and the office are
+simply full. Arriving and leaving wake Kumo as a mail does, after the moment settles and at most
+every 15 minutes, and short stops never do. Kumo reads all this only through read-only tools and
+the dream, and you can forget a day, a range or everything. The details are in
+[docs/running.md](docs/running.md#places).
 
 ### Reliability tests
 
@@ -305,9 +374,10 @@ app's UI tests run locally against the demo engine, not in CI.
 
 ## Privacy and security
 
-- **Where your data goes.** Everything is stored on your machine, in `~/.ito`. What Kumo reads to
-  do its work (your messages, the memory pages it uses, the mail it handles) goes to OpenAI's
-  models through your Codex sign-in. Push notifications pass through Apple as ciphertext, sealed
+- **Where your data goes.** Everything is stored on your machine, in `~/.ito`, including where
+  you've been if you turn places on. What Kumo reads to do its work (your messages, the memory
+  pages it uses, the mail it handles, a day or a place it looks at) goes to OpenAI's models through
+  your Codex sign-in. Push notifications pass through Apple as ciphertext, sealed
   with AES-256-GCM under a key each phone makes. The server also reaches the weather service with
   a location rounded to about 10 km, if you allow it, GitHub if you turn on backup or Reports,
   Hugging Face once, for model downloads, and the web when Kumo searches or reads a page.
