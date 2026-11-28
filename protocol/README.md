@@ -64,6 +64,13 @@ sequenceDiagram
   from Kumo reaches it at once. Notifications travel encrypted.
 - **Say where you are:** the phone sends its time zone and, roughly, its place. Kumo lives by that
   time zone, and the Desk shows the weather there.
+- **Places:** with Always and Precise location on, the phone sends its trail and visits in batches
+  under ids it makes (`POST /v0/location/batches`, safe to retry), and once, where and when your photos
+  were taken (`/v0/location/photos`). The server groups visits into places, finds home and trips, and
+  keeps time spent per area, so `/v0/location/heat` lights a week, month or year with a curve that
+  caps; a day's thread and trail show where you went. Arriving and leaving wake Kumo like mail. Places
+  it can't name become questions, answered by naming them (`PATCH /v0/places/{id}`). Forget a day, a
+  range or everything with `/v0/location/forget`; nothing else is ever deleted.
 - **Plan with Kumo:** list, move, skip a repeating one's next time and cancel the wake-ups Kumo set,
   which the Desk shows as its plans, each with its title and, for a repeat that ends, how many times
   are left or its last day.
