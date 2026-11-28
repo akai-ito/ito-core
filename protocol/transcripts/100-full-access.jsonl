@@ -3,11 +3,11 @@
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}
 {"at":0,"event":{"type":"snapshot","at":"2026-11-27T14:00:00.000Z","reason":"no_cursor","messages":[],"has_more":false,"steps":[],"asks":[],"calls":[],"threads":[],"turn":null,"next":[],"desk":{"plans":[],"coming_up":[],"waiting":[],"handled":0}}}
 {"at":2000,"app":{"method":"GET","path":"/v0/access"}}
-{"at":2040,"server":{"status":200,"headers":{"Ito-Protocol":"0.19"},"body":{"mode":"sandboxed"}}}
+{"at":2040,"server":{"status":200,"headers":{"Ito-Protocol":"0.20"},"body":{"mode":"sandboxed"}}}
 {"at":6040,"app":{"method":"POST","path":"/v0/access/full","body":{"confirm":true}}}
 {"at":6040,"event":{"id":"e_0001_25556","type":"access.changed","at":"2026-11-27T14:00:06.040Z","access":{"mode":"full","since":"2026-11-27T14:00:06.040Z"}}}
 {"at":6040,"event":{"id":"e_0002_51044","type":"desk.changed","at":"2026-11-27T14:00:06.040Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":1}}}
-{"at":6080,"server":{"status":200,"headers":{"Ito-Protocol":"0.19"},"body":{"mode":"full","since":"2026-11-27T14:00:06.040Z"}}}
+{"at":6080,"server":{"status":200,"headers":{"Ito-Protocol":"0.20"},"body":{"mode":"full","since":"2026-11-27T14:00:06.040Z"}}}
 {"at":11080,"app":{"method":"POST","path":"/v0/messages","body":{"id":"49c23b38-1127-4963-9eee-12b827a18777","text":"The browser won't start. Install what it needs and get it going."}}}
 {"at":11080,"event":{"id":"e_0003_05150","type":"message.accepted","at":"2026-11-27T14:00:11.080Z","message":{"id":"49c23b38-1127-4963-9eee-12b827a18777","role":"user","text":"The browser won't start. Install what it needs and get it going.","at":"2026-11-27T14:00:11.080Z","position":3}}}
 {"at":11080,"server":{"status":201,"body":{"message":{"id":"49c23b38-1127-4963-9eee-12b827a18777","role":"user","text":"The browser won't start. Install what it needs and get it going.","at":"2026-11-27T14:00:11.080Z","position":3}}}}
@@ -37,4 +37,4 @@
 {"at":654920,"app":{"method":"DELETE","path":"/v0/access/full"}}
 {"at":654920,"event":{"id":"e_0027_52506","type":"access.changed","at":"2026-11-27T14:10:54.920Z","access":{"mode":"sandboxed"}}}
 {"at":654920,"event":{"id":"e_0028_50949","type":"desk.changed","at":"2026-11-27T14:10:54.920Z","desk":{"plans":[],"coming_up":[],"waiting":[],"handled":2}}}
-{"at":654960,"server":{"status":200,"headers":{"Ito-Protocol":"0.19"},"body":{"mode":"sandboxed"}}}
+{"at":654960,"server":{"status":200,"headers":{"Ito-Protocol":"0.20"},"body":{"mode":"sandboxed"}}}

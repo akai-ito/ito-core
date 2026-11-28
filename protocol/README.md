@@ -64,7 +64,9 @@ sequenceDiagram
   from Kumo reaches it at once. Notifications travel encrypted.
 - **Say where you are:** the phone sends its time zone and, roughly, its place. Kumo lives by that
   time zone, and the Desk shows the weather there.
-- **Plan with Kumo:** list, move and cancel the wake-ups Kumo set, which the Desk shows as its plans.
+- **Plan with Kumo:** list, move, skip a repeating one's next time and cancel the wake-ups Kumo set,
+  which the Desk shows as its plans, each with its title and, for a repeat that ends, how many times
+  are left or its last day.
 - **Kumo's dream:** once a day, at a time you set (04:00 until you choose another), Kumo looks back
   over the whole day and puts it in order: memory, tomorrow's blocks and wake-ups, and your journal,
   written as your own diary. Read the latest dream's record with `GET /v0/dream` (what it planned,

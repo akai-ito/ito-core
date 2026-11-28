@@ -9,8 +9,8 @@ import { florenceId, florencePictures, florenceTrip, type FlorencePictures } fro
 import { sub20Id, sub20Training } from "./sub20.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
-const protocol = "0.19";
-const serverVersion = "0.19.0";
+const protocol = "0.20";
+const serverVersion = "0.20.0";
 const yesterdayAt = "2026-10-11T21:14:00.000Z";
 const todayAt = "2026-10-12T08:41:00.000Z";
 const authorization = "Bearer ito_example_not_a_real_token_00000000000000000000";
