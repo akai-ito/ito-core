@@ -22,8 +22,11 @@ export type WakeUps = {
   readonly list: () => readonly WakeUp[];
   // From the app: move it, change how it repeats or what it's for.
   readonly change: (id: string, change: WakeUpChange) => Result<WakeUp, string>;
-  // From the app.
+  // From the app: stops it, a repeating one with every time to come.
   readonly cancel: (id: string) => boolean;
+  // From the app: a repeating one's next time is skipped, and it comes back at the one after; nothing when that was
+  // its last time, and it's gone.
+  readonly skip: (id: string) => Result<WakeUp | undefined, string>;
   // Puts a wake-up back as it was, such as undoing a dream's change: a repeating one at its next time if that's
   // passed; a one-off whose time has passed can't come back.
   readonly put: (wakeUp: WakeUp) => Result<WakeUp, string>;
@@ -85,6 +88,8 @@ const instantPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|
 
 const clockPattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
+const dayPattern = /^\d{4}-\d{2}-\d{2}$/u;
+
 const mostTitleLength = 60;
 
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
@@ -128,13 +133,18 @@ export const nextOf = (repeat: Repeat, after: number, timeZone: string): number 
   return next ?? after + 7 * 24 * 60 * 60 * 1000;
 };
 
-const repeatWords = ({ days, time }: Repeat): string => {
+const daysWords = ({ days, time }: Repeat): string => {
   const sorted = weekdays.filter((day) => days.includes(day));
   if (sorted.length === 7) return `every day at ${time}`;
   if (sorted.join(",") === "mon,tue,wed,thu,fri") return `weekdays at ${time}`;
   if (sorted.join(",") === "sat,sun") return `weekends at ${time}`;
   return `${sorted.map((day) => weekdayNames[day]).join(", ")} at ${time}`;
 };
+
+const repeatWords = (repeat: Repeat): string =>
+  daysWords(repeat) +
+  (repeat.left === undefined ? "" : `, ${String(repeat.left)} ${repeat.left === 1 ? "time" : "times"} left`) +
+  (repeat.until === undefined ? "" : `, until ${repeat.until}`);
 
 const toRepeat = (value: unknown): Repeat | string | undefined => {
   if (value === undefined || value === null) return undefined;
@@ -144,7 +154,15 @@ const toRepeat = (value: unknown): Repeat | string | undefined => {
   if (known.length === 0 || known.length !== new Set(days).size) {
     return "A repeat's days are mon, tue, wed, thu, fri, sat or sun, each once.";
   }
-  return clockPattern.test(time) ? { days: known, time } : "A repeat's time is HH:MM, such as 09:00.";
+  if (!clockPattern.test(time)) return "A repeat's time is HH:MM, such as 09:00.";
+  const left = fieldOf(value, "left");
+  if (left !== undefined && (typeof left !== "number" || !Number.isSafeInteger(left) || left < 1)) {
+    return "A repeat's left is how many more times it comes round, counting the next: 1 or more.";
+  }
+  const until = lineOf(value, "until");
+  return until === "" || dayPattern.test(until)
+    ? { days: known, time, ...(typeof left === "number" && { left }), ...(until !== "" && { until }) }
+    : "A repeat's until is its last day, as YYYY-MM-DD.";
 };
 
 const toInstant = (text: string, now: number): number | string => {
@@ -199,6 +217,13 @@ const repeatSchema = {
   properties: {
     days: { type: "array", items: { enum: weekdays }, minItems: 1, maxItems: 7 },
     time: { type: "string", description: "Such as 09:00." },
+    left: {
+      type: "integer",
+      description:
+        "When you know how many times it comes round, such as 8 for eight aligner trays: how many are left, " +
+        "counting the next. It ends after the last.",
+    },
+    until: { type: "string", description: "When you know its last day, as YYYY-MM-DD: it ends after that day." },
   },
   required: ["days", "time"],
   additionalProperties: false,
@@ -283,6 +308,24 @@ export const createWakeUps = ({
     return { ...wakeUp, at: toTimestamp(next) };
   };
 
+  // Whether a repeat still comes round at this time, before its last day.
+  const isWithin = (repeat: Repeat, at: number): boolean =>
+    repeat.until === undefined || toLocal(at, timeZone()).day <= repeat.until;
+
+  // A repeating wake-up once one of its times has gone, run or skipped: at its next time after, one fewer left, or
+  // nothing once that was its last.
+  const following = (wakeUp: WakeUp, after = clock.now()): WakeUp | undefined => {
+    const { repeat } = wakeUp;
+    if (!repeat || (repeat.left !== undefined && repeat.left <= 1)) return undefined;
+    const next = nextOf(repeat, after, timeZone());
+    if (!isWithin(repeat, next)) return undefined;
+    return {
+      ...wakeUp,
+      at: toTimestamp(next),
+      repeat: { ...repeat, ...(repeat.left !== undefined && { left: repeat.left - 1 }) },
+    };
+  };
+
   const describe = (wakeUp: WakeUp): string =>
     `- ${wakeUp.id}: “${wakeUp.title}” at ${whenOf(Date.parse(wakeUp.at))}` +
     (wakeUp.repeat ? `, repeating ${repeatWords(wakeUp.repeat)}` : "") +
@@ -307,7 +350,11 @@ export const createWakeUps = ({
       ...(wakeUp.source.event ? [eventLine(wakeUp.source.event.uid)] : []),
       ...(wakeUp.motion === undefined ? [] : [`It's about ${wakeUp.motion}: read it with read_motion first.`]),
       ...(wakeUp.repeat
-        ? [`It repeats ${repeatWords(wakeUp.repeat)} and comes back by itself; move it only if this time is wrong.`]
+        ? [
+            following(wakeUp) === undefined
+              ? `It repeats ${repeatWords(wakeUp.repeat)}, and this is its last time.`
+              : `It repeats ${repeatWords(wakeUp.repeat)} and comes back by itself; move it only if this time is wrong.`,
+          ]
         : []),
       "",
       "Look first at what's changed since you set it: today so far, the calendar and your memory. If they've",
@@ -343,7 +390,8 @@ export const createWakeUps = ({
       ...why,
       quiet: !isMessaged,
     });
-    if (after.repeat) save(nextTime(after, after.repeat));
+    const next = following(after);
+    if (next) save(next);
     else remove(after.id);
   };
 
@@ -414,6 +462,8 @@ export const createWakeUps = ({
       );
     }
     const first = at ?? nextOf(repeat ?? everyDay, now, timeZone());
+    if (repeat && !isWithin(repeat, first))
+      return fail(`Its last day, ${String(repeat.until)}, comes before its first time.`);
     return ok({
       id: identifiers.wakeUp(),
       at: toTimestamp(first),
@@ -443,6 +493,9 @@ export const createWakeUps = ({
     const kept = repeat === null ? withoutRepeat(current) : { ...current, ...(repeat && { repeat }) };
     const next =
       instant ?? (repeat === undefined || repeat === null ? Date.parse(current.at) : nextOf(repeat, now, timeZone()));
+    if (kept.repeat && !isWithin(kept.repeat, next)) {
+      return fail(`Its last day, ${String(kept.repeat.until)}, comes before its next time.`);
+    }
     return ok({
       ...kept,
       at: toTimestamp(next),
@@ -461,7 +514,8 @@ export const createWakeUps = ({
         "such as when the interview ends. When it comes due you look first, then message them, move it or drop " +
         "it. Setting one is quiet: it shows in your plans on their Desk by its title, where they can move or " +
         "cancel it. Something that comes round, such as an evening reminder or a look at each weekday, is one " +
-        "wake-up with a repeat, never one per day; and when <wake_ups> already has one for this, move it instead.",
+        "wake-up with a repeat, never one per day, with its end when you know it; and when <wake_ups> already has " +
+        "one for this, move it instead.",
       inputSchema: {
         type: "object",
         properties: {
@@ -600,6 +654,18 @@ export const createWakeUps = ({
       if (!wakeUps.get().has(id)) return false;
       remove(id);
       return true;
+    },
+    skip: (id) => {
+      const current = wakeUps.get().get(id);
+      if (!current) return fail("not_found");
+      if (!current.repeat) return fail("A one-off has no next time to skip: cancel it instead.");
+      const next = following(current, Math.max(Date.parse(current.at), clock.now()));
+      if (!next) {
+        remove(id);
+        return ok(undefined);
+      }
+      save(next);
+      return ok(next);
     },
     put: (wakeUp) => {
       const isPast = Date.parse(wakeUp.at) <= clock.now();

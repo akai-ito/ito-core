@@ -3225,7 +3225,7 @@
       }
     },
     "Repeat": {
-      "description": "A wake-up that comes back: on these days, at this time in your time zone, wherever you are, such as weekdays at 09:00.",
+      "description": "A wake-up that comes back: on these days, at this time in your time zone, wherever you are, such as weekdays at 09:00, until it's stopped or, when it has an end, a number of times or up to a day.",
       "type": "object",
       "required": ["days", "time"],
       "additionalProperties": false,
@@ -3243,6 +3243,16 @@
           "description": "Such as `09:00`.",
           "type": "string",
           "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "left": {
+          "description": "How many more times it comes round, counting the next one; it ends after the last. Absent when it repeats until stopped. Kumo sets it when it knows, such as eight aligner trays: show it as \"4 left\".",
+          "type": "integer",
+          "minimum": 1
+        },
+        "until": {
+          "description": "The last day it comes round, on your local clock; it ends after that. Show it as \"until 22 Dec\".",
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
         }
       }
     },

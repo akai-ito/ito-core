@@ -286,9 +286,10 @@ blocks:
   and your Focus decides what makes a sound. Kumo marks a message urgent only when it can't wait,
   and then it's time-sensitive, to break through Focus.
 - **It sets itself wake-ups:** a concrete time, what it's for and why, one-off or repeating (such as
-  weekdays at 9), who asked for it, and where it came from. "After the dentist" is when the
+  weekdays at 9, with an end when Kumo knows one: eight more times, or until a day), who asked for
+  it, and where it came from. "After the dentist" is when the
   appointment ends, and Kumo moves a wake-up when life moves. Setting one is quiet: it shows in
-  Kumo's plans on the Desk, where you can move or cancel it. When one comes due, Kumo looks first, then
+  Kumo's plans on the Desk, where you can move it, skip a repeating one's next time, or stop it. When one comes due, Kumo looks first, then
   messages you, moves it or drops it, and Done says which.
 - **It wakes on what happens:** a new mail, a change on your calendars, the mail you send. Kumo looks
   at each with the same memory pages and plans it has in the chat, and the end of your conversation,

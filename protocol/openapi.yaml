@@ -565,7 +565,9 @@ paths:
       tags: [Desk]
       operationId: cancelWakeUp
       summary: Cancel one of Kumo's plans
-      description: Cancels a wake-up, and `desk.changed` follows. Kumo sees it's gone and doesn't set it again unasked.
+      description: |
+        Cancels a wake-up, a repeating one with every time still to come (Stop), and `desk.changed`
+        follows. Kumo sees it's gone and doesn't set it again unasked.
       parameters:
         - $ref: "#/components/parameters/WakeUp"
       responses:
@@ -573,6 +575,29 @@ paths:
           description: Cancelled.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/wakeups/{wake_up}/skip:
+    post:
+      tags: [Desk]
+      operationId: skipWakeUp
+      summary: Skip the next time of a repeating plan
+      description: |
+        Skips a repeating wake-up's next time: it comes back at the time after, one fewer `left`
+        when it counts down. When that was its last time it ends, and the answer has no
+        `wake_up`. Skipping again before it moves on skips the time after that. `desk.changed`
+        follows. A one-off has no next time, so it's refused: cancel it instead.
+      parameters:
+        - $ref: "#/components/parameters/WakeUp"
+      responses:
+        "200":
+          description: Skipped.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WakeUpSkipped" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v0/done/{entry}/undo:
@@ -3715,6 +3740,12 @@ components:
       required: [wake_up]
       properties:
         wake_up: { $ref: "events.schema.json#/$defs/WakeUp" }
+    WakeUpSkipped:
+      type: object
+      properties:
+        wake_up:
+          $ref: "events.schema.json#/$defs/WakeUp"
+          description: The wake-up at its next time; absent when that was its last, and it's gone.
     WakeUpChange:
       description: What to change; leave out what stays.
       type: object

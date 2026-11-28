@@ -116,7 +116,7 @@ const setUp = (start = "2026-11-02T10:00:00.000Z", dav?: Dav) => {
   return { open, runUntil, plan, prompts, clock, resetsAt };
 };
 
-const request = async (server: Server, method: "GET" | "PATCH" | "DELETE", url: string, payload?: unknown) => {
+const request = async (server: Server, method: "GET" | "PATCH" | "DELETE" | "POST", url: string, payload?: unknown) => {
   const response = await server.app.inject({
     method,
     url,
@@ -308,6 +308,65 @@ describe("wake-ups", () => {
       expect(renamed.text).toBe("Technical debrief is at Mon 2 Nov, 15:30 now.");
       const titles = await listed(server);
       expect(titles.map(({ title }) => title)).toEqual(["Technical debrief", "Ask what's left for tomorrow"]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("end after a number of times or on a day, and a time can be skipped from the app", async () => {
+    const { open, runUntil, plan, prompts } = setUp();
+    const server = await open();
+    try {
+      const trays = {
+        ...weekdayRun,
+        title: "Change the aligner tray",
+        repeat: { days: ["mon"], time: "09:00", left: 2 },
+      };
+      const set = await server.callTool("set_wake_up", trays);
+      expect(set.text).toMatch(/^Set w_\w+ for Mon 9 Nov, 09:00\.$/u);
+      const evening = await server.callTool("set_wake_up", {
+        ...weekdayRun,
+        title: "Stretch before bed",
+        repeat: { days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], time: "21:00", until: "2026-11-04" },
+      });
+      expect(evening.isError).not.toBe(true);
+      const late = await server.callTool("set_wake_up", {
+        ...weekdayRun,
+        title: "Too late to start",
+        repeat: { days: ["mon"], time: "09:00", until: "2026-11-08" },
+      });
+      expect(late).toEqual({ text: "Its last day, 2026-11-08, comes before its first time.", isError: true });
+      expect(await listed(server)).toMatchObject([
+        { title: "Stretch before bed", at: "2026-11-02T21:00:00.000Z", repeat: { until: "2026-11-04" } },
+        { title: "Change the aligner tray", at: "2026-11-09T09:00:00.000Z", repeat: { left: 2 } },
+      ]);
+
+      // Skipping a time moves it to the one after.
+      const [first] = await listed(server);
+      const stretch = first?.id ?? "";
+      const skipped = await request(server, "POST", `/v0/wakeups/${stretch}/skip`);
+      expect(skipped).toMatchObject({ status: 200, body: { wake_up: { at: "2026-11-03T21:00:00.000Z" } } });
+      const unknown = await request(server, "POST", "/v0/wakeups/w_none/skip");
+      expect(unknown.status).toBe(404);
+
+      // The evening one runs on the 3rd and the 4th, its last day, then ends.
+      plan(
+        () => Promise.resolve(ok("Reminded.")),
+        () => Promise.resolve(ok("Reminded.")),
+      );
+      await runUntil("2026-11-04T22:00:00.000Z");
+      expect(prompts.get()[1]).toContain("until 2026-11-04, and this is its last time.");
+      const after = await listed(server);
+      expect(after.map(({ title }) => title)).toEqual(["Change the aligner tray"]);
+
+      // The trays: one runs and counts down, and skipping the last ends it.
+      plan(() => Promise.resolve(ok("Reminded.")));
+      await runUntil("2026-11-09T10:00:00.000Z");
+      const tray = await listed(server);
+      expect(tray).toMatchObject([{ at: "2026-11-16T09:00:00.000Z", repeat: { left: 1 } }]);
+      const last = await request(server, "POST", `/v0/wakeups/${tray[0]?.id ?? ""}/skip`);
+      expect(last).toEqual({ status: 200, body: {} });
+      expect(await listed(server)).toEqual([]);
     } finally {
       await server.close();
     }

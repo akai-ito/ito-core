@@ -69,8 +69,9 @@ sequenceDiagram
   over the whole day and puts it in order: memory, tomorrow's blocks and wake-ups, and your journal,
   written as your own diary. Read the latest dream's record with `GET /v0/dream` (what it planned,
   tidied, noticed and saved for you, each line pointing at what it changed, with an undo through
-  Kumo's work), mark it seen, ask for one now, and set the dream time. `dream.finished` says when one
-  is done; it never notifies.
+  Kumo's work), mark it seen, ask for one now, and set the dream time. While one runs,
+  `dream.progress` brings each step as a short line for a live view, and `GET /v0/dream` has the
+  latest; `dream.finished` says when one is done. Neither notifies.
 - **Talk in threads:** a side thread is a conversation of its own beside the main chat. Send into
   one, reply to a message to start one, open one with its messages, rename it, mark it done or open,
   and move a message between threads; list and search them for Threads by day.
@@ -125,6 +126,7 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `access.changed` | You turned Kumo's full access on or off |
 | `question.changed` | A question in Understanding you was added, answered, filed, heard, set aside, settled or dropped |
 | `dream.finished` | Kumo finished a dream, with its record |
+| `dream.progress` | A dream under way started a step, such as tidying a page or moving a wake-up |
 
 ## Kumo's browser
 

@@ -321,7 +321,8 @@ export interface paths {
     post?: never;
     /**
      * Cancel one of Kumo's plans
-     * @description Cancels a wake-up, and `desk.changed` follows. Kumo sees it's gone and doesn't set it again unasked.
+     * @description Cancels a wake-up, a repeating one with every time still to come (Stop), and `desk.changed`
+     *     follows. Kumo sees it's gone and doesn't set it again unasked.
      */
     delete: operations["cancelWakeUp"];
     options?: never;
@@ -333,6 +334,29 @@ export interface paths {
      *     A time that has passed is refused.
      */
     patch: operations["changeWakeUp"];
+    trace?: never;
+  };
+  "/v0/wakeups/{wake_up}/skip": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Skip the next time of a repeating plan
+     * @description Skips a repeating wake-up's next time: it comes back at the time after, one fewer `left`
+     *     when it counts down. When that was its last time it ends, and the answer has no
+     *     `wake_up`. Skipping again before it moves on skips the time after that. `desk.changed`
+     *     follows. A one-off has no next time, so it's refused: cancel it instead.
+     */
+    post: operations["skipWakeUp"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   "/v0/done/{entry}/undo": {
@@ -3136,6 +3160,10 @@ export interface components {
     WakeUpResult: {
       wake_up: components["schemas"]["WakeUp"];
     };
+    WakeUpSkipped: {
+      /** @description The wake-up at its next time; absent when that was its last, and it's gone. */
+      wake_up?: components["schemas"]["WakeUp"];
+    };
     /** @description What to change; leave out what stays. */
     WakeUpChange: {
       /** @description When it's next due; for a repeating one, only this time. */
@@ -4073,11 +4101,15 @@ export interface components {
      * @enum {unknown}
      */
     Weekday: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
-    /** @description A wake-up that comes back: on these days, at this time in your time zone, wherever you are, such as weekdays at 09:00. */
+    /** @description A wake-up that comes back: on these days, at this time in your time zone, wherever you are, such as weekdays at 09:00, until it's stopped or, when it has an end, a number of times or up to a day. */
     Repeat: {
       days: components["schemas"]["Weekday"][];
       /** @description Such as `09:00`. */
       time: string;
+      /** @description How many more times it comes round, counting the next one; it ends after the last. Absent when it repeats until stopped. Kumo sets it when it knows, such as eight aligner trays: show it as "4 left". */
+      left?: number;
+      /** @description The last day it comes round, on your local clock; it ends after that. Show it as "until 22 Dec". */
+      until?: string;
     };
     /** @description Where it came from: your `chat` with Kumo, a `mail` Kumo read, a `calendar` event, or another `wake_up`. Show a kind you don't recognise by its title. */
     WakeUpSource: {
@@ -5232,6 +5264,7 @@ export type DreamTime = components["schemas"]["DreamTime"];
 export type DreamResult = components["schemas"]["DreamResult"];
 export type WakeUpList = components["schemas"]["WakeUpList"];
 export type WakeUpResult = components["schemas"]["WakeUpResult"];
+export type WakeUpSkipped = components["schemas"]["WakeUpSkipped"];
 export type WakeUpChange = components["schemas"]["WakeUpChange"];
 export type CardAnswer = components["schemas"]["CardAnswer"];
 export type CardResult = components["schemas"]["CardResult"];
@@ -5917,6 +5950,32 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["WakeUpResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  skipWakeUp: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        wake_up: components["parameters"]["WakeUp"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Skipped. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WakeUpSkipped"];
         };
       };
       400: components["responses"]["InvalidRequest"];

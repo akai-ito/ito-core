@@ -6,7 +6,7 @@ import type { WakeUpChange } from "#protocol/types.ts";
 import type { WakeUps } from "#wakeups/wakeups.ts";
 
 export type WakeUpRoutesOptions = {
-  readonly wakeUps: Pick<WakeUps, "list" | "change" | "cancel">;
+  readonly wakeUps: Pick<WakeUps, "list" | "change" | "cancel" | "skip">;
   readonly schemas: Schemas;
 };
 
@@ -39,5 +39,18 @@ export const registerWakeUps = (app: FastifyInstance, { wakeUps, schemas }: Wake
       wakeUps.cancel(request.params.wake_up)
         ? reply.code(204).send()
         : reply.code(404).send(notFound(request.params.wake_up)),
+  );
+
+  // Skip: a repeating one comes back at its time after next, or ends when that was its last.
+  app.post<{ Params: { readonly wake_up: string } }>(
+    "/v0/wakeups/:wake_up/skip",
+    { schema: schemaFor("skipWakeUp") },
+    async (request, reply) => {
+      const skipped = wakeUps.skip(request.params.wake_up);
+      if (skipped.ok) return skipped.value === undefined ? {} : { wake_up: skipped.value };
+      return skipped.failure === "not_found"
+        ? reply.code(404).send(notFound(request.params.wake_up))
+        : reply.code(400).send({ error: toCommandError("invalid_request", skipped.failure) });
+    },
   );
 };
