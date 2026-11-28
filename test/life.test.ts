@@ -4,16 +4,15 @@ import type { DayNote } from "#dream/notes.ts";
 import type { Complete } from "#engine/engine.ts";
 import { createAboutYou } from "#life/about-you.ts";
 import { createBusy, targetsOf } from "#life/busy.ts";
-import { createDays } from "#life/days.ts";
+import { createDays, type LifeLocation } from "#life/days.ts";
 import { createGoingOn } from "#life/going-on.ts";
 import { createLines, type Lines } from "#life/lines.ts";
-import type { LifePlaces } from "#life/places.ts";
 import { createSearch, wordsOf } from "#life/search.ts";
 import type { ChapterSummary } from "#memory/chapters.ts";
 import type { Hit, PageBody, PageSummary, RecentChangeBody } from "#memory/memory.ts";
 import type { Shelf } from "#memory/pages.ts";
 import type { MotionDetail } from "#motion/motion.ts";
-import type { DayThread, Made, Message, Motion, People, Place } from "#protocol/types.ts";
+import type { DayThread, Made, Message, Motion, People, Place, Trip } from "#protocol/types.ts";
 import { fail, ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
@@ -87,15 +86,17 @@ const cannedLines = (answers: readonly unknown[]) => {
   return { lines, prompts: () => prompts.get() };
 };
 
-const noThread = undefined as DayThread | undefined;
+type FakeLocation = {
+  readonly places?: (from?: string, to?: string) => readonly Place[];
+  readonly thread?: (day: string) => DayThread;
+  readonly trips?: (from?: string, to?: string) => readonly Trip[];
+};
 
-const placesOf = (overrides: Partial<LifePlaces> = {}): LifePlaces => ({
-  find: () => [],
-  threadOf: (): DayThread | undefined => noThread,
-  trips: () => [],
-  summary: () => [],
-  ...overrides,
-});
+const locationOf = ({
+  places = () => [],
+  thread = (day) => ({ day, items: [] }),
+  trips = () => [],
+}: FakeLocation = {}): LifeLocation => ({ places, days: { thread, trips } });
 
 const motion = (fields: Partial<Motion> & Pick<Motion, "id" | "kind" | "title">): Motion => ({
   summary: "",
@@ -218,12 +219,12 @@ describe("days of a range", () => {
     { id: 2, at: "2026-11-24T13:10:00.000Z", day: "2026-11-24", text: "The final went well.", yours: true },
   ];
 
-  const daysWith = (answers: readonly unknown[], places: LifePlaces = placesOf()) => {
+  const daysWith = (answers: readonly unknown[], location: LifeLocation = locationOf()) => {
     const canned = cannedLines(answers);
     const days = createDays({
       memory: fakeMemory({ pages: { journal }, chapters: [autumn, winter] }),
       dayNotes: { since: (day) => notes.filter((note) => note.day >= day) },
-      places,
+      location,
       lines: canned.lines,
       now: () => now,
       timeZone,
@@ -232,10 +233,19 @@ describe("days of a range", () => {
   };
 
   it("gives a week's days newest first, up to today, with Kumo's line and the chapter it's in", async () => {
-    const thread = { day: "2026-11-24", items: [] };
+    const stop = {
+      kind: "stop" as const,
+      place: "p_office",
+      name: "The office",
+      place_kind: "work" as const,
+      latitude: 55.95,
+      longitude: -3.19,
+      minutes: 420,
+    };
+    const thread = { day: "2026-11-24", items: [stop] };
     const { days, prompts } = daysWith(
       [{ line: "Home and the office, mostly. The gym four times.", weeks: [] }],
-      placesOf({ threadOf: (day) => (day === "2026-11-24" ? thread : undefined) }),
+      locationOf({ thread: (day) => (day === "2026-11-24" ? thread : { day, items: [] }) }),
     );
     const week = await days.range("2026-11-23", "2026-11-29");
     expect(week).toEqual(
@@ -289,7 +299,7 @@ describe("days of a range", () => {
     };
     const { days, prompts } = daysWith(
       [{ line: "Three countries. Lisbon was the longest.", weeks: [] }],
-      placesOf({ trips: () => [trip], summary: () => ["A trip to Lisbon"] }),
+      locationOf({ trips: () => [trip] }),
     );
     const year = await days.range("2026-01-01", "2026-12-31");
     expect(year.ok && year.value.chapters.map(({ title }) => title)).toEqual([
@@ -299,7 +309,7 @@ describe("days of a range", () => {
     expect(year.ok && year.value.trips).toEqual([trip]);
     expect(year.ok && year.value.weeks).toBeUndefined();
     expect(prompts()[0]).not.toContain("Their journal");
-    expect(prompts()[0]).toContain("A trip to Lisbon");
+    expect(prompts()[0]).toContain("A trip, 2026-05-02 to 2026-05-09 (8 days): Lisbon, Portugal");
   });
 
   it("writes no line from nothing, and refuses a range it can't read", async () => {
@@ -510,7 +520,7 @@ describe("search", () => {
     },
   ];
 
-  const searchWith = (answers: readonly unknown[]) => {
+  const searchWith = (answers: readonly unknown[], thread?: (day: string) => DayThread) => {
     const canned = cannedLines(answers);
     const search = createSearch({
       memory: fakeMemory({
@@ -530,7 +540,7 @@ describe("search", () => {
           },
         ],
       },
-      places: placesOf({ find: (words) => (words.includes("orrin") ? [orrins] : []) }),
+      location: locationOf({ places: () => [orrins], ...(thread && { thread }) }),
       people: { list: () => Promise.resolve(people) },
       goingOn: { threads: () => Promise.resolve([]) },
       made: { list: () => [guide] },
@@ -587,6 +597,23 @@ describe("search", () => {
     const { search } = searchWith([]);
     const found = await search.find("Orrin's");
     expect(found.ok && found.value.places).toEqual([orrins]);
+    expect(found.ok && found.value.answer).toBeUndefined();
+  });
+
+  it("brings the places where the days it found happened", async () => {
+    const stop = {
+      kind: "stop" as const,
+      place: orrins.id,
+      apple_name: "Orrin's",
+      place_kind: "restaurant" as const,
+      latitude: orrins.latitude,
+      longitude: orrins.longitude,
+      minutes: 150,
+    };
+    const { search } = searchWith([{ answer: "" }], (day) => ({ day, items: day === "2026-11-20" ? [stop] : [] }));
+    const found = await search.find("dinner with Omar");
+    expect(found.ok && found.value.places).toEqual([orrins]);
+    expect(found.ok && found.value.days[0]?.thread).toEqual({ day: "2026-11-20", items: [stop] });
     expect(found.ok && found.value.answer).toBeUndefined();
   });
 

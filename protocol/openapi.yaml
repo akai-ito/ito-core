@@ -4733,7 +4733,7 @@ components:
           maxItems: 5
           items: { $ref: "#/components/schemas/SearchDay" }
         places:
-          description: Places whose names say it, most hours first, at most three.
+          description: Places whose names say it, most hours first, then where the days it found happened, at most three.
           type: array
           maxItems: 3
           items: { $ref: "#/components/schemas/Place" }

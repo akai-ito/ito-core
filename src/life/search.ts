@@ -3,12 +3,12 @@ import type { DayNotes } from "#dream/notes.ts";
 import type { JsonSchema } from "#engine/engine.ts";
 import type { GoingOn } from "#life/going-on.ts";
 import type { Lines } from "#life/lines.ts";
-import type { LifePlaces } from "#life/places.ts";
+import { threadOn, type LifeLocation } from "#life/days.ts";
 import type { MadePages } from "#made/made.ts";
 import type { Hit, Memory } from "#memory/memory.ts";
 import { dayTitle } from "#memory/pages.ts";
 import type { PeopleKeeper } from "#people/people.ts";
-import type { LifeSearch, PersonSummary, SearchDay, SearchMessage } from "#protocol/types.ts";
+import type { LifeSearch, PersonSummary, SearchDay, SearchMessage, ThreadStop } from "#protocol/types.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
@@ -17,13 +17,13 @@ import { textOf } from "#tools/input.ts";
 // The search at the top of Life: Kumo's short answer first, written on the quick model over what was found, then
 // what was found, grouped: days (journal days and day notes), places, people, what's going on, made pages and chat
 // messages, each with enough to show a row and open it. Pages and past conversations come from memory's own search;
-// the rest is matched by its words.
+// the rest is matched by its words, and the places where the days it found happened come too.
 export type Search = { readonly find: (query: string) => Promise<Result<LifeSearch, string>> };
 
 export type SearchOptions = {
   readonly memory: Pick<Memory, "sync" | "search" | "pages">;
   readonly dayNotes: Pick<DayNotes, "since">;
-  readonly places: LifePlaces;
+  readonly location: LifeLocation;
   readonly people: Pick<PeopleKeeper, "list">;
   readonly goingOn: GoingOn;
   readonly made: Pick<MadePages, "list">;
@@ -147,7 +147,7 @@ export const toAnswerPrompt = (query: string, today: string, passages: readonly 
 export const createSearch = ({
   memory,
   dayNotes,
-  places,
+  location,
   people,
   goingOn,
   made,
@@ -193,7 +193,7 @@ export const createSearch = ({
       .filter((day, index, all) => all.findIndex((other) => other.day === day.day) === index)
       .slice(0, mostPerGroup)
       .map((day) => {
-        const thread = places.threadOf(day.day);
+        const thread = threadOn(location, day.day);
         return thread ? { ...day, thread } : day;
       });
 
@@ -247,7 +247,20 @@ export const createSearch = ({
       })
       .slice(0, mostPerGroup);
 
-    const foundPlaces = places.find(words).slice(0, mostPlaces);
+    // Places: those whose names say it, then where the days it found happened, home aside.
+    const everywhere = location.places();
+    const namedPlaces = everywhere.filter((place) => {
+      const names = [place.name, place.apple_name, place.street, place.locality].join(" ").toLowerCase();
+      return words.some((word) => names.includes(word));
+    });
+    const stayedAt = days
+      .flatMap((day) => day.thread?.items ?? [])
+      .filter((item): item is ThreadStop => item.kind === "stop" && item.place_kind !== "home")
+      .map((stop) => stop.place)
+      .flatMap((id) => everywhere.find((place) => place.id === id) ?? []);
+    const foundPlaces = [...namedPlaces, ...stayedAt]
+      .filter((place, index, all) => all.findIndex((other) => other.id === place.id) === index)
+      .slice(0, mostPlaces);
 
     const passages = [
       ...days.map(

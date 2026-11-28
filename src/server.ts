@@ -76,7 +76,6 @@ import { registerPeople } from "#http/people.ts";
 import { registerLife } from "#http/life.ts";
 import { createBusy } from "#life/busy.ts";
 import { createLife } from "#life/life.ts";
-import { placesFrom } from "#life/places.ts";
 import { createPeople, type PeopleKeeper } from "#people/people.ts";
 import { createSenders } from "#people/senders.ts";
 import { registerLocation } from "#http/location.ts";
@@ -1095,7 +1094,7 @@ export const createServer = (options: ServerOptions): Server => {
     store,
     tracks,
     questions,
-    places: placesFrom(location),
+    location,
     busy,
     complete: quickComplete,
     quickChoice: createQuickChoice(listedModels),

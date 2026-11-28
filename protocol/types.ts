@@ -3859,7 +3859,7 @@ export interface components {
       answer?: string;
       /** @description Journal days and days whose notes say it, best first, at most five. */
       days: components["schemas"]["SearchDay"][];
-      /** @description Places whose names say it, most hours first, at most three. */
+      /** @description Places whose names say it, most hours first, then where the days it found happened, at most three. */
       places: components["schemas"]["Place"][];
       /** @description People it names, or whose pages say it, at most five. */
       people: components["schemas"]["PersonSummary"][];

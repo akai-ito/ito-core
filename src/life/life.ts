@@ -5,10 +5,9 @@ import type { Complete } from "#engine/engine.ts";
 import type { QuickChoice } from "#engine/quick-model.ts";
 import { createAboutYou, type AboutYouReader } from "#life/about-you.ts";
 import type { Busy } from "#life/busy.ts";
-import { createDays, type Days } from "#life/days.ts";
+import { createDays, type Days, type LifeLocation } from "#life/days.ts";
 import { createGoingOn, type GoingOn } from "#life/going-on.ts";
 import { createLines } from "#life/lines.ts";
-import type { LifePlaces } from "#life/places.ts";
 import { createSearch, type Search } from "#life/search.ts";
 import type { MadePages } from "#made/made.ts";
 import type { Memory } from "#memory/memory.ts";
@@ -38,7 +37,7 @@ export type LifeOptions = {
   readonly store: Pick<Store, "findMessage">;
   readonly tracks: Pick<Tracks, "list">;
   readonly questions: Pick<Questions, "open">;
-  readonly places: LifePlaces;
+  readonly location: LifeLocation;
   readonly busy: Pick<Busy, "isWorking">;
   readonly complete: Complete;
   readonly quickChoice: QuickChoice;
@@ -48,13 +47,13 @@ export type LifeOptions = {
 };
 
 export const createLife = (options: LifeOptions): Life => {
-  const { database, memory, motions, made, people, dayNotes, store, tracks, questions, places, busy } = options;
+  const { database, memory, motions, made, people, dayNotes, store, tracks, questions, location, busy } = options;
   const { complete, quickChoice, clock, timeZone, info } = options;
   const now = (): number => clock.now();
   const lines = createLines({ database, complete, quickChoice, clock, info });
   const goingOn = createGoingOn({ memory, motions, busy, now, timeZone });
-  const search = createSearch({ memory, dayNotes, places, people, goingOn, made, store, lines, now, timeZone });
-  const days = createDays({ memory, dayNotes, places, lines, now, timeZone });
+  const search = createSearch({ memory, dayNotes, location, people, goingOn, made, store, lines, now, timeZone });
+  const days = createDays({ memory, dayNotes, location, lines, now, timeZone });
   const aboutYou = createAboutYou({ memory, tracks, questions, lines });
   return { search: search.find, days: days.range, goingOn: goingOn.threads, aboutYou: aboutYou.read };
 };

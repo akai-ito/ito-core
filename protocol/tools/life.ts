@@ -1,3 +1,4 @@
+import { orrins } from "./places-data.ts";
 import { createTranscript, type Transcript } from "./transcript.ts";
 
 // Life: the search on top, with Kumo's answer first; the days of a week and a month with Kumo's lines; Going on,
@@ -45,8 +46,8 @@ const searchTranscript = (): Transcript => {
     summary:
       "You search Life for “dinner with Omar”. Kumo answers first, from what memory's search found: Orrin's, last " +
       "Friday, and what you wrote about the fig thing. Under it come the days (Friday, and a dinner in October), " +
-      "and Omar, with when you last saw him. You search again and the answer comes as it was, kept, with no new " +
-      "call to the model.",
+      "Orrin's, known from Friday's photos, and Omar, with when you last saw him. You search again and the answer " +
+      "comes as it was, kept, with no new call to the model.",
     guarantees: ["G71"],
   });
   transcript.begin("2026-11-24T16:30:00.000Z");
@@ -68,7 +69,28 @@ const searchTranscript = (): Transcript => {
     ],
   });
   transcript.connect();
-  transcript.wait(4000);
+  transcript.wait(2000);
+  // Photos from dinner at Orrin's on Friday, seeding the place.
+  const orrinsPlace = transcript.placeId();
+  const where = {
+    name: "Orrin's",
+    street: "31 Broughton Street",
+    locality: "Edinburgh",
+    country: "United Kingdom",
+    country_code: "GB",
+  };
+  const photos = {
+    batch: "photos-2026-0107",
+    time_zone: "Europe/London",
+    photos: [
+      { taken_at: "2026-11-20T19:55:00.000Z", ...orrins, placemark: where },
+      { taken_at: "2026-11-20T21:30:00.000Z", ...orrins, placemark: where },
+    ],
+  };
+  transcript.request("POST", "/v0/location/photos", { body: photos });
+  transcript.wait(30);
+  transcript.response(200, { batch: photos.batch, repeated: false, taken: 2, already: 0 });
+  transcript.wait(2000);
   const answer = "Orrin's, last Friday, with Omar. You wrote that the fig thing was the best you'd had all month.";
   transcript.world("life_written", { answer });
   const path = "/v0/life/search?query=dinner%20with%20Omar";
@@ -81,6 +103,23 @@ const searchTranscript = (): Transcript => {
         gist: "Orrin's with Omar, and the fig thing",
         journal: "memory:journal/2026-11-20",
         excerpt: "Dinner at Orrin's with Omar. The fig thing was the best I'd had all month.",
+        thread: {
+          day: "2026-11-20",
+          items: [
+            {
+              kind: "stop",
+              place: orrinsPlace,
+              apple_name: "Orrin's",
+              place_kind: "unknown",
+              latitude: orrins.latitude,
+              longitude: orrins.longitude,
+              arrived_at: "2026-11-20T19:55:00.000Z",
+              departed_at: "2026-11-20T21:30:00.000Z",
+              minutes: 95,
+            },
+          ],
+          from_photos: true,
+        },
       },
       {
         day: "2026-10-03",
@@ -89,7 +128,25 @@ const searchTranscript = (): Transcript => {
         excerpt: "First dinner at Orrin's, with Leo and Omar. Leo talked about Lisbon all evening.",
       },
     ],
-    places: [],
+    places: [
+      {
+        id: orrinsPlace,
+        apple_name: "Orrin's",
+        kind: "unknown",
+        latitude: orrins.latitude,
+        longitude: orrins.longitude,
+        radius: 0,
+        hours: 1.6,
+        visits: 1,
+        first_visit: "2026-11-20T19:55:00.000Z",
+        last_visit: "2026-11-20T19:55:00.000Z",
+        street: where.street,
+        locality: where.locality,
+        country: where.country,
+        country_code: where.country_code,
+        from_photos: true,
+      },
+    ],
     people: [
       {
         id: "omar",

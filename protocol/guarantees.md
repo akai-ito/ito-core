@@ -804,8 +804,9 @@ the dream.
 
 - `GET /v0/life/search` for “dinner with Omar” answers first, in Kumo's words, from what memory's
   search found: Orrin's, last Friday, and what you wrote. (G71)
-- Then the groups: the two journal days that say it, with their lines, and Omar, with when you last
-  saw him; no place, nothing going on, no made page and no message says it. (G71)
+- Then the groups: the two journal days that say it, with their lines, Friday with its thread from
+  the photos you took at dinner; Orrin's, where Friday happened; and Omar, with when you last saw
+  him. Nothing going on, no made page and no message says it. (G71)
 - The same search again gives the same answer, kept, with no new call to the model. (G71)
 
 ### 108 · [Your week and month](transcripts/108-your-week-and-month.jsonl)

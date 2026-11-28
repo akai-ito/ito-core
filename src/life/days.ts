@@ -1,10 +1,11 @@
 import type { DayNotes } from "#dream/notes.ts";
 import type { Lines } from "#life/lines.ts";
-import type { LifePlaces } from "#life/places.ts";
+import type { Days as LocationDays } from "#location/days.ts";
+import type { Location } from "#location/location.ts";
 import type { Memory } from "#memory/memory.ts";
 import { toDay } from "#memory/pages.ts";
 import type { JsonSchema } from "#engine/engine.ts";
-import type { LifeDay, LifeDays, LifeWeek } from "#protocol/types.ts";
+import type { DayThread, LifeDay, LifeDays, LifeWeek, Place, Trip } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 
@@ -14,10 +15,40 @@ import { fieldOf, textOf } from "#tools/input.ts";
 // on the quick model and kept until what they're written from changes.
 export type Days = { readonly range: (from: string, to: string) => Promise<Result<LifeDays, string>> };
 
+// What Life reads from location: places by hours in a range, a day's thread and the trips.
+export type LifeLocation = Pick<Location, "places"> & { readonly days: Pick<LocationDays, "thread" | "trips"> };
+
+// A day's thread of places; none for a day with no stops.
+export const threadOn = (location: LifeLocation, day: string): DayThread | undefined => {
+  const thread = location.days.thread(day);
+  return thread.items.length > 0 ? thread : undefined;
+};
+
+// Places Kumo's line names: the ones the most time went to.
+const placesSummed = 8;
+
+const placeName = (place: Place): string => place.name ?? place.apple_name ?? `somewhere (${place.kind})`;
+
+const tripLine = (trip: Trip): string =>
+  `A trip, ${trip.from} to ${trip.to} (${String(trip.days)} days): ${[...trip.cities, ...trip.countries.map(({ name }) => name)].join(", ")}`;
+
+// Where a range's time went, for Kumo's line: the places by hours, then the trips.
+const whereTimeWent = (location: LifeLocation, from: string, to: string, trips: readonly Trip[]): readonly string[] => [
+  ...location
+    .places(from, to)
+    .toSorted((left, right) => right.hours - left.hours)
+    .slice(0, placesSummed)
+    .map(
+      (place) =>
+        `${placeName(place)} (${place.kind}): ${String(place.hours)} h over ${String(place.visits)} visit${place.visits === 1 ? "" : "s"}`,
+    ),
+  ...trips.map((trip) => tripLine(trip)),
+];
+
 export type DaysOptions = {
   readonly memory: Pick<Memory, "sync" | "pages" | "chapters">;
   readonly dayNotes: Pick<DayNotes, "since">;
-  readonly places: LifePlaces;
+  readonly location: LifeLocation;
   readonly lines: Lines;
   readonly now: () => number;
   readonly timeZone: () => string;
@@ -119,7 +150,7 @@ export const toLinesPrompt = (
   ].join("\n");
 };
 
-export const createDays = ({ memory, dayNotes, places, lines, now, timeZone }: DaysOptions): Days => ({
+export const createDays = ({ memory, dayNotes, location, lines, now, timeZone }: DaysOptions): Days => ({
   range: async (from, to) => {
     if (!isDay(from) || !isDay(to)) return fail("Give from and to as YYYY-MM-DD.");
     if (to < from) return fail("from comes before to.");
@@ -148,7 +179,7 @@ export const createDays = ({ memory, dayNotes, places, lines, now, timeZone }: D
         : Array.from({ length: indexOf(last) - indexOf(from) + 1 }, (_, offset) => dayAt(indexOf(last) - offset)).map(
             (day) => {
               const page = journal.get(day);
-              const thread = withThreads ? places.threadOf(day) : undefined;
+              const thread = withThreads ? threadOn(location, day) : undefined;
               const noted = notes.get(day) ?? 0;
               return {
                 day,
@@ -175,7 +206,7 @@ export const createDays = ({ memory, dayNotes, places, lines, now, timeZone }: D
       .chapters()
       .filter((chapter) => chapter.began <= to && (chapter.ended === undefined || chapter.ended >= from))
       .toSorted((left, right) => left.began.localeCompare(right.began));
-    const trips = places.trips(from, to);
+    const trips = location.days.trips(from, to);
     const facts = {
       days: span <= weeksUpTo ? days : [],
       weeks,
@@ -183,7 +214,7 @@ export const createDays = ({ memory, dayNotes, places, lines, now, timeZone }: D
         (chapter) =>
           `${chapter.title}, ${chapter.began} to ${chapter.ended ?? "now"}${chapter.gist === undefined ? "" : `: ${chapter.gist}`}`,
       ),
-      places: places.summary(from, to),
+      places: whereTimeWent(location, from, to, trips),
     };
     const hasFacts =
       facts.days.some((day) => day.gist !== undefined) || facts.chapters.length > 0 || facts.places.length > 0;
