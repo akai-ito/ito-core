@@ -553,13 +553,13 @@ export const createDreams = ({
       case "wake_up": {
         const now = changes.wakeUps().find(({ id }) => id === touched.id);
         if (isSameWakeUp(now, touched.before)) return undefined;
-        const what = now?.what ?? touched.before?.what ?? "a wake-up";
+        const title = now?.title ?? touched.before?.title ?? "a wake-up";
         const text =
           touched.before === undefined
-            ? `Set “${what}” for ${whenOf(now?.at ?? clock.now(), timeZone())}`
+            ? `Set “${title}” for ${whenOf(now?.at ?? clock.now(), timeZone())}`
             : now === undefined
-              ? `Dropped “${what}”`
-              : `Moved “${what}” to ${whenOf(now.at, timeZone())}`;
+              ? `Dropped “${title}”`
+              : `Moved “${title}” to ${whenOf(now.at, timeZone())}`;
         const undo: WakeUpUndo = {
           kind: "dream_wake_up",
           id: touched.id,

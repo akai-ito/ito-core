@@ -5029,6 +5029,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.registerDevice();
     transcript.wait(1000);
     const legs = {
+      title: "Ask how the legs feel",
       what: "Ask how the legs feel after the long run",
       why: "Fourteen kilometres is a jump; check recovery before Saturday's session.",
       source: { kind: "chat", title: "The long run with Leo" },
@@ -5045,6 +5046,7 @@ const scenarios: readonly (() => Transcript)[] = [
       "A long run along the river with Leo this morning: 14 km, my longest since the summer. Best run in months. " +
       "We stopped for pastries at the market on the way back.";
     const saturday = {
+      title: "Check Saturday's session",
       what: "Check Saturday's session still suits the legs",
       why: "After Thursday's 14 km, Saturday's intervals may want to be easy miles instead.",
       source: { kind: "chat", title: "The long run with Leo" },
@@ -5085,7 +5087,7 @@ const scenarios: readonly (() => Transcript)[] = [
     const dream = transcript.dreamId();
     const wrote = transcript.addDone({ text: "Wrote Thursday's journal", dream, undo: true });
     const movedDone = transcript.addDone({ text: moved, dream, undo: true });
-    const sessionText = `Set “${saturday.what}” for Sat 28 Nov 07:00`;
+    const sessionText = `Set “${saturday.title}” for Sat 28 Nov 07:00`;
     const sessionDone = transcript.addDone({ text: sessionText, dream, undo: true });
     const record = transcript.dreamFinished({
       id: dream,
@@ -5150,6 +5152,7 @@ const scenarios: readonly (() => Transcript)[] = [
     transcript.connect();
     transcript.wait(1000);
     const planning = {
+      title: "Shape Friday",
       what: "Shape Friday with you",
       why: "You asked for a look at the day each morning; Friday is wide open.",
       source: { kind: "chat", title: "“Look at my day with me each morning”" },
@@ -5845,15 +5848,16 @@ const scenarios: readonly (() => Transcript)[] = [
       transcript.wait(300);
       transcript.step("thinking", thinking);
       transcript.wait(1200);
+      const title = "Remind about the dentist";
       const what = "Remind them of the dentist tomorrow";
       const why = "Their check-up at Quillfield Dental is on Tuesday 2 December at 09:40; they shared the booking.";
       const source = { kind: "chat" as const, title: "Quillfield Dental booking" };
       transcript.world("agent_calls", {
         tool: "set_wake_up",
-        input: { what, why, at: "2026-12-01T19:00:00Z", asked: false, source },
+        input: { title, what, why, at: "2026-12-01T19:00:00Z", asked: false, source },
         thread: booking.thread,
       });
-      transcript.wakeUp({ at: "2026-12-01T19:00:00.000Z", what, why, by: "kumo", source });
+      transcript.wakeUp({ at: "2026-12-01T19:00:00.000Z", title, what, why, by: "kumo", source });
       transcript.wait(300);
       writeWhole(
         transcript,
