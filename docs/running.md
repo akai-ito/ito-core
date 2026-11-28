@@ -161,9 +161,9 @@ the first person (filling in earlier days with what you mentioned later), and fo
 from your corrections into How to help you. It leaves a record on the Desk of what it planned,
 tidied, noticed and saved for you; each change is in Kumo's work with an undo that puts it back as it
 was before the dream. If the box was off at the dream time, it dreams as soon as it's back; if the
-model couldn't, it tries again every half hour until the next one is due. *Dream now* runs an extra one
-at once; the night's dream still runs, looking back only since. A dream never
-notifies; Kumo messages you only when something from the night is worth it.
+model couldn't, it tries again every half hour until the next one is due. *Dream now* runs an extra
+one at once; the night's dream still runs, looking back only since. A dream never notifies; Kumo
+messages you only when something from the night is worth it.
 
 To back it up, tap *Back up to GitHub* in Ari's Settings › Memory and approve the code on GitHub.
 Your server finds your private `ito-thread` repository, or makes one, and GitHub asks you to install
@@ -287,9 +287,9 @@ blocks:
   and then it's time-sensitive, to break through Focus.
 - **It sets itself wake-ups:** a concrete time, what it's for and why, one-off or repeating (such as
   weekdays at 9, with an end when Kumo knows one: eight more times, or until a day), who asked for
-  it, and where it came from. "After the dentist" is when the
-  appointment ends, and Kumo moves a wake-up when life moves. Setting one is quiet: it shows in
-  Kumo's plans on the Desk, where you can move it, skip a repeating one's next time, or stop it. When one comes due, Kumo looks first, then
+  it, and where it came from. "After the dentist" is when the appointment ends, and Kumo moves a
+  wake-up when life moves. Setting one is quiet: it shows in Kumo's plans on the Desk, where you can
+  move it, skip a repeating one's next time, or stop it. When one comes due, Kumo looks first, then
   messages you, moves it or drops it, and Done says which.
 - **It wakes on what happens:** a new mail, a change on your calendars, the mail you send. Kumo looks
   at each with the same memory pages and plans it has in the chat, and the end of your conversation,
