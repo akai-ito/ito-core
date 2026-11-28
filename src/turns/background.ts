@@ -62,7 +62,7 @@ export type BackgroundOptions = {
   // Waits until the server can take Kumo's tool calls.
   readonly ready: () => Promise<void>;
   // What a piece of work starts with: the rules for working in the background and what's in Kumo's mind.
-  readonly frame: (prompt: string) => string;
+  readonly frame: (prompt: string, run: string) => string;
   readonly wakeUps: () => HeldWakeUps;
   // The one message the catch-up ends with.
   readonly post: (text: string) => void;
@@ -258,7 +258,7 @@ export const createBackground = ({
       const working = async (): Promise<void> => {
         try {
           settle(
-            await engine.work(frame(prompt), run, {
+            await engine.work(frame(prompt, run), run, {
               ...(choice && { choice }),
               onActivity: arm,
               signal: controller.signal,

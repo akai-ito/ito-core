@@ -5144,8 +5144,8 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "Dream now",
       summary:
         "You're off to bed early, so you ask Kumo to dream now. It dreams at once, moves Friday's planning to " +
-        "09:00 so you can sleep in, and leaves its record. Being so close to the dream time, it stands in for the " +
-        "night's dream, which doesn't run at 04:00. In the morning you move the dream time to 03:30.",
+        "09:00 so you can sleep in, and leaves its record. Dream now is an extra: the night's dream still runs at " +
+        "04:00, looking back only over what came since. In the morning you move the dream time to 03:30.",
       guarantees: ["G60", "G61"],
     });
     transcript.begin("2026-11-26T23:15:00.000Z");
@@ -5195,12 +5195,30 @@ const scenarios: readonly (() => Transcript)[] = [
       headline: "An early night: Friday starts at nine",
       lines: [{ group: "planned", text: moved, wake_up: look.id, done: String(done.id), undo: true }],
     });
+    transcript.wait(2000);
+    transcript.request("GET", "/v0/dream");
+    transcript.response(200, { time: "04:00", next_at: "2026-11-27T04:00:00.000Z", latest: record });
+    // The night's dream runs as ever, looking back only since Dream now.
+    const quiet = "Nothing new since your early dream: Friday still starts at nine";
+    transcript.world("kumo_dreams", {
+      calls: [{ tool: "record_dream", input: { lines: [{ group: "noticed", text: quiet }] } }],
+      answer: "Dreamt.",
+    });
+    transcript.time("2026-11-27T04:00:00.000Z");
+    const night = transcript.dreamFinished({
+      id: transcript.dreamId(),
+      day: "2026-11-26",
+      trigger: "scheduled",
+      started_at: "2026-11-27T04:00:00.000Z",
+      ended_at: "2026-11-27T04:00:00.000Z",
+      lines: [{ group: "noticed", text: quiet }],
+    });
     transcript.time("2026-11-27T07:30:00.000Z");
     transcript.request("GET", "/v0/dream");
-    transcript.response(200, { time: "04:00", next_at: "2026-11-28T04:00:00.000Z", latest: record });
+    transcript.response(200, { time: "04:00", next_at: "2026-11-28T04:00:00.000Z", latest: night });
     transcript.wait(5000);
     transcript.request("PUT", "/v0/dream/time", { body: { time: "03:30" } });
-    transcript.response(200, { time: "03:30", next_at: "2026-11-28T03:30:00.000Z", latest: record });
+    transcript.response(200, { time: "03:30", next_at: "2026-11-28T03:30:00.000Z", latest: night });
     return transcript;
   },
 

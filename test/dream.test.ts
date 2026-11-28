@@ -151,6 +151,7 @@ describe("dreams", () => {
           note: "The day",
         });
         await call(running, run, "set_wake_up", {
+          title: "Ask how the legs feel",
           what: "Ask how the legs feel after the long run",
           why: "Fourteen kilometres is a jump; check recovery before Saturday's session.",
           at: "2026-11-27T09:00:00Z",
@@ -182,6 +183,8 @@ describe("dreams", () => {
       expect(dreamt?.prompt).toContain("about 24 November 2026: Saw Mira for lunch.");
       expect(dreamt?.prompt).toContain("they: Long run with Leo this morning, 14 km!");
       expect(dreamt?.prompt).toContain("you: Lovely. Your longest since the summer.");
+      // Its own digest reads the day, so background work's today so far is left out.
+      expect(dreamt?.prompt).not.toContain("<today>");
 
       const state = await dreamOf(server);
       expect(state.next_at).toBe("2026-11-28T04:00:00.000Z");
@@ -237,7 +240,7 @@ describe("dreams", () => {
     }
   });
 
-  it("let a manual dream before bed stand in for the night's, one at a time", async () => {
+  it("dream now as an extra, one at a time, and still dream at the dream time", async () => {
     const { open, runUntil, plan, prompts } = setUp("2026-11-26T22:00:00.000Z");
     const server = await open();
     try {
@@ -269,9 +272,14 @@ describe("dreams", () => {
         lines: [{ group: "noticed", text: "A quiet day" }],
       });
 
+      // The night's dream still runs, reading only what came since Dream now.
+      plan(() => Promise.resolve(ok("Dreamt.")));
       await runUntil("2026-11-27T04:30:00.000Z");
       await server.dreams.settled();
-      expect(prompts.get()).toHaveLength(1);
+      expect(prompts.get()).toHaveLength(2);
+      expect(prompts.get()[1]?.prompt).toContain("It's your nightly dream.");
+      expect(prompts.get()[1]?.prompt).toContain("Your last dream was");
+      expect(await latestOf(server)).toMatchObject({ trigger: "scheduled", day: "2026-11-26" });
     } finally {
       await server.close();
     }
@@ -471,7 +479,7 @@ describe("a dream's changes to Kumo's calendar", () => {
         doneSince: () => [],
         mailSince: () => Promise.resolve([]),
         calendar: () => items.get(),
-        tracks: () => [],
+        trackEvidence: () => "",
         attachmentPath: (id) => id,
       },
       changes: {

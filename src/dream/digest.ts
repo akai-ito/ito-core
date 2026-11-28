@@ -1,6 +1,6 @@
 import type { DayNote } from "#dream/notes.ts";
 import { dayTitle } from "#memory/pages.ts";
-import type { CalendarItem, DoneEntry, Message, Thread, Track } from "#protocol/types.ts";
+import type { CalendarItem, DoneEntry, Message, Thread } from "#protocol/types.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 
 // What the dream reads, digested: each source in a few lines, the newest kept when there's more than fits, so a
@@ -159,22 +159,5 @@ export const calendarText = (items: readonly CalendarItem[], zone: string): stri
       return `- ${span}: ${item.title} (${whose})`;
     }),
     "Nothing on their calendars, or none is connected.",
-  );
-};
-
-export const tracksText = (tracks: readonly Track[], since: string, zone: string): string => {
-  const lines = tracks.flatMap((track) =>
-    track.evidence
-      .filter(({ at }) => at >= since)
-      .toReversed()
-      .map(
-        ({ at, kind, text }) => `- ${track.name} (${track.id}), ${whenOf(at, zone)}, ${kind}: ${squeeze(text, 300)}`,
-      ),
-  );
-  return section(
-    "learning",
-    "What the areas you're learning stand on since your last dream, oldest first in each:",
-    lines,
-    "No corrections or confirmations since your last dream.",
   );
 };

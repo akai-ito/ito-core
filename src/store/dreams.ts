@@ -1,12 +1,13 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Dream } from "#protocol/types.ts";
 
-// Kumo's dreams as they finished, each with the night it stands for: the dream time it was due at, so the scheduled
-// dream knows a manual one already stood in for it.
+// Kumo's dreams as they finished, each with its slot: the dream time a night's dream was due at, so it runs once a
+// night, or when Dream now began.
 export type DreamStore = {
   readonly latest: () => Dream | undefined;
   readonly find: (id: string) => Dream | undefined;
-  readonly hasSlot: (slot: string) => boolean;
+  // Whether the night's dream due at this dream time has run; Dream now doesn't count.
+  readonly hasNight: (slot: string) => boolean;
   readonly save: (dream: Dream, slot: string) => void;
   // The same dream, changed, such as once it's seen.
   readonly replace: (dream: Dream) => void;
@@ -23,7 +24,10 @@ export const createDreamStore = (database: DatabaseSync): DreamStore => ({
       database.prepare("SELECT body FROM dreams ORDER BY started_at DESC, rowid DESC LIMIT 1").get() as Row | undefined,
     ),
   find: (id) => toDream(database.prepare("SELECT body FROM dreams WHERE id = ?").get(id) as Row | undefined),
-  hasSlot: (slot) => database.prepare("SELECT 1 FROM dreams WHERE slot = ? LIMIT 1").get(slot) !== undefined,
+  hasNight: (slot) =>
+    database
+      .prepare("SELECT 1 FROM dreams WHERE slot = ? AND json_extract(body, '$.trigger') = 'scheduled' LIMIT 1")
+      .get(slot) !== undefined,
   save: (dream, slot) => {
     database
       .prepare("INSERT OR REPLACE INTO dreams (id, slot, started_at, body) VALUES (?, ?, ?, ?)")

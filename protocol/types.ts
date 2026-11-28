@@ -467,8 +467,8 @@ export interface paths {
      * Dream now
      * @description Kumo dreams now, in the background, instead of waiting for the dream time; `dream.finished`
      *     follows when it's done, often many minutes later. One dream runs at a time: while one is
-     *     under way this answers with it and starts nothing. A dream in the 12 hours before the dream
-     *     time stands in for that night's, which then doesn't run.
+     *     under way this answers with it and starts nothing. Dream now is an extra: the night's dream
+     *     still runs at the dream time, and reads only what came since.
      */
     post: operations["dreamNow"];
     delete?: never;

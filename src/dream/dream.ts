@@ -15,7 +15,6 @@ import {
   mostMessages,
   notesText,
   photosText,
-  tracksText,
   whenOf,
   workText,
   type SharedPhoto,
@@ -32,7 +31,6 @@ import type {
   DreamState,
   Message,
   Thread,
-  Track,
   WakeUp,
 } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
@@ -47,8 +45,9 @@ import type { Info } from "#turns/turns.ts";
 // in order: it tends memory, reconciles tomorrow (its blocks and guesses, and its wake-ups), writes each day's journal
 // entry in their own voice, and folds lasting lessons into How to help you. It leaves a record of what it planned,
 // tidied, noticed and saved for them, each line pointing at what it changed, which Done keeps with an undo. One dream
-// runs at a time; a manual one in the 12 hours before the dream time stands in for that night's. A dream the server
-// was off for runs once it's back, and one the model couldn't do is tried again until the next is due.
+// runs at a time. The night's dream always runs once a day, at the dream time; Dream now is an extra one, and never
+// stands in for it. A dream the server was off for runs once it's back, and one the model couldn't do is tried again
+// until the next is due.
 export type Dreams = {
   readonly tools: readonly Tool[];
   readonly state: () => DreamState;
@@ -74,7 +73,8 @@ export type DreamSources = {
   readonly mailSince: (since: number) => Promise<readonly string[]>;
   // Their calendars and Kumo's, as Coming up shows them, guesses and all.
   readonly calendar: () => readonly CalendarItem[];
-  readonly tracks: () => readonly Track[];
+  // What the learning tracks stood on since a time, as a prompt reads it, or "" when nothing.
+  readonly trackEvidence: (since: string) => string;
   readonly attachmentPath: (id: string) => string;
 };
 
@@ -119,9 +119,6 @@ export const defaultDreamTime = "04:00";
 
 // A dream the model couldn't do is tried again this often until it goes through or the next one is due.
 export const dreamRetryMs = 30 * 60 * 1000;
-
-// A manual dream this close before the dream time stands in for that night's.
-const standInMs = 12 * 60 * 60 * 1000;
 
 // A dream looks back at most this far, however long the server was off.
 const longestLookBackMs = 7 * dayMs;
@@ -183,6 +180,7 @@ type Written = { readonly group: DreamGroup; readonly text: string; readonly key
 type Running = {
   readonly run: string;
   readonly trigger: Trigger;
+  // The dream time a night's dream was due at; for Dream now, when it began.
   readonly slot: number;
   readonly startedAt: number;
   readonly notes: readonly DayNote[];
@@ -337,13 +335,8 @@ export const createDreams = ({
     return toLocal(at - shift * 60 * 1000, timeZone()).day;
   };
 
-  // A night's dream is covered once a dream stands in for it: one at its time, or one in the 12 hours before.
-  const isCovered = (slot: number): boolean => {
-    const latest = store.latest();
-    return (
-      store.hasSlot(toTimestamp(slot)) || (latest !== undefined && Date.parse(latest.started_at) > slot - standInMs)
-    );
-  };
+  // A night's dream is covered once it has run; Dream now never covers it.
+  const isCovered = (slot: number): boolean => store.hasNight(toTimestamp(slot));
 
   const withUndo = (dream: Dream): Dream => ({
     ...dream,
@@ -362,11 +355,10 @@ export const createDreams = ({
   const state = (): DreamState => {
     const current = running.get();
     const latest = store.latest();
-    // The next night a dream will run: tonight's, unless one already stood in for it.
-    const tonight = slotAfter(clock.now());
     return {
       time: timeOf(),
-      next_at: toTimestamp(isCovered(tonight) ? slotAfter(tonight) : tonight),
+      // The next night's dream, whatever Dream now has done since.
+      next_at: toTimestamp(slotAfter(clock.now())),
       ...(current && { dreaming: { since: toTimestamp(current.startedAt), trigger: current.trigger } }),
       ...(latest && { latest: withUndo(latest) }),
     };
@@ -448,7 +440,8 @@ export const createDreams = ({
         zone,
       ),
       "",
-      tracksText(sources.tracks(), from, zone),
+      sources.trackEvidence(from) ||
+        "<track_evidence>\nNo corrections or confirmations since your last dream.\n</track_evidence>",
     ].join("\n");
   };
 
@@ -740,7 +733,7 @@ export const createDreams = ({
     });
   };
 
-  // A night's dream comes due: unless one already stands in for it, or one is running (then it looks again after).
+  // A night's dream comes due: unless it has already run, or a dream is running (then it looks again after).
   const due = async (slot: number): Promise<void> => {
     if (isClosed.get()) return;
     if (running.get()) {
@@ -890,10 +883,7 @@ export const createDreams = ({
     tools: [recordTool],
     state,
     dreamNow: () => {
-      if (!running.get() && !isClosed.get()) {
-        const now = clock.now();
-        track(dream("manual", slotAfter(now - standInMs)));
-      }
+      if (!running.get() && !isClosed.get()) track(dream("manual", clock.now()));
       return state();
     },
     setTime: (time) => {

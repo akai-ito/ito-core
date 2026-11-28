@@ -161,8 +161,8 @@ the first person (filling in earlier days with what you mentioned later), and fo
 from your corrections into How to help you. It leaves a record on the Desk of what it planned,
 tidied, noticed and saved for you; each change is in Kumo's work with an undo that puts it back as it
 was before the dream. If the box was off at the dream time, it dreams as soon as it's back; if the
-model couldn't, it tries again every half hour until the next one is due. *Dream now* runs one at
-once, and one in the 12 hours before the dream time stands in for that night's. A dream never
+model couldn't, it tries again every half hour until the next one is due. *Dream now* runs an extra one
+at once; the night's dream still runs, looking back only since. A dream never
 notifies; Kumo messages you only when something from the night is worth it.
 
 To back it up, tap *Back up to GitHub* in Ari's Settings › Memory and approve the code on GitHub.

@@ -364,12 +364,13 @@ export const createServer = (options: ServerOptions): Server => {
     calendar: () => calendar.listItems(),
   });
   // What background work has in mind: the same as a turn in the chat, without the call or getting started, and with
-  // all of today so far, since it doesn't see the chat.
-  const backgroundText = (): string =>
+  // all of today so far, since it doesn't see the chat. A dream leaves today out: its own digest reads everything since
+  // the last dream.
+  const backgroundText = (run?: string): string =>
     [
       nowText(),
       access.inMindText(),
-      today.text(),
+      isDreamRun(run) ? "" : today.text(),
       memory.inMindText(),
       motions.inMindText(),
       made.inMindText(),
@@ -497,7 +498,7 @@ export const createServer = (options: ServerOptions): Server => {
     info,
     timeZone,
     ready: () => listening.get(),
-    frame: (prompt) => `${workRules}\n\n${backgroundText()}\n\n${prompt}`,
+    frame: (prompt, run) => `${workRules}\n\n${backgroundText(run)}\n\n${prompt}`,
     wakeUps: () => wakeUps,
     post: (text) => {
       store.postMessage(text);
@@ -789,7 +790,7 @@ export const createServer = (options: ServerOptions): Server => {
       doneSince: (at) => store.doneSince(at),
       mailSince: (since) => mail.readSince(since),
       calendar: () => calendar.listItems().map((item) => picture.enrich(item)),
-      tracks: () => tracks.list(),
+      trackEvidence: (since) => tracks.evidenceText(since),
       attachmentPath: (id) => attachments.pathOf(id),
     },
     changes: {
