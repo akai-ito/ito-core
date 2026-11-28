@@ -127,6 +127,9 @@
         },
         {
           "$ref": "#/$defs/QuestionChanged"
+        },
+        {
+          "$ref": "#/$defs/DreamFinished"
         }
       ]
     },
@@ -2197,6 +2200,12 @@
       "minLength": 1,
       "maxLength": 64
     },
+    "DreamId": {
+      "description": "Opaque. The server makes it when a dream finishes.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
     "CalendarItemId": {
       "description": "Opaque. The server makes it for each event it shows.",
       "type": "string",
@@ -2870,6 +2879,10 @@
         "track": {
           "$ref": "#/$defs/TrackId",
           "description": "The track this call belongs to, when it's in an area Kumo is learning. \"That was wrong\" on it steps the track back."
+        },
+        "dream": {
+          "$ref": "#/$defs/DreamId",
+          "description": "The dream that did it: show it with that dream rather than as the day's work. It doesn't count in the Desk's `handled`."
         }
       }
     },
@@ -3542,6 +3555,118 @@
         "card": {
           "$ref": "#/$defs/CardId",
           "description": "`waiting` only: the commit card on the Desk."
+        }
+      }
+    },
+    "DreamGroup": {
+      "description": "Where a line of a dream belongs: `planned`, tomorrow put in order (Kumo's blocks and guesses, wake-ups set, moved or dropped); `tidied`, memory tended (pages rewritten, merged, Now kept to what's live); `noticed`, what Kumo noticed or learnt (a lasting lesson on How to help you, a pattern, a chapter); `saved`, kept for you (the day's journal, a message or a question for the morning). Show a group you don't recognise under Noticed.",
+      "enum": ["planned", "tidied", "noticed", "saved"]
+    },
+    "DreamLine": {
+      "description": "One short line of what a dream did, pointing at what it changed or is about. Lines are in the order Kumo wrote them; group them by `group`.",
+      "type": "object",
+      "required": ["group", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/DreamGroup"
+        },
+        "text": {
+          "description": "Plain words, such as \"Moved tomorrow's run to 07:30, before the 09:00 call\".",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "done": {
+          "$ref": "#/$defs/DoneId",
+          "description": "The entry in Kumo's work for the change this line made, when it made one. Undo it with `POST /v0/done/{entry}/undo` while `undo` is true."
+        },
+        "undo": {
+          "description": "Whether `POST /v0/done/{entry}/undo` can take the change back now: it puts the page, the wake-up or the block back as it was before the dream.",
+          "type": "boolean"
+        },
+        "undone": {
+          "description": "You took the change back.",
+          "const": true
+        },
+        "page": {
+          "description": "The memory page it changed or is about, such as `memory:journal/2026-11-26`.",
+          "type": "string",
+          "pattern": "^memory:"
+        },
+        "wake_up": {
+          "$ref": "#/$defs/WakeUpId",
+          "description": "The wake-up it set, moved or dropped; one it dropped is no longer in the plans."
+        },
+        "event": {
+          "$ref": "#/$defs/CalendarItemId",
+          "description": "The item on Kumo's calendar it planned, moved or removed; one it removed is no longer in Coming up."
+        },
+        "message": {
+          "$ref": "#/$defs/MessageId",
+          "description": "A message it posted to you."
+        }
+      }
+    },
+    "Dream": {
+      "description": "One of Kumo's dreams: once a day, at the dream time, Kumo looks back over everything since the last one and puts it in order, then leaves this record. Show it from when it finishes until you've seen it (a moon on the Desk), then as seen.",
+      "type": "object",
+      "required": ["id", "day", "trigger", "started_at", "ended_at", "lines"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/DreamId"
+        },
+        "day": {
+          "description": "The local day it mostly looked back on, such as `2026-11-26` for a dream at 04:00 on the 27th.",
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "trigger": {
+          "description": "`scheduled`, at the dream time (or as soon as the server was back, if it was off then); `manual`, from Dream now.",
+          "enum": ["scheduled", "manual"]
+        },
+        "started_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "ended_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "headline": {
+          "description": "The night in a line, in Kumo's words, such as \"A quiet Wednesday: journal written, Thursday planned\".",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DreamLine"
+          }
+        },
+        "seen_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When you saw it, with `POST /v0/dreams/{dream}/seen`. Until then it's new."
+        }
+      }
+    },
+    "DreamFinished": {
+      "title": "dream.finished",
+      "description": "Kumo finished a dream, and left its record. It never notifies: Kumo messages you itself when something from the night is worth it.",
+      "type": "object",
+      "required": ["id", "type", "at", "dream"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "dream.finished"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "dream": {
+          "$ref": "#/$defs/Dream"
         }
       }
     },

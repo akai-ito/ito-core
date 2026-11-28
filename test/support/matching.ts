@@ -7,8 +7,8 @@ export type IdMatcher = {
   readonly translate: <Value>(value: Value) => Value;
 };
 
-const idPattern = /^[emstacfhkdwlvnq]_[\da-z_]+$/u;
-const transcriptIdPattern = /[emstacfhkdwlvnq]_\d{4}_\d{5}/gu;
+const idPattern = /^[emstacfhkdwlvnqz]_[\da-z_]+$/u;
+const transcriptIdPattern = /[emstacfhkdwlvnqz]_\d{4}_\d{5}/gu;
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

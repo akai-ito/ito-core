@@ -77,6 +77,7 @@ describe("chapters", () => {
     const { server, directory } = open();
     await upload(directory, "bookshop.jpg");
     await server.callTool("journal", {
+      day: "2026-11-09",
       text: "Rain all day, so a bookshop café near Santo Spirito instead.\n\n![Mira in the café](uploads/bookshop.jpg)",
       gist: "Florence: the rainy day",
       note: "The rainy day",
@@ -238,7 +239,13 @@ describe("what Kumo learnt", () => {
     });
     for (const [index, learnt] of ["One.", "Two.", "Three.", "Four."].entries()) {
       clock.moveTo(clock.now() + 60_000);
-      await server.callTool("journal", { text: `Entry ${String(index)}.`, gist: "A day", note: "An entry", learnt });
+      await server.callTool("journal", {
+        day: "2026-11-09",
+        text: `Entry ${String(index)}.`,
+        gist: "A day",
+        note: "An entry",
+        learnt,
+      });
     }
     clock.moveTo(clock.now() + 60_000);
     const tidied = await server.callTool("edit_page", {
@@ -285,13 +292,14 @@ describe("what Kumo learnt", () => {
     const { server } = open();
 
     const reading = await server.callTool("journal", {
-      text: "They seemed tired of the job hunt.",
-      reading: true,
+      day: "2026-11-09",
+      text: "A long day of interviews.",
       gist: "A long day",
-      note: "How they seemed",
-      learnt: "You're tired of the job hunt.",
+      note: "How I seemed",
+      learnt: "My reading: you seemed tired of the job hunt.",
     });
     const marked = await server.callTool("journal", {
+      day: "2026-11-09",
       text: "A long day of interviews.",
       gist: "A long day",
       note: "Interviews",
@@ -299,9 +307,7 @@ describe("what Kumo learnt", () => {
     });
 
     expect(reading).toEqual({
-      text:
-        "That's your reading of them, not something you learnt: keep it in the journal with reading: true, and " +
-        "leave learnt out.",
+      text: "That's your reading of them, not something you learnt: leave learnt out.",
       isError: true,
     });
     expect(marked.isError).toBe(true);

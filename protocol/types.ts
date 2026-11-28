@@ -448,6 +448,77 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/dream": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Kumo's dream
+     * @description Kumo's dream: the time it dreams each night, when the next one is, whether one is under way,
+     *     and the latest dream's record with what it planned, tidied, noticed and saved for you. Show
+     *     the latest as new (a moon on the Desk) until its `seen_at` is set.
+     */
+    get: operations["getDream"];
+    put?: never;
+    /**
+     * Dream now
+     * @description Kumo dreams now, in the background, instead of waiting for the dream time; `dream.finished`
+     *     follows when it's done, often many minutes later. One dream runs at a time: while one is
+     *     under way this answers with it and starts nothing. A dream in the 12 hours before the dream
+     *     time stands in for that night's, which then doesn't run.
+     */
+    post: operations["dreamNow"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/dream/time": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set the dream time
+     * @description When Kumo dreams each night, on your local clock wherever you are; 04:00 until you choose
+     *     another. The next dream moves at once.
+     */
+    put: operations["setDreamTime"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/dreams/{dream}/seen": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Mark a dream seen
+     * @description You've seen a dream's record, so it's no longer new: the moon on the Desk becomes the sun.
+     *     Seeing it again keeps the first time.
+     */
+    post: operations["seeDream"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/desk/cards/{card}/answer": {
     parameters: {
       query?: never;
@@ -470,75 +541,6 @@ export interface paths {
      *     its card in a side thread, `thread` says which, so anything Kumo says about it goes there.
      */
     post: operations["answerCard"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v0/understanding": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Read Understanding you
-     * @description Every learning track, the questions waiting quietly on them, and what you answered lately.
-     *     `question.changed` carries each question whenever it's added or moves on.
-     */
-    get: operations["getUnderstanding"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v0/understanding/questions/{question}/answer": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Answer a question
-     * @description Answers an open question: tap one or more of its options (`picked`), say it in your own
-     *     words (`text`) or aloud (`audio`, an audio file you uploaded first), or say `none_fit` or
-     *     `not_sure`, alone or with your words. The question is `answered` at once, and the answer
-     *     becomes evidence on its track. Kumo then files what it learned in the background and the
-     *     question gains `filed`; it asks nothing more about it. A spoken answer is heard on the server
-     *     first, and `answer.text` follows; if it can't be heard, the question opens again with
-     *     `unheard`. The same answer sent again, such as a retry, is taken once; a different answer to
-     *     a question that's no longer open is refused.
-     */
-    post: operations["answerQuestion"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v0/understanding/questions/{question}/not-now": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Say "Not now" to a question
-     * @description Leaves an open question open, for another time, with `later_at`: no reminder follows, and
-     *     Kumo doesn't ask it again. Saying it again only moves `later_at`.
-     */
-    post: operations["notNowQuestion"];
     delete?: never;
     options?: never;
     head?: never;
@@ -610,40 +612,6 @@ export interface paths {
      */
     put: operations["renameLead"];
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v0/shares": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Share something with Kumo
-     * @description What the share sheet sends: any mix of a link, text from another app, photos and files, and
-     *     a note you add. Upload photos and files first with `PUT /v0/attachments/{attachment}` (or
-     *     in chunks, for big ones), then name them in `attachments`, as a message does.
-     *
-     *     Answers as soon as the share is on the server's disk, with `state` `sorting`. The server
-     *     then reads the link's page for its title and summary, where it can, and Kumo decides
-     *     where the share belongs: one of your open side threads when it clearly belongs to that
-     *     thread's subject, or a new thread of its own that Kumo names (`thread.started`, by
-     *     `kumo`, comes first). The share becomes your message there, under the share's id, with
-     *     `share` holding the link and text, and arrives as `message.accepted`. Kumo answers it in
-     *     that thread's own turn, saying what it made of it and what it did with it, and its reply
-     *     notifies like any other.
-     *
-     *     Sending the same id again returns the share as it stands, `placed` once it's a message,
-     *     and changes nothing. The same id with anything different is an `id_conflict`.
-     */
-    post: operations["sendShare"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2414,7 +2382,7 @@ export interface components {
       | components["schemas"]["MessageMoved"]
       | components["schemas"]["RecordingChanged"]
       | components["schemas"]["BrowserChanged"]
-      | components["schemas"]["QuestionChanged"];
+      | components["schemas"]["DreamFinished"];
     /**
      * snapshot
      * @description The first event when the server can't resume from your cursor: there was none, the server doesn't know it (it was restored from a backup, compacted it away, or is a different server), or you are too far behind. Replace your view of the conversation and of the Desk with it. Its id is the id of the latest event, so resuming after it continues from here; it has no id while the conversation is empty.
@@ -2742,8 +2710,6 @@ export interface components {
       thread?: components["schemas"]["ThreadId"];
       /** @description User messages only: inside a thread, the message you replied to. */
       quotes?: components["schemas"]["Quote"];
-      /** @description User messages only: on something you shared from your phone's share sheet, what you shared besides your note, which is the `text`, and the photos and files, which are the `attachments`. Kumo puts a share in the side thread it belongs in, or in a new one it names, and answers it there. */
-      share?: components["schemas"]["Shared"];
     } & unknown;
     /** @description One thing the agent did while working on a turn: thinking, a web search, a command, an edit, a tool, a plan, a wait. Its title is plain words written by the server, safe to show as it is. Its other fields carry the specifics exactly as the agent used them (commands, paths, queries, URLs, output); show what you choose. Fields beyond the common ones belong to particular kinds, and a step carries those its kind has. */
     Step: {
@@ -2901,6 +2867,28 @@ export interface components {
     DoneResult: {
       entry: components["schemas"]["DoneEntry"];
     };
+    /** @description Kumo's dream as it stands. */
+    DreamState: {
+      /** @description When Kumo dreams each night, on your local clock, such as `04:00`. */
+      time: string;
+      /** @description When the next dream is due, in your time zone now. */
+      next_at: components["schemas"]["Timestamp"];
+      /** @description A dream under way, while there is one. */
+      dreaming?: {
+        since: components["schemas"]["Timestamp"];
+        /** @enum {unknown} */
+        trigger: "scheduled" | "manual";
+      };
+      /** @description The latest dream, until there's been none. */
+      latest?: components["schemas"]["Dream"];
+    };
+    DreamTime: {
+      /** @description Such as `04:00`, on your local clock. */
+      time: string;
+    };
+    DreamResult: {
+      dream: components["schemas"]["Dream"];
+    };
     WakeUpList: {
       wake_ups: components["schemas"]["WakeUp"][];
     };
@@ -2952,38 +2940,6 @@ export interface components {
       cleared: components["schemas"]["DoneEntry"][];
       /** @description Every area Kumo is learning, in the order it opened them, now. Draw each with its stage as bars. */
       tracks: components["schemas"]["Track"][];
-    };
-    /** @description Understanding you, now. */
-    Understanding: {
-      /** @description Every area Kumo is learning, in the order it opened them, as in `GET /v0/work`. */
-      tracks: components["schemas"]["Track"][];
-      /**
-       * @description The open questions, each naming its track: first those you haven't set aside, oldest
-       *     first, then those you said "Not now" to.
-       */
-      questions: components["schemas"]["Question"][];
-      /** @description The questions answered or settled in the last 14 days, newest first. */
-      recent: components["schemas"]["Question"][];
-    };
-    /**
-     * @description Your answer to a question: `picked` options, your words as `text` or as a recording in
-     *     `audio` (one or the other), and `none_fit` or `not_sure`. Send at least one; `none_fit`
-     *     doesn't go with `picked`.
-     */
-    QuestionReply: {
-      /** @description The options you tapped, from the question's own. */
-      picked?: string[];
-      /** @description Your own words. */
-      text?: string;
-      /** @description A spoken answer, as the id of an audio file you uploaded with `PUT /v0/uploads/{upload}`. */
-      audio?: components["schemas"]["AttachmentId"];
-      /** @description None of the options fit. */
-      none_fit?: boolean;
-      /** @description You're not sure. */
-      not_sure?: boolean;
-    };
-    QuestionResult: {
-      question: components["schemas"]["Question"];
     };
     /** @description What was wrong, in your words; `{}` just says it was wrong. */
     CorrectDone: {
@@ -3135,54 +3091,6 @@ export interface components {
       next: components["schemas"]["MessageId"][];
       /** @description Whether older messages exist in the thread. */
       has_more: boolean;
-    };
-    SendShare:
-      | {
-          /**
-           * Format: uuid
-           * @description A random UUID the app makes for the share. It is the share's retry key, and the id of the message it becomes.
-           */
-          id: string;
-          /**
-           * Format: uri
-           * @description The link you shared, `http` or `https`.
-           */
-          url?: string;
-          /** @description Text you shared from another app, such as a passage you selected. */
-          text?: string;
-          /** @description What you added in the share sheet, as plain text or Markdown. A quick thought can be a note alone. */
-          note?: string;
-          /** @description The screenshots, photos and files you shared, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`; naming one a message or another share already carries is an `invalid_request`. */
-          attachments?: components["schemas"]["UploadId"][];
-        }
-      | {
-          url: string;
-        }
-      | {
-          text: string;
-        }
-      | {
-          note: string;
-        }
-      | {
-          attachments: unknown[];
-        };
-    ShareResult: {
-      share: components["schemas"]["Share"];
-    };
-    /** @description A share and where it stands. */
-    Share: {
-      /** @description The share's id, which its message takes once Kumo has placed it. */
-      id: components["schemas"]["MessageId"];
-      /**
-       * @description `sorting` while the server reads it and Kumo decides which thread it belongs in; `placed` once it's your message in that thread.
-       * @enum {string}
-       */
-      state: "sorting" | "placed";
-      /** @description When the server accepted it. */
-      at: components["schemas"]["Timestamp"];
-      /** @description Once it's placed, the thread it's in. */
-      thread?: components["schemas"]["ThreadId"];
     };
     ThreadResult: {
       thread: components["schemas"]["Thread"];
@@ -3628,26 +3536,6 @@ export interface components {
       /** @description A line of the quoted message, at most 200 characters, safe to show as it is. */
       text: string;
     };
-    /** @description A link you shared, with what the server read from the page where it could, so the app can show it as a card without going to the site. */
-    SharedLink: {
-      /**
-       * Format: uri
-       * @description The link, exactly as you shared it.
-       */
-      url: string;
-      /** @description The page's title. */
-      title?: string;
-      /** @description The page's summary of itself, as it gives one to link previews. */
-      description?: string;
-      /** @description The site's name, such as "Halcyon Careers", or else its host. */
-      site?: string;
-    };
-    /** @description What you shared from your phone's share sheet, besides your note and its photos and files: a link, and text from another app. */
-    Shared: {
-      link?: components["schemas"]["SharedLink"];
-      /** @description Text you shared from another app, such as a passage you selected, exactly as it came. */
-      text?: string;
-    };
     /** @description Opaque. The server makes it when a step starts. */
     StepId: string;
     /**
@@ -3770,6 +3658,8 @@ export interface components {
     UploadId: string;
     /** @description Opaque. The server makes it when Kumo opens a track. */
     TrackId: string;
+    /** @description Opaque. The server makes it when a dream finishes. */
+    DreamId: string;
     /** @description One thing Kumo did without you, for the Done list. Reply to it with a message whose `done` names it, and the correction becomes a preference. */
     DoneEntry: {
       id: components["schemas"]["DoneId"];
@@ -3796,6 +3686,8 @@ export interface components {
       corrected_at?: components["schemas"]["Timestamp"];
       /** @description The track this call belongs to, when it's in an area Kumo is learning. "That was wrong" on it steps the track back. */
       track?: components["schemas"]["TrackId"];
+      /** @description The dream that did it: show it with that dream rather than as the day's work. It doesn't count in the Desk's `handled`. */
+      dream?: components["schemas"]["DreamId"];
     };
     /** @description Opaque. The server makes it when a wake-up is set. */
     WakeUpId: string;
@@ -4001,21 +3893,17 @@ export interface components {
      * @enum {unknown}
      */
     TrackStage: "learning" | "spot_checks" | "trusted";
-    /** @description Opaque. The server makes it when Kumo adds a question. */
-    QuestionId: string;
-    /** @description One thing a track stands on: a time you `confirmed` Kumo got it right, `corrected` it, `answered` one of its questions in Understanding you, or Kumo `moved` it to another stage, with why. Show the text alone for a kind you don't recognise. */
+    /** @description One thing a track stands on: a time you `confirmed` Kumo got it right, `corrected` it, or Kumo `moved` it to another stage, with why. */
     TrackEvidence: {
       at: components["schemas"]["Timestamp"];
       /** @enum {unknown} */
-      kind: "confirmed" | "corrected" | "moved" | "answered";
+      kind: "confirmed" | "corrected" | "moved";
       /** @description In a line, such as "You sent the Tess draft as I wrote it". */
       text: string;
       /** @description The stage it moved to, or stepped back to after a correction. */
       stage?: components["schemas"]["TrackStage"];
       /** @description The call it was about, in Done. */
       done?: components["schemas"]["DoneId"];
-      /** @description `answered` only: the question you answered. */
-      question?: components["schemas"]["QuestionId"];
     };
     /** @description An area Kumo is getting to know you in, or learning to do well, such as sorting your mail, writing as you, your food habits or planning your weekends. Kumo opens one when it starts learning something and moves it by judgement; a correction always steps it back. */
     Track: {
@@ -4035,56 +3923,50 @@ export interface components {
       evidence: components["schemas"]["TrackEvidence"][];
     };
     /**
-     * @description Where a question stands: `open`, waiting quietly for you for as long as it takes; `answered`, by you; `settled`, Kumo learned the answer elsewhere, such as in the chat, and `note` says where; `dropped`, Kumo let it go because it no longer helps. Treat a state you don't recognise as `dropped`.
+     * @description Where a line of a dream belongs: `planned`, tomorrow put in order (Kumo's blocks and guesses, wake-ups set, moved or dropped); `tidied`, memory tended (pages rewritten, merged, Now kept to what's live); `noticed`, what Kumo noticed or learnt (a lasting lesson on How to help you, a pattern, a chapter); `saved`, kept for you (the day's journal, a message or a question for the morning). Show a group you don't recognise under Noticed.
      * @enum {unknown}
      */
-    QuestionState: "open" | "answered" | "settled" | "dropped";
-    /** @description Your answer to a question: the options you tapped, your own words, written or spoken, and whether none fit or you're not sure, alone or together. */
-    QuestionAnswer: {
-      at: components["schemas"]["Timestamp"];
-      /** @description The options you tapped. */
-      picked?: string[];
-      /** @description Your own words. For a spoken answer, what the server heard, once it has: until then a spoken answer has `audio` and no `text`. */
-      text?: string;
-      /** @description A spoken answer: the recording you uploaded, which the server transcribes on its own GPU. */
-      audio?: components["schemas"]["AttachmentId"];
+    DreamGroup: "planned" | "tidied" | "noticed" | "saved";
+    /** @description One short line of what a dream did, pointing at what it changed or is about. Lines are in the order Kumo wrote them; group them by `group`. */
+    DreamLine: {
+      group: components["schemas"]["DreamGroup"];
+      /** @description Plain words, such as "Moved tomorrow's run to 07:30, before the 09:00 call". */
+      text: string;
+      /** @description The entry in Kumo's work for the change this line made, when it made one. Undo it with `POST /v0/done/{entry}/undo` while `undo` is true. */
+      done?: components["schemas"]["DoneId"];
+      /** @description Whether `POST /v0/done/{entry}/undo` can take the change back now: it puts the page, the wake-up or the block back as it was before the dream. */
+      undo?: boolean;
       /**
-       * @description None of Kumo's options fit.
+       * @description You took the change back.
        * @constant
        */
-      none_fit?: true;
-      /**
-       * @description You're not sure.
-       * @constant
-       */
-      not_sure?: true;
+      undone?: true;
+      /** @description The memory page it changed or is about, such as `memory:journal/2026-11-26`. */
+      page?: string;
+      /** @description The wake-up it set, moved or dropped; one it dropped is no longer in the plans. */
+      wake_up?: components["schemas"]["WakeUpId"];
+      /** @description The item on Kumo's calendar it planned, moved or removed; one it removed is no longer in Coming up. */
+      event?: components["schemas"]["CalendarItemId"];
+      /** @description A message it posted to you. */
+      message?: components["schemas"]["MessageId"];
     };
-    /** @description Something Kumo would like you to explain, in Understanding you, on one of its learning tracks: what it already understands, the missing piece and why it would help. It's optional and quiet: it has no due date, is never overdue, never waits on the Desk and never notifies you. Answer it with a tap on one or more of its `options`, in your own words, written or spoken, or say none fit or you're not sure; "Not now" leaves it open. An answer is enough: Kumo files what it learned in the background and asks nothing more about it. */
-    Question: {
-      id: components["schemas"]["QuestionId"];
-      /** @description The learning track it belongs to, such as Planning with you. */
-      track: components["schemas"]["TrackId"];
-      state: components["schemas"]["QuestionState"];
-      /** @description What Kumo already understands, from your conversations, memory and sources, in a sentence or two, such as "You keep Sunday mornings free and run long on Saturdays." */
-      understood: string;
-      /** @description The missing piece, asked as one question, such as "What makes a weekend feel restful rather than busy?" */
-      missing: string;
-      /** @description Why it would help, in a line, such as "So the weekends I plan leave you rested, not just full." */
-      why: string;
-      /** @description Quick answers to tap: Kumo's honest possibilities, a few words each, for you to recognise or correct. Tap one or several. Empty when only your own words will do. */
-      options: string[];
-      asked_at: components["schemas"]["Timestamp"];
-      changed_at: components["schemas"]["Timestamp"];
-      /** @description `open` only: the last time you said "Not now". It stays open, with no reminder; show it after the rest. */
-      later_at?: components["schemas"]["Timestamp"];
-      /** @description `open` only: your spoken answer couldn't be heard, and why, so the question is open for you to answer again. */
-      unheard?: string;
-      /** @description `answered` only: what you said. */
-      answer?: components["schemas"]["QuestionAnswer"];
-      /** @description `answered` only, once Kumo has filed it: what it took from your answer, in a line, such as "Weekends start slow: nothing booked before noon." */
-      filed?: string;
-      /** @description `settled`: where Kumo learned the answer, such as "You said in the chat that sleep comes first." `dropped`: why Kumo let it go. */
-      note?: string;
+    /** @description One of Kumo's dreams: once a day, at the dream time, Kumo looks back over everything since the last one and puts it in order, then leaves this record. Show it from when it finishes until you've seen it (a moon on the Desk), then as seen. */
+    Dream: {
+      id: components["schemas"]["DreamId"];
+      /** @description The local day it mostly looked back on, such as `2026-11-26` for a dream at 04:00 on the 27th. */
+      day: string;
+      /**
+       * @description `scheduled`, at the dream time (or as soon as the server was back, if it was off then); `manual`, from Dream now.
+       * @enum {unknown}
+       */
+      trigger: "scheduled" | "manual";
+      started_at: components["schemas"]["Timestamp"];
+      ended_at: components["schemas"]["Timestamp"];
+      /** @description The night in a line, in Kumo's words, such as "A quiet Wednesday: journal written, Thursday planned". */
+      headline?: string;
+      lines: components["schemas"]["DreamLine"][];
+      /** @description When you saw it, with `POST /v0/dreams/{dream}/seen`. Until then it's new. */
+      seen_at?: components["schemas"]["Timestamp"];
     };
     /**
      * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
@@ -4569,15 +4451,15 @@ export interface components {
       browser: components["schemas"]["Browser"];
     };
     /**
-     * question.changed
-     * @description A question in Understanding you was added or moved on: answered, filed by Kumo, set aside with "Not now", heard, settled or dropped. It carries the whole question, and never notifies. These events are compacted like the Desk's, so after a `snapshot`, fetch `GET /v0/understanding`.
+     * dream.finished
+     * @description Kumo finished a dream, and left its record. It never notifies: Kumo messages you itself when something from the night is worth it.
      */
-    QuestionChanged: {
+    DreamFinished: {
       id: components["schemas"]["EventId"];
       /** @constant */
-      type: "question.changed";
+      type: "dream.finished";
       at: components["schemas"]["Timestamp"];
-      question: components["schemas"]["Question"];
+      dream: components["schemas"]["Dream"];
     };
     /**
      * @description Why the server pushed: a `reply` finished, a turn `failed`, the agent made an `ask`, Kumo sent a `post` outside a turn, or Kumo's browser needs your hand, a `takeover`.
@@ -4803,6 +4685,8 @@ export interface components {
     /** @description A random UUID the app makes once per install, and keeps. */
     Device: string;
     WakeUp: components["schemas"]["WakeUpId"];
+    /** @description The dream's id, from its `Dream`. */
+    Dream: components["schemas"]["DreamId"];
     /** @description The id the app chose when it started the call. */
     Call: components["schemas"]["CallId"];
     /** @description The capability's id, such as `reports`. */
@@ -4883,6 +4767,9 @@ export type Discovery = components["schemas"]["Discovery"];
 export type BeliefAnswer = components["schemas"]["BeliefAnswer"];
 export type DonePage = components["schemas"]["DonePage"];
 export type DoneResult = components["schemas"]["DoneResult"];
+export type DreamState = components["schemas"]["DreamState"];
+export type DreamTime = components["schemas"]["DreamTime"];
+export type DreamResult = components["schemas"]["DreamResult"];
 export type WakeUpList = components["schemas"]["WakeUpList"];
 export type WakeUpResult = components["schemas"]["WakeUpResult"];
 export type WakeUpChange = components["schemas"]["WakeUpChange"];
@@ -4890,9 +4777,6 @@ export type CardAnswer = components["schemas"]["CardAnswer"];
 export type CardResult = components["schemas"]["CardResult"];
 export type GuessAnswer = components["schemas"]["GuessAnswer"];
 export type Work = components["schemas"]["Work"];
-export type Understanding = components["schemas"]["Understanding"];
-export type QuestionReply = components["schemas"]["QuestionReply"];
-export type QuestionResult = components["schemas"]["QuestionResult"];
 export type CorrectDone = components["schemas"]["CorrectDone"];
 export type NewEvent = components["schemas"]["NewEvent"];
 export type EventMove = components["schemas"]["EventMove"];
@@ -4904,9 +4788,6 @@ export type MessageResult = components["schemas"]["MessageResult"];
 export type MessagePage = components["schemas"]["MessagePage"];
 export type ThreadList = components["schemas"]["ThreadList"];
 export type ThreadPage = components["schemas"]["ThreadPage"];
-export type SendShare = components["schemas"]["SendShare"];
-export type ShareResult = components["schemas"]["ShareResult"];
-export type Share = components["schemas"]["Share"];
 export type ThreadResult = components["schemas"]["ThreadResult"];
 export type ThreadChange = components["schemas"]["ThreadChange"];
 export type MoveMessage = components["schemas"]["MoveMessage"];
@@ -4979,8 +4860,6 @@ export type Outcome = components["schemas"]["Outcome"];
 export type DoneId = components["schemas"]["DoneId"];
 export type ThreadId = components["schemas"]["ThreadId"];
 export type Quote = components["schemas"]["Quote"];
-export type SharedLink = components["schemas"]["SharedLink"];
-export type Shared = components["schemas"]["Shared"];
 export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
 export type MemoryPageRef = components["schemas"]["MemoryPageRef"];
@@ -4994,6 +4873,7 @@ export type ThreadDone = components["schemas"]["ThreadDone"];
 export type Thread = components["schemas"]["Thread"];
 export type UploadId = components["schemas"]["UploadId"];
 export type TrackId = components["schemas"]["TrackId"];
+export type DreamId = components["schemas"]["DreamId"];
 export type DoneEntry = components["schemas"]["DoneEntry"];
 export type WakeUpId = components["schemas"]["WakeUpId"];
 export type Weekday = components["schemas"]["Weekday"];
@@ -5007,12 +4887,11 @@ export type Slot = components["schemas"]["Slot"];
 export type Card = components["schemas"]["Card"];
 export type Desk = components["schemas"]["Desk"];
 export type TrackStage = components["schemas"]["TrackStage"];
-export type QuestionId = components["schemas"]["QuestionId"];
 export type TrackEvidence = components["schemas"]["TrackEvidence"];
 export type Track = components["schemas"]["Track"];
-export type QuestionState = components["schemas"]["QuestionState"];
-export type QuestionAnswer = components["schemas"]["QuestionAnswer"];
-export type Question = components["schemas"]["Question"];
+export type DreamGroup = components["schemas"]["DreamGroup"];
+export type DreamLine = components["schemas"]["DreamLine"];
+export type Dream = components["schemas"]["Dream"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
 export type StatusDetail = components["schemas"]["StatusDetail"];
@@ -5056,7 +4935,7 @@ export type ThreadChanged = components["schemas"]["ThreadChanged"];
 export type MessageMoved = components["schemas"]["MessageMoved"];
 export type RecordingChanged = components["schemas"]["RecordingChanged"];
 export type BrowserChanged = components["schemas"]["BrowserChanged"];
-export type QuestionChanged = components["schemas"]["QuestionChanged"];
+export type DreamFinished = components["schemas"]["DreamFinished"];
 export type NotificationKind = components["schemas"]["NotificationKind"];
 export type ResponseInvalidRequest = components["responses"]["InvalidRequest"];
 export type ResponseTokenRejected = components["responses"]["TokenRejected"];
@@ -5085,6 +4964,7 @@ export type ParameterAttachment = components["parameters"]["Attachment"];
 export type ParameterAsk = components["parameters"]["Ask"];
 export type ParameterDevice = components["parameters"]["Device"];
 export type ParameterWakeUp = components["parameters"]["WakeUp"];
+export type ParameterDream = components["parameters"]["Dream"];
 export type ParameterCall = components["parameters"]["Call"];
 export type ParameterCapability = components["parameters"]["Capability"];
 export type HeaderItoProtocol = components["headers"]["ItoProtocol"];
@@ -5709,6 +5589,108 @@ export interface operations {
       401: components["responses"]["TokenRejected"];
     };
   };
+  getDream: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The dream. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DreamState"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  dreamNow: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Dreaming. */
+      202: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DreamState"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  setDreamTime: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "time": "03:30"
+         *     }
+         */
+        "application/json": components["schemas"]["DreamTime"];
+      };
+    };
+    responses: {
+      /** @description Set. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DreamState"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  seeDream: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The dream's id, from its `Dream`. */
+        dream: components["parameters"]["Dream"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Seen. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DreamResult"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
   answerCard: {
     parameters: {
       query?: {
@@ -5740,92 +5722,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["CardResult"];
-        };
-      };
-      400: components["responses"]["InvalidRequest"];
-      401: components["responses"]["TokenRejected"];
-      404: components["responses"]["NotFound"];
-    };
-  };
-  getUnderstanding: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Understanding you. */
-      200: {
-        headers: {
-          "Ito-Protocol": components["headers"]["ItoProtocol"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Understanding"];
-        };
-      };
-      401: components["responses"]["TokenRejected"];
-    };
-  };
-  answerQuestion: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        question: components["schemas"]["QuestionId"];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        /**
-         * @example {
-         *       "picked": [
-         *         "Unplanned time"
-         *       ],
-         *       "text": "Nothing booked before noon."
-         *     }
-         */
-        "application/json": components["schemas"]["QuestionReply"];
-      };
-    };
-    responses: {
-      /** @description Taken; Kumo files it in the background. */
-      202: {
-        headers: {
-          "Ito-Protocol": components["headers"]["ItoProtocol"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["QuestionResult"];
-        };
-      };
-      400: components["responses"]["InvalidRequest"];
-      401: components["responses"]["TokenRejected"];
-      404: components["responses"]["NotFound"];
-    };
-  };
-  notNowQuestion: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        question: components["schemas"]["QuestionId"];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Left for later. */
-      200: {
-        headers: {
-          "Ito-Protocol": components["headers"]["ItoProtocol"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["QuestionResult"];
         };
       };
       400: components["responses"]["InvalidRequest"];
@@ -5962,61 +5858,6 @@ export interface operations {
       };
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
-    };
-  };
-  sendShare: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        /**
-         * @example {
-         *       "id": "0f9b4c2e-6a71-4d3b-8e25-9c1a7d4e3b60",
-         *       "url": "https://careers.halcyon.example/jobs/platform-engineer",
-         *       "note": "This is the one Sam mentioned"
-         *     }
-         */
-        "application/json": components["schemas"]["SendShare"];
-      };
-    };
-    responses: {
-      /** @description Already accepted earlier; nothing changed. This is where it stands. */
-      200: {
-        headers: {
-          "Ito-Protocol": components["headers"]["ItoProtocol"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ShareResult"];
-        };
-      };
-      /** @description Accepted for the first time; Kumo is sorting it. */
-      201: {
-        headers: {
-          "Ito-Protocol": components["headers"]["ItoProtocol"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ShareResult"];
-        };
-      };
-      /** @description The request is malformed or not possible now (`invalid_request`), such as an attachment that belongs to a message already, or an attachment it names isn't on the server (`attachment_missing`). */
-      400: {
-        headers: {
-          "Ito-Protocol": components["headers"]["ItoProtocol"];
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResult"];
-        };
-      };
-      401: components["responses"]["TokenRejected"];
-      409: components["responses"]["IdConflict"];
-      429: components["responses"]["SlowDown"];
     };
   };
   listThreads: {

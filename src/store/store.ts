@@ -24,6 +24,7 @@ import type {
   Call,
   Desk,
   DoneEntry,
+  Dream,
   Onboarding,
   Error as ErrorBody,
   Spoken,
@@ -287,6 +288,8 @@ export type Store = Settings & {
   // What was said since a time, in the main chat and every thread: their messages and your replies and posts,
   // newest first, at most `limit`.
   readonly messagesSince: (at: string, limit: number) => readonly Message[];
+  // A dream finished: every app hears it.
+  readonly recordDream: (dream: Dream) => void;
   readonly recordMotion: (
     type: "motion.started" | "motion.changed" | "motion.finished",
     motion: Omit<Motion, "position"> & { readonly position?: number },
@@ -1425,6 +1428,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           )
           .all(at, limit) as unknown as readonly MessageRow[]
       ).map((row) => toMessage(row)),
+
+    recordDream: (dream) => {
+      record((stamp) => ({ ...stamp, type: "dream.finished", dream }));
+    },
 
     recordMotion: (type, given, note) =>
       transaction(() => {

@@ -18,6 +18,7 @@ import type {
   Card,
   Desk,
   DeskLine,
+  Dream,
   Onboarding,
   Problem,
   Shared,
@@ -217,6 +218,10 @@ export type Transcript = {
   readonly ambient: (ambient: Ambient | undefined) => void;
   // One more thing Kumo did, counted in what it handled unless it's quiet.
   readonly addDone: (entry: Fields) => Fields;
+  // A dream's id, made when it finishes, before the entries in Done that point at it.
+  readonly dreamId: () => string;
+  // A dream finished: every app hears its record.
+  readonly dreamFinished: (dream: Dream) => Dream;
   readonly addCard: (card: NewCard) => Card;
   readonly answerCard: (card: string, answer: Fields) => void;
   readonly settleCard: (card: string, replacement?: Partial<Card>) => void;
@@ -277,7 +282,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "h" | "k" | "d" | "w" | "l" | "v" | "n" | "q";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "h" | "k" | "d" | "w" | "l" | "v" | "n" | "q" | "z";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -508,7 +513,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacfhkdwlvnq]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfhkdwlvnqz]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -533,6 +538,7 @@ const toCounters = (log: readonly Event[]): Counters => {
     v: highest("v"),
     n: highest("n"),
     q: highest("q"),
+    z: highest("z"),
   };
 };
 
@@ -553,7 +559,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({
     boot: 1,
-    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, h: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0, q: 0 },
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, h: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0, q: 0, z: 0 },
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
@@ -1960,10 +1966,16 @@ export const createTranscript = (header: Header): Transcript => {
     );
   };
 
+  // A dream's changes show with the dream, not in what Kumo handled today.
   const addDone = (entry: Fields): Fields => {
-    const done = { id: newId("d"), at: timestamp(), quiet: false, undo: false, ...entry };
-    if (!done.quiet) changeDesk((desk) => ({ ...desk, handled: desk.handled + 1 }));
+    const done: Fields = { id: newId("d"), at: timestamp(), quiet: false, undo: false, ...entry };
+    if (done.quiet !== true && done.dream === undefined) changeDesk((desk) => ({ ...desk, handled: desk.handled + 1 }));
     return done;
+  };
+
+  const dreamFinished = (dream: Dream): Dream => {
+    emit("dream.finished", { dream });
+    return dream;
   };
 
   const addCard = (given: NewCard): Card => {
@@ -2226,6 +2238,8 @@ export const createTranscript = (header: Header): Transcript => {
     deskLine,
     ambient,
     addDone,
+    dreamId: () => newId("z"),
+    dreamFinished,
     addCard,
     answerCard,
     settleCard,

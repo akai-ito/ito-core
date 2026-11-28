@@ -176,8 +176,8 @@ describe("the demo engine's memory", () => {
       const recalled = await memorySteps("recall Alex");
       const change = await server.memory.change(second.find(({ action }) => action === "updated")?.change ?? "");
 
-      expect(first.map(({ title }) => title)).toEqual(["Updated Alex", "Added to today's journal"]);
-      expect(second.map(({ title }) => title)).toEqual(["Used Alex", "Updated Alex", "Added to today's journal"]);
+      expect(first.map(({ title }) => title)).toEqual(["Updated Alex"]);
+      expect(second.map(({ title }) => title)).toEqual(["Used Alex", "Updated Alex"]);
       expect(recalled).toMatchObject([
         {
           action: "used",

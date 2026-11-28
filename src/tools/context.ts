@@ -15,3 +15,8 @@ export const contextThread = (): ThreadId | undefined => {
   const thread = context.getStore()?.thread;
   return thread === undefined ? undefined : toThreadId(thread);
 };
+
+// A dream's run: its tools, such as writing a day's journal entry, are offered only there.
+export const dreamRunPrefix = "dream-";
+
+export const isDreamRun = (run: string | undefined): boolean => run?.startsWith(dreamRunPrefix) === true;

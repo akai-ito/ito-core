@@ -78,7 +78,6 @@ describe("Ito's tools over MCP", () => {
           { name: "forget_page" },
           { name: "page_history" },
           { name: "restore_page" },
-          { name: "journal" },
           { name: "unlearn" },
           { name: "start_motion" },
           { name: "change_motion" },
@@ -118,6 +117,7 @@ describe("Ito's tools over MCP", () => {
           { name: "correct_transcript" },
           { name: "delete_recording" },
           { name: "show_file" },
+          { name: "note_day" },
         ],
       },
     });

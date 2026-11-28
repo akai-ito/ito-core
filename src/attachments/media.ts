@@ -64,3 +64,57 @@ export const readDimensions = (bytes: Buffer, mediaType: string): Dimensions | u
   const dimensions = readHeader(bytes, mediaType);
   return dimensions && dimensions.width > 0 && dimensions.height > 0 ? dimensions : undefined;
 };
+
+const exifMarker = 225;
+const startOfScan = 218;
+const exifPointerTag = 0x87_69;
+const takenTag = 0x90_03;
+const asciiType = 2;
+const entryBytes = 12;
+
+// The EXIF block's TIFF header, from a JPEG's APP1 segment, if it has one before its image data.
+const exifOf = (bytes: Buffer, offset = 2): Buffer | undefined => {
+  if (offset + 4 > bytes.length || bytes[offset] !== markerByte) return undefined;
+  const marker = bytes[offset + 1] ?? 0;
+  if (marker === startOfScan) return undefined;
+  const length = bytes.readUInt16BE(offset + 2);
+  return marker === exifMarker && bytes.toString("ascii", offset + 4, offset + 8) === "Exif"
+    ? bytes.subarray(offset + 10, Math.min(bytes.length, offset + 2 + length))
+    : exifOf(bytes, offset + 2 + length);
+};
+
+type Tiff = { readonly bytes: Buffer; readonly isLittle: boolean };
+
+const short = ({ bytes, isLittle }: Tiff, at: number): number =>
+  isLittle ? bytes.readUInt16LE(at) : bytes.readUInt16BE(at);
+
+const long = ({ bytes, isLittle }: Tiff, at: number): number =>
+  isLittle ? bytes.readUInt32LE(at) : bytes.readUInt32BE(at);
+
+// The value at a tag in the directory at an offset: a number for a pointer, the offset of its text otherwise.
+const entryOf = (tiff: Tiff, directory: number, tag: number): number | undefined => {
+  if (directory + 2 > tiff.bytes.length) return undefined;
+  const count = short(tiff, directory);
+  const index = Array.from({ length: count }, (_, place) => directory + 2 + place * entryBytes).find(
+    (at) => at + entryBytes <= tiff.bytes.length && short(tiff, at) === tag,
+  );
+  if (index === undefined) return undefined;
+  if (tag === takenTag && short(tiff, index + 2) !== asciiType) return undefined;
+  return long(tiff, index + 8);
+};
+
+// The local day a JPEG photo was taken, from its EXIF DateTimeOriginal, such as 2026-11-22; none when it doesn't say,
+// as with a screenshot or a photo stripped of it.
+export const readTakenDay = (bytes: Buffer): string | undefined => {
+  if (bytes[0] !== markerByte || bytes[1] !== startOfImage) return undefined;
+  const exif = exifOf(bytes);
+  if (!exif || exif.length < 8) return undefined;
+  const order = exif.toString("ascii", 0, 2);
+  if (order !== "II" && order !== "MM") return undefined;
+  const tiff: Tiff = { bytes: exif, isLittle: order === "II" };
+  const pointer = entryOf(tiff, long(tiff, 4), exifPointerTag);
+  const at = pointer === undefined ? undefined : entryOf(tiff, pointer, takenTag);
+  if (at === undefined || at + 10 > exif.length) return undefined;
+  const taken = /^(?<year>\d{4}):(?<month>\d{2}):(?<day>\d{2})/u.exec(exif.toString("ascii", at, at + 10))?.groups;
+  return taken ? `${taken.year ?? ""}-${taken.month ?? ""}-${taken.day ?? ""}` : undefined;
+};

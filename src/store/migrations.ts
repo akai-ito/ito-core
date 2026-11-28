@@ -408,4 +408,22 @@ export const migrations: readonly string[] = [
     body TEXT NOT NULL
   );
   ALTER TABLE messages ADD COLUMN share TEXT;`,
+  // 0.20: Kumo's dreams, each with the night it stands for (`slot`, the dream time it was due at), and the notes
+  // Kumo keeps during the day for the next dream, each with the day it's about and the dream that took it in.
+  `CREATE TABLE dreams (
+    id TEXT PRIMARY KEY,
+    slot TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX dreams_by_slot ON dreams (slot);
+  CREATE INDEX dreams_by_start ON dreams (started_at);
+  CREATE TABLE day_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    day TEXT NOT NULL,
+    body TEXT NOT NULL,
+    dream TEXT
+  );
+  CREATE INDEX day_notes_by_dream ON day_notes (dream, id);`,
 ];

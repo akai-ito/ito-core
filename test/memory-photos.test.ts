@@ -63,11 +63,12 @@ const git = (directory: string, ...arguments_: readonly string[]): string =>
 const today = "memory:journal/2026-11-03";
 
 describe("photos in memory", () => {
-  it("keep a shared photo with today's journal entry, upright, scaled down and without its metadata", async () => {
+  it("keep a shared photo with a day's journal entry, upright, scaled down and without its metadata", async () => {
     const { server, directory } = open();
     upload(directory, "photo.jpg", await sidewaysPhoto());
 
     const added = await server.callTool("journal", {
+      day: "2026-11-03",
       text: "A long walk by the river.\n\n![Mira by the river at dusk](uploads/photo.jpg)",
       gist: "A walk by the river",
       note: "The river walk",
@@ -79,7 +80,7 @@ describe("photos in memory", () => {
     const answer = await get(server, `/v0/memory/page?address=${today}`);
     const media = await get(server, `/v0/memory/media/${name ?? ""}`);
 
-    expect(added).toEqual({ text: "Added to today's journal, with its photo." });
+    expect(added).toEqual({ text: "Wrote 3 November 2026, with its photo." });
     expect(page.ok && page.value.markdown).toContain(
       `A long walk by the river.\n\n![Mira by the river at dusk](../media/${name ?? ""})`,
     );
@@ -103,7 +104,12 @@ describe("photos in memory", () => {
   it("keep one copy of a photo put on a page and on an earlier day", async () => {
     const { server, directory } = open();
     upload(directory, "photo.jpg", await sidewaysPhoto());
-    await server.callTool("journal", { text: "Home early.", gist: "Home early", note: "Home early" });
+    await server.callTool("journal", {
+      day: "2026-11-03",
+      text: "Home early.",
+      gist: "Home early",
+      note: "Home early",
+    });
     const read = await server.callTool("read_page", { address: today });
     const version = /version (?<version>\w+)/u.exec(read.text)?.groups?.version;
 
@@ -137,7 +143,8 @@ describe("photos in memory", () => {
   it("refuse what they can't keep, and save nothing", async () => {
     const { server, directory } = open();
     upload(directory, "notes.txt", "Not a photo.");
-    const journal = (text: string) => server.callTool("journal", { text, gist: "A day", note: "A note" });
+    const journal = (text: string) =>
+      server.callTool("journal", { day: "2026-11-03", text, gist: "A day", note: "A note" });
 
     const missing = await journal("![Leo](uploads/missing.jpg)");
     const outside = await journal("![The Thread](../thread/.git/HEAD)");
@@ -160,6 +167,7 @@ describe("photos in memory", () => {
     upload(directory, "photo.jpg", await sidewaysPhoto());
 
     await server.callTool("journal", {
+      day: "2026-11-03",
       text: "![The harbour at Piran](https://example.com/piran.jpg)\n\n![Mira on the harbour wall](uploads/photo.jpg)",
       gist: "Piran",
       note: "Piran",

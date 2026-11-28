@@ -290,8 +290,9 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     return store.doneSince(toTimestamp(since)).filter((entry) => entry.at < until);
   };
 
+  // A dream's changes show with the dream, not in what Kumo handled today.
   const recount = (): void => {
-    const handled = today().filter(({ quiet }) => !quiet).length;
+    const handled = today().filter(({ quiet, dream }) => !quiet && dream === undefined).length;
     changeDesk((desk) => ({ ...desk, handled }));
   };
 
@@ -331,7 +332,7 @@ export const createDesk = ({ store, identifiers, clock, timeZone, work, info }: 
     const { undo, ...rest } = given;
     const entry: DoneEntry = { id: identifiers.done(), at: at(), ...rest, undo: undo !== undefined };
     store.addDone(entry, undo);
-    if (!entry.quiet) recount();
+    if (!entry.quiet && entry.dream === undefined) recount();
     return entry;
   };
 

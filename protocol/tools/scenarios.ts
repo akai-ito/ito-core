@@ -1937,8 +1937,8 @@ const scenarios: readonly (() => Transcript)[] = [
       title: "Ari updates what it knows",
       summary:
         "You tell Ari things have moved on with Alex. Ari reads the page, rewrites the present and moves the " +
-        "old state to Earlier, adds to today's journal, and says so. Tapping the update shows the page " +
-        "before and after.",
+        "old state to Earlier, keeps a note for tonight's journal, and says so. Tapping the update shows the " +
+        "page before and after.",
       guarantees: ["G14", "G22"],
     });
     const seededAt = "2026-10-26T19:00:00.000Z";
@@ -1974,14 +1974,9 @@ const scenarios: readonly (() => Transcript)[] = [
       change,
     );
     transcript.wait(400);
-    agentCalls(transcript, "journal", {
-      text: "Things with Alex are going really well: they're seeing a lot of each other.",
-      gist: "Things going really well with Alex",
-      note: "Going well with Alex",
-    });
-    memoryStep(transcript, "journaled", [{ address: "memory:journal/2026-10-26", title: "26 October 2026" }], {
-      title: "Adding to today's journal",
-      endedTitle: "Added to today's journal",
+    agentCalls(transcript, "note_day", {
+      text: "Things with Alex are going really well: we're seeing a lot of each other.",
+      yours: true,
     });
     transcript.wait(300);
     writeWhole(transcript, "That's lovely to hear. I've updated Alex's page, so taking it slow is now history.");
@@ -2767,10 +2762,10 @@ const scenarios: readonly (() => Transcript)[] = [
       scenario: 57,
       title: "What Ari learnt lately",
       summary:
-        "You tell Ari about a trip. Ari starts a page for it and adds to today's journal, each with a line on " +
-        "what the page is now and a note on what changed. The Library leads with those notes, lists journal " +
-        "days by their headlines, lists people with the circle Ari keeps for each, and shows the trip's " +
-        "linked page by its name.",
+        "You tell Ari about a trip. Ari starts a page for it, with a line on what the page is now and a note on " +
+        "what changed, and keeps a note for tonight's journal. The Library leads with those notes, lists journal " +
+        "days by their headlines, lists people with the circle Ari keeps for each, and shows the trip's linked " +
+        "page by its name.",
       guarantees: ["G22"],
     });
     const seededAt = "2026-10-27T18:00:00.000Z";
@@ -2801,7 +2796,6 @@ const scenarios: readonly (() => Transcript)[] = [
       links: [mira.address],
       markdown: "Florence with Mira, 6 to 9 November. Nothing booked yet (as of 27 Oct).\n",
     };
-    const today = { address: "memory:journal/2026-10-27", title: "27 October 2026" };
     transcript.begin(seededAt);
     transcript.world("memory_holds", { pages: [mira, yesterday] });
     transcript.wait(10 * 60 * 1000);
@@ -2826,24 +2820,14 @@ const scenarios: readonly (() => Transcript)[] = [
       change,
     );
     transcript.wait(400);
-    agentCalls(transcript, "journal", {
-      text: "Divy and Mira are off to Florence together, 6 to 9 November.",
-      gist: "Florence planned with Mira",
-      note: "Florence with Mira",
-    });
-    memoryStep(transcript, "journaled", [today], {
-      title: "Adding to today's journal",
-      endedTitle: "Added to today's journal",
-    });
+    agentCalls(transcript, "note_day", { text: "Mira and I are off to Florence together, 6 to 9 November." });
     transcript.wait(300);
     writeWhole(transcript, "Florence with Mira, lovely! I've started a page for the trip.");
     transcript.endTurn("completed");
     transcript.wait(5000);
     const writtenAt = new Date(Date.parse(seededAt) + 10 * 60 * 1000 + 2000 + 700).toISOString();
-    const journaledAt = new Date(Date.parse(writtenAt) + 400).toISOString();
     memoryCall(transcript, "/v0/memory/recent", {
       changes: [
-        { change: transcript.change(), ...today, at: journaledAt, note: "Florence with Mira" },
         {
           change,
           address: florence.address,
@@ -2863,10 +2847,7 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.wait(2000);
     memoryCall(transcript, "/v0/memory/pages?shelf=journal", {
-      pages: [
-        { ...today, gist: "Florence planned with Mira", changed_at: journaledAt },
-        { address: yesterday.address, title: yesterday.title, gist: yesterday.gist, changed_at: seededAt },
-      ],
+      pages: [{ address: yesterday.address, title: yesterday.title, gist: yesterday.gist, changed_at: seededAt }],
     });
     transcript.wait(2000);
     memoryCall(transcript, "/v0/memory/pages?shelf=people", {
@@ -5028,6 +5009,311 @@ const scenarios: readonly (() => Transcript)[] = [
     });
     transcript.wait(60 * 60 * 1000);
     memoryCall(transcript, "/v0/made", { made: [changed.made] });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "92-a-nights-dream",
+      scenario: 92,
+      title: "A night's dream",
+      summary:
+        "At 04:00, while you sleep, Kumo dreams: it looks back over Thursday, writes your journal for it, moves " +
+        "tomorrow's check on your legs to after your lie-in, and sets one for Saturday's session. It leaves a record " +
+        "of what it planned, noticed and saved for you, and nothing notifies. In the morning you open it, it's " +
+        "seen, and you take back the Saturday check; the record says so.",
+      guarantees: ["G60", "G61", "G33"],
+    });
+    transcript.begin("2026-11-26T21:30:00.000Z");
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(1000);
+    const legs = {
+      what: "Ask how the legs feel after the long run",
+      why: "Fourteen kilometres is a jump; check recovery before Saturday's session.",
+      source: { kind: "chat", title: "The long run with Leo" },
+    } as const;
+    agentCalls(transcript, "set_wake_up", { ...legs, at: "2026-11-27T08:00:00Z", asked: false });
+    const check = transcript.wakeUp({ ...legs, at: "2026-11-27T08:00:00.000Z", by: "kumo" });
+    transcript.wait(2000);
+    agentCalls(transcript, "note_day", {
+      text: "Ran 14 km along the river with Leo, the longest since the summer; pastries at the market after.",
+    });
+    agentCalls(transcript, "note_day", { text: "Best run in months.", yours: true });
+    agentCalls(transcript, "note_day", { text: "Sleeping in tomorrow; nothing before ten.", yours: true });
+    const entry =
+      "A long run along the river with Leo this morning: 14 km, my longest since the summer. Best run in months. " +
+      "We stopped for pastries at the market on the way back.";
+    const saturday = {
+      what: "Check Saturday's session still suits the legs",
+      why: "After Thursday's 14 km, Saturday's intervals may want to be easy miles instead.",
+      source: { kind: "chat", title: "The long run with Leo" },
+    } as const;
+    const moved = "Moved the check on your legs to 09:30, after your lie-in";
+    const noticed = "Your long runs are back: 14 km, the first since the summer";
+    transcript.world("kumo_dreams", {
+      calls: [
+        {
+          tool: "journal",
+          input: {
+            day: "2026-11-26",
+            text: entry,
+            gist: "14 km with Leo; my longest run since the summer",
+            note: "Thursday",
+          },
+        },
+        { tool: "move_wake_up", input: { id: check.id, at: "2026-11-27T09:30:00Z" } },
+        { tool: "set_wake_up", input: { ...saturday, at: "2026-11-28T07:00:00Z", asked: false } },
+        {
+          tool: "record_dream",
+          input: {
+            headline: "Thursday's long run, written up; Friday starts late",
+            lines: [
+              { group: "saved", text: "Wrote Thursday's journal", page: "memory:journal/2026-11-26" },
+              { group: "planned", text: moved, wake_up: check.id },
+              { group: "noticed", text: noticed },
+            ],
+          },
+        },
+      ],
+      answer: "Dreamt.",
+    });
+    transcript.time("2026-11-27T04:00:00.000Z");
+    const later = { ...check, at: "2026-11-27T09:30:00.000Z" };
+    transcript.plans([later]);
+    const session = transcript.wakeUp({ ...saturday, at: "2026-11-28T07:00:00.000Z", by: "kumo" });
+    const dream = transcript.dreamId();
+    const wrote = transcript.addDone({ text: "Wrote Thursday's journal", dream, undo: true });
+    const movedDone = transcript.addDone({ text: moved, dream, undo: true });
+    const sessionText = `Set “${saturday.what}” for Sat 28 Nov 07:00`;
+    const sessionDone = transcript.addDone({ text: sessionText, dream, undo: true });
+    const record = transcript.dreamFinished({
+      id: dream,
+      day: "2026-11-26",
+      trigger: "scheduled",
+      started_at: "2026-11-27T04:00:00.000Z",
+      ended_at: "2026-11-27T04:00:00.000Z",
+      headline: "Thursday's long run, written up; Friday starts late",
+      lines: [
+        {
+          group: "saved",
+          text: "Wrote Thursday's journal",
+          page: "memory:journal/2026-11-26",
+          done: String(wrote.id),
+          undo: true,
+        },
+        { group: "planned", text: moved, wake_up: check.id, done: String(movedDone.id), undo: true },
+        { group: "noticed", text: noticed },
+        { group: "planned", text: sessionText, wake_up: session.id, done: String(sessionDone.id), undo: true },
+      ],
+    });
+    transcript.time("2026-11-27T07:40:00.000Z");
+    transcript.request("GET", "/v0/dream");
+    transcript.response(200, { time: "04:00", next_at: "2026-11-28T04:00:00.000Z", latest: record });
+    transcript.wait(4000);
+    const seen = { ...record, seen_at: "2026-11-27T07:40:04.000Z" };
+    transcript.request("POST", `/v0/dreams/${dream}/seen`);
+    transcript.response(200, { dream: seen });
+    transcript.wait(6000);
+    transcript.request("POST", `/v0/done/${String(sessionDone.id)}/undo`);
+    transcript.plans([later]);
+    transcript.response(200, {
+      entry: { ...sessionDone, text: `Undone: ${sessionText}`, undo: false },
+    });
+    transcript.wait(1000);
+    transcript.request("GET", "/v0/dream");
+    transcript.response(200, {
+      time: "04:00",
+      next_at: "2026-11-28T04:00:00.000Z",
+      latest: {
+        ...seen,
+        lines: seen.lines.map((line) =>
+          line.done === String(sessionDone.id) ? { ...line, undo: false, undone: true } : line,
+        ),
+      },
+    });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "93-dream-now",
+      scenario: 93,
+      title: "Dream now",
+      summary:
+        "You're off to bed early, so you ask Kumo to dream now. It dreams at once, moves Friday's planning to " +
+        "09:00 so you can sleep in, and leaves its record. Being so close to the dream time, it stands in for the " +
+        "night's dream, which doesn't run at 04:00. In the morning you move the dream time to 03:30.",
+      guarantees: ["G60", "G61"],
+    });
+    transcript.begin("2026-11-26T23:15:00.000Z");
+    transcript.connect();
+    transcript.wait(1000);
+    const planning = {
+      what: "Shape Friday with you",
+      why: "You asked for a look at the day each morning; Friday is wide open.",
+      source: { kind: "chat", title: "“Look at my day with me each morning”" },
+    } as const;
+    agentCalls(transcript, "set_wake_up", { ...planning, at: "2026-11-27T08:30:00Z", asked: true });
+    const look = transcript.wakeUp({ ...planning, at: "2026-11-27T08:30:00.000Z", by: "you" });
+    transcript.wait(2000);
+    transcript.request("GET", "/v0/dream");
+    transcript.response(200, { time: "04:00", next_at: "2026-11-27T04:00:00.000Z" });
+    transcript.wait(2000);
+    const moved = "Moved Friday's planning to 09:00, so you can sleep in";
+    transcript.world("kumo_dreams", {
+      calls: [
+        { tool: "move_wake_up", input: { id: look.id, at: "2026-11-27T09:00:00Z" } },
+        {
+          tool: "record_dream",
+          input: {
+            headline: "An early night: Friday starts at nine",
+            lines: [{ group: "planned", text: moved, wake_up: look.id }],
+          },
+        },
+      ],
+      answer: "Dreamt.",
+    });
+    transcript.request("POST", "/v0/dream");
+    transcript.response(202, {
+      time: "04:00",
+      next_at: "2026-11-27T04:00:00.000Z",
+      dreaming: { since: "2026-11-26T23:15:05.000Z", trigger: "manual" },
+    });
+    transcript.plans([{ ...look, at: "2026-11-27T09:00:00.000Z" }]);
+    const dream = transcript.dreamId();
+    const done = transcript.addDone({ text: moved, dream, undo: true });
+    const record = transcript.dreamFinished({
+      id: dream,
+      day: "2026-11-26",
+      trigger: "manual",
+      started_at: "2026-11-26T23:15:05.000Z",
+      ended_at: "2026-11-26T23:15:05.000Z",
+      headline: "An early night: Friday starts at nine",
+      lines: [{ group: "planned", text: moved, wake_up: look.id, done: String(done.id), undo: true }],
+    });
+    transcript.time("2026-11-27T07:30:00.000Z");
+    transcript.request("GET", "/v0/dream");
+    transcript.response(200, { time: "04:00", next_at: "2026-11-28T04:00:00.000Z", latest: record });
+    transcript.wait(5000);
+    transcript.request("PUT", "/v0/dream/time", { body: { time: "03:30" } });
+    transcript.response(200, { time: "03:30", next_at: "2026-11-28T03:30:00.000Z", latest: record });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
+      name: "94-your-day-in-your-words",
+      scenario: 94,
+      title: "Your day in your words",
+      summary:
+        "During Thursday Kumo only keeps notes for the dream: the run with Leo, your own words about it, and a " +
+        "lunch with Mira you mention that was really on Tuesday. That night it writes Thursday's journal as your " +
+        "own diary, in the first person, and adds the lunch to Tuesday's entry where it happened. In the morning " +
+        "you read both days in the Library.",
+      guarantees: ["G61", "G22"],
+    });
+    const tuesday = {
+      address: "memory:journal/2026-11-24",
+      title: "24 November 2026",
+      gist: "A quiet day; I finished the deck",
+      aliases: [],
+      links: [],
+      markdown: "A quiet day at home. I finished the Halcyon deck and went to bed early.\n",
+      note: "Tuesday",
+    };
+    transcript.begin("2026-11-26T17:40:00.000Z");
+    transcript.world("memory_holds", { pages: [tuesday] });
+    transcript.connect();
+    transcript.wait(1000);
+    agentCalls(transcript, "note_day", {
+      text: "Ran 14 km along the river with Leo, the longest since the summer; pastries at the market after.",
+    });
+    transcript.wait(60_000);
+    agentCalls(transcript, "note_day", { text: "Best run in months.", yours: true });
+    transcript.wait(60_000);
+    agentCalls(transcript, "note_day", {
+      text: "Had lunch with Mira on Tuesday; she's moving to Lisbon in the spring.",
+      day: "2026-11-24",
+    });
+    const thursdayText =
+      "A long run along the river with Leo this morning: 14 km, my longest since the summer. Best run in months. " +
+      "We stopped for pastries at the market on the way back.";
+    const tuesdayText =
+      "A quiet day at home. I finished the Halcyon deck, then had lunch with Mira, who told me she's moving to " +
+      "Lisbon in the spring. Early to bed.";
+    const thursdayGist = "14 km with Leo; my longest run since the summer";
+    const tuesdayGist = "Finished the deck; Mira's moving to Lisbon";
+    transcript.world("kumo_dreams", {
+      calls: [
+        { tool: "journal", input: { day: "2026-11-26", text: thursdayText, gist: thursdayGist, note: "Thursday" } },
+        {
+          tool: "journal",
+          input: { day: "2026-11-24", text: tuesdayText, gist: tuesdayGist, note: "Lunch with Mira" },
+        },
+        {
+          tool: "record_dream",
+          input: {
+            headline: "Thursday written up, and Tuesday filled in",
+            lines: [
+              { group: "saved", text: "Wrote Thursday's journal", page: "memory:journal/2026-11-26" },
+              { group: "saved", text: "Added your lunch with Mira to Tuesday", page: tuesday.address },
+            ],
+          },
+        },
+      ],
+      answer: "Dreamt.",
+    });
+    transcript.time("2026-11-27T04:00:00.000Z");
+    const dream = transcript.dreamId();
+    const thursday = transcript.addDone({ text: "Wrote Thursday's journal", dream, undo: true });
+    const added = transcript.addDone({ text: "Added your lunch with Mira to Tuesday", dream, undo: true });
+    transcript.dreamFinished({
+      id: dream,
+      day: "2026-11-26",
+      trigger: "scheduled",
+      started_at: "2026-11-27T04:00:00.000Z",
+      ended_at: "2026-11-27T04:00:00.000Z",
+      headline: "Thursday written up, and Tuesday filled in",
+      lines: [
+        {
+          group: "saved",
+          text: "Wrote Thursday's journal",
+          page: "memory:journal/2026-11-26",
+          done: String(thursday.id),
+          undo: true,
+        },
+        {
+          group: "saved",
+          text: "Added your lunch with Mira to Tuesday",
+          page: tuesday.address,
+          done: String(added.id),
+          undo: true,
+        },
+      ],
+    });
+    transcript.time("2026-11-27T08:10:00.000Z");
+    memoryCall(transcript, "/v0/memory/page?address=memory:journal/2026-11-26", {
+      address: "memory:journal/2026-11-26",
+      title: "26 November 2026",
+      gist: thursdayGist,
+      shelf: "journal",
+      aliases: [],
+      links: [],
+      changed_at: "2026-11-27T04:00:00.000Z",
+      markdown: `${thursdayText}\n`,
+    });
+    transcript.wait(3000);
+    memoryCall(transcript, `/v0/memory/page?address=${tuesday.address}`, {
+      address: tuesday.address,
+      title: tuesday.title,
+      gist: tuesdayGist,
+      shelf: "journal",
+      aliases: [],
+      links: [],
+      changed_at: "2026-11-27T04:00:00.000Z",
+      markdown: `${tuesdayText}\n`,
+    });
     return transcript;
   },
 

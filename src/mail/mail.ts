@@ -79,6 +79,9 @@ export type Mailbox = {
   readonly check: (account: Account, values: Values) => Promise<CheckResult>;
   readonly catchUp: (onProgress: Progress, only?: readonly string[]) => Promise<Result<undefined, string>>;
   readonly accounts: () => readonly Account[];
+  // The mail they read or acted on since an instant, a line each, oldest first, for the dream: read, answered or
+  // flagged in their inboxes and archive, and what they sent.
+  readonly readSince: (since: number) => Promise<readonly string[]>;
   readonly close: () => Promise<void>;
 };
 
@@ -334,6 +337,16 @@ const textValue = (values: Values, name: string): string => {
 
 const senderOf = (mail: Mail): string => mail.from.name ?? mail.from.address;
 
+// How they handled a mail, from its flags: read, answered, flagged; none when they haven't opened it.
+const handledMarks = (flags: readonly string[]): string =>
+  [
+    flags.includes("\\Seen") && "read",
+    flags.includes("\\Answered") && "answered",
+    flags.includes("\\Flagged") && "flagged",
+  ]
+    .filter(Boolean)
+    .join(", ");
+
 const toAddress = (address: string): { readonly address: string } => ({ address });
 
 const namesOf = (addresses: readonly Address[]): Readonly<Record<string, string>> =>
@@ -403,6 +416,26 @@ const toNewCard = (card: Card): NewCard => {
 
 const summarise = (account: string, mail: Mail): string =>
   `- ${mail.date.slice(0, 16)} · ${senderOf(mail)} · ${mail.subject} (${account} ${mail.messageId})`;
+
+// The mail in one account they read, answered or flagged since an instant, and what they sent, a line each.
+export const handledMail = (
+  account: string,
+  since: number,
+  received: readonly Mail[],
+  sent: readonly Mail[],
+): readonly { readonly at: string; readonly line: string }[] => [
+  ...received
+    .filter((mail) => Date.parse(mail.date) >= since && handledMarks(mail.flags) !== "")
+    .map((mail) => ({ at: mail.date, line: `${summarise(account, mail)} · ${handledMarks(mail.flags)}` })),
+  ...sent
+    .filter((mail) => Date.parse(mail.date) >= since)
+    .map((mail) => ({
+      at: mail.date,
+      line:
+        `- ${mail.date.slice(0, 16)} · they sent to ${mail.to.map((to) => to.name ?? to.address).join(", ")} · ` +
+        `${mail.subject} (${account} ${mail.messageId})`,
+    })),
+];
 
 const toSentMark = (text: string | undefined): SentMark | undefined => {
   const parsed = jsonOf(text);
@@ -2738,6 +2771,24 @@ export const createMailbox = ({
     return ok(undefined);
   };
 
+  const readSince = async (since: number): Promise<readonly string[]> => {
+    const from = toTimestamp(since);
+    const read = await Promise.all(
+      connections
+        .get()
+        .values()
+        .map(async ({ account, source }) => {
+          const [recent, sent] = await Promise.all([source.recent(from), source.sent(from)]);
+          if (!recent.ok) info("Mail they read couldn't be looked at", { account, error: recent.failure });
+          return handledMail(account, since, recent.ok ? recent.value : [], sent.ok ? sent.value : []);
+        }),
+    );
+    return read
+      .flat()
+      .toSorted((left, right) => left.at.localeCompare(right.at))
+      .map(({ line }) => line);
+  };
+
   const unsubscribe = host.subscribe(reconcile);
   reconcile();
   pollSent();
@@ -2747,6 +2798,7 @@ export const createMailbox = ({
     check,
     catchUp,
     accounts: () => connections.get().keys().toArray(),
+    readSince,
     close: async () => {
       isClosed.set(true);
       unsubscribe();

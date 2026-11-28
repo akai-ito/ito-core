@@ -453,31 +453,33 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
   },
   {
     name: "journal",
-    title: "Add to today's journal",
+    title: "Write a day's journal entry",
+    audience: "dream",
     description:
-      "Add to today's journal, your running account of the day: what you talked about and what happened. When " +
-      "they journal to you themselves, add their own words with yours: true. Your own reading of them, such as " +
-      "how they seemed, goes in as its own entry with reading: true, so it's never taken for a fact; never read " +
-      "their relationships or motives, and keep any reading out of the gist.",
+      "Write one day's journal entry whole, as their own diary in the first person (“I…”), from the day's notes and " +
+      "everything else you read: the day's moments, the people, their own words, photos where they belong, big news " +
+      "they read, what actually happened, and training or sleep only when it mattered. One flowing entry in short " +
+      "paragraphs, no time headings, its length following the day; nothing invented, and how they felt only when " +
+      "they said so. It replaces what the day said, so read the day first and keep everything still true, every " +
+      "photo included. Something they mentioned later goes into the day it happened.",
     inputSchema: {
       type: "object",
       properties: {
-        text: { type: "string", description: `What to add, as Markdown. ${photoGuide}` },
-        yours: { type: "boolean", description: "True when these are the person's own words." },
-        reading: {
-          type: "boolean",
-          description: "True when this is your reading of them, in a line or two, marked as yours.",
-        },
+        day: { type: "string", description: "The day it's about, as YYYY-MM-DD." },
+        text: { type: "string", description: `The whole entry, as Markdown. ${photoGuide}` },
         gist: {
           type: "string",
-          description:
-            "The day's headline so far, in one line, such as “Home from Ljubljana; Leo's first sub-two”. " +
-            "Keep it current as the day goes on.",
+          description: "The day in one line, in the first person, such as “Home from Ljubljana; Leo's first sub-two”.",
         },
-        note: { type: "string", description: "What this entry adds, in a few words." },
+        note: { type: "string", description: "What this write changed, in a few words." },
+        links: {
+          type: "array",
+          items: { type: "string" },
+          description: "Addresses of the pages it draws on, such as memory:people/leo.",
+        },
         learnt: { type: "string", description: learntGuide },
       },
-      required: ["text", "gist", "note"],
+      required: ["day", "text", "gist", "note"],
       additionalProperties: false,
     },
     call: (input) =>
@@ -487,7 +489,7 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
         const written = await memory.journal(input);
         if (!written.ok) return failed(written.failure);
         memory.recordStep({ action: "journaled", pages: toPageReference(written.value) });
-        return { text: `Added to today's journal${withPhotos(written.value.photos)}.` };
+        return { text: `Wrote ${written.value.title}${withPhotos(written.value.photos)}.` };
       }),
   },
 ];

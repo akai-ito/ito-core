@@ -1,5 +1,5 @@
 import type { Step } from "#protocol/types.ts";
-import { contextRun } from "#tools/context.ts";
+import { contextRun, isDreamRun } from "#tools/context.ts";
 import { fieldOf } from "#tools/input.ts";
 
 export const toolServerName = "ito";
@@ -29,11 +29,14 @@ export type Tool = {
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, unknown>>;
   readonly call: (input: unknown) => Promise<ToolResult>;
-  readonly audience?: "work" | "hidden";
+  // Offered only in background work, only in a dream, or never (called by Ito itself).
+  readonly audience?: "work" | "dream" | "hidden";
 };
 
 const isOffered = ({ audience }: Tool): boolean =>
-  audience === undefined || (audience === "work" && contextRun() !== undefined);
+  audience === undefined ||
+  (audience === "work" && contextRun() !== undefined) ||
+  (audience === "dream" && isDreamRun(contextRun()));
 
 export type McpMessage = { readonly id?: unknown; readonly method?: unknown; readonly params?: unknown };
 

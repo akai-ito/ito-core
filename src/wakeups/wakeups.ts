@@ -24,6 +24,9 @@ export type WakeUps = {
   readonly change: (id: string, change: WakeUpChange) => Result<WakeUp, string>;
   // From the app.
   readonly cancel: (id: string) => boolean;
+  // Puts a wake-up back as it was, such as undoing a dream's change: a repeating one at its next time if that's
+  // passed; a one-off whose time has passed can't come back.
+  readonly put: (wakeUp: WakeUp) => Result<WakeUp, string>;
   readonly inMindText: () => string;
   // The wake-ups that came from these calendar events, for Kumo when they change.
   readonly tiedTo: (uids: readonly string[]) => readonly WakeUp[];
@@ -597,6 +600,13 @@ export const createWakeUps = ({
       if (!wakeUps.get().has(id)) return false;
       remove(id);
       return true;
+    },
+    put: (wakeUp) => {
+      const isPast = Date.parse(wakeUp.at) <= clock.now();
+      if (isPast && !wakeUp.repeat) return fail(`Its time, ${whenOf(Date.parse(wakeUp.at))}, has passed.`);
+      const back = isPast && wakeUp.repeat ? nextTime(wakeUp, wakeUp.repeat) : wakeUp;
+      save(back);
+      return ok(back);
     },
     inMindText: () => {
       const listed = sorted();

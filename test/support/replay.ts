@@ -355,6 +355,9 @@ export const replay = async (name: string): Promise<void> => {
     return Promise.resolve(new Response(bytes, { headers: { "Content-Type": "image/jpeg" } }));
   };
 
+  // A transcript with a dream in it has Kumo dream at the dream time.
+  const isDreaming = transcript.steps.some((step) => isWorldStep(step) && step.world === "kumo_dreams");
+
   const createReplayServer = (): Server =>
     createServer({
       fetch: fetchFromWorld,
@@ -391,6 +394,7 @@ export const replay = async (name: string): Promise<void> => {
       push: { hosts: { production: apns.origin, sandbox: apns.origin } },
       capabilities,
       timeZone: "UTC",
+      dreams: isDreaming,
       createVoice: (context) => {
         voiceContext.set(context);
         const voice = createCannedVoice(
@@ -676,7 +680,8 @@ export const replay = async (name: string): Promise<void> => {
         await advance(time);
         return;
       }
-      case "kumo_works": {
+      case "kumo_works":
+      case "kumo_dreams": {
         const { calls, post, answer } = step as unknown as WorkPlan;
         plans.update((current) => [
           ...current,
