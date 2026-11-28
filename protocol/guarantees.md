@@ -776,6 +776,7 @@ the dream.
   Lisbon glows by the trip's length, full at 500 hours; the week, in fine cells, has home full at
   10. (G69)
 - `POST /v0/location/forget` takes March: the photos, the places they made and the trip. (G67)
+
 ### 105 · [Linking your people](transcripts/105-linking-your-people.jsonl)
 
 - Kumo links its People pages to their cards: Leo's page has the email his card has and only one card
