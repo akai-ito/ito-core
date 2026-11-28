@@ -39,6 +39,9 @@ info:
       each with what it already understands, the missing piece and why it would help. Answer with a
       tap, your own words or your voice, or say none fit, not sure or not now. Quiet and optional:
       nothing is due, and nothing notifies.
+    - **Places:** while you have them on, the phone uploads where it's been, and seeds the past
+      from photo locations. Read your places, trips, the lit map's heat, and a day's thread and
+      trail; name a place, and forget a day, a range or everything.
     - **Kumo's dream:** once a day Kumo looks back over the whole day and puts it in order; read the
       latest dream's record of what it planned, tidied, noticed and saved for you, mark it seen, ask
       for one now, and set the dream time.
@@ -155,6 +158,12 @@ tags:
     description: Call the agent and speak your messages.
   - name: Whereabouts
     description: Where you roughly are, for your time zone and the weather on the Desk.
+  - name: Places
+    description: |
+      Where you've been, while places are on: the phone uploads its points and visits, and seeds
+      the past from photo locations. The box gathers visits into places, finds home and trips, and
+      gives the lit map its heat, a day its thread and trail, and Kumo on the map its questions.
+      Everything stays on the box, forever, until you forget a day, a range or all of it.
 paths:
   /.well-known/ito:
     get:
@@ -1990,7 +1999,8 @@ paths:
         Send it when the app opens and whenever the time zone or the place changes, such as on a
         trip: its time zone, and when you allow it, roughly where it is. The box keeps only the
         latest one from any device, with the place rounded to about 10 km, and never anything more
-        precise.
+        precise. Where you've been, precisely, comes only from places, when you turn them on
+        (`uploadLocation`).
 
         The time zone is the one Kumo lives by: a repeating wake-up comes back at its time there,
         and moving to another zone wakes Kumo to move what should follow you. The place gives the
@@ -2010,6 +2020,347 @@ paths:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/location/batches:
+    post:
+      tags: [Places]
+      operationId: uploadLocation
+      summary: Upload where the phone has been
+      description: |
+        A batch of what the phone collected while places are on: live points (GPS while you're
+        moving, and the significant-change pings iOS sends) and visits (iOS's "arrived here at
+        08:58" and later "left at 18:12"). Send them as they queue, oldest first, whenever the box
+        is reachable; offline days upload later and nothing is lost.
+
+        Retrying is always safe. A batch id already taken answers as it did the first time, with
+        `repeated`. Within any batch, a point the box already has (the same `at` and `source`)
+        is skipped, and a visit is the same visit when it has the same `arrived_at`: sending it
+        again with its `departed_at` closes it. A visit iOS gives without an arrival closes the
+        open visit it belongs to.
+
+        Everything is kept on the box, forever, until you forget it (`forgetLocation`). Arriving
+        and leaving are events Kumo looks at, as with mail, when they're fresh; data that only
+        arrives hours later never wakes Kumo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LocationBatch" }
+            example:
+              batch: 7d1c6c2e-batch-0001
+              time_zone: Europe/London
+              samples:
+                - {
+                    at: "2026-11-24T08:41:10.000Z",
+                    latitude: 55.9467,
+                    longitude: -3.2049,
+                    accuracy: 8,
+                    speed: 1.4,
+                    course: 92,
+                    altitude: 71,
+                  }
+              visits:
+                - {
+                    arrived_at: "2026-11-24T08:58:00.000Z",
+                    latitude: 55.9483,
+                    longitude: -3.1996,
+                    accuracy: 18,
+                    placemark: { name: Northwind, locality: Edinburgh, country: United Kingdom, country_code: GB },
+                  }
+      responses:
+        "200":
+          description: Kept.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocationBatchResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/location/photos:
+    post:
+      tags: [Places]
+      operationId: seedLocationFromPhotos
+      summary: Seed the past from photo locations
+      description: |
+        Where and when your photos were taken, read from their metadata on the phone (never the
+        images), to seed past places, the heat and trips from before places were on. Each is kept
+        as seeded, never as a live point: seeded days count in the heat only where the box has no
+        live data for that day, and seeded data never wakes Kumo or makes a place question. Retrying
+        is safe: a batch id already taken answers as it did, and a photo the box already has (the
+        same `taken_at`) is skipped. Geocode a few per day on the phone where you can, so trips
+        know their countries and cities.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PhotoSeeds" }
+            example:
+              batch: photos-2026-0001
+              photos:
+                - {
+                    taken_at: "2026-03-15T11:20:41.000Z",
+                    latitude: 38.7139,
+                    longitude: -9.1394,
+                    placemark: { locality: Lisbon, country: Portugal, country_code: PT },
+                  }
+      responses:
+        "200":
+          description: Kept, as seeded.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PhotoSeedsResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/location:
+    get:
+      tags: [Places]
+      operationId: getLocation
+      summary: What the box keeps of where you've been
+      description: How much the box holds, from when to when, and which place is home, for Settings.
+      responses:
+        "200":
+          description: What's kept.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LocationHeld" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/location/forget:
+    post:
+      tags: [Places]
+      operationId: forgetLocation
+      summary: Forget where you've been
+      description: |
+        Deletes a day, a range of days (both ends included) or everything: the live points,
+        visits and seeded photo locations from those days, and with them what came from them.
+        Places with no visits left go, along with their questions; the rest, the heat, trips and
+        home are worked out again from what's left. Days are your local days, as each point's own
+        time zone had them. Forgetting what's already gone changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ForgetLocation" }
+            example: { from: "2026-11-20", to: "2026-11-22" }
+      responses:
+        "200":
+          description: Forgotten.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForgetResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/location/heat:
+    get:
+      tags: [Places]
+      operationId: getHeat
+      summary: Where your time went, as heat
+      description: |
+        Your hours over a range of days, summed into map cells, for the lit map. Cells are
+        geohashes: `precision` picks their size, about 150 m at 7, 1 km at 6, 5 km at 5, 40 km at
+        4, 150 km at 3 and 1,250 km at 2. Pick the one that fits the map's span: a week of a city
+        at 6 or 7, a year of the world at 3.
+
+        Home is included. A day away from home counts as 14 hours, shared among that day's cells,
+        so a trip glows by its length. Each cell's `glow` is `(1 − e^(−3h/full)) / (1 − e^(−3))`,
+        capped at 1, where `full` is 10 h for a week, 40 h for a month and 500 h for a year;
+        another range scales between those by its length unless you give `full`. Cells come
+        brightest first.
+      parameters:
+        - {
+            name: from,
+            in: query,
+            required: true,
+            description: "The first day, included.",
+            schema: { $ref: "#/components/schemas/Day" },
+          }
+        - {
+            name: to,
+            in: query,
+            required: true,
+            description: "The last day, included.",
+            schema: { $ref: "#/components/schemas/Day" },
+          }
+        - name: precision
+          in: query
+          required: true
+          description: The geohash length of each cell, from 2 (continents) to 7 (streets).
+          schema: { type: integer, minimum: 2, maximum: 7 }
+        - name: full
+          in: query
+          required: false
+          description: The hours at which a cell is fully lit, instead of the range's own.
+          schema: { type: number, exclusiveMinimum: 0, maximum: 10000 }
+      responses:
+        "200":
+          description: The heat.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Heat" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/location/days/{day}:
+    get:
+      tags: [Places]
+      operationId: getDayThread
+      summary: A day's thread of places
+      description: |
+        The day as a thread: each place you stopped at, with when you arrived and left, and the
+        moves between them, with how far and how long. A stay that began the day before, such as a
+        night at home, starts the day; one still going ends it, marked `here`. A day known only
+        from photos is marked `from_photos`.
+      parameters:
+        - { name: day, in: path, required: true, schema: { $ref: "#/components/schemas/Day" } }
+      responses:
+        "200":
+          description: The day's thread.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DayThread" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/location/days/{day}/trail:
+    get:
+      tags: [Places]
+      operationId: getDayTrail
+      summary: A day's trail
+      description: |
+        The day's route as a simplified line for the map: the stops' centres and the live points
+        between them, with points closer than about 15 m to the line dropped. Empty for a day the
+        box has nothing for.
+      parameters:
+        - { name: day, in: path, required: true, schema: { $ref: "#/components/schemas/Day" } }
+      responses:
+        "200":
+          description: The trail.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trail" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/location/trips:
+    get:
+      tags: [Places]
+      operationId: listTrips
+      summary: Your trips
+      description: |
+        The stretches you spent away from home, at least 50 km from it and for at least a night,
+        with the countries and cities you were in, newest first. A trip's id is its first day, so a
+        journal entry can point at it. Give a range for the trips that touch it.
+      parameters:
+        - {
+            name: from,
+            in: query,
+            required: false,
+            description: "The first day, included.",
+            schema: { $ref: "#/components/schemas/Day" },
+          }
+        - {
+            name: to,
+            in: query,
+            required: false,
+            description: "The last day, included.",
+            schema: { $ref: "#/components/schemas/Day" },
+          }
+      responses:
+        "200":
+          description: The trips.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trips" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/places:
+    get:
+      tags: [Places]
+      operationId: listPlaces
+      summary: Your places
+      description: |
+        The places your visits gathered into, ranked by true hours, most first. Give a range for
+        the hours and visits within it, leaving out places you weren't at; without one, all time.
+        Places you said aren't places are left out.
+      parameters:
+        - {
+            name: from,
+            in: query,
+            required: false,
+            description: "The first day, included.",
+            schema: { $ref: "#/components/schemas/Day" },
+          }
+        - {
+            name: to,
+            in: query,
+            required: false,
+            description: "The last day, included.",
+            schema: { $ref: "#/components/schemas/Day" },
+          }
+      responses:
+        "200":
+          description: The places.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Places" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/places/{place}:
+    get:
+      tags: [Places]
+      operationId: getPlace
+      summary: A place, with every visit
+      parameters:
+        - $ref: "#/components/parameters/Place"
+      responses:
+        "200":
+          description: The place.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlacePage" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Places]
+      operationId: changePlace
+      summary: Rename a place, or say it isn't one
+      description: |
+        Names a place in your words, sets its kind, or says it isn't a place (a station you change
+        at, a traffic jam): it leaves your places and the questions, and later visits there stay
+        unnamed and unasked. Its open question, if any, is settled with what you said.
+      parameters:
+        - $ref: "#/components/parameters/Place"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlaceChange" }
+            example: { name: "Omar's five-a-side", kind: outdoors }
+      responses:
+        "200":
+          description: Changed.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlaceResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/capabilities:
     get:
       tags: [Capabilities]
@@ -2974,6 +3325,12 @@ components:
         type: integer
         minimum: 0
   parameters:
+    Place:
+      name: place
+      in: path
+      required: true
+      description: The place's id, from its `Place`.
+      schema: { $ref: "events.schema.json#/$defs/PlaceId" }
     CalendarItem:
       name: item
       in: path
@@ -3364,6 +3721,12 @@ components:
             show its words instead.
           type: array
           items: { $ref: "#/components/schemas/MemoryPhoto" }
+        maps:
+          description: |
+            The maps the page shows, such as a journal day's route or a trip, in the order the
+            Markdown first shows them. Absent when it shows none.
+          type: array
+          items: { $ref: "#/components/schemas/MemoryMap" }
         chapter: { $ref: "#/components/schemas/ChapterFacts" }
     MemoryPhoto:
       description: A photo a page keeps with its story.
@@ -5027,6 +5390,382 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+    LocationBatch:
+      description: |
+        What the phone collected, under an id it chose for the batch. `time_zone` is where the
+        phone was when it collected them, which gives each point and visit its local day.
+      type: object
+      required: [batch]
+      additionalProperties: false
+      properties:
+        batch: { $ref: "#/components/schemas/LocationBatchId" }
+        time_zone:
+          description: An IANA name such as `Europe/London`; without one, the time zone Kumo lives by.
+          type: string
+          minLength: 1
+          maxLength: 64
+        samples:
+          type: array
+          maxItems: 5000
+          items: { $ref: "#/components/schemas/LocationSample" }
+        visits:
+          type: array
+          maxItems: 500
+          items: { $ref: "#/components/schemas/LocationVisit" }
+    LocationBatchId:
+      description: The app's id for a batch, such as a UUID; a retry sends the same one.
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: "^[A-Za-z0-9_.:-]+$"
+    LocationSample:
+      description: |
+        One point, as Core Location gave it. Leave out `speed`, `course` and `altitude` when iOS
+        says it doesn't know (a negative value).
+      type: object
+      required: [at, latitude, longitude, accuracy]
+      additionalProperties: false
+      properties:
+        at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        accuracy: { description: Horizontal accuracy in metres., type: number, minimum: 0 }
+        speed: { description: Metres per second., type: number, minimum: 0 }
+        course: { description: Degrees from true north., type: number, minimum: 0, maximum: 360 }
+        altitude: { description: Metres above sea level., type: number }
+        source:
+          description: |
+            `live`, a live update while moving (the default); `change`, a significant-change ping,
+            hundreds of metres coarse.
+          enum: [live, change]
+    LocationVisit:
+      description: |
+        A visit as iOS gave it: an arrival with no departure while you're there, then the same
+        visit again with its departure. iOS sometimes gives one with no arrival, when the app
+        started mid-visit; send it with `departed_at` alone. A visit needs one or the other.
+      type: object
+      required: [latitude, longitude, accuracy]
+      additionalProperties: false
+      properties:
+        arrived_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        departed_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        accuracy: { description: Horizontal accuracy in metres., type: number, minimum: 0 }
+        placemark: { $ref: "#/components/schemas/Placemark" }
+    Placemark:
+      description: What Apple's map data on the phone says is at a spot (MapKit or the geocoder).
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          {
+            description: "Apple's name for it: a point of interest, such as a café, or an address.",
+            type: string,
+            minLength: 1,
+            maxLength: 120,
+          }
+        category:
+          description: Its MapKit point-of-interest category without the `MKPOICategory` prefix, such as `Restaurant` or `FitnessCenter`.
+          type: string
+          minLength: 1
+          maxLength: 64
+        street: { description: The street and number., type: string, minLength: 1, maxLength: 120 }
+        locality: { description: The town or city., type: string, minLength: 1, maxLength: 80 }
+        area: { description: "The region, such as Scotland.", type: string, minLength: 1, maxLength: 80 }
+        country: { type: string, minLength: 1, maxLength: 80 }
+        country_code: { description: ISO 3166-1 alpha-2., type: string, pattern: "^[A-Z]{2}$" }
+    LocationBatchResult:
+      type: object
+      required: [batch, repeated, samples, visits]
+      properties:
+        batch: { $ref: "#/components/schemas/LocationBatchId" }
+        repeated: { description: "This batch id was already taken; nothing changed.", type: boolean }
+        samples:
+          type: object
+          required: [taken, already]
+          properties:
+            taken: { description: New points kept., type: integer, minimum: 0 }
+            already: { description: Points the box already had., type: integer, minimum: 0 }
+        visits:
+          type: object
+          required: [taken, updated, already]
+          properties:
+            taken: { description: New visits kept., type: integer, minimum: 0 }
+            updated: { description: "Visits the box had, now with their departure.", type: integer, minimum: 0 }
+            already: { description: Visits the box already had as they are., type: integer, minimum: 0 }
+    PhotoSeeds:
+      description: Where and when photos were taken, from their metadata, under an id the app chose for the batch.
+      type: object
+      required: [batch, photos]
+      additionalProperties: false
+      properties:
+        batch: { $ref: "#/components/schemas/LocationBatchId" }
+        time_zone:
+          description: An IANA name for the photos' local days; without one, the time zone Kumo lives by.
+          type: string
+          minLength: 1
+          maxLength: 64
+        photos:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items: { $ref: "#/components/schemas/PhotoSeed" }
+    PhotoSeed:
+      type: object
+      required: [taken_at, latitude, longitude]
+      additionalProperties: false
+      properties:
+        taken_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        placemark: { $ref: "#/components/schemas/Placemark" }
+    PhotoSeedsResult:
+      type: object
+      required: [batch, repeated, taken, already]
+      properties:
+        batch: { $ref: "#/components/schemas/LocationBatchId" }
+        repeated: { description: "This batch id was already taken; nothing changed.", type: boolean }
+        taken: { type: integer, minimum: 0 }
+        already: { type: integer, minimum: 0 }
+    LocationHeld:
+      description: What the box keeps of where you've been.
+      type: object
+      required: [samples, visits, photos, places]
+      properties:
+        samples: { description: Live points kept., type: integer, minimum: 0 }
+        visits: { type: integer, minimum: 0 }
+        photos: { description: Seeded photo locations kept., type: integer, minimum: 0 }
+        places: { type: integer, minimum: 0 }
+        first_day: { $ref: "#/components/schemas/Day" }
+        last_day: { $ref: "#/components/schemas/Day" }
+        uploaded_at: { $ref: "events.schema.json#/$defs/Timestamp", description: The last batch the box took. }
+        home: { $ref: "events.schema.json#/$defs/PlaceId", description: "Home, once the box has seen where you sleep." }
+    ForgetLocation:
+      description: A day, a range of days (both included), or everything.
+      oneOf:
+        - type: object
+          required: [day]
+          additionalProperties: false
+          properties:
+            day: { $ref: "#/components/schemas/Day" }
+        - type: object
+          required: [from, to]
+          additionalProperties: false
+          properties:
+            from: { $ref: "#/components/schemas/Day" }
+            to: { $ref: "#/components/schemas/Day" }
+        - type: object
+          required: [everything]
+          additionalProperties: false
+          properties:
+            everything: { const: true }
+    ForgetResult:
+      description: What was deleted.
+      type: object
+      required: [samples, visits, photos, places]
+      properties:
+        samples: { type: integer, minimum: 0 }
+        visits: { type: integer, minimum: 0 }
+        photos: { type: integer, minimum: 0 }
+        places: { description: Places that had no visits left., type: integer, minimum: 0 }
+    PlaceKind:
+      description: |
+        What sort of place it is: `unknown` until it's named. Treat a kind you don't recognise as
+        `other`.
+      enum:
+        [home, work, gym, friend, family, cafe, restaurant, bar, shop, school, health, outdoors, travel, other, unknown]
+    Place:
+      description: |
+        A spot your visits gathered at, within about 75 m. `name` is yours or Kumo's, once it has
+        one; `apple_name` is Apple's, as the phone gave it.
+      type: object
+      required: [id, kind, latitude, longitude, radius, hours, visits, first_visit, last_visit]
+      properties:
+        id: { $ref: "events.schema.json#/$defs/PlaceId" }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        apple_name: { type: string, minLength: 1 }
+        kind: { $ref: "#/components/schemas/PlaceKind" }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        radius: { description: "How far its visits spread, in metres.", type: integer, minimum: 0 }
+        hours:
+          { description: "True hours there, in the range asked or all time, to one decimal.", type: number, minimum: 0 }
+        visits: { description: "Visits there, in the range asked or all time.", type: integer, minimum: 0 }
+        first_visit: { $ref: "events.schema.json#/$defs/Timestamp", description: "When you first arrived, ever." }
+        last_visit: { $ref: "events.schema.json#/$defs/Timestamp", description: When you last arrived. }
+        here: { description: You're there now., const: true }
+        street: { type: string, minLength: 1 }
+        locality: { type: string, minLength: 1 }
+        country: { type: string, minLength: 1 }
+        country_code: { type: string, pattern: "^[A-Z]{2}$" }
+        from_photos: { description: Known only from where photos were taken., const: true }
+    PlaceVisit:
+      type: object
+      required: [minutes]
+      properties:
+        arrived_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        departed_at: { $ref: "events.schema.json#/$defs/Timestamp", description: Absent while you're there. }
+        minutes: { type: integer, minimum: 0 }
+        from_photos: { description: "Seen in photos taken there, not a visit iOS recorded.", const: true }
+    Places:
+      type: object
+      required: [places]
+      properties:
+        places:
+          type: array
+          items: { $ref: "#/components/schemas/Place" }
+    PlacePage:
+      type: object
+      required: [place, visits]
+      properties:
+        place: { $ref: "#/components/schemas/Place" }
+        visits:
+          description: Every visit, newest first.
+          type: array
+          items: { $ref: "#/components/schemas/PlaceVisit" }
+    PlaceChange:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        kind: { $ref: "#/components/schemas/PlaceKind", description: "Any kind but `unknown`." }
+        not_a_place: { const: true }
+    PlaceResult:
+      type: object
+      required: [place]
+      properties:
+        place: { $ref: "#/components/schemas/Place" }
+    Trip:
+      description: A stretch away from home, for the year's globe and its trip cards.
+      type: object
+      required: [id, from, to, days, countries, cities, latitude, longitude, kilometres]
+      properties:
+        id:
+          {
+            $ref: "#/components/schemas/Day",
+            description: "Its first day; a journal entry points at it as `trip:<id>`.",
+          }
+        from: { $ref: "#/components/schemas/Day" }
+        to: { $ref: "#/components/schemas/Day" }
+        days: { type: integer, minimum: 1 }
+        countries:
+          description: The countries you were in, most time first.
+          type: array
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: { type: string, minLength: 1 }
+              code: { type: string, pattern: "^[A-Z]{2}$" }
+        cities:
+          description: The towns and cities you were in, most time first.
+          type: array
+          items: { type: string, minLength: 1 }
+        latitude: { description: Where most of the time went., type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        kilometres: { description: How far that is from home., type: integer, minimum: 0 }
+        from_photos: { description: Known only from where photos were taken., const: true }
+    Trips:
+      type: object
+      required: [trips]
+      properties:
+        trips:
+          type: array
+          items: { $ref: "#/components/schemas/Trip" }
+    Heat:
+      type: object
+      required: [from, to, precision, full, cells]
+      properties:
+        from: { $ref: "#/components/schemas/Day" }
+        to: { $ref: "#/components/schemas/Day" }
+        precision: { type: integer, minimum: 2, maximum: 7 }
+        full: { description: The hours at which a cell is fully lit., type: number }
+        cells:
+          type: array
+          items: { $ref: "#/components/schemas/HeatCell" }
+    HeatCell:
+      type: object
+      required: [cell, latitude, longitude, south, west, north, east, hours, glow]
+      properties:
+        cell: { description: The geohash., type: string, minLength: 2, maxLength: 7 }
+        latitude: { description: Its centre., type: number }
+        longitude: { type: number }
+        south: { type: number }
+        west: { type: number }
+        north: { type: number }
+        east: { type: number }
+        hours: { description: "Hours there, to one decimal, with days away counted as 14 h.", type: number, minimum: 0 }
+        glow: { description: "How lit it is, from 0 to 1, to two decimals.", type: number, minimum: 0, maximum: 1 }
+    Trail:
+      type: object
+      required: [day, points]
+      properties:
+        day: { $ref: "#/components/schemas/Day" }
+        points:
+          type: array
+          items:
+            type: object
+            required: [at, latitude, longitude]
+            properties:
+              at: { $ref: "events.schema.json#/$defs/Timestamp" }
+              latitude: { type: number }
+              longitude: { type: number }
+    DayThread:
+      type: object
+      required: [day, items]
+      properties:
+        day: { $ref: "#/components/schemas/Day" }
+        items:
+          description: The stops and the moves between them, in order.
+          type: array
+          items:
+            oneOf:
+              - { $ref: "#/components/schemas/ThreadStop" }
+              - { $ref: "#/components/schemas/ThreadMove" }
+        from_photos: { description: The day is known only from where photos were taken., const: true }
+    ThreadStop:
+      description: A stay at a place. `arrived_at` may be the day before, and `departed_at` the day after.
+      type: object
+      required: [kind, place, place_kind, latitude, longitude, minutes]
+      properties:
+        kind: { const: stop }
+        place: { $ref: "events.schema.json#/$defs/PlaceId" }
+        name: { type: string, minLength: 1 }
+        apple_name: { type: string, minLength: 1 }
+        place_kind: { $ref: "#/components/schemas/PlaceKind" }
+        latitude: { type: number }
+        longitude: { type: number }
+        arrived_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        departed_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        minutes: { description: Minutes of it within the day., type: integer, minimum: 0 }
+        here: { description: You're still there., const: true }
+    ThreadMove:
+      description: |
+        The way from one stop to the next. `metres` follows the live points when there are any
+        (`traced`), or else is the straight line. `mode` is a guess from the speed.
+      type: object
+      required: [kind, started_at, ended_at, minutes, metres, traced, mode]
+      properties:
+        kind: { const: move }
+        started_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        ended_at: { $ref: "events.schema.json#/$defs/Timestamp" }
+        minutes: { type: integer, minimum: 0 }
+        metres: { type: integer, minimum: 0 }
+        traced: { type: boolean }
+        mode: { enum: [walk, cycle, ride, flight] }
+    MemoryMap:
+      description: |
+        A map a page shows in its story, as a Markdown image whose source is `route:<day>` (that
+        day's trail and stops, from `getDayTrail` and `getDayThread`) or `trip:<id>` (a trip, from
+        `listTrips`). The image's words are its caption.
+      type: object
+      required: [source, kind, day]
+      properties:
+        source: { description: "The source as the Markdown has it, such as `route:2026-11-24`.", type: string }
+        kind: { enum: [route, trip] }
+        day: { $ref: "#/components/schemas/Day", description: "The route's day, or the trip's first day." }
     ErrorResult:
       type: object
       required: [error]

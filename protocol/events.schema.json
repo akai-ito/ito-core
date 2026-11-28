@@ -3134,12 +3134,16 @@
           "minLength": 1
         },
         "kind": {
-          "description": "What sort of question it is, when it isn't a plain one: `contact` asks which card in your Contacts a person is, and carries `contact`. Show a kind you don't recognise as a plain question.",
-          "enum": ["contact"]
+          "description": "What sort of question it is, when it isn't a plain one: `contact` asks which card in your Contacts a person is, and carries `contact`; `place` is a spot Kumo can't name yet, with `place` saying where and when, drawn as Kumo on the map. Show a kind you don't recognise as a plain question.",
+          "enum": ["contact", "place"]
         },
         "contact": {
           "$ref": "#/$defs/ContactQuestion",
           "description": "`contact` questions only: who it's about and the cards that could be them."
+        },
+        "place": {
+          "$ref": "#/$defs/PlaceAsk",
+          "description": "`place` questions only: the spot, when you were there and for how long. Answering names the place; its options are Kumo's guesses at the name."
         }
       }
     },
@@ -3207,6 +3211,45 @@
       "description": "A Contacts photo, named by what's in it: a name always means the same bytes, so keep it once fetched.",
       "type": "string",
       "pattern": "^[0-9a-f]{24}$"
+    },
+    "PlaceId": {
+      "description": "Opaque. The server makes it when visits first gather at a spot.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "PlaceAsk": {
+      "description": "The spot a place question asks about, for Kumo on the map: where it is, the stay that made Kumo ask, and how much time you've spent there in all.",
+      "type": "object",
+      "required": ["place", "latitude", "longitude", "arrived_at", "minutes", "visits", "hours"],
+      "properties": {
+        "place": { "$ref": "#/$defs/PlaceId" },
+        "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
+        "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
+        "arrived_at": { "$ref": "#/$defs/Timestamp", "description": "When the stay Kumo asks about began." },
+        "departed_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When it ended; absent while you're still there."
+        },
+        "minutes": {
+          "description": "How long that stay lasted, or has lasted so far.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "visits": { "description": "How many times you've been there.", "type": "integer", "minimum": 1 },
+        "hours": { "description": "Your time there in all, in hours, to one decimal.", "type": "number", "minimum": 0 },
+        "apple_name": {
+          "description": "Apple's name for the spot, as the phone gave it, such as a café's name or a street address.",
+          "type": "string",
+          "minLength": 1
+        },
+        "street": {
+          "description": "The street, as the phone gave it, such as \"12 Dalry Road\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "locality": { "description": "The town or city, such as \"Edinburgh\".", "type": "string", "minLength": 1 }
+      }
     },
     "QuestionAnswer": {
       "description": "Your answer to a question: the options you tapped, your own words, written or spoken, and whether none fit or you're not sure, alone or together.",

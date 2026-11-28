@@ -3,7 +3,14 @@ import type { Attachments } from "#attachments/attachments.ts";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Clock } from "#clock.ts";
 import { lastLine } from "#desk/desk.ts";
-import type { ContactQuestion, Question, QuestionAnswer, QuestionReply, QuestionState } from "#protocol/types.ts";
+import type {
+  ContactQuestion,
+  PlaceAsk,
+  Question,
+  QuestionAnswer,
+  QuestionReply,
+  QuestionState,
+} from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
 import { fieldOf, stringsOf, textOf } from "#tools/input.ts";
@@ -32,6 +39,10 @@ export type Questions = {
   readonly settleContact: (id: string, note: string) => void;
   readonly tools: readonly Tool[];
   readonly inMindText: () => string;
+  // Whether Kumo has asked about a place, and hasn't let the question go.
+  readonly isAsked: (place: string) => boolean;
+  // A place was named or set aside elsewhere, or forgotten: its open question is settled or dropped, with a note.
+  readonly closePlace: (place: string, note: string, state: "settled" | "dropped") => void;
   // Resolves once the answers being heard and filed now are done.
   readonly settled: () => Promise<void>;
   readonly close: () => void;
@@ -50,15 +61,23 @@ export type QuestionsOptions = {
   readonly store: Pick<Store, "recordQuestion" | "findAttachment" | "keepAttachment" | "subscribe">;
   readonly attachments: Pick<Attachments, "pathOf">;
   readonly voice: Pick<VoiceLoop, "readiness" | "transcribe">;
-  readonly tracks: Pick<Tracks, "find" | "answered">;
+  readonly tracks: Pick<Tracks, "find" | "answered" | "ensure">;
   readonly clock: Clock;
   readonly identifiers: { readonly question: () => string };
   readonly work: (prompt: string) => Promise<Result<string, string>>;
   // Takes in an answer to a contact question, such as linking the page to the card they picked, and gives the line
   // for them on what came of it. No model files these.
   readonly contactAnswered?: (question: Question) => Promise<Result<string, string>>;
+  // Places Kumo can ask about, for Kumo on the map: what a place question shows, and naming the place they answer.
+  readonly places?: {
+    readonly ask: (place: string) => Result<PlaceAsk, string>;
+    readonly named: (place: string, name: string) => void;
+  };
   readonly info: Info;
 };
+
+// The track place questions go on when Kumo names none.
+export const placesTrack = { name: "Your places", note: "The places in your days, and what each one is." } as const;
 
 // A few at a time, so the page stays quiet.
 const openPerTrack = 5;
@@ -180,9 +199,25 @@ const sentOf = (answer: Given): string =>
     answer.not_in_contacts === true,
   ]);
 
+// The name a place answer gives: their own words, or else the guess they tapped.
+export const placeNameOf = (answer: Pick<QuestionAnswer, "picked" | "text">): string | undefined =>
+  (answer.text === undefined ? undefined : answer.text.replaceAll(/\s+/gu, " ").trim().slice(0, 80) || undefined) ??
+  answer.picked?.[0];
+
 const filingPrompt = (question: Question, answer: QuestionAnswer, track: string): string =>
   [
     `They answered one of your questions in Understanding you, on your ${track} track.`,
+    ...(question.place === undefined
+      ? []
+      : [
+          `It was about a place on their map (${question.place.place}), at ${String(question.place.latitude)}, ` +
+            `${String(question.place.longitude)}${question.place.apple_name === undefined ? "" : `, which Apple calls ${question.place.apple_name}`}.`,
+          ...(placeNameOf(answer) === undefined
+            ? []
+            : [
+                `Their map now calls it ${placeNameOf(answer) ?? ""}; write it a places page only if it matters to them.`,
+              ]),
+        ]),
     `What you understood: ${question.understood}`,
     `What you asked: ${question.missing}`,
     `Why it would help: ${question.why}`,
@@ -208,7 +243,8 @@ const filingPrompt = (question: Question, answer: QuestionAnswer, track: string)
   ].join("\n");
 
 export const createQuestions = (options: QuestionsOptions): Questions => {
-  const { database, store, attachments, voice, tracks, clock, identifiers, work, contactAnswered, info } = options;
+  const { database, store, attachments, voice, tracks, clock, identifiers, work, contactAnswered, places, info } =
+    options;
   const now = (): string => toTimestamp(clock.now());
   const isClosed = createCell(false);
   const hearing = createCell<string | undefined>(undefined);
@@ -255,6 +291,7 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
     changed_at: now(),
     ...(before.kind !== undefined && { kind: before.kind }),
     ...(before.contact !== undefined && { contact: before.contact }),
+    ...(before.place !== undefined && { place: before.place }),
     ...extra,
   });
 
@@ -328,7 +365,10 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
           .filter(Boolean)
           .join(" ");
         if (text === "") save(moveTo(current, "open", { unheard: "Nothing could be heard in your recording." }));
-        else takeIn(save({ ...current, answer: { ...current.answer, text }, changed_at: now() }));
+        else {
+          if (current.place !== undefined) places?.named(current.place.place, placeNameOf({ text }) ?? text);
+          takeIn(save({ ...current, answer: { ...current.answer, text }, changed_at: now() }));
+        }
       } else if (heard.failure.code === "unavailable" || heard.failure.code === "cancelled") {
         // It waits for the voice to be ready again.
         return;
@@ -426,11 +466,20 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
         "what you already understand and why the answer would help. When writing an answer would be effort, offer " +
         "a few honest possibilities as options for them to recognise or correct. Keep what happened, how they feel " +
         "and your own reading apart, and never offer a feeling as a fact. Keep to the few that matter: a track " +
-        `holds at most ${String(openPerTrack)} open questions, and asking what you already asked gives you that one.`,
+        `holds at most ${String(openPerTrack)} open questions, and asking what you already asked gives you that one. ` +
+        "For a place on their map you can't name, give place: they see it as you on the map at that spot, with " +
+        "when and how long, your options as guesses at its name, and their answer names it.",
       inputSchema: {
         type: "object",
         properties: {
-          track: { type: "string", description: "The track it belongs to, by id." },
+          track: {
+            type: "string",
+            description: `The track it belongs to, by id; for a place, leave it out for ${placesTrack.name}.`,
+          },
+          place: {
+            type: "string",
+            description: "A place you can't name yet, by id, such as one their comings and goings showed you.",
+          },
           understood: {
             type: "string",
             description:
@@ -455,11 +504,17 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
               "when only their words will do.",
           },
         },
-        required: ["track", "understood", "missing", "why"],
+        required: ["understood", "missing", "why"],
         additionalProperties: false,
       },
       call: (input) => {
-        const track = tracks.find(lineOf(input, "track"));
+        const placeId = lineOf(input, "place");
+        if (placeId !== "" && !places)
+          return Promise.resolve(failed("Places aren't on, so there's no place to ask about."));
+        const place = placeId === "" || !places ? undefined : places.ask(placeId);
+        if (place && !place.ok) return Promise.resolve(failed(place.failure));
+        const named = lineOf(input, "track");
+        const track = named === "" && place ? tracks.ensure(placesTrack.name, placesTrack.note) : tracks.find(named);
         if (!track) return Promise.resolve(failed("There's no such track: open one with open_track first."));
         const understood = lineOf(input, "understood");
         const missing = lineOf(input, "missing");
@@ -486,7 +541,9 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
           (question) =>
             (question.state === "open" ||
               ((question.state === "answered" || question.state === "settled") && question.changed_at >= remembered)) &&
-            isSameAsk(question.missing, missing),
+            (place
+              ? question.place?.place === place.value.place
+              : question.place === undefined && isSameAsk(question.missing, missing)),
         );
         if (asked) {
           return Promise.resolve({ text: `You've already asked that: ${describe(asked)}` });
@@ -511,6 +568,7 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
           options: choices,
           asked_at: at,
           changed_at: at,
+          ...(place && { kind: "place" as const, place: place.value }),
         });
         return Promise.resolve({
           text: `Added ${question.id} to ${track.name}. It waits quietly for them in Understanding you.`,
@@ -627,6 +685,8 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
       }
       if (audio !== undefined) store.keepAttachment(audio);
       const answered = save(moveTo(question, "answered", { answer: { at: now(), ...given.value } }));
+      const placeName = question.place === undefined ? undefined : placeNameOf(given.value);
+      if (placeName !== undefined && question.place !== undefined) places?.named(question.place.place, placeName);
       if (audio === undefined) takeIn(answered);
       else hear();
       return ok(answered);
@@ -674,6 +734,14 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
         ...(open.length > inMindKept ? [`…and ${String(open.length - inMindKept)} more (list_questions).`] : []),
         "</questions>",
       ].join("\n");
+    },
+    isAsked: (place) =>
+      all().some(
+        (question) => question.place?.place === place && (question.state === "open" || question.state === "answered"),
+      ),
+    closePlace: (place, note, state) => {
+      const open = all().find((question) => question.state === "open" && question.place?.place === place);
+      if (open) save(moveTo(open, state, { note }));
     },
     settled,
     close: () => {

@@ -328,6 +328,47 @@ shows the weather there and today's sunset, read every half hour from
 [Open-Meteo](https://open-meteo.com) (the box needs to reach `api.open-meteo.com`); without one,
 there's no weather at all.
 
+## Places
+
+Places are off until you turn them on in Ari, which needs location set to **Always** with **Precise**
+on (otherwise they stay off rather than draw a trail full of gaps). While they're on, the phone
+uploads in batches, whenever the box is reachable:
+
+- **Visits:** iOS's "arrived here at 08:58" and later "left at 18:12", with Apple's name for the
+  spot where the phone could find one. They're the backbone: places, arrive and leave times.
+- **Live points:** GPS about every 10 seconds, only while you're moving (never in Low Power Mode or
+  under 20% battery), and the significant-change pings iOS sends. They draw the way between.
+- **Photo locations:** once, to seed the past: when and where each photo was taken, read from its
+  metadata on the phone, never the photo itself. They're kept apart, marked as seeded, and never
+  wake Kumo or make a question.
+
+**What's kept, and where:** everything stays on your box, in `ito.db` (tables `location_points`,
+`location_visits`, `location_photos`, `places`, and the per-day `location_days` and `location_heat`),
+forever, until you forget it. Nothing goes to Apple or anyone else from the box; Kumo reads it only
+through its own read-only tools (where you were, time at places, a day's route, your places) and the
+night's dream, when it looks at a day or a place, so that's when it reaches the model. A point is
+about 40 bytes: a year of the hybrid trail is tens of megabytes.
+
+**Forgetting:** Ari forgets a day, a range of days or everything with `POST /v0/location/forget`.
+A visit that touches the range goes whole, along with the places that have no visits left (and their
+questions); the rest, home, the heat and trips, are worked out again from what's left. The box
+keeps nothing else about those days, but the journal Kumo already wrote stays as it is: change it
+in memory if it says too much.
+
+**What the box works out:** visits within about 75 m gather into places, ranked by true hours. Home
+is the place you slept at most at 03:00 over the last two months (a home you set wins). A day mostly
+50 km or more from home is a day away, and two or more in a row make a trip, with the countries and
+cities Apple named. Each day's hours are kept by geohash cell (7 characters, about 150 m; any coarser
+cell is a prefix of it, so a week or a year is a cheap sum), home included, with a day away counted
+as 14 hours. The map glows on `(1 − e^(−3h/full)) / (1 − e^(−3))`, full at 10 h for a week,
+40 h for a month and 500 h for a year.
+
+**Comings and goings:** arriving at a place and leaving it wake Kumo as a mail does, three minutes
+after the moment settles and at most every 15 minutes. Leaving and coming back within 15 minutes,
+stops under 10 minutes, points, photo seeds and visits that arrive an hour late never wake it. Kumo
+mostly keeps a note for the dream; a place it can't name becomes a quiet question in Understanding
+you, which names the place when you answer.
+
 ## Notifications
 
 The steps to switch notifications on are in the
@@ -409,6 +450,7 @@ is deleted, and so is a finished one no message names after a day.
 
 Ito keeps everything in `~/.ito` (set `ITO_HOME` to move it): the conversation in `ito.db`, Codex's
 sign-in and sessions in `codex`, the agent's working directory in `workspace`, its memory in
-`thread`, what you attach in `attachments` (and big uploads on their way in `uploads`), the
+`thread`, where you've been while places are on (in `ito.db`, until you forget it), what you attach
+in `attachments` (and big uploads on their way in `uploads`), the
 embedding and voice models in `models`, each capability's own folder in `capabilities`, and the log
 in `logs`.

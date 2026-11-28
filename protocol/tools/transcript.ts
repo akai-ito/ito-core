@@ -203,6 +203,7 @@ export type Transcript = {
   readonly track: () => string;
   // A question's id in Understanding you, as the server makes it.
   readonly questionId: () => string;
+  readonly placeId: () => string;
   // A question was added or moved on: every app hears it whole, and it never notifies.
   readonly question: (question: Fields) => void;
   readonly getUnderstanding: (understanding: Fields) => void;
@@ -285,7 +286,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "h" | "k" | "d" | "w" | "l" | "v" | "n" | "q" | "z";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "h" | "k" | "d" | "w" | "l" | "v" | "n" | "q" | "z" | "p";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -516,7 +517,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacfhkdwlvnqz]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfhkdwlvnqzp]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -542,6 +543,7 @@ const toCounters = (log: readonly Event[]): Counters => {
     n: highest("n"),
     q: highest("q"),
     z: highest("z"),
+    p: highest("p"),
   };
 };
 
@@ -562,7 +564,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({
     boot: 1,
-    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, h: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0, q: 0, z: 0 },
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, h: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0, q: 0, z: 0, p: 0 },
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
@@ -2232,6 +2234,7 @@ export const createTranscript = (header: Header): Transcript => {
     listWakeUps,
     track: () => newId("l"),
     questionId: () => newId("q"),
+    placeId: () => newId("p"),
     question: (question) => {
       emit("question.changed", { question });
     },

@@ -1330,7 +1330,8 @@ export interface paths {
      * @description Send it when the app opens and whenever the time zone or the place changes, such as on a
      *     trip: its time zone, and when you allow it, roughly where it is. The box keeps only the
      *     latest one from any device, with the place rounded to about 10 km, and never anything more
-     *     precise.
+     *     precise. Where you've been, precisely, comes only from places, when you turn them on
+     *     (`uploadLocation`).
      *
      *     The time zone is the one Kumo lives by: a repeating wake-up comes back at its time there,
      *     and moving to another zone wakes Kumo to move what should follow you. The place gives the
@@ -1342,6 +1343,250 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  "/v0/location/batches": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Upload where the phone has been
+     * @description A batch of what the phone collected while places are on: live points (GPS while you're
+     *     moving, and the significant-change pings iOS sends) and visits (iOS's "arrived here at
+     *     08:58" and later "left at 18:12"). Send them as they queue, oldest first, whenever the box
+     *     is reachable; offline days upload later and nothing is lost.
+     *
+     *     Retrying is always safe. A batch id already taken answers as it did the first time, with
+     *     `repeated`. Within any batch, a point the box already has (the same `at` and `source`)
+     *     is skipped, and a visit is the same visit when it has the same `arrived_at`: sending it
+     *     again with its `departed_at` closes it. A visit iOS gives without an arrival closes the
+     *     open visit it belongs to.
+     *
+     *     Everything is kept on the box, forever, until you forget it (`forgetLocation`). Arriving
+     *     and leaving are events Kumo looks at, as with mail, when they're fresh; data that only
+     *     arrives hours later never wakes Kumo.
+     */
+    post: operations["uploadLocation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/location/photos": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Seed the past from photo locations
+     * @description Where and when your photos were taken, read from their metadata on the phone (never the
+     *     images), to seed past places, the heat and trips from before places were on. Each is kept
+     *     as seeded, never as a live point: seeded days count in the heat only where the box has no
+     *     live data for that day, and seeded data never wakes Kumo or makes a place question. Retrying
+     *     is safe: a batch id already taken answers as it did, and a photo the box already has (the
+     *     same `taken_at`) is skipped. Geocode a few per day on the phone where you can, so trips
+     *     know their countries and cities.
+     */
+    post: operations["seedLocationFromPhotos"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/location": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * What the box keeps of where you've been
+     * @description How much the box holds, from when to when, and which place is home, for Settings.
+     */
+    get: operations["getLocation"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/location/forget": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Forget where you've been
+     * @description Deletes a day, a range of days (both ends included) or everything: the live points,
+     *     visits and seeded photo locations from those days, and with them what came from them.
+     *     Places with no visits left go, along with their questions; the rest, the heat, trips and
+     *     home are worked out again from what's left. Days are your local days, as each point's own
+     *     time zone had them. Forgetting what's already gone changes nothing.
+     */
+    post: operations["forgetLocation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/location/heat": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Where your time went, as heat
+     * @description Your hours over a range of days, summed into map cells, for the lit map. Cells are
+     *     geohashes: `precision` picks their size, about 150 m at 7, 1 km at 6, 5 km at 5, 40 km at
+     *     4, 150 km at 3 and 1,250 km at 2. Pick the one that fits the map's span: a week of a city
+     *     at 6 or 7, a year of the world at 3.
+     *
+     *     Home is included. A day away from home counts as 14 hours, shared among that day's cells,
+     *     so a trip glows by its length. Each cell's `glow` is `(1 − e^(−3h/full)) / (1 − e^(−3))`,
+     *     capped at 1, where `full` is 10 h for a week, 40 h for a month and 500 h for a year;
+     *     another range scales between those by its length unless you give `full`. Cells come
+     *     brightest first.
+     */
+    get: operations["getHeat"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/location/days/{day}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A day's thread of places
+     * @description The day as a thread: each place you stopped at, with when you arrived and left, and the
+     *     moves between them, with how far and how long. A stay that began the day before, such as a
+     *     night at home, starts the day; one still going ends it, marked `here`. A day known only
+     *     from photos is marked `from_photos`.
+     */
+    get: operations["getDayThread"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/location/days/{day}/trail": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A day's trail
+     * @description The day's route as a simplified line for the map: the stops' centres and the live points
+     *     between them, with points closer than about 15 m to the line dropped. Empty for a day the
+     *     box has nothing for.
+     */
+    get: operations["getDayTrail"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/location/trips": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Your trips
+     * @description The stretches you spent away from home, at least 50 km from it and for at least a night,
+     *     with the countries and cities you were in, newest first. A trip's id is its first day, so a
+     *     journal entry can point at it. Give a range for the trips that touch it.
+     */
+    get: operations["listTrips"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/places": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Your places
+     * @description The places your visits gathered into, ranked by true hours, most first. Give a range for
+     *     the hours and visits within it, leaving out places you weren't at; without one, all time.
+     *     Places you said aren't places are left out.
+     */
+    get: operations["listPlaces"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v0/places/{place}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** A place, with every visit */
+    get: operations["getPlace"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Rename a place, or say it isn't one
+     * @description Names a place in your words, sets its kind, or says it isn't a place (a station you change
+     *     at, a traffic jam): it leaves your places and the questions, and later visits there stay
+     *     unnamed and unasked. Its open question, if any, is settled with what you said.
+     */
+    patch: operations["changePlace"];
     trace?: never;
   };
   "/v0/capabilities": {
@@ -2371,6 +2616,11 @@ export interface components {
        *     show its words instead.
        */
       photos?: components["schemas"]["MemoryPhoto"][];
+      /**
+       * @description The maps the page shows, such as a journal day's route or a trip, in the order the
+       *     Markdown first shows them. Absent when it shows none.
+       */
+      maps?: components["schemas"]["MemoryMap"][];
       chapter?: components["schemas"]["ChapterFacts"];
     };
     /** @description A photo a page keeps with its story. */
@@ -3986,6 +4236,350 @@ export interface components {
       /** @description The town or city, such as `Rome`, as the phone names it. */
       name?: string;
     };
+    /**
+     * @description What the phone collected, under an id it chose for the batch. `time_zone` is where the
+     *     phone was when it collected them, which gives each point and visit its local day.
+     */
+    LocationBatch: {
+      batch: components["schemas"]["LocationBatchId"];
+      /** @description An IANA name such as `Europe/London`; without one, the time zone Kumo lives by. */
+      time_zone?: string;
+      samples?: components["schemas"]["LocationSample"][];
+      visits?: components["schemas"]["LocationVisit"][];
+    };
+    /** @description The app's id for a batch, such as a UUID; a retry sends the same one. */
+    LocationBatchId: string;
+    /**
+     * @description One point, as Core Location gave it. Leave out `speed`, `course` and `altitude` when iOS
+     *     says it doesn't know (a negative value).
+     */
+    LocationSample: {
+      at: components["schemas"]["Timestamp"];
+      latitude: number;
+      longitude: number;
+      /** @description Horizontal accuracy in metres. */
+      accuracy: number;
+      /** @description Metres per second. */
+      speed?: number;
+      /** @description Degrees from true north. */
+      course?: number;
+      /** @description Metres above sea level. */
+      altitude?: number;
+      /**
+       * @description `live`, a live update while moving (the default); `change`, a significant-change ping,
+       *     hundreds of metres coarse.
+       * @enum {unknown}
+       */
+      source?: "live" | "change";
+    };
+    /**
+     * @description A visit as iOS gave it: an arrival with no departure while you're there, then the same
+     *     visit again with its departure. iOS sometimes gives one with no arrival, when the app
+     *     started mid-visit; send it with `departed_at` alone. A visit needs one or the other.
+     */
+    LocationVisit: {
+      arrived_at?: components["schemas"]["Timestamp"];
+      departed_at?: components["schemas"]["Timestamp"];
+      latitude: number;
+      longitude: number;
+      /** @description Horizontal accuracy in metres. */
+      accuracy: number;
+      placemark?: components["schemas"]["Placemark"];
+    };
+    /** @description What Apple's map data on the phone says is at a spot (MapKit or the geocoder). */
+    Placemark: {
+      /** @description Apple's name for it: a point of interest, such as a café, or an address. */
+      name?: string;
+      /** @description Its MapKit point-of-interest category without the `MKPOICategory` prefix, such as `Restaurant` or `FitnessCenter`. */
+      category?: string;
+      /** @description The street and number. */
+      street?: string;
+      /** @description The town or city. */
+      locality?: string;
+      /** @description The region, such as Scotland. */
+      area?: string;
+      country?: string;
+      /** @description ISO 3166-1 alpha-2. */
+      country_code?: string;
+    };
+    LocationBatchResult: {
+      batch: components["schemas"]["LocationBatchId"];
+      /** @description This batch id was already taken; nothing changed. */
+      repeated: boolean;
+      samples: {
+        /** @description New points kept. */
+        taken: number;
+        /** @description Points the box already had. */
+        already: number;
+      };
+      visits: {
+        /** @description New visits kept. */
+        taken: number;
+        /** @description Visits the box had, now with their departure. */
+        updated: number;
+        /** @description Visits the box already had as they are. */
+        already: number;
+      };
+    };
+    /** @description Where and when photos were taken, from their metadata, under an id the app chose for the batch. */
+    PhotoSeeds: {
+      batch: components["schemas"]["LocationBatchId"];
+      /** @description An IANA name for the photos' local days; without one, the time zone Kumo lives by. */
+      time_zone?: string;
+      photos: components["schemas"]["PhotoSeed"][];
+    };
+    PhotoSeed: {
+      taken_at: components["schemas"]["Timestamp"];
+      latitude: number;
+      longitude: number;
+      placemark?: components["schemas"]["Placemark"];
+    };
+    PhotoSeedsResult: {
+      batch: components["schemas"]["LocationBatchId"];
+      /** @description This batch id was already taken; nothing changed. */
+      repeated: boolean;
+      taken: number;
+      already: number;
+    };
+    /** @description What the box keeps of where you've been. */
+    LocationHeld: {
+      /** @description Live points kept. */
+      samples: number;
+      visits: number;
+      /** @description Seeded photo locations kept. */
+      photos: number;
+      places: number;
+      first_day?: components["schemas"]["Day"];
+      last_day?: components["schemas"]["Day"];
+      /** @description The last batch the box took. */
+      uploaded_at?: components["schemas"]["Timestamp"];
+      /** @description Home, once the box has seen where you sleep. */
+      home?: components["schemas"]["PlaceId"];
+    };
+    /** @description A day, a range of days (both included), or everything. */
+    ForgetLocation:
+      | {
+          day: components["schemas"]["Day"];
+        }
+      | {
+          from: components["schemas"]["Day"];
+          to: components["schemas"]["Day"];
+        }
+      | {
+          /** @constant */
+          everything: true;
+        };
+    /** @description What was deleted. */
+    ForgetResult: {
+      samples: number;
+      visits: number;
+      photos: number;
+      /** @description Places that had no visits left. */
+      places: number;
+    };
+    /**
+     * @description What sort of place it is: `unknown` until it's named. Treat a kind you don't recognise as
+     *     `other`.
+     * @enum {unknown}
+     */
+    PlaceKind:
+      | "home"
+      | "work"
+      | "gym"
+      | "friend"
+      | "family"
+      | "cafe"
+      | "restaurant"
+      | "bar"
+      | "shop"
+      | "school"
+      | "health"
+      | "outdoors"
+      | "travel"
+      | "other"
+      | "unknown";
+    /**
+     * @description A spot your visits gathered at, within about 75 m. `name` is yours or Kumo's, once it has
+     *     one; `apple_name` is Apple's, as the phone gave it.
+     */
+    Place: {
+      id: components["schemas"]["PlaceId"];
+      name?: string;
+      apple_name?: string;
+      kind: components["schemas"]["PlaceKind"];
+      latitude: number;
+      longitude: number;
+      /** @description How far its visits spread, in metres. */
+      radius: number;
+      /** @description True hours there, in the range asked or all time, to one decimal. */
+      hours: number;
+      /** @description Visits there, in the range asked or all time. */
+      visits: number;
+      /** @description When you first arrived, ever. */
+      first_visit: components["schemas"]["Timestamp"];
+      /** @description When you last arrived. */
+      last_visit: components["schemas"]["Timestamp"];
+      /**
+       * @description You're there now.
+       * @constant
+       */
+      here?: true;
+      street?: string;
+      locality?: string;
+      country?: string;
+      country_code?: string;
+      /**
+       * @description Known only from where photos were taken.
+       * @constant
+       */
+      from_photos?: true;
+    };
+    PlaceVisit: {
+      arrived_at?: components["schemas"]["Timestamp"];
+      /** @description Absent while you're there. */
+      departed_at?: components["schemas"]["Timestamp"];
+      minutes: number;
+      /**
+       * @description Seen in photos taken there, not a visit iOS recorded.
+       * @constant
+       */
+      from_photos?: true;
+    };
+    Places: {
+      places: components["schemas"]["Place"][];
+    };
+    PlacePage: {
+      place: components["schemas"]["Place"];
+      /** @description Every visit, newest first. */
+      visits: components["schemas"]["PlaceVisit"][];
+    };
+    PlaceChange: {
+      name?: string;
+      /** @description Any kind but `unknown`. */
+      kind?: components["schemas"]["PlaceKind"];
+      /** @constant */
+      not_a_place?: true;
+    };
+    PlaceResult: {
+      place: components["schemas"]["Place"];
+    };
+    /** @description A stretch away from home, for the year's globe and its trip cards. */
+    Trip: {
+      /** @description Its first day; a journal entry points at it as `trip:<id>`. */
+      id: components["schemas"]["Day"];
+      from: components["schemas"]["Day"];
+      to: components["schemas"]["Day"];
+      days: number;
+      /** @description The countries you were in, most time first. */
+      countries: {
+        name: string;
+        code?: string;
+      }[];
+      /** @description The towns and cities you were in, most time first. */
+      cities: string[];
+      /** @description Where most of the time went. */
+      latitude: number;
+      longitude: number;
+      /** @description How far that is from home. */
+      kilometres: number;
+      /**
+       * @description Known only from where photos were taken.
+       * @constant
+       */
+      from_photos?: true;
+    };
+    Trips: {
+      trips: components["schemas"]["Trip"][];
+    };
+    Heat: {
+      from: components["schemas"]["Day"];
+      to: components["schemas"]["Day"];
+      precision: number;
+      /** @description The hours at which a cell is fully lit. */
+      full: number;
+      cells: components["schemas"]["HeatCell"][];
+    };
+    HeatCell: {
+      /** @description The geohash. */
+      cell: string;
+      /** @description Its centre. */
+      latitude: number;
+      longitude: number;
+      south: number;
+      west: number;
+      north: number;
+      east: number;
+      /** @description Hours there, to one decimal, with days away counted as 14 h. */
+      hours: number;
+      /** @description How lit it is, from 0 to 1, to two decimals. */
+      glow: number;
+    };
+    Trail: {
+      day: components["schemas"]["Day"];
+      points: {
+        at: components["schemas"]["Timestamp"];
+        latitude: number;
+        longitude: number;
+      }[];
+    };
+    DayThread: {
+      day: components["schemas"]["Day"];
+      /** @description The stops and the moves between them, in order. */
+      items: (components["schemas"]["ThreadStop"] | components["schemas"]["ThreadMove"])[];
+      /**
+       * @description The day is known only from where photos were taken.
+       * @constant
+       */
+      from_photos?: true;
+    };
+    /** @description A stay at a place. `arrived_at` may be the day before, and `departed_at` the day after. */
+    ThreadStop: {
+      /** @constant */
+      kind: "stop";
+      place: components["schemas"]["PlaceId"];
+      name?: string;
+      apple_name?: string;
+      place_kind: components["schemas"]["PlaceKind"];
+      latitude: number;
+      longitude: number;
+      arrived_at?: components["schemas"]["Timestamp"];
+      departed_at?: components["schemas"]["Timestamp"];
+      /** @description Minutes of it within the day. */
+      minutes: number;
+      /**
+       * @description You're still there.
+       * @constant
+       */
+      here?: true;
+    };
+    /**
+     * @description The way from one stop to the next. `metres` follows the live points when there are any
+     *     (`traced`), or else is the straight line. `mode` is a guess from the speed.
+     */
+    ThreadMove: {
+      /** @constant */
+      kind: "move";
+      started_at: components["schemas"]["Timestamp"];
+      ended_at: components["schemas"]["Timestamp"];
+      minutes: number;
+      metres: number;
+      traced: boolean;
+      /** @enum {unknown} */
+      mode: "walk" | "cycle" | "ride" | "flight";
+    };
+    /**
+     * @description A map a page shows in its story, as a Markdown image whose source is `route:<day>` (that
+     *     day's trail and stops, from `getDayTrail` and `getDayThread`) or `trip:<id>` (a trip, from
+     *     `listTrips`). The image's words are its caption.
+     */
+    MemoryMap: {
+      /** @description The source as the Markdown has it, such as `route:2026-11-24`. */
+      source: string;
+      /** @enum {unknown} */
+      kind: "route" | "trip";
+      /** @description The route's day, or the trip's first day. */
+      day: components["schemas"]["Day"];
+    };
     ErrorResult: {
       error: components["schemas"]["Error"];
     };
@@ -4682,6 +5276,30 @@ export interface components {
       name: string;
       candidates: components["schemas"]["ContactCandidate"][];
     };
+    /** @description Opaque. The server makes it when visits first gather at a spot. */
+    PlaceId: string;
+    /** @description The spot a place question asks about, for Kumo on the map: where it is, the stay that made Kumo ask, and how much time you've spent there in all. */
+    PlaceAsk: {
+      place: components["schemas"]["PlaceId"];
+      latitude: number;
+      longitude: number;
+      /** @description When the stay Kumo asks about began. */
+      arrived_at: components["schemas"]["Timestamp"];
+      /** @description When it ended; absent while you're still there. */
+      departed_at?: components["schemas"]["Timestamp"];
+      /** @description How long that stay lasted, or has lasted so far. */
+      minutes: number;
+      /** @description How many times you've been there. */
+      visits: number;
+      /** @description Your time there in all, in hours, to one decimal. */
+      hours: number;
+      /** @description Apple's name for the spot, as the phone gave it, such as a café's name or a street address. */
+      apple_name?: string;
+      /** @description The street, as the phone gave it, such as "12 Dalry Road". */
+      street?: string;
+      /** @description The town or city, such as "Edinburgh". */
+      locality?: string;
+    };
     /** @description Something Kumo would like you to explain, in Understanding you, on one of its learning tracks: what it already understands, the missing piece and why it would help. It's optional and quiet: it has no due date, is never overdue, never waits on the Desk and never notifies you. Answer it with a tap on one or more of its `options`, in your own words, written or spoken, or say none fit or you're not sure; "Not now" leaves it open. An answer is enough: Kumo files what it learned in the background and asks nothing more about it. */
     Question: {
       id: components["schemas"]["QuestionId"];
@@ -4709,12 +5327,14 @@ export interface components {
       /** @description `settled`: where Kumo learned the answer, such as "You said in the chat that sleep comes first." `dropped`: why Kumo let it go. */
       note?: string;
       /**
-       * @description What sort of question it is, when it isn't a plain one: `contact` asks which card in your Contacts a person is, and carries `contact`. Show a kind you don't recognise as a plain question.
+       * @description What sort of question it is, when it isn't a plain one: `contact` asks which card in your Contacts a person is, and carries `contact`; `place` is a spot Kumo can't name yet, with `place` saying where and when, drawn as Kumo on the map. Show a kind you don't recognise as a plain question.
        * @enum {unknown}
        */
-      kind?: "contact";
+      kind?: "contact" | "place";
       /** @description `contact` questions only: who it's about and the cards that could be them. */
       contact?: components["schemas"]["ContactQuestion"];
+      /** @description `place` questions only: the spot, when you were there and for how long. Answering names the place; its options are Kumo's guesses at the name. */
+      place?: components["schemas"]["PlaceAsk"];
     };
     /**
      * @description Coarse, for animating the agent's presence. Show the label of a kind you don't recognise.
@@ -5443,6 +6063,8 @@ export interface components {
     };
   };
   parameters: {
+    /** @description The place's id, from its `Place`. */
+    Place: components["schemas"]["PlaceId"];
     /** @description The item's id, from its `CalendarItem` in Coming up. */
     CalendarItem: components["schemas"]["CalendarItemId"];
     /** @description The page's id, from its `Made`. */
@@ -5637,6 +6259,34 @@ export type Device = components["schemas"]["Device"];
 export type DeviceResult = components["schemas"]["DeviceResult"];
 export type Whereabouts = components["schemas"]["Whereabouts"];
 export type Area = components["schemas"]["Area"];
+export type LocationBatch = components["schemas"]["LocationBatch"];
+export type LocationBatchId = components["schemas"]["LocationBatchId"];
+export type LocationSample = components["schemas"]["LocationSample"];
+export type LocationVisit = components["schemas"]["LocationVisit"];
+export type Placemark = components["schemas"]["Placemark"];
+export type LocationBatchResult = components["schemas"]["LocationBatchResult"];
+export type PhotoSeeds = components["schemas"]["PhotoSeeds"];
+export type PhotoSeed = components["schemas"]["PhotoSeed"];
+export type PhotoSeedsResult = components["schemas"]["PhotoSeedsResult"];
+export type LocationHeld = components["schemas"]["LocationHeld"];
+export type ForgetLocation = components["schemas"]["ForgetLocation"];
+export type ForgetResult = components["schemas"]["ForgetResult"];
+export type PlaceKind = components["schemas"]["PlaceKind"];
+export type Place = components["schemas"]["Place"];
+export type PlaceVisit = components["schemas"]["PlaceVisit"];
+export type Places = components["schemas"]["Places"];
+export type PlacePage = components["schemas"]["PlacePage"];
+export type PlaceChange = components["schemas"]["PlaceChange"];
+export type PlaceResult = components["schemas"]["PlaceResult"];
+export type Trip = components["schemas"]["Trip"];
+export type Trips = components["schemas"]["Trips"];
+export type Heat = components["schemas"]["Heat"];
+export type HeatCell = components["schemas"]["HeatCell"];
+export type Trail = components["schemas"]["Trail"];
+export type DayThread = components["schemas"]["DayThread"];
+export type ThreadStop = components["schemas"]["ThreadStop"];
+export type ThreadMove = components["schemas"]["ThreadMove"];
+export type MemoryMap = components["schemas"]["MemoryMap"];
 export type ErrorResult = components["schemas"]["ErrorResult"];
 export type Timestamp = components["schemas"]["Timestamp"];
 export type Problem = components["schemas"]["Problem"];
@@ -5711,6 +6361,8 @@ export type ContactUid = components["schemas"]["ContactUid"];
 export type PhotoName = components["schemas"]["PhotoName"];
 export type ContactCandidate = components["schemas"]["ContactCandidate"];
 export type ContactQuestion = components["schemas"]["ContactQuestion"];
+export type PlaceId = components["schemas"]["PlaceId"];
+export type PlaceAsk = components["schemas"]["PlaceAsk"];
 export type Question = components["schemas"]["Question"];
 export type StatusKind = components["schemas"]["StatusKind"];
 export type StatusLabel = components["schemas"]["StatusLabel"];
@@ -5774,6 +6426,7 @@ export type ResponseUploadIncomplete = components["responses"]["UploadIncomplete
 export type ResponseChecksumMismatch = components["responses"]["ChecksumMismatch"];
 export type ResponseSlowDown = components["responses"]["SlowDown"];
 export type ResponseUnavailable = components["responses"]["Unavailable"];
+export type ParameterPlace = components["parameters"]["Place"];
 export type ParameterCalendarItem = components["parameters"]["CalendarItem"];
 export type ParameterMade = components["parameters"]["Made"];
 export type ParameterMotion = components["parameters"]["Motion"];
@@ -7956,6 +8609,364 @@ export interface operations {
       };
       400: components["responses"]["InvalidRequest"];
       401: components["responses"]["TokenRejected"];
+    };
+  };
+  uploadLocation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "batch": "7d1c6c2e-batch-0001",
+         *       "time_zone": "Europe/London",
+         *       "samples": [
+         *         {
+         *           "at": "2026-11-24T08:41:10.000Z",
+         *           "latitude": 55.9467,
+         *           "longitude": -3.2049,
+         *           "accuracy": 8,
+         *           "speed": 1.4,
+         *           "course": 92,
+         *           "altitude": 71
+         *         }
+         *       ],
+         *       "visits": [
+         *         {
+         *           "arrived_at": "2026-11-24T08:58:00.000Z",
+         *           "latitude": 55.9483,
+         *           "longitude": -3.1996,
+         *           "accuracy": 18,
+         *           "placemark": {
+         *             "name": "Northwind",
+         *             "locality": "Edinburgh",
+         *             "country": "United Kingdom",
+         *             "country_code": "GB"
+         *           }
+         *         }
+         *       ]
+         *     }
+         */
+        "application/json": components["schemas"]["LocationBatch"];
+      };
+    };
+    responses: {
+      /** @description Kept. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LocationBatchResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  seedLocationFromPhotos: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "batch": "photos-2026-0001",
+         *       "photos": [
+         *         {
+         *           "taken_at": "2026-03-15T11:20:41.000Z",
+         *           "latitude": 38.7139,
+         *           "longitude": -9.1394,
+         *           "placemark": {
+         *             "locality": "Lisbon",
+         *             "country": "Portugal",
+         *             "country_code": "PT"
+         *           }
+         *         }
+         *       ]
+         *     }
+         */
+        "application/json": components["schemas"]["PhotoSeeds"];
+      };
+    };
+    responses: {
+      /** @description Kept, as seeded. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PhotoSeedsResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getLocation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description What's kept. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LocationHeld"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  forgetLocation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "from": "2026-11-20",
+         *       "to": "2026-11-22"
+         *     }
+         */
+        "application/json": components["schemas"]["ForgetLocation"];
+      };
+    };
+    responses: {
+      /** @description Forgotten. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ForgetResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getHeat: {
+    parameters: {
+      query: {
+        /** @description The first day, included. */
+        from: components["schemas"]["Day"];
+        /** @description The last day, included. */
+        to: components["schemas"]["Day"];
+        /** @description The geohash length of each cell, from 2 (continents) to 7 (streets). */
+        precision: number;
+        /** @description The hours at which a cell is fully lit, instead of the range's own. */
+        full?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The heat. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Heat"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getDayThread: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        day: components["schemas"]["Day"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The day's thread. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DayThread"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getDayTrail: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        day: components["schemas"]["Day"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The trail. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Trail"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  listTrips: {
+    parameters: {
+      query?: {
+        /** @description The first day, included. */
+        from?: components["schemas"]["Day"];
+        /** @description The last day, included. */
+        to?: components["schemas"]["Day"];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The trips. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Trips"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  listPlaces: {
+    parameters: {
+      query?: {
+        /** @description The first day, included. */
+        from?: components["schemas"]["Day"];
+        /** @description The last day, included. */
+        to?: components["schemas"]["Day"];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The places. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Places"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+    };
+  };
+  getPlace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The place's id, from its `Place`. */
+        place: components["parameters"]["Place"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The place. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PlacePage"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
+    };
+  };
+  changePlace: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description The place's id, from its `Place`. */
+        place: components["parameters"]["Place"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "name": "Omar's five-a-side",
+         *       "kind": "outdoors"
+         *     }
+         */
+        "application/json": components["schemas"]["PlaceChange"];
+      };
+    };
+    responses: {
+      /** @description Changed. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PlaceResult"];
+        };
+      };
+      400: components["responses"]["InvalidRequest"];
+      401: components["responses"]["TokenRejected"];
+      404: components["responses"]["NotFound"];
     };
   };
   listCapabilities: {
