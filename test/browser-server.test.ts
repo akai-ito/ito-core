@@ -10,7 +10,7 @@ import { WebSocket } from "ws";
 import { missingChromium } from "#browser/session.ts";
 import { createCell } from "#cell.ts";
 import { systemClock } from "#clock.ts";
-import { toDeviceId } from "#conversation/ids.ts";
+import { toDeviceId, toThreadId, toTurnId } from "#conversation/ids.ts";
 import { createScriptEngine } from "#engine/scripted/script-engine.ts";
 import { hashToken, tokenSetting } from "#http/auth.ts";
 import { wordEmbedder } from "#memory/embedder.ts";
@@ -236,10 +236,11 @@ describe.skipIf(!hasChromium)("Kumo's browser on the server", () => {
     await vi.waitFor(() => {
       expect(live.frames().length).toBeGreaterThan(0);
     });
-    expect(live.texts().slice(0, 2)).toEqual([
-      { type: "state", browser: browserOf(server) },
-      { type: "view", url: `${origin()}/book?from=mail#top`, width: 393, height: 659, tab: 1, tabs: 1 },
-    ]);
+    expect(live.texts()[0]).toEqual({ type: "state", browser: browserOf(server) });
+    const view = live.texts().find(({ type }) => type === "view");
+    expect(view).toMatchObject({ url: `${origin()}/book?from=mail#top`, width: 393, height: 659, tab: 1, tabs: 1 });
+    expect(["headful", "headless"]).toContain(view?.display);
+    expect(live.texts()).toContainEqual({ type: "link", state: "live" });
     live.send({ type: "tap", x: 10, y: 10 });
     await vi.waitFor(() => {
       expect(live.texts()).toContainEqual({
@@ -407,7 +408,7 @@ describe.skipIf(!hasChromium)("Kumo's browser on the server", () => {
         .filter(({ name }) => name === "Morgan"),
     ).toHaveLength(1);
     await expect.poll(() => prompts().length).toBe(1);
-    expect(prompts()[0]).toContain("He tapped “Book it”, and Ito pressed it: the site answered");
+    expect(prompts()[0]).toMatch(/He tapped “Book it”, and Ito pressed it \(final-[\d-]+\): the site answered/u);
 
     const again = await fill("Quinn");
     await call(
@@ -426,6 +427,89 @@ describe.skipIf(!hasChromium)("Kumo's browser on the server", () => {
         .filter(({ name }) => name === "Quinn"),
     ).toHaveLength(0);
     expect(server.store.desk().waiting.filter(({ kind }) => kind === "commit")).toEqual([]);
+  });
+
+  it("keeps hand-offs and how a card went in the task's trail, and stops a task without waking Kumo", async () => {
+    const { server, base, call, request, prompts } = await openServer();
+    const thread = server.store.startThread("kumo", "Train to the coast");
+    const place = toThreadId(thread.id);
+    server.store.postMessage("I'll look at the trains.", { thread: place });
+    const turn = toTurnId("turn-coast");
+    server.store.startTurn(turn, [], undefined, place);
+    server.store.endTurn(turn, "completed");
+    const trail = () => server.store.threadPage(place)?.steps ?? [];
+
+    await call("browser_open", { url: `${origin()}/login`, step: "opening the bank" }, thread.id);
+    await call("browser_takeover", { need: "login", why: "Sign in to Fixture Bank" }, thread.id);
+    expect(trail().filter(({ kind }) => kind === "handoff")).toMatchObject([
+      {
+        turn,
+        title: "Needed you to log in",
+        outcome: "completed",
+        handoff: { need: "login", why: "Sign in to Fixture Bank", site: "Fixture Bank" },
+      },
+    ]);
+    const live = await openLive(base);
+    await request("POST", "/v0/capabilities/browser/takeover");
+    live.send({ type: "viewport", width: 402, height: 640, keyboard: 0 });
+    await vi.waitFor(() => {
+      expect(live.texts()).toContainEqual(expect.objectContaining({ type: "view", width: 402, height: 640 }));
+    });
+    expect(live.texts()).toContainEqual({ type: "link", state: "live" });
+    await request("DELETE", "/v0/capabilities/browser/takeover");
+    await vi.waitFor(() => {
+      expect(trail().find(({ kind }) => kind === "handoff")?.handoff).toMatchObject({ answer: "handed_back" });
+    });
+    await expect.poll(() => prompts().length).toBe(1);
+
+    await call("browser_takeover", { need: "captcha", why: "Get past the check" }, thread.id);
+    await request("POST", "/v0/capabilities/browser/takeover");
+    const stopped = await request("DELETE", "/v0/capabilities/browser/task");
+    expect(await stopped.json()).toEqual({ browser: { state: "idle" } });
+    await vi.waitFor(() => {
+      expect(trail().findLast(({ kind }) => kind === "handoff")).toMatchObject({
+        title: "Needed you past a check",
+        handoff: { need: "captcha", answer: "stopped" },
+      });
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(prompts()).toHaveLength(1);
+
+    const opened = await call("browser_open", { url: `${origin()}/book`, step: "opening the booking" }, thread.id);
+    const filled = await call(
+      "browser_act",
+      { action: "type", ref: referenceOf(opened, "textbox", "Name"), text: "Rowan", step: "giving the name" },
+      thread.id,
+    );
+    await call(
+      "browser_commit",
+      { ref: referenceOf(filled, "button", "Book now"), title: "Book a table", summary: "For two.", verb: "Book" },
+      thread.id,
+    );
+    const card = commitCard(server);
+    await request("POST", `/v0/desk/cards/${card.id}/answer?thread=${thread.id}`, { option: "Book" });
+    await vi.waitFor(() => {
+      expect(trail().find(({ kind }) => kind === "commit")).toMatchObject({
+        title: "Pressed “Book now”",
+        commit: { card: card.id, title: "Book a table", verb: "Book", outcome: "done", page: { button: "Book now" } },
+      });
+    });
+    await expect.poll(() => prompts().length).toBe(2);
+    const final = /\((?<final>final-[\d-]+)\)/u.exec(prompts()[1] ?? "")?.groups?.final ?? "";
+    await call("browser_read", {}, thread.id);
+    await call(
+      "browser_settle",
+      { final, outcome: "went_through", how: "The page says Booked", reference: "FK-2041" },
+      thread.id,
+    );
+    await vi.waitFor(() => {
+      expect(trail().find(({ kind }) => kind === "commit")?.commit).toMatchObject({
+        outcome: "done",
+        reference: "FK-2041",
+      });
+    });
+    for (const frame of live.texts()) expect(fromServer?.(frame), JSON.stringify(frame)).toBe(true);
+    live.close();
   });
 
   it("refuses the live view and the takeover while the browser is off", async () => {

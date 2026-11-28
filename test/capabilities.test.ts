@@ -235,6 +235,28 @@ describe("capability host", () => {
     });
   });
 
+  it("says why a capability couldn't start and how to fix it, such as a package the server never installed", async () => {
+    const host = createHost({
+      installed: [{ id: "unpacked", entry: path.join(import.meta.dirname, "support", "capabilities", "unpacked.ts") }],
+      server: { version: "0.6.0", engine: "Codex test", workspace: path.join(home, "workspace") },
+      settings: createMemorySettings([[onSetting("unpacked"), "true"]]),
+      folders: mkdtempSync(path.join(home, "folders-")),
+      clock: createVirtualClock(0),
+      info: (message) => {
+        logged.update((current) => [...current, message]);
+      },
+    });
+    hosts.update((current) => [...current, host]);
+    await host.ready;
+
+    expect(host.find("unpacked")).toMatchObject({
+      state: "needs_you",
+      detail:
+        "unpacked couldn't start: the ito-test-missing-package package isn't installed on the server. To fix it, " +
+        "run npm ci --omit=dev in the ito-core folder, then switch unpacked off and on.",
+    });
+  });
+
   it("restarts a crashed capability with backoff, and gives up after five crashes in ten minutes", async () => {
     const clock = createVirtualClock(0);
     const { host } = await startHost(createMemorySettings(switchedOn({ token: "secret-1" })), clock);

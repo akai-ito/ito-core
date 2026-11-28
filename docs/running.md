@@ -72,6 +72,9 @@ To update, pull and restart; a reply being written at that moment ends as interr
 cd ~/ito-core && git pull && npm ci --omit=dev && systemctl --user restart ito
 ```
 
+When Playwright's version changes, run `npx playwright install --with-deps chromium` too, before
+the restart.
+
 ## The model and the agent's instructions
 
 Ari runs on Codex's default model until you choose another, and how hard it thinks, in Ari's
@@ -106,6 +109,28 @@ load or a mistake you corrected, as public [issues labelled
 from your conversation. Tap *Connect GitHub* on its sheet and approve the code on GitHub: Ito's
 GitHub app can only open and comment on issues in Ito's own repositories, and GitHub hands its token
 to your server, never to the phone. Up to 20 reports a day are filed; any more go to Ito's log.
+
+## Kumo's browser
+
+The Browser capability is a Chromium on the server that Kumo uses for you, with takeover on the
+phone for logins, codes, CAPTCHAs and payments. It needs Playwright's Chromium and, on Linux, Xvfb,
+a virtual display, so Chromium runs headful, as a person's browser does: sites trust that more than
+a headless one, so logins and CAPTCHAs behave as they do on a laptop.
+
+```sh
+sudo apt install xvfb                          # the virtual display
+cd ~/ito-core && npm ci --omit=dev             # Playwright comes with Ito's packages
+npx playwright install --with-deps chromium    # Chromium and the libraries it needs
+systemctl --user restart ito
+```
+
+Switch it on in Ari's Settings › Capabilities. If it can't start, its row there says why and how to
+fix it, such as a package missing because `npm ci` was skipped. The browser starts Xvfb itself on a
+free display while Chromium runs, or uses `$DISPLAY` if one is set, such as under `xvfb-run`.
+Without either it falls back to headless and says so in Ito's log (`journalctl --user -u ito`),
+with the fix. On a Mac it runs headless unless `ITO_BROWSER=headful` is set, which opens a window
+on the desktop; `ITO_BROWSER=headless` forces headless anywhere. The page always browses at your
+phone's size: a takeover tells the server the room the page has on screen, and it's kept.
 
 ## Memory
 

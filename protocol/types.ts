@@ -1284,6 +1284,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v0/capabilities/browser/task": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Stop Kumo's browsing task
+     * @description Stops what Kumo is doing in the browser, for "Stop the task": a step it's in the middle of
+     *     finishes first, then nothing more of the task is done. A takeover you hold ends, without
+     *     waking Kumo; a need it was waiting on, and a one-tap card waiting for your tap, are dropped;
+     *     and the page stays exactly as it is, unpressed. The turn that was browsing can't use the
+     *     browser again, so a new ask starts afresh. The trail's hand-off says you stopped it.
+     *     Stopping with no task changes nothing. The answer is the browser, now `idle`.
+     */
+    delete: operations["stopBrowserTask"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v0/capabilities/browser/stream": {
     parameters: {
       query?: never;
@@ -1297,15 +1322,24 @@ export interface paths {
      *     at once, one for each device; the page is streamed while any is.
      *
      *     - **Binary frames down:** the page, from Chrome's own screencast: one JPEG each, the whole
-     *       viewport at iPhone size, as soon as anything paints. While the page moves they come at 1x,
-     *       up to 60 a second; once it's still for a moment, a sharp one at 2x follows. A slow
+     *       viewport at your phone's size, as soon as anything paints. While the page moves they come
+     *       at 1x, up to 60 a second; once it's still for a moment, a sharp one at 2x follows. A slow
      *       connection gets fewer, never a backlog: draw the latest.
      *     - **Text frames** both ways are JSON, as in [the browser stream schema](browser.schema.json):
-     *       `state`, `view`, `focus`, `refused` and `ended` from the server; `tap`, `touch`, `scroll`,
-     *       `text`, `fill`, `key` and `navigate` from the app, which reach the page only while you
-     *       hold it. `focus` gives the field with the focus, its kind, where it is and how long its
-     *       value is, so a native field laid over it can type with iOS's keyboard and fill in
-     *       passwords and codes, sending each change with `fill` and return as `key` Enter.
+     *       `state`, `view`, `focus`, `mark`, `link`, `refused` and `ended` from the server; `tap`,
+     *       `touch`, `scroll`, `text`, `fill`, `key`, `navigate` and `viewport` from the app, which
+     *       reach the page only while you hold it. What you send reaches the page at once, in order,
+     *       never waiting on anything else: moves and scrolls sent faster than the page takes them
+     *       join up. `focus` gives the field with the focus, its kind, where it is and how long its
+     *       value is, in frames from other sites too, so a native field laid over it can type with
+     *       iOS's keyboard and fill in passwords and codes, sending each change with `fill` and
+     *       return as `key` Enter; it comes by itself when a new page puts the focus in a field.
+     *       `mark` gives the site's own pay button on a `payment` need, to ring, and follows it as
+     *       the page scrolls. `viewport` tells the server how much room the page has between the
+     *       header and the Hand back bar, and how much the keyboard covers, and the page's viewport
+     *       is made the room above the keyboard, so nothing sits under the bar or the keyboard.
+     *       `link` says `reconnecting` while the page should have painted and couldn't be shown, and
+     *       `live` again once it can.
      *
      *     Peeking is watching: nothing you do changes the page until you take it over with
      *     `POST /v0/capabilities/browser/takeover`, and Kumo carries on meanwhile.
@@ -2826,6 +2860,38 @@ export interface components {
       wait_ms?: number;
       /** @description `image_view`: the image looked at. */
       path?: string;
+      /** @description `handoff`: a time Kumo's browser needed your hand, or you took the page over, kept in the trail of the thread its task lives in so it outlasts a relaunch. Its `title` says what for, such as "Needed you to log in", or "You took over" when Kumo hadn't asked; draw `answer` under it, such as "You logged in and handed back · 17:21". It ends at once, as it's written, and `step.updated` adds the answer when the page comes back, even after its turn has ended. */
+      handoff?: {
+        /** @description What Kumo asked your hand for. Absent when you took the page over without being asked. */
+        need?: components["schemas"]["BrowserNeedKind"];
+        /** @description What Kumo asked, in its words, such as "Sign in to Railway so I can get the tickets". */
+        why?: string;
+        /** @description The site, such as "Railway". */
+        site: string;
+        /**
+         * @description How the page came back: `handed_back` by you, `lapsed` when you left it untouched until it went back by itself, or `stopped` when you stopped the task. Absent while Kumo still waits on you, or you still hold the page. Treat one you don't recognise as handed back.
+         * @enum {unknown}
+         */
+        answer?: "handed_back" | "lapsed" | "stopped";
+        /** @description When it came back, with `answer`. */
+        answered_at?: components["schemas"]["Timestamp"];
+      };
+      /** @description `commit`: how a one-tap card you answered went, kept in the trail of the thread its task lives in, so the card can be drawn as it settled after it has left the Desk and after a relaunch. Its `title` says it in a line, such as "Pressed “Book now”". When Kumo settles an uncertain press, or reads the site's reference on the confirmation page, `step.updated` brings the new `outcome` or the `reference`. */
+      commit?: {
+        /** @description The card, as it was on the Desk. */
+        card: components["schemas"]["CardId"];
+        /** @description The card's title, such as "Table for two at Kiln". */
+        title: string;
+        /** @description The card's option that acts, such as "Book". */
+        verb: string;
+        outcome: components["schemas"]["CommitOutcome"];
+        /** @description `declined`: what you tapped or wrote instead, such as "Not now". */
+        answer?: string;
+        /** @description `done`: the site's reference for it, as Kumo read it on the confirmation page, such as "TW-48KQ". Absent until Kumo reads one, and when the site gave none. */
+        reference?: string;
+        /** @description The card's page as you saw it: its picture, summary and details. */
+        page: components["schemas"]["CommitCard"];
+      };
     };
     /** @description What the agent is doing right now. */
     Status: {
@@ -3539,7 +3605,7 @@ export interface components {
     /** @description Opaque. The server makes it when a step starts. */
     StepId: string;
     /**
-     * @description What kind of thing the agent did. Show the title of a kind you don't recognise.
+     * @description What kind of thing the agent did. `handoff` and `commit` are written by the server, not the agent: a time Kumo's browser needed your hand, and how a one-tap card you answered went. Show the title of a kind you don't recognise.
      * @enum {unknown}
      */
     StepKind:
@@ -3553,7 +3619,9 @@ export interface components {
       | "image_view"
       | "compacting"
       | "memory"
-      | "motion";
+      | "motion"
+      | "handoff"
+      | "commit";
     /** @description A page in memory, named but not shown. */
     MemoryPageRef: {
       address: components["schemas"]["MemoryAddress"];
@@ -3561,6 +3629,38 @@ export interface components {
     };
     /** @description An opaque id the server chooses for one change to memory. */
     ChangeId: string;
+    /**
+     * @description What Kumo needs your hand for: `login` to sign in, `code` for a two-factor code, `captcha`, `payment` to press the site's pay button yourself, or `other`. Treat a kind you don't recognise as `other`.
+     * @enum {unknown}
+     */
+    BrowserNeedKind: "login" | "code" | "captcha" | "payment" | "other";
+    /** @description Opaque. The server makes it for each card. */
+    CardId: string;
+    /**
+     * @description How a one-tap card settled. `done`: the box pressed the site's button and the site answered. `uncertain`: it pressed, but the site's answer was lost, and Kumo checks on the site before anything is pressed again. `failed`: Kumo checked an uncertain press and it didn't go through. `changed`: the page had moved on before your tap, so nothing was pressed. `declined`: you said not now, or asked for a change, so nothing was pressed. `refused`: nothing was pressed, such as because money moves there or you held the page. Treat one you don't recognise as `refused`.
+     * @enum {unknown}
+     */
+    CommitOutcome: "done" | "uncertain" | "failed" | "changed" | "declined" | "refused";
+    /** @description A free booking or form Kumo has ready on a site, such as a table for two, for your one tap. Show the picture, the summary and the details, with the options: the one that `acts` has the box press the site's own button, exactly the one outlined in the picture, but only if the page is still as it was; if it changed, nothing is pressed and Kumo looks again. The other option, or words of your own, press nothing: Kumo hears them. Money never goes this way: where money moves, Kumo asks you to take over and press the button yourself. */
+    CommitCard: {
+      /** @description The site, such as "OpenTable". */
+      site: string;
+      /** @description The page's address, without its query. */
+      url: string;
+      /** @description The site's own button that a go-ahead presses, as it reads, such as "Book now". */
+      button: string;
+      /** @description What pressing it does, in Kumo's words. */
+      summary: string;
+      /** @description What matters, such as when, for how many, and the name it's under. Absent when Kumo gave none. */
+      details?: {
+        label: string;
+        value: string;
+      }[];
+      /** @description The page as Kumo left it, at iPhone size, with the button outlined. Fetch it with `GET /v0/attachments/{attachment}`. */
+      screenshot: components["schemas"]["AttachmentId"];
+      /** @description The side thread the task lives in, where Kumo tells you how it went. Absent for the main chat. */
+      thread?: components["schemas"]["ThreadId"];
+    };
     /**
      * @description `question` asks for information or a choice. `approval` asks before the agent does something consequential, and shows a `preview` of what would happen. Treat a kind you don't recognise as a question.
      * @enum {unknown}
@@ -3765,8 +3865,6 @@ export interface components {
       /** @description Where, when the phone named it, such as "Rome". */
       place?: string;
     };
-    /** @description Opaque. The server makes it for each card. */
-    CardId: string;
     /** @description A time Kumo offers. */
     Slot: {
       start: components["schemas"]["Timestamp"];
@@ -3850,26 +3948,7 @@ export interface components {
         text: string;
         capability?: string;
       };
-      /** @description A free booking or form Kumo has ready on a site, such as a table for two, for your one tap. Show the picture, the summary and the details, with the options: the one that `acts` has the box press the site's own button, exactly the one outlined in the picture, but only if the page is still as it was; if it changed, nothing is pressed and Kumo looks again. The other option, or words of your own, press nothing: Kumo hears them. Money never goes this way: where money moves, Kumo asks you to take over and press the button yourself. */
-      commit?: {
-        /** @description The site, such as "OpenTable". */
-        site: string;
-        /** @description The page's address, without its query. */
-        url: string;
-        /** @description The site's own button that a go-ahead presses, as it reads, such as "Book now". */
-        button: string;
-        /** @description What pressing it does, in Kumo's words. */
-        summary: string;
-        /** @description What matters, such as when, for how many, and the name it's under. Absent when Kumo gave none. */
-        details?: {
-          label: string;
-          value: string;
-        }[];
-        /** @description The page as Kumo left it, at iPhone size, with the button outlined. Fetch it with `GET /v0/attachments/{attachment}`. */
-        screenshot: components["schemas"]["AttachmentId"];
-        /** @description The side thread the task lives in, where Kumo tells you how it went. Absent for the main chat. */
-        thread?: components["schemas"]["ThreadId"];
-      };
+      commit?: components["schemas"]["CommitCard"];
     } & (unknown & unknown & unknown & unknown & unknown);
     /** @description Home: Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail. */
     Desk: {
@@ -4030,11 +4109,6 @@ export interface components {
      * @enum {unknown}
      */
     BrowserState: "idle" | "browsing" | "needs_you" | "yours" | "waiting";
-    /**
-     * @description What Kumo needs your hand for: `login` to sign in, `code` for a two-factor code, `captcha`, `payment` to press the site's pay button yourself, or `other`. Treat a kind you don't recognise as `other`.
-     * @enum {unknown}
-     */
-    BrowserNeedKind: "login" | "code" | "captcha" | "payment" | "other";
     /** @description Kumo's browser on the server: one Chromium, signed in where you signed in, that Kumo uses for you, at iPhone size. A browsing task lives in the thread it started in: show `line` there, in the thread's view or the main chat, and a tap on it peeks at the live view (`GET /v0/capabilities/browser/stream`), which you can take over. Kumo never presses a button that pays, never types a password, card or code, and asks you instead. */
     Browser: {
       state: components["schemas"]["BrowserState"];
@@ -4864,6 +4938,10 @@ export type StepId = components["schemas"]["StepId"];
 export type StepKind = components["schemas"]["StepKind"];
 export type MemoryPageRef = components["schemas"]["MemoryPageRef"];
 export type ChangeId = components["schemas"]["ChangeId"];
+export type BrowserNeedKind = components["schemas"]["BrowserNeedKind"];
+export type CardId = components["schemas"]["CardId"];
+export type CommitOutcome = components["schemas"]["CommitOutcome"];
+export type CommitCard = components["schemas"]["CommitCard"];
 export type AskKind = components["schemas"]["AskKind"];
 export type AskOption = components["schemas"]["AskOption"];
 export type AskOutcome = components["schemas"]["AskOutcome"];
@@ -4882,7 +4960,6 @@ export type WakeUpSource = components["schemas"]["WakeUpSource"];
 export type WakeUp = components["schemas"]["WakeUp"];
 export type DeskLine = components["schemas"]["DeskLine"];
 export type Ambient = components["schemas"]["Ambient"];
-export type CardId = components["schemas"]["CardId"];
 export type Slot = components["schemas"]["Slot"];
 export type Card = components["schemas"]["Card"];
 export type Desk = components["schemas"]["Desk"];
@@ -4900,7 +4977,6 @@ export type RecordingState = components["schemas"]["RecordingState"];
 export type Recording = components["schemas"]["Recording"];
 export type FileId = components["schemas"]["FileId"];
 export type BrowserState = components["schemas"]["BrowserState"];
-export type BrowserNeedKind = components["schemas"]["BrowserNeedKind"];
 export type Browser = components["schemas"]["Browser"];
 export type Motion = components["schemas"]["Motion"];
 export type MotionChange = components["schemas"]["MotionChange"];
@@ -7059,6 +7135,29 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description The browser, back with Kumo. */
+      200: {
+        headers: {
+          "Ito-Protocol": components["headers"]["ItoProtocol"];
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BrowserBody"];
+        };
+      };
+      401: components["responses"]["TokenRejected"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  stopBrowserTask: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Stopped; the browser, now `idle`. */
       200: {
         headers: {
           "Ito-Protocol": components["headers"]["ItoProtocol"];

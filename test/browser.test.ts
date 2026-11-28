@@ -82,6 +82,20 @@ const referenceOf = (text: string, role: string, name: string): string => {
 
 const failureOf = (result: Result<CallResult, string>): string => (result.ok ? "" : result.failure);
 
+// The colour at a point in a frame of the live view, whose viewport is `width` CSS pixels wide.
+const colourAt = async (base64: string, x: number, y: number, width: number): Promise<string> => {
+  const { data: pixels, info } = await sharp(Buffer.from(base64, "base64")).raw().toBuffer({ resolveWithObject: true });
+  const scale = info.width / width;
+  const at = (Math.floor(y * scale) * info.width + Math.floor(x * scale)) * info.channels;
+  const [red = 0, green = 0, blue = 0] = [pixels[at], pixels[at + 1], pixels[at + 2]];
+  const named = [
+    { name: "red", isIt: red > 150 && green < 90 && blue < 90 },
+    { name: "green", isIt: green > 120 && red < 90 && blue < 90 },
+    { name: "blue", isIt: blue > 150 && red < 90 && green < 90 },
+  ].find(({ isIt }) => isIt)?.name;
+  return named ?? `rgb(${String(red)},${String(green)},${String(blue)})`;
+};
+
 const step = "testing";
 
 const firstTurn: Place = { turn: "turn-1" };
@@ -348,21 +362,25 @@ describe.skipIf(!hasChromium)("the browser", () => {
     const locked = await browser.call("act", { action: "click", ref: referenceOf(opened, "button", "Sign in"), step });
     expect(failureOf(locked)).toContain("He has the page now");
     const focus = () => browser.core.published().findLast(({ topic }) => topic === "focus")?.data;
+    const focusIs = (expected: Readonly<Record<string, unknown>>) =>
+      vi.waitFor(() => {
+        expect(focus()).toMatchObject(expected);
+      });
     expect(await browser.core.control("input", { input: { type: "key", key: "Tab" } })).toEqual({
       ok: true,
       value: {},
     });
-    expect(focus()).toMatchObject({ kind: "email", label: "Email", length: 0 });
+    await focusIs({ kind: "email", label: "Email", length: 0 });
     expect((focus() as { readonly box: { readonly width: number } }).box.width).toBeGreaterThan(0);
     await browser.core.control("input", { input: { type: "fill", text: "sam@example.com" } });
-    expect(focus()).toMatchObject({ kind: "email", length: 15 });
+    await focusIs({ kind: "email", length: 15 });
     await browser.core.control("input", { input: { type: "key", key: "Tab" } });
+    await focusIs({ kind: "password" });
     const password = focus() as { readonly kind: string; readonly box: { readonly y: number } };
-    expect(password.kind).toBe("password");
     expect(password.box.y).toBeGreaterThan(0);
     await browser.core.control("input", { input: { type: "fill", text: "wrong" } });
     await browser.core.control("input", { input: { type: "fill", text: "correct horse" } });
-    expect(focus()).toMatchObject({ kind: "password", length: 13 });
+    await focusIs({ kind: "password", length: 13 });
     expect(await browser.core.control("input", { input: { type: "key", key: "Enter" } })).toEqual({
       ok: true,
       value: {},
@@ -471,9 +489,12 @@ describe.skipIf(!hasChromium)("the browser", () => {
       await first.core.control("input", { input });
     }
     await first.core.control("hand_back", {});
-    await vi.waitFor(async () => {
-      expect(await first.text("read", {})).toContain("Signed in as sam@example.com");
-    });
+    await vi.waitFor(
+      async () => {
+        expect(await first.text("read", {})).toContain("Signed in as sam@example.com");
+      },
+      { timeout: 5000 },
+    );
     first.core.close();
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
@@ -514,6 +535,267 @@ describe.skipIf(!hasChromium)("the browser", () => {
     expect(browser.states().at(-1)).toEqual({ state: "idle" });
     const freed = await browser.call("read", {}, { thread: "thread-b", turn: "turn-b" });
     expect(freed.ok).toBe(true);
+  });
+
+  describe("taking over pages that were finicky from a phone", () => {
+    type Watched = {
+      readonly frames: () => readonly string[];
+      readonly links: () => readonly string[];
+      readonly input: (input: Readonly<Record<string, unknown>>) => Promise<number>;
+      readonly colourAt: (x: number, y: number) => Promise<string>;
+      readonly focus: () => unknown;
+    };
+
+    // Watches the page and takes it over, keeping every frame and link state, and timing each input.
+    const takeOver = async (browser: Opened): Promise<Watched> => {
+      const frames = createCell<readonly string[]>([]);
+      const links = createCell<readonly string[]>([]);
+      browser.core.onPublish(({ topic, data }) => {
+        if (topic === "frame") frames.update((current) => [...current, (data as { readonly data: string }).data]);
+        else if (topic === "link") links.update((current) => [...current, (data as { readonly state: string }).state]);
+      });
+      await browser.core.control("watch", { on: true });
+      await vi.waitFor(() => {
+        expect(frames.get().length).toBeGreaterThan(0);
+      });
+      expect(await browser.core.control("take", {})).toMatchObject({ ok: true });
+      const width = () =>
+        (browser.core.published().findLast(({ topic }) => topic === "view")?.data as { readonly width?: number })
+          .width ?? 393;
+      return {
+        frames: () => frames.get(),
+        links: () => links.get(),
+        input: async (input) => {
+          const started = Date.now();
+          expect(await browser.core.control("input", { input })).toEqual({ ok: true, value: {} });
+          return Date.now() - started;
+        },
+        colourAt: async (x, y) => colourAt(frames.get().at(-1) ?? "", x, y, width()),
+        focus: () => browser.core.published().findLast(({ topic }) => topic === "focus")?.data,
+      };
+    };
+
+    const here: Place = { thread: "thread-9", turn: "turn-9" };
+
+    it("types the password on the step that arrives after a navigation, among frames that never finish", async () => {
+      const browser = await openBrowser();
+      await browser.text("open", { url: `${origin()}/signin`, step: "signing in" }, here);
+      await browser.text("takeover", { need: "login", why: "Sign in to Fixture Market" }, here);
+      const page = await takeOver(browser);
+
+      const tapped = await page.input({ type: "tap", x: 100, y: 120 });
+      await vi.waitFor(() => {
+        expect(page.focus()).toMatchObject({ kind: "email", label: "Email" });
+      });
+      const typed = [
+        tapped,
+        await page.input({ type: "fill", text: "sam@example.com" }),
+        await page.input({ type: "tap", x: 170, y: 182 }),
+      ];
+      // No input of his: the password field took the focus by itself, and the phone hears it.
+      await vi.waitFor(
+        () => {
+          expect(page.focus()).toMatchObject({ kind: "password", label: "Password", length: 0 });
+        },
+        { timeout: 5000 },
+      );
+      const box = (page.focus() as { readonly box: { readonly x: number; readonly y: number } }).box;
+      expect(box).toMatchObject({ x: 20, y: 100 });
+      const took = [
+        ...typed,
+        await page.input({ type: "fill", text: "correct horse" }),
+        await page.input({ type: "key", key: "Enter" }),
+      ];
+
+      expect(Math.max(...took)).toBeLessThan(1600);
+      await browser.core.control("hand_back", {});
+      await vi.waitFor(
+        async () => {
+          expect(await browser.text("read", {}, here)).toContain("Signed in to Fixture Market as sam@example.com");
+        },
+        { timeout: 5000 },
+      );
+    });
+
+    it("lands taps and typing in a check inside a frame from another site, with the phone's keyboard for its field", async () => {
+      const browser = await openBrowser();
+      await browser.text("open", { url: `${origin()}/check`, step: "getting the timetable" }, here);
+      await browser.text("takeover", { need: "captcha", why: "Get past the check" }, here);
+      const page = await takeOver(browser);
+
+      await page.input({ type: "tap", x: 52, y: 332 });
+      await vi.waitFor(async () => {
+        expect(await page.colourAt(52, 332)).toBe("green");
+      });
+      await page.input({ type: "tap", x: 100, y: 400 });
+      await vi.waitFor(() => {
+        expect(page.focus()).toMatchObject({ kind: "text", label: "Answer", length: 0 });
+      });
+      const { box } = page.focus() as { readonly box: Readonly<Record<string, number>> };
+      expect(box.x).toBeCloseTo(32, 0);
+      expect(box.y).toBeCloseTo(382, 0);
+      expect(box.width).toBeCloseTo(200, 0);
+      expect(box.height).toBeCloseTo(36, 0);
+      await page.input({ type: "fill", text: "blue" });
+      await vi.waitFor(() => {
+        expect(page.focus()).toMatchObject({ label: "Answer", length: 4 });
+      });
+
+      await browser.core.control("hand_back", {});
+      const read = await browser.text("read", {}, here);
+      expect(read).toMatch(/checkbox "I'm a person" \[checked\]/u);
+      expect(read).toMatch(/textbox "Answer"[^\n]*: blue/u);
+    });
+
+    it("never lets a frame that hangs hold up his taps", async () => {
+      const browser = await openBrowser();
+      await browser.text("open", { url: `${origin()}/check`, step }, here);
+      const page = await takeOver(browser);
+
+      // The check's frame takes the focus into its field, then hangs for a long while.
+      await page.input({ type: "tap", x: 282, y: 332 });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      // A frame spinning on one core slows painting on a small machine, so the picture has a few seconds.
+      const first = await page.input({ type: "tap", x: 196, y: 40 });
+      await vi.waitFor(
+        async () => {
+          expect(await page.colourAt(196, 40)).toBe("red");
+        },
+        { timeout: 5000 },
+      );
+      const second = await page.input({ type: "tap", x: 196, y: 40 });
+      await vi.waitFor(
+        async () => {
+          expect(await page.colourAt(196, 40)).toBe("blue");
+        },
+        { timeout: 5000 },
+      );
+
+      expect(Math.max(first, second)).toBeLessThan(1600);
+      expect(await browser.core.control("hand_back", {})).toMatchObject({ ok: true, value: { state: "idle" } });
+    });
+
+    it("fits the page to the room his phone has, so a banner's button at the bottom is there to tap", async () => {
+      const folder = mkdtempSync(path.join(home, "room-"));
+      const browser = await openBrowser({}, folder);
+      await browser.text("open", { url: `${origin()}/consent`, step }, here);
+      const page = await takeOver(browser);
+      const view = () => browser.core.published().findLast(({ topic }) => topic === "view")?.data;
+
+      await page.input({ type: "viewport", width: 390, height: 560 });
+      expect(view()).toMatchObject({ width: 390, height: 560 });
+      await page.input({ type: "tap", x: 195, y: 560 - 44 });
+      await vi.waitFor(async () => {
+        expect(await page.colourAt(195, 300)).toBe("green");
+      });
+      await page.input({ type: "viewport", width: 390, height: 560, keyboard: 300 });
+      expect(view()).toMatchObject({ width: 390, height: 260 });
+      await page.input({ type: "viewport", width: 390, height: 560, keyboard: 300 });
+      await browser.core.control("hand_back", {});
+      await vi.waitFor(() => {
+        expect(view()).toMatchObject({ width: 390, height: 560 });
+      });
+      browser.core.close();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      const again = await openBrowser({}, folder);
+      expect(await again.text("open", { url: `${origin()}/book`, step })).toContain("Screen 390 wide");
+    });
+
+    it("scrolls far down with fast swipes, every one counted, and taps what's there", async () => {
+      const browser = await openBrowser();
+      await browser.text("open", { url: `${origin()}/tall`, step }, here);
+      const page = await takeOver(browser);
+
+      const swipes = Array.from({ length: 40 }, () =>
+        browser.core.control("input", { input: { type: "scroll", x: 196, y: 300, dx: 0, dy: 50 } }),
+      );
+      expect(await Promise.all(swipes)).toEqual(swipes.map(() => ({ ok: true, value: {} })));
+      await vi.waitFor(async () => {
+        await page.input({ type: "tap", x: 170, y: 130 });
+        expect(await page.colourAt(196, 400)).toBe("green");
+      });
+    });
+
+    it("applies a burst of taps in order, none dropped and none waiting on another", async () => {
+      const browser = await openBrowser();
+      await browser.text("open", { url: `${origin()}/taps`, step }, here);
+      await takeOver(browser);
+      const order = [1, 2, 3, 4, 5, 3, 1, 5, 2, 4, 1, 2, 3, 4, 5];
+
+      const started = Date.now();
+      const tapped = await Promise.all(
+        order.map((number) => browser.core.control("input", { input: { type: "tap", x: number * 64 - 20, y: 130 } })),
+      );
+      const took = Date.now() - started;
+      expect(tapped.every((done) => done.ok)).toBe(true);
+      expect(took).toBeLessThan(order.length * 400);
+
+      await browser.core.control("hand_back", {});
+      await vi.waitFor(async () => {
+        expect(await browser.text("read", {}, here)).toContain(`Pressed: ${order.join(" ")}`);
+      });
+    });
+
+    it("says it's reconnecting while the page is frozen, rather than showing a still picture as live, then recovers", async () => {
+      const browser = await openBrowser();
+      await browser.text("open", { url: `${origin()}/freeze`, step }, here);
+      const page = await takeOver(browser);
+
+      await page.input({ type: "tap", x: 170, y: 130 });
+      await vi.waitFor(
+        () => {
+          expect(page.links()).toContain("reconnecting");
+        },
+        { timeout: 6000 },
+      );
+      await vi.waitFor(
+        async () => {
+          expect(await page.colourAt(196, 400)).toBe("green");
+          expect(page.links().at(-1)).toBe("live");
+        },
+        { timeout: 15_000 },
+      );
+    });
+
+    it("stops the task: the takeover ends without waking Kumo, and that turn can't browse again", async () => {
+      const browser = await openBrowser();
+      await browser.text("open", { url: `${origin()}/login`, step }, here);
+      await browser.text("takeover", { need: "login", why: "Sign in to Fixture Bank" }, here);
+      await browser.core.control("take", {});
+
+      expect(await browser.core.control("stop", {})).toEqual({ ok: true, value: { state: "idle" } });
+      expect(browser.core.published().find(({ topic }) => topic === "handed_back")?.data).toMatchObject({
+        stopped: true,
+        need: { kind: "login" },
+      });
+      expect(failureOf(await browser.call("read", {}, here))).toContain("He stopped this task");
+      const afresh = await browser.call("read", {}, { thread: "thread-9", turn: "turn-10" });
+      expect(afresh.ok).toBe(true);
+    });
+
+    it("rings the site's own pay button Kumo stopped at, until the page goes back", async () => {
+      const browser = await openBrowser();
+      const shop = await browser.text("open", { url: `${origin()}/checkout`, step }, here);
+      const paying = await browser.call(
+        "act",
+        { action: "click", ref: referenceOf(shop, "button", "Pay £42.00"), kind: "payment", step },
+        here,
+      );
+      expect(failureOf(paying)).toMatch(/^Refused: money moves here/u);
+      await browser.text("takeover", { need: "payment", why: "Pay £42 for the notebook" }, here);
+      await takeOver(browser);
+      const mark = () => browser.core.published().findLast(({ topic }) => topic === "mark")?.data;
+
+      await vi.waitFor(() => {
+        expect(mark()).toMatchObject({ label: "Pay £42.00" });
+      });
+      const { box } = mark() as { readonly box: Readonly<Record<string, number>> };
+      expect(box.width).toBeGreaterThan(40);
+      expect(box.y).toBeGreaterThan(100);
+      await browser.core.control("hand_back", {});
+      expect(mark()).toEqual({});
+    });
   });
 
   it("says when Chromium is missing, rather than browsing without it", async () => {
