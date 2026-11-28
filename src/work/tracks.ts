@@ -22,6 +22,8 @@ export type Tracks = {
   readonly evidenceSince: (at: string) => readonly TrackEvidenceOf[];
   // The same, as a prompt reads it, or "" when there's none.
   readonly evidenceText: (at: string) => string;
+  // They answered one of Kumo's questions on a track, in Understanding you: the answer is evidence on it.
+  readonly answered: (id: string, text: string, question: string) => void;
   readonly tools: readonly Tool[];
   readonly inMindText: () => string;
 };
@@ -257,6 +259,10 @@ export const createTracks = ({ database, clock, identifiers, info, timeZone = ()
             ),
             "</track_evidence>",
           ].join("\n");
+    },
+    answered: (id, text, question) => {
+      const track = find(id);
+      if (track) save(withEvidence(track, { at: now(), kind: "answered", text, question }));
     },
     tools,
     inMindText: () => {

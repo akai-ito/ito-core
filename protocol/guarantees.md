@@ -61,6 +61,7 @@ where the protocol has to make it possible, marked *App*.
 | G58 | **Chapters and what Kumo learnt come from memory.** A chapter is a page Kumo writes and keeps on its own shelf: a story with the day it began, the day it ended once it's over, and the day Kumo noticed it, which the server stamps; what it drew on is counted by the server, never said by Kumo. A line Kumo learnt about you comes only with a change that taught it, never with one that tidies or fixes records, is kept in the Thread with that change, and leaves the Library when Kumo takes it back or forgets its page. | 87 |
 | G59 | **Pages Kumo makes stay current, and your ticks are yours.** A rich, lasting answer can come as a page Kumo made: a card in the reply that opens it, and a place on the Made shelf. Kumo makes a page whole, with pictures it kept and blocks the app draws, then changes it only from the version it read, with a note that says what changed; a change never notifies. Your ticks carry when you ticked, every app hears them, and a change that drops an item lets its tick go. Forgetting a page asks you first. | 91 |
 | G62 | **One day, joined up.** Every turn, in the main chat or a thread, and every piece of Kumo's background work has today so far in mind: what was said in the other conversations since 04:00 where you are, each thread named, the newest first, with what Kumo did and what's still to come today. The server writes it from what it holds, with no model call, within a bounded size, and a turn leaves out its own conversation, which it has already. Kumo keeps one plan from it: what you say anywhere moves its blocks, guesses and wake-ups without being asked again, and a wake-up for something already planned is moved, never doubled, so Kumo checks in once. | 95, 96 |
+| G63 | **Understanding you is quiet, and an answer is enough.** What Kumo would like you to explain is a question on one of its learning tracks, saying what it already understands, the missing piece and why it would help, with honest options to tap. A question has no due date and is never overdue, never waits on the Desk and never notifies; Kumo doesn't ask what it's already asking, or what you answered lately. You answer with taps, your own words or your voice, or say none fit or not sure, and Not now leaves it open. An answer becomes evidence on its track and Kumo files what it learned in the background, with no follow-up; a question answered elsewhere is settled, with where. | 97 |
 | G66 | **Full access is yours to give, and shows while it lasts.** Kumo runs in Codex's sandbox, writing only in its workspace, until you turn on full access with a command of its own that says it's meant; nothing else turns it on. From the next turn or piece of work that starts, in the chat, in the background and in the night's dream alike, Kumo runs without the sandbox and is told so; turning it off puts the sandbox back from the next one. A turn already running keeps what it started with. Every app hears each change and the snapshot carries it while it's on, so the chat can show it, and Kumo's work notes each change. | 100 |
 
 ## How Kumo decides to speak
@@ -657,6 +658,19 @@ catches up once (G57).
   did from Done, and what's still to come today. (G62)
 - Kumo's check-in in a thread is in the main chat's mind next, with the wake-up that sent it, while
   the main chat's own messages are left out of it. (G62)
+
+### 97 · [Understanding you](transcripts/97-understanding-you.jsonl)
+
+- Kumo asks with `add_question` on a track: what it understands, the missing piece, why it would
+  help and a few options. Every app hears `question.changed`; no card reaches the Desk and nothing
+  notifies. (G63)
+- `GET /v0/understanding` has every track, the open questions and what you answered lately. (G63)
+- Not now leaves a question open, with `later_at`, and moves it after the rest. (G63)
+- An answer of taps and your words is `answered` at once, evidence on its track in `GET /v0/work`;
+  Kumo files what it learned in the background, and the question gains `filed`, with nothing more
+  asked. (G63)
+- Kumo settles a question it learned the answer to elsewhere, with a note on where, and asking the
+  same thing again adds nothing. (G63)
 
 ### 100 · [Full access](transcripts/100-full-access.jsonl)
 

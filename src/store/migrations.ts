@@ -393,4 +393,10 @@ export const migrations: readonly string[] = [
       strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AS set_at
   )
   WHERE EXISTS (SELECT 1 FROM wake_ups);`,
+  // Understanding you: the questions Kumo would like them to explain, on its learning tracks.
+  `CREATE TABLE questions (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL
+  );`,
 ];

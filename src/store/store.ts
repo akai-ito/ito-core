@@ -36,6 +36,7 @@ import type {
   MotionChange,
   Outcome,
   Problem,
+  Question,
   Recording,
   Snapshot,
   Status,
@@ -214,6 +215,8 @@ export type Store = Settings & {
   readonly recordVoiceStatus: (state: VoiceState, reason?: string) => void;
   // Where a recording's transcript stands, for the app to follow.
   readonly recordRecording: (recording: Recording) => void;
+  // A question in Understanding you was added or moved on, for the app to follow.
+  readonly recordQuestion: (question: Question) => void;
   readonly latestCall: () => Call | undefined;
   readonly exchanges: (through: TurnId | undefined, limit: number, thread?: ThreadId) => readonly Exchange[];
   // A thread Kumo starts empty, for a post; it sits at the end of the main chat.
@@ -386,7 +389,8 @@ const snapshotSize = 50;
 const compactedSetting = "compacted_through_seq";
 
 const compactedTypes =
-  "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed', 'recording.changed', 'browser.changed')";
+  "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed', 'recording.changed', 'browser.changed', " +
+  "'question.changed')";
 
 const parseIds = (json: string): readonly string[] => JSON.parse(json) as readonly string[];
 
@@ -1025,6 +1029,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     recordRecording: (recording) => {
       record((stamp) => ({ ...stamp, type: "recording.changed", recording }));
+    },
+
+    recordQuestion: (question) => {
+      record((stamp) => ({ ...stamp, type: "question.changed", question }));
     },
 
     deleteCallAudio: (id) =>

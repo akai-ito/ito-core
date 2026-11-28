@@ -32,6 +32,10 @@ info:
       and fill in its setup sheet, or connect it through its provider.
     - **Kumo's browser:** follow what Kumo is doing on a site as a line in its thread, peek at the
       live view, and take the page over when Kumo needs your hand, then hand it back.
+    - **Understanding you:** the questions Kumo would like you to explain, on its learning tracks,
+      each with what it already understands, the missing piece and why it would help. Answer with a
+      tap, your own words or your voice, or say none fit, not sure or not now. Quiet and optional:
+      nothing is due, and nothing notifies.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
       journal, the photos a page keeps with its story, the chapters of your life Ari noticed, what
       it learnt about you lately, what Ari changed lately and why, and what each change changed.
@@ -74,6 +78,12 @@ tags:
     description: Getting started, with what Kumo found and the beliefs it checks with you.
   - name: Desk
     description: Home, with Kumo's plans, Coming up, Waiting on you, Kumo's work and the calendar.
+  - name: Understanding
+    description: |
+      Understanding you: the deeper questions Kumo would like you to explain, which grow out of its
+      learning tracks (Getting to know you). Optional and quiet: a question has no due date, is never
+      overdue, never waits on the Desk and never notifies. An answer is enough: it becomes evidence on
+      its track, and Kumo files what it learned in the background with no follow-up.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
   - name: Threads
@@ -723,6 +733,83 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CardResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/understanding:
+    get:
+      tags: [Understanding]
+      operationId: getUnderstanding
+      summary: Read Understanding you
+      description: |
+        Every learning track, the questions waiting quietly on them, and what you answered lately.
+        `question.changed` carries each question whenever it's added or moves on.
+      responses:
+        "200":
+          description: Understanding you.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Understanding" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/understanding/questions/{question}/answer:
+    post:
+      tags: [Understanding]
+      operationId: answerQuestion
+      summary: Answer a question
+      description: |
+        Answers an open question: tap one or more of its options (`picked`), say it in your own
+        words (`text`) or aloud (`audio`, an audio file you uploaded first), or say `none_fit` or
+        `not_sure`, alone or with your words. The question is `answered` at once, and the answer
+        becomes evidence on its track. Kumo then files what it learned in the background and the
+        question gains `filed`; it asks nothing more about it. A spoken answer is heard on the server
+        first, and `answer.text` follows; if it can't be heard, the question opens again with
+        `unheard`. The same answer sent again, such as a retry, is taken once; a different answer to
+        a question that's no longer open is refused.
+      parameters:
+        - name: question
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/QuestionId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuestionReply" }
+            example: { picked: [Unplanned time], text: Nothing booked before noon. }
+      responses:
+        "202":
+          description: Taken; Kumo files it in the background.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuestionResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/understanding/questions/{question}/not-now:
+    post:
+      tags: [Understanding]
+      operationId: notNowQuestion
+      summary: Say "Not now" to a question
+      description: |
+        Leaves an open question open, for another time, with `later_at`: no reminder follows, and
+        Kumo doesn't ask it again. Saying it again only moves `later_at`.
+      parameters:
+        - name: question
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/QuestionId" }
+      responses:
+        "200":
+          description: Left for later.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuestionResult" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -3471,6 +3558,60 @@ components:
           description: Every area Kumo is learning, in the order it opened them, now. Draw each with its stage as bars.
           type: array
           items: { $ref: "events.schema.json#/$defs/Track" }
+    Understanding:
+      description: Understanding you, now.
+      type: object
+      required: [tracks, questions, recent]
+      properties:
+        tracks:
+          description: Every area Kumo is learning, in the order it opened them, as in `GET /v0/work`.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Track" }
+        questions:
+          description: |
+            The open questions, each naming its track: first those you haven't set aside, oldest
+            first, then those you said "Not now" to.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Question" }
+        recent:
+          description: The questions answered or settled in the last 14 days, newest first.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Question" }
+    QuestionReply:
+      description: |
+        Your answer to a question: `picked` options, your words as `text` or as a recording in
+        `audio` (one or the other), and `none_fit` or `not_sure`. Send at least one; `none_fit`
+        doesn't go with `picked`.
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        picked:
+          description: The options you tapped, from the question's own.
+          type: array
+          minItems: 1
+          maxItems: 6
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 80 }
+        text:
+          description: Your own words.
+          type: string
+          minLength: 1
+          maxLength: 4000
+        audio:
+          $ref: "events.schema.json#/$defs/AttachmentId"
+          description: A spoken answer, as the id of an audio file you uploaded with `PUT /v0/uploads/{upload}`.
+        none_fit:
+          description: None of the options fit.
+          type: boolean
+        not_sure:
+          description: You're not sure.
+          type: boolean
+    QuestionResult:
+      type: object
+      required: [question]
+      properties:
+        question: { $ref: "events.schema.json#/$defs/Question" }
     CorrectDone:
       description: What was wrong, in your words; `{}` just says it was wrong.
       type: object

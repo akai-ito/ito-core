@@ -31,6 +31,7 @@ export type Identifiers = {
   readonly track: () => string;
   readonly calendarItem: () => string;
   readonly belief: () => string;
+  readonly question: () => string;
 };
 
 const alphabet = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -54,4 +55,5 @@ export const randomIdentifiers: Identifiers = {
   track: () => `l_${randomText()}`,
   calendarItem: () => `v_${randomText()}`,
   belief: () => `n_${randomText()}`,
+  question: () => `q_${randomText()}`,
 };

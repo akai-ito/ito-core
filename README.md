@@ -155,7 +155,7 @@ each capability and the voice as child processes, each speaking JSON-RPC over it
 | [src/memory](src/memory) | The Thread, recall and backup |
 | [src/recordings](src/recordings), [src/files](src/files), [src/made](src/made) | Recordings transcribed on the box, files Kumo shows at one version, and pages Kumo makes |
 | [src/mail](src/mail), [src/calendar](src/calendar), [src/contacts](src/contacts) | IMAP, CalDAV and CardDAV, drafts and Kumo's calendar |
-| [src/wakeups](src/wakeups), [src/desk](src/desk), [src/work](src/work) | Wake-ups, the Desk, and Kumo's work log and learning tracks |
+| [src/wakeups](src/wakeups), [src/desk](src/desk), [src/work](src/work) | Wake-ups, the Desk, and Kumo's work log, learning tracks and Understanding you |
 | [capabilities](capabilities) | The capability SDK, Reports and a sample |
 | [agent](agent) | Kumo's instructions and the skill files it reads on demand |
 | [voice](voice) | The voice sidecar: turn detection, speech recognition and synthesis |

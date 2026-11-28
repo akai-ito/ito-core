@@ -265,6 +265,16 @@ undoes it where it can, keeps what to do differently on your How to help you pag
 pass reads the "Sorting mail" part as it sorts), and steps its track back. To be shown everything
 again, tell Kumo.
 
+What Kumo would like you to explain, which only you can tell it, waits in **Understanding you**, a
+quiet page that grows out of its tracks (tap Kumo on the Desk). Each question says what Kumo already
+understands, the missing piece and why it would help, often with a few honest guesses to tap. Answer
+with taps, your own words or your voice (heard on the box's GPU, as recordings are), or say none
+fit, not sure or not now. Nothing there is due or overdue, and it never reaches Waiting on you or
+notifies you. An answer is enough: it becomes evidence on its track, Kumo files what it learned in
+memory in the background, and asks nothing more about it. If you explain something in the chat
+instead, Kumo settles the question with a note on where, and the nightly dream can add and settle
+questions too.
+
 ## Time zone, location and weather
 
 Ari tells the box its time zone and, if you allow it, roughly where you are; the box keeps only the
