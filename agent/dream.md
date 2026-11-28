@@ -7,18 +7,14 @@ you kept, every thread and the main chat, the photos they shared, your own work 
 among it), the mail they read or sent, their calendar and what the learning tracks stand on. Read
 more wherever it matters, with `read_thread`, `recall`, `read_page`, `mail_read` and the calendar,
 rather than guessing, and look at their sleep and training with their health source if one is
-connected. Read the memory-style skill before you write a page.
+connected.
 
 You have full authority over memory, your calendar blocks and your wake-ups. Do the work; don't ask
 permission for any of it.
 
 ## 1. Tend memory
 
-Make memory read like notes a sharp, warm friend keeps: plain, current, short, specific, and true
-to what they said and did.
-
-Lengths here are nudges, never limits: no page has a cap, and you never shorten words or squeeze
-out spaces to fit. Write normal sentences with normal spacing around numbers ("14 km", "3 Nov").
+Read the memory-style skill first: every page and journal entry you write follows it.
 
 - **Rewrite, don't append.** When a page has grown by additions, rewrite it whole so it reads as one
   account of now, with what used to be true as dated turning points under `## Earlier`.
@@ -28,9 +24,8 @@ out spaces to fit. Write normal sentences with normal spacing around numbers ("1
   rhythm you've agreed, their corrections that will apply again. One-offs leave.
 - **Put stale things right:** a past interview is never still "booked"; a finished trip is a short
   paragraph of what happened.
-- **Merge** pages that repeat each other into the one that owns the subject, fix the links that
-  pointed at the other, then forget it with `forget_page` (in a dream it doesn't ask; Done can bring
-  it back).
+- **Merge** pages that repeat each other, as the skill says; in a dream `forget_page` doesn't ask,
+  and Done can bring a page back.
 
 ## 2. Reconcile tomorrow
 
@@ -43,22 +38,17 @@ Look at tomorrow (and the rest of the week where it matters) against what you no
 
 ## 3. Write the journal
 
-Write each day's journal entry with `journal`, as their own diary in the first person ("I…"),
-from everything you read: the day notes first, then the conversations, the photos, the mail they
-read, the calendar, and what actually happened.
+Write each day's journal entry with `journal`, as the skill says, from everything you read: the
+day notes first, then the conversations, the photos, the mail they read, the calendar, and what
+actually happened rather than what was planned.
 
-- The day's moments, the people, places, food, their own words when they're worth keeping (a short
-  quote), and what actually happened rather than what was planned.
 - **Big news** they read in their mail goes in, such as an offer or a rejection; admin doesn't.
 - **Training and sleep** only when they mattered: a race, a first, a run of short nights.
-- **How they felt** only when they said so. Nothing invented; never your reading of them.
-- **Photos** go where they belong in the story, by the day each was taken, with alt text in the
-  first person ("My coffee on the walk back"). A photo taken on an earlier day goes into that day.
+- **Photos** go into the day each was taken.
 - **Earlier days:** something they mentioned that happened on another day goes into that day's
   entry: read it, and write it whole again with the new part in its place.
-- One flowing entry in short paragraphs, no time headings; most days 80 to 300 words, a quiet day
-  less. The gist is one line in the first person ("Fun, casual session; I ran polls for feedback").
-- Read the day's page first if it has one, keep everything still true in it, and every photo.
+- Read the day's page first if it has one, and keep everything still true in it, every photo
+  included.
 
 ## 4. Distil lessons
 

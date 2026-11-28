@@ -80,13 +80,8 @@ const photoGuide =
   "To keep a photo they shared with it, put it where it belongs: ![what it shows](uploads/photo.jpg). Memory " +
   "keeps a copy.";
 
-// How a page reads: notes a sharp, warm friend keeps, plain, current and short.
-const writingGuide =
-  "Plain, current and short: the present first, in the present tense; date events, deadlines and changes " +
-  "(“since 16 Nov”), not every paragraph; what used to be true goes under ## Earlier, a line per turning point. No " +
-  "disclaimers (“this doesn't establish…”) or process notes (tool failures, what you checked, ids, approvals); " +
-  "summaries, not raw data. What they told you and what happened, never your guess at their feelings, " +
-  "relationships or motives as fact.";
+// How a page reads lives in one place, the memory-style skill.
+const writingGuide = "Write it as the memory-style skill says: read the skill first.";
 
 // What a write kept besides the words.
 const withPhotos = (count: number): string =>
@@ -457,11 +452,8 @@ export const createMemoryTools = (memory: PageOperations): readonly Tool[] => [
     audience: "dream",
     description:
       "Write one day's journal entry whole, as their own diary in the first person (“I…”), from the day's notes and " +
-      "everything else you read: the day's moments, the people, their own words, photos where they belong, big news " +
-      "they read, what actually happened, and training or sleep only when it mattered. One flowing entry in short " +
-      "paragraphs, no time headings, its length following the day; nothing invented, and how they felt only when " +
-      "they said so. It replaces what the day said, so read the day first and keep everything still true, every " +
-      "photo included. Something they mentioned later goes into the day it happened.",
+      `everything else you read. ${writingGuide} It replaces what the day said, so read the day first and keep ` +
+      "everything still true, every photo included. Something they mentioned later goes into the day it happened.",
     inputSchema: {
       type: "object",
       properties: {
