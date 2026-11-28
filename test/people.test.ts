@@ -349,5 +349,8 @@ describe("People", () => {
       together: { since: "2026-08-26", days: 2, hours: 0 },
     });
     expect(await people.person("nobody")).toBeUndefined();
+    const known = await people.known();
+    expect(known.find(({ id }) => id === "omar")).toMatchObject({ id: "omar", name: "Omar" });
+    expect(known.find(({ id }) => id === "omar")?.names).toContain("Omar");
   });
 });

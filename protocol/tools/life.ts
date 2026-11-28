@@ -47,7 +47,8 @@ const searchTranscript = (): Transcript => {
       "You search Life for “dinner with Omar”. Kumo answers first, from what memory's search found: Orrin's, last " +
       "Friday, and what you wrote about the fig thing. Under it come the days (Friday, and a dinner in October), " +
       "Orrin's, known from Friday's photos, and Omar, with when you last saw him. You search again and the answer " +
-      "comes as it was, kept, with no new call to the model.",
+      "comes as it was, kept, with no new call to the model. You name Orrin's and open its page: Friday's visit, " +
+      "Omar as who you went with, from Friday's journal, the line you wrote there, and Kumo's line about it.",
     guarantees: ["G71"],
   });
   transcript.begin("2026-11-24T16:30:00.000Z");
@@ -92,6 +93,21 @@ const searchTranscript = (): Transcript => {
   transcript.wait(30);
   transcript.response(200, { batch: photos.batch, repeated: false, taken: 2, already: 0 });
   transcript.wait(2000);
+  const orrinsShown = {
+    id: orrinsPlace,
+    kind: "unknown",
+    latitude: orrins.latitude,
+    longitude: orrins.longitude,
+    radius: 0,
+    hours: 1.6,
+    visits: 1,
+    first_visit: "2026-11-20T19:55:00.000Z",
+    last_visit: "2026-11-20T19:55:00.000Z",
+    locality: where.locality,
+    country: where.country,
+    country_code: where.country_code,
+    from_photos: true,
+  };
   const answer = "Orrin's, last Friday, with Omar. You wrote that the fig thing was the best you'd had all month.";
   transcript.world("life_written", { answer });
   const path = "/v0/life/search?query=dinner%20with%20Omar";
@@ -128,23 +144,7 @@ const searchTranscript = (): Transcript => {
         excerpt: "First dinner at Orrin's, with Leo and Omar. Leo talked about Lisbon all evening.",
       },
     ],
-    places: [
-      {
-        id: orrinsPlace,
-        kind: "unknown",
-        latitude: orrins.latitude,
-        longitude: orrins.longitude,
-        radius: 0,
-        hours: 1.6,
-        visits: 1,
-        first_visit: "2026-11-20T19:55:00.000Z",
-        last_visit: "2026-11-20T19:55:00.000Z",
-        locality: where.locality,
-        country: where.country,
-        country_code: where.country_code,
-        from_photos: true,
-      },
-    ],
+    places: [orrinsShown],
     people: [
       {
         id: "omar",
@@ -166,6 +166,36 @@ const searchTranscript = (): Transcript => {
   transcript.request("GET", path);
   transcript.wait(60);
   transcript.response(200, found);
+
+  // He names Orrin's, then opens its page: Omar from Friday's journal, the line he wrote, and Kumo's line.
+  transcript.wait(30_000);
+  const named = { ...orrinsShown, name: "Orrin's", kind: "restaurant" };
+  transcript.request("PATCH", `/v0/places/${orrinsPlace}`, { body: { name: "Orrin's", kind: "restaurant" } });
+  transcript.wait(30);
+  transcript.response(200, { place: named });
+  transcript.wait(2000);
+  const line = "You come here with Omar, for the fig thing.";
+  transcript.world("life_written", { line });
+  transcript.request("GET", `/v0/places/${orrinsPlace}`);
+  transcript.wait(900);
+  transcript.response(200, {
+    place: named,
+    visits: [
+      {
+        arrived_at: "2026-11-20T19:55:00.000Z",
+        departed_at: "2026-11-20T21:30:00.000Z",
+        minutes: 95,
+        from_photos: true,
+      },
+    ],
+    companions: [{ person: "omar", name: "Omar", visits: 1, last: "2026-11-20" }],
+    moment: {
+      day: "2026-11-20",
+      text: "Dinner at Orrin's with Omar. The fig thing was the best I'd had all month.",
+      journal: "memory:journal/2026-11-20",
+    },
+    line,
+  });
   return transcript;
 };
 

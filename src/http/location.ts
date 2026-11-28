@@ -3,11 +3,13 @@ import { toCommandError } from "#conversation/failures.ts";
 import { toRouteSchemas } from "#http/validation.ts";
 import type { Location } from "#location/location.ts";
 import type { Schemas } from "#protocol/schemas.ts";
-import type { ForgetLocation, LocationBatch, PhotoSeeds, PlaceChange } from "#protocol/types.ts";
+import type { ForgetLocation, LocationBatch, PhotoSeeds, PlaceChange, PlacePage } from "#protocol/types.ts";
 import type { Result } from "#result.ts";
 
 export type LocationRoutesOptions = {
   readonly location: Location;
+  // A place's page with who he went with and Kumo's line, from Life.
+  readonly placePage: (id: string) => Promise<PlacePage | undefined>;
   readonly schemas: Schemas;
 };
 
@@ -24,7 +26,10 @@ const isDay = (text: string): boolean => {
 };
 
 // Places: the phone's uploads and seeds, forgetting, and reading places, trips, heat and a day's thread and trail.
-export const registerLocation = (app: FastifyInstance, { location, schemas }: LocationRoutesOptions): void => {
+export const registerLocation = (
+  app: FastifyInstance,
+  { location, placePage, schemas }: LocationRoutesOptions,
+): void => {
   const routeSchemas = toRouteSchemas(schemas);
   const schemaFor = (operationId: string) => routeSchemas.get(operationId) ?? {};
 
@@ -108,7 +113,7 @@ export const registerLocation = (app: FastifyInstance, { location, schemas }: Lo
     "/v0/places/:place",
     { schema: schemaFor("getPlace") },
     async (request, reply) => {
-      const page = location.place(request.params.place);
+      const page = await placePage(request.params.place);
       return (
         page ??
         reply

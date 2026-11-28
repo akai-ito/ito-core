@@ -1674,7 +1674,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** A place, with every visit */
+    /** A place, with every visit, who you went with and Kumo's line */
     get: operations["getPlace"];
     put?: never;
     post?: never;
@@ -4703,6 +4703,43 @@ export interface components {
       place: components["schemas"]["Place"];
       /** @description Every visit, newest first. */
       visits: components["schemas"]["PlaceVisit"][];
+      /**
+       * @description Who you went with, most visits together first, at most six: someone on a People page named
+       *     beside the place in the journal or a day note on a day you were there, on a calendar event
+       *     with you during a visit, or the one it's named after, such as Leo's. Someone on the calendar
+       *     there with you in the next two weeks comes too, with `next`. Never from tracking anyone.
+       */
+      companions: components["schemas"]["PlaceCompanion"][];
+      moment?: components["schemas"]["PlaceMoment"];
+      /**
+       * @description Kumo's line about the place, such as "You come back for the fig thing.", written on the
+       *     quick model from the visits, who you went with, what's on the calendar there and what you
+       *     wrote, and kept until those change. Absent when there's nothing to go on, or Kumo hasn't
+       *     written it, can't now or doesn't finish within a few seconds; never stood in for.
+       */
+      line?: string;
+    };
+    PlaceCompanion: {
+      person: components["schemas"]["PersonId"];
+      /** @description What Kumo calls them, from their People page. */
+      name: string;
+      /** @description Their card's photo, from `GET /v0/people/photos/{photo}`. */
+      photo?: components["schemas"]["PhotoName"];
+      /** @description The days you were there together. */
+      visits: number;
+      /** @description The last day you were there together. */
+      last?: components["schemas"]["Day"];
+      /** @description The next time you're on the calendar there together. */
+      next?: {
+        day: components["schemas"]["Day"];
+        at?: components["schemas"]["Timestamp"];
+      };
+    };
+    /** @description The newest line in the journal, on a day you were there, that names the place. */
+    PlaceMoment: {
+      day: components["schemas"]["Day"];
+      text: string;
+      journal: components["schemas"]["MemoryAddress"];
     };
     PlaceChange: {
       name?: string;
@@ -6537,6 +6574,8 @@ export type Place = components["schemas"]["Place"];
 export type PlaceVisit = components["schemas"]["PlaceVisit"];
 export type Places = components["schemas"]["Places"];
 export type PlacePage = components["schemas"]["PlacePage"];
+export type PlaceCompanion = components["schemas"]["PlaceCompanion"];
+export type PlaceMoment = components["schemas"]["PlaceMoment"];
 export type PlaceChange = components["schemas"]["PlaceChange"];
 export type PlaceResult = components["schemas"]["PlaceResult"];
 export type Trip = components["schemas"]["Trip"];

@@ -1083,7 +1083,6 @@ export const createServer = (options: ServerOptions): Server => {
   registerDay(app, { picture, schemas });
   registerUnderstanding(app, { questions, tracks, schemas });
   registerPeople(app, { people, schemas });
-  registerLocation(app, { location, schemas });
   const life = createLife({
     database,
     memory,
@@ -1095,6 +1094,7 @@ export const createServer = (options: ServerOptions): Server => {
     tracks,
     questions,
     location,
+    calendar,
     busy,
     complete: quickComplete,
     quickChoice: createQuickChoice(listedModels),
@@ -1102,6 +1102,7 @@ export const createServer = (options: ServerOptions): Server => {
     timeZone,
     info,
   });
+  registerLocation(app, { location, placePage: life.place, schemas });
   registerLife(app, { life, schemas });
   registerTools(app, {
     token: toolsToken,
