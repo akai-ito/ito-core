@@ -59,7 +59,7 @@ import { defaultLimits, type Info, type Limits, type Log } from "#turns/turns.ts
 import { createBackground, whenWords, type Background } from "#turns/background.ts";
 import { packageVersion } from "#version.ts";
 import type { Message, ModelChoice } from "#protocol/types.ts";
-import type { Result } from "#result.ts";
+import { fail, type Result } from "#result.ts";
 import { toSpoken } from "#desk/day.ts";
 import { createDesk } from "#desk/desk.ts";
 import { createWorkTools, type PostPlace } from "#work/tools.ts";
@@ -72,6 +72,9 @@ import { createPlaces } from "#places/places.ts";
 import { createTracks } from "#work/tracks.ts";
 import { createQuestions } from "#work/questions.ts";
 import { registerUnderstanding } from "#http/understanding.ts";
+import { registerPeople } from "#http/people.ts";
+import { createPeople, type PeopleKeeper } from "#people/people.ts";
+import { createSenders } from "#people/senders.ts";
 import { createDeskLine } from "#desk/line.ts";
 import { createGettingStarted } from "#onboarding/onboarding.ts";
 import { createCalendar, type Calendar } from "#calendar/calendar.ts";
@@ -652,6 +655,9 @@ export const createServer = (options: ServerOptions): Server => {
           }),
       ),
     );
+  const senders = createSenders(database);
+  // People, made once Kumo's day notes are: answers to contact questions reach it through here.
+  const peopleCell = createCell<PeopleKeeper | undefined>(undefined);
   const contacts = createContacts({
     host,
     store,
@@ -693,6 +699,9 @@ export const createServer = (options: ServerOptions): Server => {
     ...(options.createMailSource && { createSource: options.createMailSource }),
     workspace: path.join(options.dataDirectory, "workspace"),
     contacts,
+    onSender: (name, address) => {
+      senders.record(name, address, toTimestamp(clock.now()));
+    },
   });
   const calendar = createCalendar({
     host,
@@ -716,6 +725,8 @@ export const createServer = (options: ServerOptions): Server => {
     clock,
     identifiers,
     work: workFor("Answers they gave in Understanding you"),
+    contactAnswered: (question) =>
+      peopleCell.get()?.answered(question) ?? Promise.resolve(fail("People isn't running yet.")),
     info,
   });
   const blocks = createBlockStore(database);
@@ -776,6 +787,21 @@ export const createServer = (options: ServerOptions): Server => {
   // Kumo's dream: once a day it looks back over everything since the last one and puts it in order. During the day
   // Kumo only keeps notes for it.
   const dayNotes = createDayNotes({ database, clock, timeZone });
+  const people = createPeople({
+    memory,
+    contacts,
+    questions,
+    tracks,
+    store,
+    senders,
+    calendar,
+    wakeUps,
+    dayNotes,
+    clock,
+    timeZone,
+    info,
+  });
+  peopleCell.set(people);
   const dreams = createDreams({
     store: createDreamStore(database),
     settings: store,
@@ -950,6 +976,7 @@ export const createServer = (options: ServerOptions): Server => {
     ...calendar.tools,
     ...picture.tools,
     ...contacts.tools,
+    people.tool,
     ...wakeUps.tools,
     ...mail.tools,
     ...gettingStarted.tools,
@@ -998,6 +1025,7 @@ export const createServer = (options: ServerOptions): Server => {
   registerDream(app, { dreams, schemas });
   registerDay(app, { picture, schemas });
   registerUnderstanding(app, { questions, tracks, schemas });
+  registerPeople(app, { people, schemas });
   registerTools(app, {
     token: toolsToken,
     tools: allTools,
@@ -1034,6 +1062,7 @@ export const createServer = (options: ServerOptions): Server => {
     places.close();
     gettingStarted.close();
     calendar.close();
+    people.close();
     contacts.close();
     await mail.close();
     notifier.close();

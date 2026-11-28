@@ -48,6 +48,9 @@ pages.</sub></p>
   sends mail.
 - **Calendar and contacts.** iCloud over CalDAV and CardDAV: events, holds and invite answers,
   Kumo's own calendar for its plan of your day and its guesses, and contact details kept current.
+- **People.** Kumo's People pages linked to their Contacts cards (on sure evidence, or after asking
+  you), listed by circle in your order with when you last saw them and what's coming up, all from
+  evidence, never from tracking anyone.
 - **Memory.** The Thread, a git repository of Markdown pages and a journal that you can read
   without Ito, with search over it and past conversations, and an optional backup to a private
   GitHub repository. Kumo keeps the chapters of your life there, and tells you what it learnt.
@@ -159,6 +162,7 @@ each capability and the voice as child processes, each speaking JSON-RPC over it
 | [src/memory](src/memory) | The Thread, recall and backup |
 | [src/recordings](src/recordings), [src/files](src/files), [src/made](src/made) | Recordings transcribed on the box, files Kumo shows at one version, and pages Kumo makes |
 | [src/mail](src/mail), [src/calendar](src/calendar), [src/contacts](src/contacts) | IMAP, CalDAV and CardDAV, drafts and Kumo's calendar |
+| [src/people](src/people) | People pages linked to Contacts cards, circles in your order, and the evidence behind last seen and time together |
 | [src/wakeups](src/wakeups), [src/desk](src/desk), [src/work](src/work) | Wake-ups, the Desk, and Kumo's work log, learning tracks and Understanding you |
 | [capabilities](capabilities) | The capability SDK, Reports and a sample |
 | [agent](agent) | Kumo's instructions and the skill files it reads on demand |

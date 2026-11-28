@@ -50,9 +50,13 @@ export type Facts = {
   readonly title?: string;
   readonly related: readonly Related[];
   readonly note?: string;
-  // An iCloud group, which lives among the contacts as a card of its own.
+  // An iCloud group, which lives among the contacts as a card of its own, with the uids of the cards in it.
   readonly isGroup: boolean;
+  readonly members?: readonly string[];
 };
+
+// A card's photo, from its PHOTO: inline bytes only, as iCloud writes them.
+export type Photo = { readonly bytes: Buffer; readonly mediaType: string };
 
 // What a change can do to a contact's facts. Absent means leave it; a removal names what goes.
 export type Change = {
@@ -331,7 +335,41 @@ export const factsOf = (card: VCard, fallbackUid: string): Facts => {
       .flatMap((line) => relatedOf(line, lines) ?? []),
     ...(valueOf(lines, "NOTE") !== undefined && { note: valueOf(lines, "NOTE") }),
     isGroup,
+    ...(isGroup && {
+      members: lines
+        .filter((line) => line.name === "X-ADDRESSBOOKSERVER-MEMBER" || line.name === "MEMBER")
+        .map((line) =>
+          unescapeText(line.value)
+            .replace(/^urn:uuid:/iu, "")
+            .trim(),
+        )
+        .filter((uid) => uid !== ""),
+    }),
   };
+};
+
+const sniffed = (bytes: Buffer): string | undefined => {
+  if (bytes.subarray(0, 2).toString("hex") === "ffd8") return "image/jpeg";
+  if (bytes.subarray(0, 4).toString("latin1") === "\u{89}PNG") return "image/png";
+  if (bytes.subarray(0, 4).toString("latin1") === "GIF8") return "image/gif";
+  if (bytes.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  if (bytes.subarray(4, 12).toString("latin1").startsWith("ftyphei")) return "image/heic";
+  return undefined;
+};
+
+// The photo on a card: vCard 3.0 writes PHOTO;ENCODING=b;TYPE=JPEG:<base64>, 4.0 a data: URI. A photo only linked by
+// a URL isn't read: fetching it would need the account again, for a picture.
+export const photoOf = (card: VCard): Photo | undefined => {
+  const line = card.lines.find((candidate) => candidate.name === "PHOTO");
+  if (!line) return undefined;
+  const value = line.value.trim();
+  const data = /^data:(?<type>[^;,]*)(?:;[^,]*)?;base64,(?<base>.*)$/isu.exec(value)?.groups;
+  const encoding = line.params.find((parameter) => parameter.name === "ENCODING")?.values[0]?.toLowerCase();
+  const isInline = data !== undefined || encoding === "b" || encoding === "base64";
+  if (!isInline) return undefined;
+  const bytes = Buffer.from((data?.base ?? value).replaceAll(/\s+/gu, ""), "base64");
+  const mediaType = sniffed(bytes);
+  return mediaType === undefined || bytes.length === 0 ? undefined : { bytes, mediaType };
 };
 
 // Writing: one line, folded at 75 octets without splitting a character.

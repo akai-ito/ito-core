@@ -702,6 +702,16 @@ export const replay = async (name: string): Promise<void> => {
         await advance(time);
         return;
       }
+      case "contacts_hold": {
+        await advance(time);
+        const { cards } = step as unknown as {
+          readonly cards: readonly { readonly file: string; readonly vcard: string }[];
+        };
+        for (const card of cards) carddav.seed("Contacts", card.file, card.vcard);
+        await live.get()?.server.contacts.refresh();
+        await settle();
+        return;
+      }
       case "calendar_has": {
         const { events: given } = step as unknown as { readonly events: readonly CalendarEventFields[] };
         await advance(time);

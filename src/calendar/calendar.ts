@@ -26,6 +26,8 @@ export type Calendar = {
   readonly isConnected: () => boolean;
   // Every event from yesterday to a week ahead, as last read, before Kumo's picture is added.
   readonly listItems: () => readonly CalendarItem[];
+  // Who's invited to an event, by its uid, as last read: the organizer and attendees' names and emails.
+  readonly attendeesOf: (uid: string) => readonly string[];
   // Every event on their own calendars, as last read, with where it stands, for noticing changes.
   readonly agenda: () => readonly AgendaEntry[];
   // After each good read of the calendar.
@@ -485,6 +487,12 @@ export const createCalendar = ({
     removeEvent,
     isConnected: () => source() !== undefined,
     listItems: () => events.get().map((event) => toCalendarItem(event)),
+    attendeesOf: (uid) =>
+      events
+        .get()
+        .filter((event) => event.uid === uid)
+        .flatMap(({ organizer, attendees }) => [...(organizer ? [organizer] : []), ...attendees])
+        .flatMap(({ email, name }) => [email, ...(name === undefined ? [] : [name])]),
     agenda: () =>
       events
         .get()

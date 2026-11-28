@@ -24,6 +24,8 @@ export type Tracks = {
   readonly evidenceText: (at: string) => string;
   // They answered one of Kumo's questions on a track, in Understanding you: the answer is evidence on it.
   readonly answered: (id: string, text: string, question: string) => void;
+  // The track with this name, opened at Learning when there's none yet, such as Your people for linking contacts.
+  readonly ensure: (name: string, note: string) => Track;
   readonly tools: readonly Tool[];
   readonly inMindText: () => string;
 };
@@ -228,6 +230,22 @@ export const createTracks = ({ database, clock, identifiers, info, timeZone = ()
   return {
     list: () => tracks.get(),
     find,
+    ensure: (name, note) => {
+      const same = tracks.get().find((track) => track.name.toLowerCase() === name.toLowerCase());
+      if (same) return same;
+      const track: Track = {
+        id: identifiers.track(),
+        name,
+        stage: "learning",
+        since: now(),
+        note,
+        confirmed: 0,
+        corrected: 0,
+        evidence: [],
+      };
+      save(track);
+      return track;
+    },
     corrected: (entry, text) => {
       const track = entry.track === undefined ? undefined : find(entry.track);
       if (track) save(correct(track, text, entry.id));

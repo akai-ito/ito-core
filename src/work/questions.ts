@@ -3,7 +3,7 @@ import type { Attachments } from "#attachments/attachments.ts";
 import { createCell } from "#cell.ts";
 import { toTimestamp, type Clock } from "#clock.ts";
 import { lastLine } from "#desk/desk.ts";
-import type { Question, QuestionAnswer, QuestionReply, QuestionState } from "#protocol/types.ts";
+import type { ContactQuestion, Question, QuestionAnswer, QuestionReply, QuestionState } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { Store } from "#store/store.ts";
 import { fieldOf, stringsOf, textOf } from "#tools/input.ts";
@@ -24,11 +24,25 @@ export type Questions = {
   readonly recent: () => readonly Question[];
   readonly answer: (id: string, reply: QuestionReply) => Result<Question, string>;
   readonly notNow: (id: string) => Result<Question, string>;
+  // Asks which card in their Contacts someone is, with the candidates; the open one about them, when there is one.
+  readonly addContact: (fields: NewContactQuestion) => Question;
+  // Every question about a contact, in any state, oldest first.
+  readonly contactQuestions: () => readonly Question[];
+  // Settles an open contact question that no longer needs them, such as a page linked another way.
+  readonly settleContact: (id: string, note: string) => void;
   readonly tools: readonly Tool[];
   readonly inMindText: () => string;
   // Resolves once the answers being heard and filed now are done.
   readonly settled: () => Promise<void>;
   readonly close: () => void;
+};
+
+export type NewContactQuestion = {
+  readonly track: string;
+  readonly understood: string;
+  readonly missing: string;
+  readonly why: string;
+  readonly contact: ContactQuestion;
 };
 
 export type QuestionsOptions = {
@@ -40,6 +54,9 @@ export type QuestionsOptions = {
   readonly clock: Clock;
   readonly identifiers: { readonly question: () => string };
   readonly work: (prompt: string) => Promise<Result<string, string>>;
+  // Takes in an answer to a contact question, such as linking the page to the card they picked, and gives the line
+  // for them on what came of it. No model files these.
+  readonly contactAnswered?: (question: Question) => Promise<Result<string, string>>;
   readonly info: Info;
 };
 
@@ -118,6 +135,7 @@ export const answerWords = (answer: QuestionAnswer, length = 160): string =>
     ...(answer.picked === undefined ? [] : [answer.picked.join(", ")]),
     ...(answer.none_fit === true ? ["none of the options fit"] : []),
     ...(answer.not_sure === true ? ["not sure"] : []),
+    ...(answer.not_in_contacts === true ? ["not in their contacts"] : []),
     ...(answer.text === undefined ? [] : [`“${clip(answer.text.replaceAll(/\s+/gu, " ").trim(), length)}”`]),
   ].join("; ");
 
@@ -132,12 +150,19 @@ const toGiven = (question: Question, reply: QuestionReply): Result<Given, string
   if (stranger !== undefined) return fail(`“${stranger}” isn't one of this question's options.`);
   if (text !== "" && audio !== "") return fail("Send your words as text or as a recording, not both.");
   if (reply.none_fit === true && picked.length > 0) return fail("None fit doesn't go with options you picked.");
+  const isContact = question.kind === "contact";
+  if (!isContact && reply.not_in_contacts === true) return fail("Only a question about a contact takes that answer.");
+  if (reply.not_in_contacts === true && (picked.length > 0 || reply.none_fit === true)) {
+    return fail("Not in your contacts doesn't go with a card you picked or none fit.");
+  }
+  if (isContact && picked.length > 1) return fail("Pick one card: a person is one of them at most.");
   const given: Given = {
     ...(picked.length > 0 && { picked }),
     ...(text !== "" && { text }),
     ...(audio !== "" && { audio }),
     ...(reply.none_fit === true && { none_fit: true as const }),
     ...(reply.not_sure === true && { not_sure: true as const }),
+    ...(reply.not_in_contacts === true && { not_in_contacts: true as const }),
   };
   return Object.keys(given).length === 0
     ? fail("Pick an option, say it in your words, or say none fit or not sure.")
@@ -152,6 +177,7 @@ const sentOf = (answer: Given): string =>
     answer.audio ?? "",
     answer.none_fit === true,
     answer.not_sure === true,
+    answer.not_in_contacts === true,
   ]);
 
 const filingPrompt = (question: Question, answer: QuestionAnswer, track: string): string =>
@@ -182,7 +208,7 @@ const filingPrompt = (question: Question, answer: QuestionAnswer, track: string)
   ].join("\n");
 
 export const createQuestions = (options: QuestionsOptions): Questions => {
-  const { database, store, attachments, voice, tracks, clock, identifiers, work, info } = options;
+  const { database, store, attachments, voice, tracks, clock, identifiers, work, contactAnswered, info } = options;
   const now = (): string => toTimestamp(clock.now());
   const isClosed = createCell(false);
   const hearing = createCell<string | undefined>(undefined);
@@ -227,6 +253,8 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
     options: before.options,
     asked_at: before.asked_at,
     changed_at: now(),
+    ...(before.kind !== undefined && { kind: before.kind }),
+    ...(before.contact !== undefined && { contact: before.contact }),
     ...extra,
   });
 
@@ -247,13 +275,28 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
   const takeIn = (question: Question): void => {
     const { answer } = question;
     if (!answer) return;
+    // A card they picked is said by its name, not its uid.
+    const said =
+      question.contact === undefined
+        ? answer
+        : {
+            ...answer,
+            ...(answer.picked !== undefined && {
+              picked: answer.picked.map(
+                (uid) => question.contact?.candidates.find((candidate) => candidate.uid === uid)?.name ?? uid,
+              ),
+            }),
+          };
     tracks.answered(
       question.track,
-      `You answered “${clip(question.missing, 80)}”: ${answerWords(answer, 100)}`,
+      `You answered “${clip(question.missing, 80)}”: ${answerWords(said, 100)}`,
       question.id,
     );
     background(async () => {
-      const filed = await work(filingPrompt(question, answer, tracks.find(question.track)?.name ?? "learning"));
+      const filed =
+        contactAnswered !== undefined && question.kind === "contact"
+          ? await contactAnswered(question)
+          : await work(filingPrompt(question, answer, tracks.find(question.track)?.name ?? "learning"));
       if (!filed.ok) {
         info("An answer in Understanding you couldn't be filed", { question: question.id, reason: filed.failure });
         return;
@@ -337,7 +380,11 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
         return (
           `${question.id} (${track}), asked ${dayOf(question.asked_at)}: ${question.missing} ` +
           `You understood: ${question.understood} Why: ${question.why}` +
-          (question.options.length > 0 ? ` Options: ${question.options.join(" · ")}.` : "") +
+          (question.contact === undefined
+            ? question.options.length > 0
+              ? ` Options: ${question.options.join(" · ")}.`
+              : ""
+            : ` Cards: ${question.contact.candidates.map(({ name, uid }) => `${name} (uid ${uid})`).join(" · ")}.`) +
           (question.later_at === undefined ? "" : ` They said not now on ${dayOf(question.later_at)}.`) +
           (question.unheard === undefined ? "" : " Their spoken answer couldn't be heard.")
         );
@@ -583,6 +630,29 @@ export const createQuestions = (options: QuestionsOptions): Questions => {
       if (audio === undefined) takeIn(answered);
       else hear();
       return ok(answered);
+    },
+    addContact: ({ track, understood, missing, why, contact }) => {
+      const asked = all().find((question) => question.state === "open" && question.contact?.person === contact.person);
+      if (asked) return asked;
+      const at = now();
+      return save({
+        id: identifiers.question(),
+        track,
+        state: "open",
+        understood: clip(understood, limits.understood),
+        missing: clip(missing, limits.missing),
+        why: clip(why, limits.why),
+        options: contact.candidates.map(({ uid }) => uid),
+        asked_at: at,
+        changed_at: at,
+        kind: "contact",
+        contact,
+      });
+    },
+    contactQuestions: () => all().filter(({ kind }) => kind === "contact"),
+    settleContact: (id, note) => {
+      const question = find(id);
+      if (question?.state === "open") save(moveTo(question, "settled", { note: clip(note, limits.note) }));
     },
     notNow: (id) => {
       const question = find(id);
