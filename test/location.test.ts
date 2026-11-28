@@ -322,6 +322,28 @@ describe("heat and trips", () => {
     expect(heard.get()).toBe(0);
   });
 
+  it("takes only the town and country from a photo's placemark, never its area's name", () => {
+    const { location } = open();
+    location.seed({
+      batch: "photos-1",
+      photos: [10, 12, 14].map((hour) => ({
+        taken_at: `2026-03-14T${String(hour)}:00:00.000Z`,
+        ...lisbon,
+        placemark: {
+          name: "Somewhere at the area's centre",
+          street: "A street near the centre",
+          locality: "Lisbon",
+          country: "Portugal",
+          country_code: "PT",
+        },
+      })),
+    });
+    const place = location.places().find(({ from_photos: photos }) => photos === true);
+    expect(place).toMatchObject({ locality: "Lisbon", country: "Portugal", country_code: "PT" });
+    expect(place?.apple_name).toBeUndefined();
+    expect(place?.street).toBeUndefined();
+  });
+
   it("forgets a range, and everything, with what came from it", () => {
     const { location, closed } = open();
     twoDays(location);

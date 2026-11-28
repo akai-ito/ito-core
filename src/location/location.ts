@@ -216,7 +216,10 @@ export const createLocation = ({
     const now = clock.now();
     const centre =
       meanOf(visits.map((visit) => ({ ...visit, weight: Math.max(durationOf(visit, now), minuteMs) }))) ?? place;
-    const named = visits.findLast(({ placemark }) => placemark?.name !== undefined)?.placemark;
+    // A photo's placemark names its ~11 km area (the app looks up the area's centre), so only its town and
+    // country count; a place's name and street come from the visits iOS recorded there.
+    const named = visits.findLast(({ placemark, seeded }) => !seeded && placemark?.name !== undefined)?.placemark;
+    const street = visits.findLast(({ placemark, seeded }) => !seeded && placemark?.street !== undefined)?.placemark;
     const where = visits.findLast(({ placemark }) => placemark !== undefined)?.placemark;
     const times = visits.map((visit) => whenOf(visit));
     const live = visits.filter(({ seeded }) => !seeded);
@@ -232,7 +235,7 @@ export const createLocation = ({
       first_visit: toTimestamp(Math.min(...times)),
       last_visit: toTimestamp(Math.max(...times)),
       ...(named?.name !== undefined && { apple_name: named.name }),
-      ...(where?.street !== undefined && { street: where.street }),
+      ...(street?.street !== undefined && { street: street.street }),
       ...(where?.locality !== undefined && { locality: where.locality }),
       ...(where?.country !== undefined && { country: where.country }),
       ...(where?.country_code !== undefined && { country_code: where.country_code }),
@@ -715,6 +718,11 @@ export const createLocation = ({
       ...(homePlace && { home: homePlace.id }),
     };
   };
+
+  // Places made only from photos once took a name and street from their area's centre: put them right once.
+  for (const place of records.places()) {
+    if (place.from_photos && (place.apple_name !== undefined || place.street !== undefined)) refresh(place.id);
+  }
 
   return {
     upload,
