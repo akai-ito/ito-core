@@ -64,6 +64,8 @@ export type MemoryStore = {
   readonly findChange: (id: string) => ChangeRow | undefined;
   readonly latestChanges: () => readonly LatestChange[];
   readonly recentChanges: (limit: number) => readonly RecentChange[];
+  // The latest changes to one page, newest first.
+  readonly changesOf: (address: string, limit: number) => readonly RecentChange[];
   // The newest lines Kumo learnt, newest first.
   readonly learntLines: (limit: number) => readonly LearntLine[];
   // Every line Kumo learnt that says any of the words, newest first.
@@ -154,6 +156,14 @@ export const createMemoryStore = (database: DatabaseSync): MemoryStore => {
         database
           .prepare("SELECT id, address, title, note, at FROM memory_changes ORDER BY at DESC, rowid DESC LIMIT ?")
           .all(limit) as unknown as readonly (Omit<RecentChange, "note"> & { readonly note: string | null })[]
+      ).map(({ note, ...change }) => (note === null ? change : { ...change, note })),
+    changesOf: (address, limit) =>
+      (
+        database
+          .prepare(
+            "SELECT id, address, title, note, at FROM memory_changes WHERE address = ? ORDER BY at DESC, rowid DESC LIMIT ?",
+          )
+          .all(address, limit) as unknown as readonly (Omit<RecentChange, "note"> & { readonly note: string | null })[]
       ).map(({ note, ...change }) => (note === null ? change : { ...change, note })),
     learntLines: (limit) =>
       database

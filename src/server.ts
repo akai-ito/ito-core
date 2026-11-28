@@ -73,6 +73,10 @@ import { createTracks } from "#work/tracks.ts";
 import { createQuestions } from "#work/questions.ts";
 import { registerUnderstanding } from "#http/understanding.ts";
 import { registerPeople } from "#http/people.ts";
+import { registerLife } from "#http/life.ts";
+import { createBusy } from "#life/busy.ts";
+import { createLife } from "#life/life.ts";
+import { placesFrom } from "#life/places.ts";
 import { createPeople, type PeopleKeeper } from "#people/people.ts";
 import { createSenders } from "#people/senders.ts";
 import { registerLocation } from "#http/location.ts";
@@ -499,8 +503,19 @@ export const createServer = (options: ServerOptions): Server => {
   });
   // Kumo's work in the background: a backstop on silence, one retry, and a pause through a usage limit with one
   // catch-up after. When the model can't act, nothing stands in for it: the problem shows until work goes through.
+  // What Kumo is working on right now, for Going on: what running turns and background work touch.
+  const busy = createBusy(clock);
   const background = createBackground({
-    engine,
+    engine: {
+      work: async (prompt, run, workOptions) => {
+        try {
+          return await engine.work(prompt, run, workOptions);
+        } finally {
+          busy.ended(run);
+        }
+      },
+      usageResetsAt: () => engine.usageResetsAt(),
+    },
     clock,
     settings: store,
     info,
@@ -1039,6 +1054,7 @@ export const createServer = (options: ServerOptions): Server => {
     call: (input) => {
       const run = contextRun();
       if (run !== undefined) background.touch(run);
+      busy.called(tool.name, input, run);
       return tool.call(input);
     },
   });
@@ -1056,6 +1072,7 @@ export const createServer = (options: ServerOptions): Server => {
   };
   store.subscribe(({ event }) => {
     if (event.type !== "turn.ended") return;
+    busy.turnEnded();
     memory.indexConversation();
     // A turn in the chat shows how the model stands: a usage limit pauses background work, an answer ends a pause.
     if (event.outcome === "completed") background.answered();
@@ -1067,6 +1084,25 @@ export const createServer = (options: ServerOptions): Server => {
   registerUnderstanding(app, { questions, tracks, schemas });
   registerPeople(app, { people, schemas });
   registerLocation(app, { location, schemas });
+  const life = createLife({
+    database,
+    memory,
+    motions,
+    made,
+    people,
+    dayNotes,
+    store,
+    tracks,
+    questions,
+    places: placesFrom(location),
+    busy,
+    complete: quickComplete,
+    quickChoice: createQuickChoice(listedModels),
+    clock,
+    timeZone,
+    info,
+  });
+  registerLife(app, { life, schemas });
   registerTools(app, {
     token: toolsToken,
     tools: allTools,

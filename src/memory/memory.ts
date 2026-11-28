@@ -114,6 +114,9 @@ export type RecentChangeBody = {
   readonly note?: string;
 };
 
+// A passage a search found: on a page, or a message of a past conversation (`message`).
+export type Hit = Passage & { readonly message?: string };
+
 export type ChangeBody = {
   readonly change: string;
   readonly address: string;
@@ -151,6 +154,10 @@ export type Memory = {
   readonly chapters: () => readonly ChapterSummary[];
   // What Kumo learnt about them lately, newest first.
   readonly learnt: () => readonly LearntBody[];
+  // The passages that best match a search, pages' and past conversations' alike, best first.
+  readonly search: (query: string, limit: number) => Promise<readonly Hit[]>;
+  // The latest changes to one page, newest first.
+  readonly changesOf: (address: string, limit: number) => readonly RecentChangeBody[];
   readonly page: (
     address: string,
   ) => Result<PageBody, { readonly code: "invalid" | "not_found"; readonly detail: string }>;
@@ -1042,6 +1049,27 @@ export const createMemory = ({
       })),
     chapters: () => (thread.get() ? chapters.list() : []),
     learnt: () => learntLines(store.learntLines(learntShown)),
+    search: async (query, limit) => {
+      await ready;
+      const vector = await embedder.query(query);
+      return rank(store.chunks(), store.searchText(query, limit * 3), vector, limit).map(
+        ({ address, title, message, text, at }) => ({
+          address,
+          title,
+          ...(message !== undefined && { message }),
+          text,
+          at,
+        }),
+      );
+    },
+    changesOf: (address, limit) =>
+      store.changesOf(address, limit).map(({ id, address: changed, title, note, at }) => ({
+        change: id,
+        address: changed,
+        title,
+        at,
+        ...(note !== undefined && { note }),
+      })),
     page: (address) => {
       const location = toLocation(address);
       if (!location.ok) return fail({ code: "invalid", detail: location.failure });
