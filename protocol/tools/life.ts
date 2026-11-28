@@ -70,7 +70,8 @@ const searchTranscript = (): Transcript => {
   });
   transcript.connect();
   transcript.wait(2000);
-  // Photos from dinner at Orrin's on Friday, seeding the place.
+  // Photos from dinner at Orrin's on Friday, seeding the place. The app names a photo's ~11 km area from its
+  // centre, so the box keeps only the town and country: the place stays unnamed until he names it.
   const orrinsPlace = transcript.placeId();
   const where = {
     name: "Orrin's",
@@ -109,7 +110,6 @@ const searchTranscript = (): Transcript => {
             {
               kind: "stop",
               place: orrinsPlace,
-              apple_name: "Orrin's",
               place_kind: "unknown",
               latitude: orrins.latitude,
               longitude: orrins.longitude,
@@ -131,7 +131,6 @@ const searchTranscript = (): Transcript => {
     places: [
       {
         id: orrinsPlace,
-        apple_name: "Orrin's",
         kind: "unknown",
         latitude: orrins.latitude,
         longitude: orrins.longitude,
@@ -140,7 +139,6 @@ const searchTranscript = (): Transcript => {
         visits: 1,
         first_visit: "2026-11-20T19:55:00.000Z",
         last_visit: "2026-11-20T19:55:00.000Z",
-        street: where.street,
         locality: where.locality,
         country: where.country,
         country_code: where.country_code,
