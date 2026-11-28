@@ -399,4 +399,13 @@ export const migrations: readonly string[] = [
     position INTEGER NOT NULL,
     body TEXT NOT NULL
   );`,
+  // 0.20: what they share from their phone's share sheet, as it came, from when the server accepts it, through Kumo
+  // placing it in a thread, which makes it their message under the same id; and on that message, what they shared
+  // besides their note.
+  `CREATE TABLE shares (
+    id TEXT PRIMARY KEY,
+    at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  ALTER TABLE messages ADD COLUMN share TEXT;`,
 ];

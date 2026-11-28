@@ -20,6 +20,7 @@ import type {
   DeskLine,
   Onboarding,
   Problem,
+  Shared,
   Thread,
   Error as ErrorBody,
   LiveTurn,
@@ -42,6 +43,7 @@ import type {
 import type { Event, Line } from "./spec.ts";
 import { fixtureDirectory } from "./transcript-files.ts";
 import { askAloud, createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
+import { hostOf, readPage } from "#shares/link.ts";
 
 export type Header = {
   readonly name: string;
@@ -75,7 +77,24 @@ type SendOptions = {
   readonly thread?: string;
   readonly replyTo?: string;
   readonly newThread?: boolean;
+  // What it shared besides its note, for a message a share became.
+  readonly share?: Shared;
 };
+
+// What the share sheet sends, the page the link leads to, and where Kumo puts it: an open thread it joins, or a new
+// thread it names.
+type ShareOptions = {
+  readonly id?: string;
+  readonly url?: string;
+  readonly html?: string;
+  readonly text?: string;
+  readonly note?: string;
+  readonly attachments?: readonly string[];
+  readonly joins?: string;
+  readonly startsThread?: string;
+};
+
+type ShareStarted = { readonly id: string; readonly thread: string };
 
 type PostOptions = { readonly isUrgent?: boolean; readonly thread?: string; readonly newThread?: string };
 
@@ -157,6 +176,10 @@ export type Transcript = {
   readonly cancelAsk: (ask: string) => void;
   readonly registerDevice: () => string;
   readonly upload: (file: string, options?: UploadOptions) => string;
+  // You share something from the share sheet; Kumo places it, and it's your message in that thread.
+  readonly share: (options: ShareOptions) => ShareStarted;
+  // You share it again under the same id, as a retry would; it stands as it was.
+  readonly shareAgain: (options: ShareOptions & { readonly id: string; readonly thread: string }) => void;
   readonly uploadTooLarge: (name: string, size: number) => void;
   readonly forgetUnsentUploads: () => void;
   readonly fetchAttachment: (id: string) => void;
@@ -1519,6 +1542,7 @@ export const createTranscript = (header: Header): Transcript => {
           ...(attached.length > 0 && { attachments: attached }),
           ...(thread !== undefined && { thread }),
           ...(quotes && { quotes }),
+          ...(options.share && { share: options.share }),
         },
       });
       if (answering) endAsk(answering, "answered", id);
@@ -1569,6 +1593,48 @@ export const createTranscript = (header: Header): Transcript => {
     }
     response(isKnown ? 200 : 201, { message: messageById(id) }, { isLost: options.isLost });
     return id;
+  };
+
+  const shareBody = ({ id, url, text, note, attachments: attached = [] }: ShareOptions): Fields => ({
+    id,
+    ...(url !== undefined && { url }),
+    ...(text !== undefined && { text }),
+    ...(note !== undefined && { note }),
+    ...(attached.length > 0 && { attachments: attached }),
+  });
+
+  // As the server does: the page is read for the link, Kumo decides where the share goes, and it's accepted there.
+  const share = (options: ShareOptions): ShareStarted => {
+    const id = options.id ?? newUserId();
+    const { url, html, text, note = "", attachments: attached = [], joins, startsThread } = options;
+    if (url !== undefined && html !== undefined) world("web_has", { url, html });
+    world("share_sorted", { thread: joins ?? "", title: startsThread ?? "" });
+    request("POST", "/v0/shares", { body: shareBody({ ...options, id }) });
+    response(201, { share: { id, state: "sorting", at: timestamp() } });
+    const page = html === undefined ? {} : readPage(html);
+    const site = page.site ?? (url === undefined ? undefined : hostOf(url));
+    const shared: Shared = {
+      ...(url !== undefined && { link: { url, ...page, ...(site !== undefined && { site }) } }),
+      ...(text !== undefined && { text }),
+    };
+    const thread = joins ?? startThreadAt("kumo", nextPosition(), { ...(startsThread && { title: startsThread }) }).id;
+    accept(
+      id,
+      note,
+      attached.map((attachment) => {
+        const found = attachments.get().get(attachment);
+        if (!found) throw new Error(`unknown attachment ${attachment}`);
+        return found;
+      }),
+      { thread, share: shared },
+    );
+    return { id, thread };
+  };
+
+  const shareAgain = (options: ShareOptions & { readonly id: string; readonly thread: string }): void => {
+    request("POST", "/v0/shares", { body: shareBody(options) });
+    const accepted = messageById(options.id);
+    response(200, { share: { id: options.id, state: "placed", at: accepted.at, thread: options.thread } });
   };
 
   const ask = (fields: AskFields): string => {
@@ -2127,6 +2193,8 @@ export const createTranscript = (header: Header): Transcript => {
     cancelAsk,
     registerDevice,
     upload,
+    share,
+    shareAgain,
     uploadTooLarge,
     forgetUnsentUploads,
     fetchAttachment,

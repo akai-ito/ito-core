@@ -272,6 +272,7 @@ export const replay = async (name: string): Promise<void> => {
   const spokenPcm = new Uint8Array(fixture("spoken-sentence.wav")).slice(44);
   const web = createCell<ReadonlyMap<string, string>>(new Map());
   const webJson = createCell<ReadonlyMap<string, unknown>>(new Map());
+  const webPages = createCell<ReadonlyMap<string, string>>(new Map());
   const asides = createCell<readonly unknown[]>([]);
 
   const complete: Complete = (_prompt, schema) => {
@@ -344,6 +345,10 @@ export const replay = async (name: string): Promise<void> => {
     const answered = providerAnswer(url);
     if (answered) return Promise.resolve(answered);
     if (webJson.get().has(url)) return Promise.resolve(Response.json(webJson.get().get(url)));
+    const page = webPages.get().get(url);
+    if (page !== undefined) {
+      return Promise.resolve(new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } }));
+    }
     const file = web.get().get(url);
     if (file === undefined) return Promise.resolve(new Response("Not found", { status: 404 }));
     const bytes = new Uint8Array(fixture(file));
@@ -727,6 +732,12 @@ export const replay = async (name: string): Promise<void> => {
         await advance(time);
         return;
       }
+      case "share_sorted": {
+        const { thread, title } = step as unknown as { readonly thread: string; readonly title: string };
+        asides.update((current) => [...current, { thread: ids.translate(thread), title }]);
+        await advance(time);
+        return;
+      }
       case "you_approve": {
         isApproved.set(true);
         await advance(time + providerPollMs);
@@ -741,12 +752,14 @@ export const replay = async (name: string): Promise<void> => {
       }
       case "web_has": {
         await advance(time);
-        const { url, file, json } = step as unknown as {
+        const { url, file, json, html } = step as unknown as {
           readonly url: string;
           readonly file?: string;
           readonly json?: unknown;
+          readonly html?: string;
         };
         if (json !== undefined) webJson.update((current) => new Map([...current, [url, json]]));
+        if (html !== undefined) webPages.update((current) => new Map([...current, [url, html]]));
         if (file !== undefined) web.update((current) => new Map([...current, [url, file]]));
         return;
       }

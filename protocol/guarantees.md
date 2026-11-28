@@ -62,6 +62,7 @@ where the protocol has to make it possible, marked *App*.
 | G59 | **Pages Kumo makes stay current, and your ticks are yours.** A rich, lasting answer can come as a page Kumo made: a card in the reply that opens it, and a place on the Made shelf. Kumo makes a page whole, with pictures it kept and blocks the app draws, then changes it only from the version it read, with a note that says what changed; a change never notifies. Your ticks carry when you ticked, every app hears them, and a change that drops an item lets its tick go. Forgetting a page asks you first. | 91 |
 | G62 | **One day, joined up.** Every turn, in the main chat or a thread, and every piece of Kumo's background work has today so far in mind: what was said in the other conversations since 04:00 where you are, each thread named, the newest first, with what Kumo did and what's still to come today. The server writes it from what it holds, with no model call, within a bounded size, and a turn leaves out its own conversation, which it has already. Kumo keeps one plan from it: what you say anywhere moves its blocks, guesses and wake-ups without being asked again, and a wake-up for something already planned is moved, never doubled, so Kumo checks in once. | 95, 96 |
 | G63 | **Understanding you is quiet, and an answer is enough.** What Kumo would like you to explain is a question on one of its learning tracks, saying what it already understands, the missing piece and why it would help, with honest options to tap. A question has no due date and is never overdue, never waits on the Desk and never notifies; Kumo doesn't ask what it's already asking, or what you answered lately. You answer with taps, your own words or your voice, or say none fit or not sure, and Not now leaves it open. An answer becomes evidence on its track and Kumo files what it learned in the background, with no follow-up; a question answered elsewhere is settled, with where. | 97 |
+| G64 | **A share lands where it belongs.** What you share from the share sheet, a link, text, photos and files and a note, is on the server's disk before it answers, once per id the app chose: sharing again never makes a second. The server reads a link's page for its title and summary, where it can, and the app never contacts the site. Kumo puts the share in the open side thread it clearly belongs to, or else a new thread it names, where it becomes your message under the share's id; the main chat never holds it. That thread's own turn answers it, with what Kumo made of it and what it did, and the reply notifies like any other. | 98 |
 | G66 | **Full access is yours to give, and shows while it lasts.** Kumo runs in Codex's sandbox, writing only in its workspace, until you turn on full access with a command of its own that says it's meant; nothing else turns it on. From the next turn or piece of work that starts, in the chat, in the background and in the night's dream alike, Kumo runs without the sandbox and is told so; turning it off puts the sandbox back from the next one. A turn already running keeps what it started with. Every app hears each change and the snapshot carries it while it's on, so the chat can show it, and Kumo's work notes each change. | 100 |
 
 ## How Kumo decides to speak
@@ -671,6 +672,18 @@ catches up once (G57).
   asked. (G63)
 - Kumo settles a question it learned the answer to elsewhere, with a note on where, and asking the
   same thing again adds nothing. (G63)
+
+### 98 · [Sharing with Kumo](transcripts/98-sharing-with-kumo.jsonl)
+
+- `POST /v0/shares` answers as soon as the share is on disk, `sorting`. (G64)
+- The server reads the link's page for its title, summary and site name, and Kumo puts the share in
+  the open thread about the role: it arrives there as your message under the share's id, with the
+  note as its text and the link in `share`, and that thread's turn answers it. (G64)
+- A screenshot that belongs to no open thread starts a thread Kumo names (`thread.started`, by
+  `kumo`), where it's your message with its attachment, and is answered there. (G64)
+- Each reply notifies, naming its thread. (G64, G15)
+- Sharing again under the same id answers `200` with the share `placed` and its thread, and changes
+  nothing. (G64)
 
 ### 100 · [Full access](transcripts/100-full-access.jsonl)
 

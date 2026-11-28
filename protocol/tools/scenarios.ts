@@ -5499,6 +5499,93 @@ const scenarios: readonly (() => Transcript)[] = [
 
   () => {
     const transcript = createTranscript({
+      name: "98-sharing-with-kumo",
+      scenario: 98,
+      title: "Sharing with Kumo",
+      summary:
+        "From another app's share sheet you share a job ad's link, with a note. The server reads the page for its " +
+        "title and summary, and Kumo puts the share in your open thread about that role, where it answers with " +
+        "what it made of it and what it did. Then you share a screenshot of a booking, which belongs to no thread, " +
+        "so Kumo starts one it names and answers there. Each reply notifies, naming its thread. The share sheet " +
+        "sends the first share again, and nothing changes.",
+      guarantees: ["G64"],
+    });
+    transcript.time("2026-11-26T17:05:00.000Z");
+    transcript.post(
+      "Sam at Halcyon wrote back: they'd like to talk about the platform team, and a recruiter call is next. " +
+        "I'll keep the role here.",
+      { newThread: "Halcyon role" },
+    );
+    const role = transcript.latestThread();
+    transcript.begin("2026-11-27T08:40:00.000Z", { cursor: "latest" });
+    transcript.connect();
+    transcript.registerDevice();
+    transcript.wait(3000);
+    const url = "https://careers.halcyon.example/jobs/platform-engineer";
+    const html = [
+      "<!doctype html><html><head>",
+      "<title>Platform Engineer, Infrastructure | Halcyon Careers</title>",
+      '<meta property="og:title" content="Platform Engineer, Infrastructure">',
+      '<meta property="og:description" content="Build and run the systems every Halcyon team ships on. London, ',
+      'hybrid, three days a week in the office.">',
+      '<meta property="og:site_name" content="Halcyon Careers">',
+      "</head><body><h1>Platform Engineer</h1></body></html>",
+    ].join("");
+    const note = "This is the one Sam mentioned";
+    const link = transcript.share({ url, html, note, joins: role });
+    transcript.inThread(role, () => {
+      transcript.startTurn([link.id]);
+      transcript.wait(300);
+      transcript.step("thinking", thinking);
+      transcript.wait(1500);
+      writeWhole(
+        transcript,
+        "That's the one Sam meant: Platform Engineer, Infrastructure, building what every Halcyon team ships on, " +
+          "in London and hybrid. I've kept it here with the role, and I'll use it to prep you before the " +
+          "recruiter call.",
+      );
+      const result = "Platform Engineer · recruiter call next";
+      transcript.world("agent_calls", { tool: "update_thread", input: { result }, thread: role });
+      transcript.changeThread(role, { result });
+      transcript.wait(200);
+      transcript.endTurn("completed");
+    });
+    transcript.wait(20 * 60 * 1000);
+    const screenshot = transcript.upload("library-shelves.png", { name: "screenshot.png" });
+    transcript.wait(500);
+    const booking = transcript.share({ attachments: [screenshot], startsThread: "Dentist check-up" });
+    transcript.inThread(booking.thread, () => {
+      transcript.startTurn([booking.id]);
+      transcript.wait(300);
+      transcript.step("thinking", thinking);
+      transcript.wait(1200);
+      const what = "Remind them of the dentist tomorrow";
+      const why = "Their check-up at Quillfield Dental is on Tuesday 2 December at 09:40; they shared the booking.";
+      const source = { kind: "chat" as const, title: "Quillfield Dental booking" };
+      transcript.world("agent_calls", {
+        tool: "set_wake_up",
+        input: { what, why, at: "2026-12-01T19:00:00Z", asked: false, source },
+        thread: booking.thread,
+      });
+      transcript.wakeUp({ at: "2026-12-01T19:00:00.000Z", what, why, by: "kumo", source });
+      transcript.wait(300);
+      writeWhole(
+        transcript,
+        "A check-up at Quillfield Dental on Tuesday 2 December at 09:40. I'll remind you the evening before.",
+      );
+      const result = "Tue 2 Dec, 09:40";
+      transcript.world("agent_calls", { tool: "update_thread", input: { result }, thread: booking.thread });
+      transcript.changeThread(booking.thread, { result });
+      transcript.wait(200);
+      transcript.endTurn("completed");
+    });
+    transcript.wait(5000);
+    transcript.shareAgain({ id: link.id, url, note, thread: role });
+    return transcript;
+  },
+
+  () => {
+    const transcript = createTranscript({
       name: "100-full-access",
       scenario: 100,
       title: "Full access",

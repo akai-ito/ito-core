@@ -77,7 +77,14 @@ export type SteerOutcome = "taken" | "refused";
 
 export type JsonSchema = Readonly<Record<string, unknown>>;
 
-export type Complete = (prompt: string, schema: JsonSchema, choice?: ModelChoice) => Promise<Result<unknown, string>>;
+// A structured answer, aside from any conversation, such as a thread's name. Images, by their paths on the server,
+// go with the prompt for the model to see.
+export type Complete = (
+  prompt: string,
+  schema: JsonSchema,
+  choice?: ModelChoice,
+  images?: readonly string[],
+) => Promise<Result<unknown, string>>;
 
 // Why background work didn't finish: a turn's failure codes, and the technical cause.
 export type WorkFailure = { readonly code: EngineFailureCode; readonly detail: string };

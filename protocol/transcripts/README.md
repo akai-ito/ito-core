@@ -55,11 +55,12 @@ request that shows its own `Authorization` header uses the token it names.
 | `voiceprint_learnt` | the server has learnt your voice from your calls |
 | `memory_holds` | memory already holds these `pages` |
 | `capability_on` | a capability is set up with these `values` and switched on |
-| `web_has` | the web serves the picture at `url` |
+| `web_has` | the web serves the picture at `url`, or the page whose `html` it gives |
 | `agent_calls` | the agent calls one of Ito's tools: `tool` and `input`, what it `returns` where it matters, and the side `thread` whose conversation calls it, if any |
 | `you_approve` | you approve the `code` a capability's connection showed, at the provider; the server picks up the token at its next poll, within 5 seconds |
 | `ari_keeps_up` | what Ari will answer when the server asks it, aside, to keep a thing up with your ticks and choices: its `changes`, `summary` and `note` |
 | `thread_named` | what the quick model will answer when the server asks it, after a thread you started gets its first answer, what to call it: its `title` |
+| `share_sorted` | what the quick model will answer when the server asks it where the next share belongs: the open `thread` it joins, or else the `title` of a new thread |
 | `thread_opened`, `notification_tapped` | you open a side `thread`, from the chat or from its notification; nothing changes on the wire until the app asks for it |
 | `mail_arrives` | a mail lands in an inbox the box watches: its `account`, `message_id`, `from`, `to`, `subject` and `text` |
 | `attention_decides` | what the attention pass will answer for the next mail: its `decision` (`promotion`, `notice`, `newsletter`, `record`, `work` or `urgent`), its `stakes` (`low` or `high`), the `folder` a record or newsletter goes into, its `reason` and `confidence` |

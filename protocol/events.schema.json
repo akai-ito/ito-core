@@ -298,6 +298,10 @@
         "quotes": {
           "$ref": "#/$defs/Quote",
           "description": "User messages only: inside a thread, the message you replied to."
+        },
+        "share": {
+          "$ref": "#/$defs/Shared",
+          "description": "User messages only: on something you shared from your phone's share sheet, what you shared besides your note, which is the `text`, and the photos and files, which are the `attachments`. Kumo puts a share in the side thread it belongs in, or in a new one it names, and answers it there."
         }
       },
       "if": {
@@ -341,6 +345,47 @@
           }
         }
       ]
+    },
+    "Shared": {
+      "description": "What you shared from your phone's share sheet, besides your note and its photos and files: a link, and text from another app.",
+      "type": "object",
+      "properties": {
+        "link": {
+          "$ref": "#/$defs/SharedLink"
+        },
+        "text": {
+          "description": "Text you shared from another app, such as a passage you selected, exactly as it came.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SharedLink": {
+      "description": "A link you shared, with what the server read from the page where it could, so the app can show it as a card without going to the site.",
+      "type": "object",
+      "required": ["url"],
+      "properties": {
+        "url": {
+          "description": "The link, exactly as you shared it.",
+          "type": "string",
+          "format": "uri"
+        },
+        "title": {
+          "description": "The page's title.",
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "description": "The page's summary of itself, as it gives one to link previews.",
+          "type": "string",
+          "minLength": 1
+        },
+        "site": {
+          "description": "The site's name, such as \"Halcyon Careers\", or else its host.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
     },
     "AttachmentKind": {
       "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's or one you send, which the server transcribes for the agent; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",

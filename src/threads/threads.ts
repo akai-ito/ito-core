@@ -2,6 +2,7 @@ import { toMessageId, toThreadId, type MessageId, type ThreadId } from "#convers
 import type { Message, Thread } from "#protocol/types.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import { lineOf } from "#notifications/text.ts";
+import { toSaid } from "#shares/said.ts";
 import type { Store } from "#store/store.ts";
 import { contextRun, contextThread } from "#tools/context.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
@@ -52,7 +53,8 @@ const isTitle = (title: string): boolean => title.split(/\s+/u).filter(Boolean).
 
 export const createThreads = ({ store, spoken, branched }: ThreadsOptions): ThreadsContext => {
   const toLine = (message: Message, most: number): string =>
-    `- ${spoken(message.at)}, ${whoSaid(message)}: ${squeeze(message.text, most) || lineOf("", message.attachments)}`;
+    `- ${spoken(message.at)}, ${whoSaid(message)}: ` +
+    (squeeze(toSaid(message.text, message.share), most) || lineOf("", message.attachments));
 
   const openLines = (except: ThreadId | undefined): readonly string[] =>
     store

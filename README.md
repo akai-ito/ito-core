@@ -150,6 +150,7 @@ each capability and the voice as child processes, each speaking JSON-RPC over it
 | [protocol](protocol) | The client API: OpenAPI for commands, JSON Schema for events, the guarantees and the golden transcripts |
 | [src/http](src/http), [src/store](src/store) | The routes, the event stream and the SQLite event log with its projections |
 | [src/turns](src/turns), [src/threads](src/threads) | One turn at a time in each conversation, the main chat and every side thread: routing, Stop, steering, asks, approvals, crash recovery, and the backstop for background work |
+| [src/shares](src/shares) | What you share from the phone's share sheet: the link's page read on the box, and Kumo's call on which thread it belongs in |
 | [src/engine](src/engine) | The engine seam, the Codex adapter and the scripted engine for tests and the demo |
 | [src/tools](src/tools), [src/capabilities](src/capabilities) | The MCP server, the `ito` commands and skills, and the capability host |
 | [src/memory](src/memory) | The Thread, recall and backup |
