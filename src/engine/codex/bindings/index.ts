@@ -93,5 +93,6 @@ export type { WebSearchContextSize } from "./WebSearchContextSize.ts";
 export type { WebSearchItem } from "./WebSearchItem.ts";
 export type { WebSearchLocation } from "./WebSearchLocation.ts";
 export type { WebSearchMode } from "./WebSearchMode.ts";
+export type { WebSearchProvider } from "./WebSearchProvider.ts";
 export type { WebSearchToolConfig } from "./WebSearchToolConfig.ts";
 export * as v2 from "./v2/index.ts";

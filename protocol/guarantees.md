@@ -29,7 +29,7 @@ where the protocol has to make it possible, marked *App*.
 | G19 | **Attachments stay as you sent them.** A photo or file is uploaded once, under an id the app chooses, so a retry never makes a second copy. Its bytes never change, every app can fetch them, and the agent works on its own copy, so nothing it does changes what you sent. | 27, 28, 29, 30 |
 | G20 | **Pairing never shows the token.** The QR code carries a short-lived code that works once, never a token. Each paired device gets a token of its own, and the server keeps only its hash. | 31 |
 | G21 | **A capability's secrets stay on the server.** A secret setup value goes to the server once and never comes back in any answer, only whether one is set. One that connects through its provider goes from the provider to the server, and the app only shows the code to approve. Each capability receives only its own values. Switching one off takes effect at once, and one that isn't working says why. | 32, 33 |
-| G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36, 57 |
+| G22 | **Memory stays out of the log.** Memory steps name the pages Ari used or changed, never their content, so nothing in the event log, a snapshot or history repeats what a page says. What a change changed is fetched from memory itself, when someone asks. | 34, 35, 36, 57, 94 |
 | G23 | **Your voice stays yours.** A spoken message keeps its recording on your server until you delete the call's audio, and the agent only ever gets the words. Deleting the audio keeps the words and tells every app. | 38, 40, 41 |
 | G24 | **Talk only when the server can talk.** The server says whether it can hold a call, meaning it can listen and speak with your names loaded, and when it can't, why in a line to show. It says so on the event stream as soon as that changes. There's no worse fallback: while the voice isn't ready, the app doesn't offer Talk. | 43, 44, 49 |
 | G25 | **The server hears your turns.** Each turn you finish becomes one spoken message, posted by the server with its recording, and shown live as you speak. If you carry on before Ari begins to answer, your words join that message. Muting ends a turn you're in the middle of, as said so far. Nothing you say while muted is heard. | 38, 45, 48, 51, 56, 61 |
@@ -39,18 +39,18 @@ where the protocol has to make it possible, marked *App*.
 | G29 | **Threads keep subjects apart.** A side thread is a conversation of its own beside the main chat, with its own turns: a message in one never steers or waits behind another, and turns in different threads run at once. Kumo starts one by moving the message that began it, which keeps its id and position; you start one by replying to a message in the main chat (it stays there, with the thread under it) or from Threads. Every message says which thread it's in, every turn and ask too, and every notification about one names it. A thread shows in the main chat as one line, moving to the end only when Kumo comes back to it with something new, which waits as its news until you've seen it. Done is quiet and replying reopens it. Earlier messages stay in the main chat as they were. | 58, 88, 89 |
 | G31 | **Pictures come from your server.** A picture in a reply is one Ari found on the web and kept on your server as an attachment, with where it came from and who to credit; the app never contacts the site, and the picture stays. | 60, 90, 91 |
 | G32 | **Things in motion change a part at a time.** Ari starts a thing whole, once, then changes it by item id, citing the version it read: a stale or misshapen change is refused, nothing empties it, and every change keeps Ari's note and where in the conversation it happened. Your ticks, and your choices for a trip's places, are your own and every app hears them. Ari keeps the thing up with them at once, as an ordinary change with its note and no chat message, and hears of them with your next message. Ari can't start or change a trip without a cover, a photo for every place and every stop at its place, or any thing with a title over 28 characters. A role is in the career pipeline once, in one stage. Finishing a thing says how it ended, apart from ending it, so a goal missed or let go never shows as achieved, and a copy, a test or small admin never shows at all. Forgetting a thing asks you first. | 62, 63, 64 |
-| G33 | **The Desk is home.** Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail come whole in the snapshot and in every change, so an app never pieces it together. | 65, 74, 78, 79, 84 |
+| G33 | **The Desk is home.** Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail come whole in the snapshot and in every change, so an app never pieces it together. | 65, 74, 78, 79, 84, 92 |
 | G34 | **Waiting on you stays until it's done, or can't help.** A card waits until it's settled, shows when the box is acting on your answer, and leaves when that's done. One that only matters until a moment (its `until`), or an invite whose event is over, leaves by itself then, noted in Done. | 65, 67 |
 | G35 | **Every mail is read, and only work becomes work.** A quick model judges each new mail by its consequences, not its tone; only mail with work to do starts a short-lived work thread, and the conversation hears only what Kumo chooses to tell you. | 66 |
 | G36 | **Kumo never sends what you'd write.** Replies to people are drafts in your Drafts folder and cards on the Desk; you send them from Mail. | 66 |
 | G37 | **The calendar goes through the box.** Events, holds and invite answers are written to iCloud by the box, so they land while your phone sleeps; an invite is held on Kumo's calendar until you answer. | 67 |
 | G39 | **Getting started reads before it asks.** Kumo reads your recent mail and calendar first, every app sees how far it has got, and its few questions come as ordinary messages in the conversation. What it believes about you waits for your word, and getting started ends when you say so. | 69, 70 |
 | G40 | **Problems show until they're fixed.** Something wrong on the server that needs you (notifications it can't send, a mail or calendar account that keeps failing, a capability that needs setting up, Kumo's model not answering its work in the background, or pausing it at a usage limit) is listed with how to fix it, live on every app, and clears on its own once fixed. A blip that sorts itself out never shows. | 71, 81, 86 |
-| G43 | **"That was wrong" is taken in.** On anything Kumo did, it undoes what it can and keeps what to do differently as a preference on How to help you, and Done says so. Saying it again only adds your words. | 73, 82 |
+| G43 | **"That was wrong" is taken in.** On anything Kumo did, it undoes what it can and keeps what to do differently as evidence on the learning track it belongs to, which steps back, and Done says so; never as a new line on How to help you, where only what lasts goes, distilled from the tracks. Saying it again only adds your words. | 73, 82 |
 | G44 | **Kumo's picture of your day is on its own calendar.** Its plan for your day and its guesses at the rest are written to Kumo's calendar, never yours, and show in Coming up as they land. A guess is marked as one, with why; once you've answered it, it's yours rather than a guess, and Kumo's next guesses learn from it. | 74 |
 | G48 | **Kumo speaks in messages.** What its work in the background has to tell you, such as a mail that changes your plans, comes as Kumo's own message in the conversation: one per thing, as it happens, never batched, rewritten or stood in for by a template. A card on the Desk makes no sound of its own. | 65, 66 |
-| G49 | **Kumo's plans are concrete, quiet and yours.** A wake-up has a concrete time Kumo worked out, what it's for and why, how it repeats, who made it and where it came from. Setting one only adds it to Kumo's plans on the Desk, with no message and no notification. The app lists them, moves them and cancels them, and the Desk follows. | 78, 79 |
-| G50 | **Kumo looks before it speaks.** When a wake-up comes due, Kumo looks first, then messages you if that's useful, moves it if things changed, or drops it if it's moot, and Done says which. A repeating one comes back by itself at its time where you are. | 78, 80 |
+| G49 | **Kumo's plans are concrete, quiet and yours.** A wake-up has a concrete time Kumo worked out, a short title of its own, what Kumo will do and why, how it repeats and when a repeat ends (after a number of times, or on a day), who made it and where it came from. Setting one only adds it to Kumo's plans on the Desk, with no message and no notification. The app lists them, moves them, skips a repeating one's next time and cancels them, and the Desk follows. | 78, 79 |
+| G50 | **Kumo looks before it speaks.** When a wake-up comes due, Kumo looks first, then messages you if that's useful, moves it if things changed, or drops it if it's moot, and Done says which. A repeating one comes back by itself at its time where you are, until its end, and Kumo knows when a time is its last. | 78, 80 |
 | G51 | **Kumo wakes on what happens.** A change on your own calendars, such as an event moving or being cancelled or an invite arriving, wakes Kumo to look and decide, as a new mail does. It hears of each change once, even across a restart, never of its own changes, and keeps its wake-ups current with them. | 80 |
 | G52 | **Nothing robotic stands in.** When Kumo's model can't act, nothing is sent in its place: what was due waits, the problem shows once it lasts, and Kumo catches up when its model answers. | 81 |
 | G53 | **Kumo learns one area at a time, in the open.** Kumo opens a track for any area it's getting to know you in or learning to do well. Each has a stage (Learning, Spot checks, Trusted) and the evidence it stands on. Kumo moves it by judgement and reads it as context; a correction always steps it back, and "That was wrong" on a call in a track is one. Kumo's work shows every track. | 82 |
@@ -60,6 +60,12 @@ where the protocol has to make it possible, marked *App*.
 | G57 | **Paused at a usage limit, then caught up once.** When the model provider's usage limit is reached, Kumo's background work pauses until the limit resets, with nothing retried meanwhile, and the pause shows at once as a problem that says when it ends. Once the limit resets, or a turn in the chat goes through, Kumo catches up once on what it missed, each wake-up and kind of work counted once, and tells you in one message. Background work with nobody watching that shows no sign of life for 15 minutes is stopped and tried once more. | 86 |
 | G58 | **Chapters and what Kumo learnt come from memory.** A chapter is a page Kumo writes and keeps on its own shelf: a story with the day it began, the day it ended once it's over, and the day Kumo noticed it, which the server stamps; what it drew on is counted by the server, never said by Kumo. A line Kumo learnt about you comes only with a change that taught it, never with one that tidies or fixes records, is kept in the Thread with that change, and leaves the Library when Kumo takes it back or forgets its page. | 87 |
 | G59 | **Pages Kumo makes stay current, and your ticks are yours.** A rich, lasting answer can come as a page Kumo made: a card in the reply that opens it, and a place on the Made shelf. Kumo makes a page whole, with pictures it kept and blocks the app draws, then changes it only from the version it read, with a note that says what changed; a change never notifies. Your ticks carry when you ticked, every app hears them, and a change that drops an item lets its tick go. Forgetting a page asks you first. | 91 |
+| G60 | **Kumo dreams once a day, reliably.** At the dream time you set, 04:00 until you choose another, on your local clock wherever you are, Kumo looks back over everything since its last dream and puts it in order: memory, its blocks and wake-ups for tomorrow, and the journal. One dream runs at a time, and every app can follow its steps as it goes, quietly. The night's dream runs once every day; Dream now starts an extra one at once and never takes its place, and each dream reads everything since the one before. A dream the server was off for runs as soon as it's back, and one the model couldn't do is tried again until the next is due. A dream never notifies: Kumo messages you only when something from the night is worth it. | 92, 93 |
+| G61 | **A dream leaves a record you can take back.** Each dream ends with a record of what it planned, tidied, noticed and saved for you, every line pointing at what it changed. Every change is one entry in Kumo's work, marked with its dream and kept out of what Kumo handled today, whose undo puts the page, the wake-up or the block back as it was before the dream, while it hasn't changed since. The record is new until you've seen it. The journal a dream writes is your own diary in the first person, from the notes Kumo kept during the day and the day itself, with what you mentioned later put in the day it happened. | 92, 93, 94 |
+| G62 | **One day, joined up.** Every turn, in the main chat or a thread, and every piece of Kumo's background work has today so far in mind: what was said in the other conversations since 04:00 where you are, each thread named, the newest first, with what Kumo did and what's still to come today. The server writes it from what it holds, with no model call, within a bounded size, and a turn leaves out its own conversation, which it has already. Kumo keeps one plan from it: what you say anywhere moves its blocks, guesses and wake-ups without being asked again, and a wake-up for something already planned is moved, never doubled, so Kumo checks in once. | 95, 96 |
+| G63 | **Understanding you is quiet, and an answer is enough.** What Kumo would like you to explain is a question on one of its learning tracks, saying what it already understands, the missing piece and why it would help, with honest options to tap. A question has no due date and is never overdue, never waits on the Desk and never notifies; Kumo doesn't ask what it's already asking, or what you answered lately. You answer with taps, your own words or your voice, or say none fit or not sure, and Not now leaves it open. An answer becomes evidence on its track and Kumo files what it learned in the background, with no follow-up; a question answered elsewhere is settled, with where. | 97 |
+| G64 | **A share lands where it belongs.** What you share from the share sheet, a link, text, photos and files and a note, is on the server's disk before it answers, once per id the app chose: sharing again never makes a second. The server reads a link's page for its title and summary, where it can, and the app never contacts the site. Kumo puts the share in the open side thread it clearly belongs to, or else a new thread it names, where it becomes your message under the share's id; the main chat never holds it. That thread's own turn answers it, with what Kumo made of it and what it did, and the reply notifies like any other. | 98 |
+| G66 | **Full access is yours to give, and shows while it lasts.** Kumo runs in Codex's sandbox, writing only in its workspace, until you turn on full access with a command of its own that says it's meant; nothing else turns it on. From the next turn or piece of work that starts, in the chat, in the background and in the night's dream alike, Kumo runs without the sandbox and is told so; turning it off puts the sandbox back from the next one. A turn already running keeps what it started with. Every app hears each change and the snapshot carries it while it's on, so the chat can show it, and Kumo's work notes each change. | 100 |
 
 ## How Kumo decides to speak
 
@@ -69,9 +75,9 @@ are what the server holds it to.
 
 - **It messages you** (G48, G15). A message is the only way Kumo speaks. Every message notifies;
   your phone's Focus decides the sound, and only an urgent message breaks through it.
-- **It sets itself wake-ups** (G49, G50, G54). Each is a concrete time Kumo worked out and keeps
-  current, with what it's for and why. Setting one is quiet, and when one comes due Kumo looks
-  first.
+- **It sets itself wake-ups** (G49, G50, G54, G62). Each is a concrete time Kumo worked out and
+  keeps current, with a short title, what it will do and why; what comes round is one repeating
+  wake-up. Setting one is quiet, and when one comes due Kumo looks first, at today so far too.
 - **It wakes on what happens** (G35, G51, G54). A new mail, a change on your calendars and a move
   to another time zone each reach Kumo's judgement, never a fixed rule.
 - **It acts and records** (G34, G36, G37, G43, G44, G53, G56). Cards, its own calendar blocks,
@@ -80,6 +86,10 @@ are what the server holds it to.
 
 When Kumo's model can't act, nothing stands in for it (G52); at a usage limit it pauses, then
 catches up once (G57).
+
+Once a day, while you sleep, Kumo dreams (G60, G61): it looks back over the whole day and puts
+everything in order, and leaves a record you can take back. During the day it only keeps notes for
+the dream.
 
 ## Scenario by scenario
 
@@ -329,8 +339,8 @@ catches up once (G57).
 ### 35 · [Ari updates what it knows](transcripts/35-ari-updates-what-it-knows.jsonl)
 
 - Each page Ari writes shows as a `memory` step with `action: updated` and a `change` id; tapping
-  it fetches the page before and after. Additions to the journal show with `action: journaled`.
-  (G14, G22)
+  it fetches the page before and after. What happened in your day goes in a note for tonight's
+  journal, which the dream writes; the note shows nothing on the wire. (G14, G22)
 
 ### 36 · [Forget that](transcripts/36-forget-that.jsonl)
 
@@ -512,7 +522,7 @@ catches up once (G57).
 
 - `GET /v0/work` has today's work: what Kumo handled and what it cleared. (G43)
 - "That was wrong" from Kumo's work undoes the call and answers with the entry, `corrected_at` set;
-  once Kumo has kept what to do differently, Done says so. (G43)
+  once Kumo has kept what to do differently on the track it belongs to, Done says so. (G43)
 
 ### 74 · [The day made visible](transcripts/74-the-day-made-visible.jsonl)
 
@@ -523,8 +533,9 @@ catches up once (G57).
 
 ### 78 · [A wake-up](transcripts/78-a-wake-up.jsonl)
 
-- Kumo sets a wake-up with a concrete time: the end of the event it's for. It joins `plans` on the
-  Desk, and nothing notifies. `GET /v0/wakeups` lists the same. (G49, G33)
+- Kumo sets a wake-up with a concrete time, the end of the event it's for, and a short title for its
+  plans. It joins `plans` on the Desk, and nothing notifies. `GET /v0/wakeups` lists the same.
+  (G49, G33)
 - When it comes due, Kumo looks and messages you, Done says so, and the one-off leaves the Desk.
   (G50)
 
@@ -637,6 +648,90 @@ catches up once (G57).
   message comes with it. (G59)
 - A tick carries when you ticked, and every app hears the whole state in `made.state`. (G59)
 - The Made shelf comes from `GET /v0/made`, most recently changed first. (G59)
+
+### 92 · [A night's dream](transcripts/92-a-nights-dream.jsonl)
+
+- At the dream time Kumo dreams by itself: what it changes shows as it changes (a wake-up moved or set
+  is in the plans at once), each step it starts comes as `dream.progress` (reading back over the day,
+  writing Thursday's journal, moving a wake-up), and `dream.finished` carries the record when it's
+  done. Nothing notifies. (G60, G33)
+- Each line is in one group, `planned`, `tidied`, `noticed` or `saved`, and points at what it's
+  about; a line for a change has its entry in Kumo's work (`done`) and `undo`. A change Kumo didn't
+  mention gets a plain line of its own, so nothing a dream changed goes unsaid. (G61)
+- `GET /v0/dream` gives the dream time, the next one, and the latest record; it's new until
+  `POST /v0/dreams/{dream}/seen`. *App:* a moon on the Desk until it's seen, then the sun. (G61)
+- Undoing a line's entry takes back that change, here the wake-up, and the record shows it
+  `undone`. The dream's entries in Done carry the dream and don't count in `handled`. (G61)
+
+### 93 · [Dream now](transcripts/93-dream-now.jsonl)
+
+- `POST /v0/dream` answers at once with the dream under way (`dreaming`), and `dream.finished`
+  follows. Asking again while one runs starts nothing. (G60)
+- Dream now is an extra: `next_at` still says tonight's dream, which runs at 04:00 as ever and looks
+  back only over what came since Dream now. (G60)
+- `PUT /v0/dream/time` moves the dream time, on your local clock. (G60, G61)
+
+### 94 · [Your day in your words](transcripts/94-your-day-in-your-words.jsonl)
+
+- During the day Kumo keeps notes for the dream (`note_day`), with the day each is about; nothing
+  shows on the wire. (G61)
+- At night the dream writes each day's journal whole, as your own diary in the first person, and
+  rewrites an earlier day with what you mentioned later. The record points at both days; their
+  words come from memory, never from the log. (G61, G22)
+
+### 95 · [One plan across threads](transcripts/95-one-plan-across-threads.jsonl)
+
+- You tell Kumo four things in three conversations: a change of place in the main chat, a demo in
+  one thread, a finished handover in another, and a task still due back in the main chat. Each
+  turn has the others in mind, by thread, and what Kumo did since. (G62)
+- Kumo keeps one plan without being asked each time: its blocks for the slides and the review, a
+  guess at the evening marked as one, and one wake-up it moves and renames rather than doubles,
+  so `GET /v0/wakeups` lists one plan with its title. A wake-up that comes due too early looks at
+  today so far and moves itself, quietly. (G62, G49, G50)
+
+### 96 · [Today so far](transcripts/96-today-so-far.jsonl)
+
+- Background work has all of today in mind: each conversation named, the newest first, what Kumo
+  did from Done, and what's still to come today. (G62)
+- Kumo's check-in in a thread is in the main chat's mind next, with the wake-up that sent it, while
+  the main chat's own messages are left out of it. (G62)
+
+### 97 · [Understanding you](transcripts/97-understanding-you.jsonl)
+
+- Kumo asks with `add_question` on a track: what it understands, the missing piece, why it would
+  help and a few options. Every app hears `question.changed`; no card reaches the Desk and nothing
+  notifies. (G63)
+- `GET /v0/understanding` has every track, the open questions and what you answered lately. (G63)
+- Not now leaves a question open, with `later_at`, and moves it after the rest. (G63)
+- An answer of taps and your words is `answered` at once, evidence on its track in `GET /v0/work`;
+  Kumo files what it learned in the background, and the question gains `filed`, with nothing more
+  asked. (G63)
+- Kumo settles a question it learned the answer to elsewhere, with a note on where, and asking the
+  same thing again adds nothing. (G63)
+
+### 98 · [Sharing with Kumo](transcripts/98-sharing-with-kumo.jsonl)
+
+- `POST /v0/shares` answers as soon as the share is on disk, `sorting`. (G64)
+- The server reads the link's page for its title, summary and site name, and Kumo puts the share in
+  the open thread about the role: it arrives there as your message under the share's id, with the
+  note as its text and the link in `share`, and that thread's turn answers it. (G64)
+- A screenshot that belongs to no open thread starts a thread Kumo names (`thread.started`, by
+  `kumo`), where it's your message with its attachment, and is answered there. (G64)
+- Each reply notifies, naming its thread. (G64, G15)
+- Sharing again under the same id answers `200` with the share `placed` and its thread, and changes
+  nothing. (G64)
+
+### 100 · [Full access](transcripts/100-full-access.jsonl)
+
+- Settings reads how Kumo runs from `GET /v0/access`: `sandboxed` until you change it. (G66)
+- You turn on full access with Face ID, and the app sends `POST /v0/access/full` with `confirm: true`;
+  without it the server refuses. Every app hears `access.changed` with when it began, and the chat
+  shows its marker for as long as it lasts. (G66)
+- Kumo's work notes the change, so the Desk's handled count moves. (G66)
+- From its next turn Kumo runs without the sandbox, says what it's about to do, and installs what the
+  browser needs in Ito's own checkout. (G66)
+- `DELETE /v0/access/full` puts the sandbox back from the next turn, and Kumo's work notes that too.
+  (G66)
 
 ## Not in this version
 

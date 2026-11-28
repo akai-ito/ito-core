@@ -339,4 +339,91 @@ export const migrations: readonly string[] = [
     made TEXT PRIMARY KEY,
     state TEXT NOT NULL
   );`,
+  // 0.20: each wake-up has a short title for Kumo's plans, apart from what Kumo will do and why. One set before has a
+  // provisional title, the first clause of what it was for, cut at a word to fit, in the Desk and its events too;
+  // where there are any, a one-off wake-up a few minutes on has Kumo give each a plain title and fold repeats.
+  `CREATE TEMP TABLE wake_up_titles (what TEXT PRIMARY KEY, title TEXT);
+  INSERT OR IGNORE INTO wake_up_titles SELECT json_extract(body, '$.what'), json_extract(body, '$.what') FROM wake_ups;
+  INSERT OR IGNORE INTO wake_up_titles
+    SELECT json_extract(value, '$.what'), json_extract(value, '$.what') FROM desk, json_each(desk.body, '$.plans');
+  INSERT OR IGNORE INTO wake_up_titles
+    SELECT json_extract(value, '$.what'), json_extract(value, '$.what')
+    FROM events, json_each(events.body, '$.desk.plans') WHERE events.type = 'desk.changed';
+  DELETE FROM wake_up_titles WHERE what IS NULL;
+  UPDATE wake_up_titles SET title = substr(title, 1, instr(title || ';', ';') - 1);
+  UPDATE wake_up_titles SET title = substr(title, 1, instr(title || '. ', '. ') - 1);
+  UPDATE wake_up_titles SET title = substr(title, 1, instr(title || ' — ', ' — ') - 1);
+  UPDATE wake_up_titles SET title = rtrim(trim(title), '.');
+  UPDATE wake_up_titles SET title = coalesce(
+    nullif(rtrim(rtrim(substr(title, 1, 47),
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789''’'), ' ,:;-–—'), ''),
+    substr(title, 1, 47)
+  ) || '…' WHERE length(title) > 48;
+  UPDATE wake_up_titles SET title = 'A look Kumo set' WHERE title = '';
+  UPDATE wake_ups SET body = json_set(body, '$.title',
+    (SELECT title FROM wake_up_titles WHERE what = json_extract(wake_ups.body, '$.what')));
+  UPDATE desk SET body = json_set(body, '$.plans', json((
+    SELECT json_group_array(json(json_set(value, '$.title',
+      (SELECT title FROM wake_up_titles WHERE what = json_extract(value, '$.what')))))
+    FROM json_each(desk.body, '$.plans')
+  ))) WHERE json_array_length(body, '$.plans') > 0;
+  UPDATE events SET body = json_set(body, '$.desk.plans', json((
+    SELECT json_group_array(json(json_set(value, '$.title',
+      (SELECT title FROM wake_up_titles WHERE what = json_extract(value, '$.what')))))
+    FROM json_each(events.body, '$.desk.plans')
+  ))) WHERE type = 'desk.changed' AND json_array_length(body, '$.desk.plans') > 0;
+  DROP TABLE wake_up_titles;
+  INSERT INTO wake_ups (id, at, body)
+  SELECT id, at, json_object(
+    'id', id,
+    'at', at,
+    'title', 'Tidy your plans',
+    'what', 'Give each of your wake-ups a plain title, and fold repeats into one',
+    'why', 'Ito 0.20 shows your plans by a short title of their own. Give each of your wake-ups one with ' ||
+      'move_wake_up: a few plain words as they''d say it, such as "Ask how the technical went", not a note to ' ||
+      'yourself. Where several one-offs are the same reminder on different days, keep one with a repeat and drop ' ||
+      'the rest. Say nothing to them about it.',
+    'by', 'kumo',
+    'source', json(json_object('kind', 'chat', 'title', 'Ito 0.20: plain titles for your plans')),
+    'set_at', set_at
+  )
+  FROM (
+    SELECT 'w_titles_0_20' AS id,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+5 minutes') AS at,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AS set_at
+  )
+  WHERE EXISTS (SELECT 1 FROM wake_ups);`,
+  // Understanding you: the questions Kumo would like them to explain, on its learning tracks.
+  `CREATE TABLE questions (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL
+  );`,
+  // 0.20: what they share from their phone's share sheet, as it came, from when the server accepts it, through Kumo
+  // placing it in a thread, which makes it their message under the same id; and on that message, what they shared
+  // besides their note.
+  `CREATE TABLE shares (
+    id TEXT PRIMARY KEY,
+    at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  ALTER TABLE messages ADD COLUMN share TEXT;`,
+  // 0.20: Kumo's dreams, each with the night it stands for (`slot`, the dream time it was due at), and the notes
+  // Kumo keeps during the day for the next dream, each with the day it's about and the dream that took it in.
+  `CREATE TABLE dreams (
+    id TEXT PRIMARY KEY,
+    slot TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX dreams_by_slot ON dreams (slot);
+  CREATE INDEX dreams_by_start ON dreams (started_at);
+  CREATE TABLE day_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    day TEXT NOT NULL,
+    body TEXT NOT NULL,
+    dream TEXT
+  );
+  CREATE INDEX day_notes_by_dream ON day_notes (dream, id);`,
 ];

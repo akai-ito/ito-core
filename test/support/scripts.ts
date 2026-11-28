@@ -63,7 +63,11 @@ const isPartOf = (event: LoggedEvent, turn: string, messageTurns: ReadonlyMap<st
     case "onboarding.changed":
     case "problems.changed":
     case "recording.changed":
-    case "browser.changed": {
+    case "browser.changed":
+    case "access.changed":
+    case "question.changed":
+    case "dream.finished":
+    case "dream.progress": {
       return false;
     }
   }
@@ -157,7 +161,11 @@ const toTimed = (event: LoggedEvent, approvals: ReadonlySet<string>): TimedEvent
     case "onboarding.changed":
     case "problems.changed":
     case "recording.changed":
-    case "browser.changed": {
+    case "browser.changed":
+    case "access.changed":
+    case "question.changed":
+    case "dream.finished":
+    case "dream.progress": {
       return;
     }
   }

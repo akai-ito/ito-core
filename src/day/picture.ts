@@ -78,15 +78,15 @@ export const toldSetting = "day_told";
 
 type Told = { readonly at: string; readonly text: string; readonly done: string };
 
-// How to undo a change they made from Ito: move it back, or put it back.
-type ChangeUndo =
+// How to undo a change to Kumo's calendar, made from Ito or by a dream: move it back, put it back, or take it off.
+export type ChangeUndo =
   | { readonly kind: "kumo_block_moved"; readonly uid: string; readonly start: string; readonly end: string }
-  | { readonly kind: "kumo_block_removed"; readonly event: NewCalendarEvent; readonly block?: Block };
+  | { readonly kind: "kumo_block_removed"; readonly event: NewCalendarEvent; readonly block?: Block }
+  | { readonly kind: "kumo_block_added"; readonly uid: string };
 
-const isChangeUndo = (payload: unknown): payload is ChangeUndo => {
-  const kind = fieldOf(payload, "kind");
-  return kind === "kumo_block_moved" || kind === "kumo_block_removed";
-};
+const changeKinds: ReadonlySet<unknown> = new Set(["kumo_block_moved", "kumo_block_removed", "kumo_block_added"]);
+
+const isChangeUndo = (payload: unknown): payload is ChangeUndo => changeKinds.has(fieldOf(payload, "kind"));
 
 const isTold = (value: unknown): value is Told =>
   typeof fieldOf(value, "at") === "string" &&
@@ -355,6 +355,13 @@ export const createDayPicture = ({
       if (changed.ok) return ok(undefined);
       if (block) blocks.save(block);
       return fail(changed.failure);
+    }
+    if (undo.kind === "kumo_block_added") {
+      const block = blocks.find(undo.uid);
+      const removed = await calendar.removeEvent(undo.uid);
+      if (!removed.ok) return fail(removed.failure);
+      if (block) blocks.remove(undo.uid);
+      return ok(undefined);
     }
     // The block is kept first, so the item comes back marked as it was.
     if (undo.block) blocks.save({ ...undo.block, changedAt: now });

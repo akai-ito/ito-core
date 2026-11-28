@@ -12,16 +12,24 @@ import { fieldOf, stringsOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 import type { Info } from "#turns/turns.ts";
 
-// Wake-ups: a concrete time Kumo will wake and look at something, what it's for and why, one-off or repeating, who
-// made it and where it came from. When one comes due Kumo looks first, then messages them, moves it or drops it, and
-// Done says which. Setting one is quiet: it shows in Kumo's plans on the Desk.
+// Wake-ups: a concrete time Kumo will wake and look at something, one-off or repeating, with a short title for its
+// plans, what it will do and why, who made it and where it came from. When one comes due Kumo looks first, then
+// messages them, moves it or drops it, and Done says which. Setting one is quiet: it shows in Kumo's plans on the
+// Desk. Something that comes round is one repeating wake-up, never one per day: a second with the same title is
+// refused, pointing at the first.
 export type WakeUps = {
   readonly tools: readonly Tool[];
   readonly list: () => readonly WakeUp[];
   // From the app: move it, change how it repeats or what it's for.
   readonly change: (id: string, change: WakeUpChange) => Result<WakeUp, string>;
-  // From the app.
+  // From the app: stops it, a repeating one with every time to come.
   readonly cancel: (id: string) => boolean;
+  // From the app: a repeating one's next time is skipped, and it comes back at the one after; nothing when that was
+  // its last time, and it's gone.
+  readonly skip: (id: string) => Result<WakeUp | undefined, string>;
+  // Puts a wake-up back as it was, such as undoing a dream's change: a repeating one at its next time if that's
+  // passed; a one-off whose time has passed can't come back.
+  readonly put: (wakeUp: WakeUp) => Result<WakeUp, string>;
   readonly inMindText: () => string;
   // The wake-ups that came from these calendar events, for Kumo when they change.
   readonly tiedTo: (uids: readonly string[]) => readonly WakeUp[];
@@ -80,9 +88,29 @@ const instantPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|
 
 const clockPattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 
+const dayPattern = /^\d{4}-\d{2}-\d{2}$/u;
+
+const mostTitleLength = 60;
+
 const lineOf = (value: unknown, field: string): string => textOf(value, field).replaceAll(/\s+/gu, " ").trim();
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
+
+// A title as it reads, whatever its case and punctuation, so two for the same thing are seen as one.
+const titleKey = (title: string): string =>
+  title
+    .toLowerCase()
+    .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+const sameTitle = (left: string, right: string): boolean => titleKey(left) === titleKey(right);
+
+const titleProblem = (title: string): string | undefined =>
+  title === ""
+    ? "Give it a title: a few plain words for their plans, such as “Ask how the technical went”."
+    : title.length > mostTitleLength
+      ? `Keep the title to a few plain words, under ${String(mostTitleLength)} characters: the rest goes in what.`
+      : undefined;
 
 const minutesOf = (time: string): number => {
   const [hours = 0, minutes = 0] = time.split(":", 2).map(Number);
@@ -105,13 +133,18 @@ export const nextOf = (repeat: Repeat, after: number, timeZone: string): number 
   return next ?? after + 7 * 24 * 60 * 60 * 1000;
 };
 
-const repeatWords = ({ days, time }: Repeat): string => {
+const daysWords = ({ days, time }: Repeat): string => {
   const sorted = weekdays.filter((day) => days.includes(day));
   if (sorted.length === 7) return `every day at ${time}`;
   if (sorted.join(",") === "mon,tue,wed,thu,fri") return `weekdays at ${time}`;
   if (sorted.join(",") === "sat,sun") return `weekends at ${time}`;
   return `${sorted.map((day) => weekdayNames[day]).join(", ")} at ${time}`;
 };
+
+const repeatWords = (repeat: Repeat): string =>
+  daysWords(repeat) +
+  (repeat.left === undefined ? "" : `, ${String(repeat.left)} ${repeat.left === 1 ? "time" : "times"} left`) +
+  (repeat.until === undefined ? "" : `, until ${repeat.until}`);
 
 const toRepeat = (value: unknown): Repeat | string | undefined => {
   if (value === undefined || value === null) return undefined;
@@ -121,7 +154,15 @@ const toRepeat = (value: unknown): Repeat | string | undefined => {
   if (known.length === 0 || known.length !== new Set(days).size) {
     return "A repeat's days are mon, tue, wed, thu, fri, sat or sun, each once.";
   }
-  return clockPattern.test(time) ? { days: known, time } : "A repeat's time is HH:MM, such as 09:00.";
+  if (!clockPattern.test(time)) return "A repeat's time is HH:MM, such as 09:00.";
+  const left = fieldOf(value, "left");
+  if (left !== undefined && (typeof left !== "number" || !Number.isSafeInteger(left) || left < 1)) {
+    return "A repeat's left is how many more times it comes round, counting the next: 1 or more.";
+  }
+  const until = lineOf(value, "until");
+  return until === "" || dayPattern.test(until)
+    ? { days: known, time, ...(typeof left === "number" && { left }), ...(until !== "" && { until }) }
+    : "A repeat's until is its last day, as YYYY-MM-DD.";
 };
 
 const toInstant = (text: string, now: number): number | string => {
@@ -176,6 +217,13 @@ const repeatSchema = {
   properties: {
     days: { type: "array", items: { enum: weekdays }, minItems: 1, maxItems: 7 },
     time: { type: "string", description: "Such as 09:00." },
+    left: {
+      type: "integer",
+      description:
+        "When you know how many times it comes round, such as 8 for eight aligner trays: how many are left, " +
+        "counting the next. It ends after the last.",
+    },
+    until: { type: "string", description: "When you know its last day, as YYYY-MM-DD: it ends after that day." },
   },
   required: ["days", "time"],
   additionalProperties: false,
@@ -260,10 +308,29 @@ export const createWakeUps = ({
     return { ...wakeUp, at: toTimestamp(next) };
   };
 
+  // Whether a repeat still comes round at this time, before its last day.
+  const isWithin = (repeat: Repeat, at: number): boolean =>
+    repeat.until === undefined || toLocal(at, timeZone()).day <= repeat.until;
+
+  // A repeating wake-up once one of its times has gone, run or skipped: at its next time after, one fewer left, or
+  // nothing once that was its last.
+  const following = (wakeUp: WakeUp, after = clock.now()): WakeUp | undefined => {
+    const { repeat } = wakeUp;
+    if (!repeat || (repeat.left !== undefined && repeat.left <= 1)) return undefined;
+    const next = nextOf(repeat, after, timeZone());
+    if (!isWithin(repeat, next)) return undefined;
+    return {
+      ...wakeUp,
+      at: toTimestamp(next),
+      repeat: { ...repeat, ...(repeat.left !== undefined && { left: repeat.left - 1 }) },
+    };
+  };
+
   const describe = (wakeUp: WakeUp): string =>
-    `- ${wakeUp.id}: “${wakeUp.what}” at ${whenOf(Date.parse(wakeUp.at))}` +
+    `- ${wakeUp.id}: “${wakeUp.title}” at ${whenOf(Date.parse(wakeUp.at))}` +
     (wakeUp.repeat ? `, repeating ${repeatWords(wakeUp.repeat)}` : "") +
-    `; ${wakeUp.by === "you" ? "they asked" : "yours"}, from ${sourceWords(wakeUp.source)}`;
+    `; ${wakeUp.by === "you" ? "they asked" : "yours"}, from ${sourceWords(wakeUp.source)}` +
+    (sameTitle(wakeUp.what, wakeUp.title) ? "" : `. You'll: ${wakeUp.what}`);
 
   const eventLine = (uid: string): string => {
     const found = event(uid);
@@ -276,16 +343,22 @@ export const createWakeUps = ({
 
   const promptOf = (wakeUp: WakeUp): string =>
     [
-      `It's ${toSpoken(clock.now(), timeZone())}. A wake-up you set has come due: “${wakeUp.what}”.`,
+      `It's ${toSpoken(clock.now(), timeZone())}. A wake-up you set has come due: “${wakeUp.title}”.`,
+      `What you meant to do: ${wakeUp.what}`,
       `Why: ${wakeUp.why}`,
       `${wakeUp.by === "you" ? "They asked for it" : "You set it yourself"}, from ${sourceWords(wakeUp.source)}.`,
       ...(wakeUp.source.event ? [eventLine(wakeUp.source.event.uid)] : []),
       ...(wakeUp.motion === undefined ? [] : [`It's about ${wakeUp.motion}: read it with read_motion first.`]),
       ...(wakeUp.repeat
-        ? [`It repeats ${repeatWords(wakeUp.repeat)} and comes back by itself; move it only if this time is wrong.`]
+        ? [
+            following(wakeUp) === undefined
+              ? `It repeats ${repeatWords(wakeUp.repeat)}, and this is its last time.`
+              : `It repeats ${repeatWords(wakeUp.repeat)} and comes back by itself; move it only if this time is wrong.`,
+          ]
         : []),
       "",
-      "Look first at what's changed since you set it: the calendar, your memory, the end of the conversation.",
+      "Look first at what's changed since you set it: today so far, the calendar and your memory. If they've",
+      "already answered it, or you've already checked in on it today, don't ask again.",
       "Then do what fits:",
       "- Message them with post if it's useful now.",
       `- If now is the wrong time, such as the event moving or them being asleep, move it with move_wake_up (${wakeUp.id}).`,
@@ -299,25 +372,26 @@ export const createWakeUps = ({
     const reason = isCatchUp ? "Caught up after Kumo's pause" : lastLine(answer);
     const why = reason === "" ? {} : { reason };
     if (!after) {
-      desk.addDone({ text: `Dropped “${before.what}”`, ...why, quiet: false });
+      desk.addDone({ text: `Dropped “${before.title}”`, ...why, quiet: false });
       return;
     }
     if (after.at !== before.at && Date.parse(after.at) > clock.now()) {
-      desk.addDone({ text: `Moved “${before.what}” to ${whenOf(Date.parse(after.at))}`, ...why, quiet: false });
+      desk.addDone({ text: `Moved “${before.title}” to ${whenOf(Date.parse(after.at))}`, ...why, quiet: false });
       return;
     }
     // A catch-up's one message is for all it looked at, so its wake-ups are quiet in Done.
     const isMessaged = !isCatchUp && postedIn(run);
     desk.addDone({
       text: isCatchUp
-        ? `Woke up late for “${before.what}”`
+        ? `Woke up late for “${before.title}”`
         : isMessaged
-          ? `Woke up for “${before.what}” and messaged you`
-          : `Woke up for “${before.what}”`,
+          ? `Woke up for “${before.title}” and messaged you`
+          : `Woke up for “${before.title}”`,
       ...why,
       quiet: !isMessaged,
     });
-    if (after.repeat) save(nextTime(after, after.repeat));
+    const next = following(after);
+    if (next) save(next);
     else remove(after.id);
   };
 
@@ -358,11 +432,17 @@ export const createWakeUps = ({
     if (after && Date.parse(after.at) <= clock.now()) save({ ...after, at: toTimestamp(clock.now() + retryMs) });
   };
 
+  // Another wake-up already for this, by its title: the one to move, or make repeat, instead of a second.
+  const alike = (title: string): WakeUp | undefined => sorted().find((other) => sameTitle(other.title, title));
+
   const toNew = (input: unknown): Result<WakeUp, string> => {
     const now = clock.now();
+    const title = lineOf(input, "title");
+    const problem = titleProblem(title);
+    if (problem !== undefined) return fail(problem);
     const what = lineOf(input, "what");
     const why = textOf(input, "why").trim();
-    if (what === "" || why === "") return fail("Say what it's for in a line, and why.");
+    if (what === "" || why === "") return fail("Say what you'll do in a line, and why.");
     const repeat = toRepeat(fieldOf(input, "repeat"));
     if (typeof repeat === "string") return fail(repeat);
     const given = lineOf(input, "at");
@@ -373,10 +453,21 @@ export const createWakeUps = ({
     if (typeof source === "string") return fail(source);
     const motion = lineOf(input, "motion");
     if (motion !== "" && !isMotion(motion)) return fail(`There's no thing ${motion} in motion.`);
+    const same = alike(title);
+    if (same) {
+      return fail(
+        `You already have “${same.title}” (${same.id}) at ${whenOf(Date.parse(same.at))}. Move that one, or give it ` +
+          "a repeat if this comes round, rather than setting another; if it's something else, give it a title " +
+          "that tells them apart.",
+      );
+    }
     const first = at ?? nextOf(repeat ?? everyDay, now, timeZone());
+    if (repeat && !isWithin(repeat, first))
+      return fail(`Its last day, ${String(repeat.until)}, comes before its first time.`);
     return ok({
       id: identifiers.wakeUp(),
       at: toTimestamp(first),
+      title,
       what,
       why,
       ...(repeat && { repeat }),
@@ -387,23 +478,28 @@ export const createWakeUps = ({
     });
   };
 
-  // A change, from Kumo or from the app: a new time, a new repeat or none, new words.
+  // A change, from Kumo or from the app: a new time, a new repeat or none, a new title, new words.
   const changed = (
     current: WakeUp,
     at: string | undefined,
     repeat: Repeat | null | undefined,
-    what: string,
-    why: string,
+    { title, what, why }: { readonly title: string; readonly what: string; readonly why: string },
   ): Result<WakeUp, string> => {
     const now = clock.now();
     const instant = at === undefined ? undefined : toInstant(at, now);
     if (typeof instant === "string") return fail(instant);
+    const problem = title === "" ? undefined : titleProblem(title);
+    if (problem !== undefined) return fail(problem);
     const kept = repeat === null ? withoutRepeat(current) : { ...current, ...(repeat && { repeat }) };
     const next =
       instant ?? (repeat === undefined || repeat === null ? Date.parse(current.at) : nextOf(repeat, now, timeZone()));
+    if (kept.repeat && !isWithin(kept.repeat, next)) {
+      return fail(`Its last day, ${String(kept.repeat.until)}, comes before its next time.`);
+    }
     return ok({
       ...kept,
       at: toTimestamp(next),
+      ...(title !== "" && { title }),
       ...(what !== "" && { what }),
       ...(why !== "" && { why }),
     });
@@ -416,13 +512,24 @@ export const createWakeUps = ({
       description:
         "Set a time to wake up and look at something, one-off or repeating, at a concrete time you've worked out, " +
         "such as when the interview ends. When it comes due you look first, then message them, move it or drop " +
-        "it. Setting one is quiet: it shows in your plans on their Desk, where they can move or cancel it.",
+        "it. Setting one is quiet: it shows in your plans on their Desk by its title, where they can move or " +
+        "cancel it. Something that comes round, such as an evening reminder or a look at each weekday, is one " +
+        "wake-up with a repeat, never one per day, with its end when you know it; and when <wake_ups> already has " +
+        "one for this, move it instead.",
       inputSchema: {
         type: "object",
         properties: {
+          title: {
+            type: "string",
+            description:
+              "What it is in a few plain words, as they'd say it, for their plans: such as “Ask how the technical " +
+              "went” or “Look at the week ahead”. No notes to yourself.",
+          },
           what: {
             type: "string",
-            description: "What it's for, in a line, such as “Ask how the Halcyon technical went”.",
+            description:
+              "What you'll do when you wake, in a line, such as “Ask how the Halcyon technical went and note what " +
+              "to work on”.",
           },
           why: {
             type: "string",
@@ -451,7 +558,7 @@ export const createWakeUps = ({
           },
           motion: { type: "string", description: "The thing in motion it's about, by id." },
         },
-        required: ["what", "why", "asked", "source"],
+        required: ["title", "what", "why", "asked", "source"],
         additionalProperties: false,
       },
       call: (input) => {
@@ -465,9 +572,9 @@ export const createWakeUps = ({
       name: "move_wake_up",
       title: "Move a wake-up",
       description:
-        "Move one of your wake-ups, or change how it repeats or what it's for, by its id: when life moves, such as " +
-        "the event it's for moving, them travelling, or now being the wrong moment. For a repeating one, at moves " +
-        "only its next time.",
+        "Move one of your wake-ups, or change how it repeats, its title or what it's for, by its id: when life " +
+        "moves, such as the event it's for moving, them travelling, or now being the wrong moment. For a repeating " +
+        "one, at moves only its next time.",
       inputSchema: {
         type: "object",
         properties: {
@@ -475,6 +582,7 @@ export const createWakeUps = ({
           at: { type: "string", description: "The new time, an instant with its offset." },
           repeat: repeatSchema,
           one_off: { type: "boolean", description: "True to stop it repeating." },
+          title: { type: "string" },
           what: { type: "string" },
           why: { type: "string" },
         },
@@ -492,12 +600,15 @@ export const createWakeUps = ({
           current,
           given === "" ? undefined : given,
           fieldOf(input, "one_off") === true ? null : repeat,
-          lineOf(input, "what"),
-          textOf(input, "why").trim(),
+          {
+            title: lineOf(input, "title"),
+            what: lineOf(input, "what"),
+            why: textOf(input, "why").trim(),
+          },
         );
         if (!next.ok) return Promise.resolve(failed(next.failure));
         save(next.value);
-        return Promise.resolve({ text: `${next.value.what} is at ${whenOf(Date.parse(next.value.at))} now.` });
+        return Promise.resolve({ text: `${next.value.title} is at ${whenOf(Date.parse(next.value.at))} now.` });
       },
     },
     {
@@ -517,7 +628,7 @@ export const createWakeUps = ({
         const found = wakeUps.get().get(id);
         if (!found) return Promise.resolve(failed(`There's no wake-up ${id || "with that id"}.`));
         remove(id);
-        return Promise.resolve({ text: `Dropped ${found.what}.` });
+        return Promise.resolve({ text: `Dropped ${found.title}.` });
       },
     },
   ];
@@ -531,7 +642,11 @@ export const createWakeUps = ({
     change: (id, given) => {
       const current = wakeUps.get().get(id);
       if (!current) return fail("not_found");
-      const next = changed(current, given.at, given.repeat, given.what?.trim() ?? "", given.why?.trim() ?? "");
+      const next = changed(current, given.at, given.repeat, {
+        title: given.title?.replaceAll(/\s+/gu, " ").trim() ?? "",
+        what: given.what?.trim() ?? "",
+        why: given.why?.trim() ?? "",
+      });
       if (next.ok) save(next.value);
       return next;
     },
@@ -540,13 +655,32 @@ export const createWakeUps = ({
       remove(id);
       return true;
     },
+    skip: (id) => {
+      const current = wakeUps.get().get(id);
+      if (!current) return fail("not_found");
+      if (!current.repeat) return fail("A one-off has no next time to skip: cancel it instead.");
+      const next = following(current, Math.max(Date.parse(current.at), clock.now()));
+      if (!next) {
+        remove(id);
+        return ok(undefined);
+      }
+      save(next);
+      return ok(next);
+    },
+    put: (wakeUp) => {
+      const isPast = Date.parse(wakeUp.at) <= clock.now();
+      if (isPast && !wakeUp.repeat) return fail(`Its time, ${whenOf(Date.parse(wakeUp.at))}, has passed.`);
+      const back = isPast && wakeUp.repeat ? nextTime(wakeUp, wakeUp.repeat) : wakeUp;
+      save(back);
+      return ok(back);
+    },
     inMindText: () => {
       const listed = sorted();
       return listed.length === 0
         ? ""
         : [
             "<wake_ups>",
-            "Your wake-ups, soonest first; they can move or cancel them in Ito too:",
+            "Your wake-ups, soonest first, by their titles; they can move or cancel them in Ito too:",
             ...listed.map(describe),
             "</wake_ups>",
           ].join("\n");

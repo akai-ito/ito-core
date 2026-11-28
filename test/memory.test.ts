@@ -112,24 +112,20 @@ describe("memory", () => {
     );
   });
 
-  it("keeps their words, Kumo's account and Kumo's reading apart, and keeps a reading off the pages", async () => {
+  it("writes a day's journal whole, in their voice, and keeps a reading off every page", async () => {
     const { memory, directory } = await openMemory();
     await write(memory, { address: "memory:people/sam", title: "Sam", body: "A friend from running (as of 1 Nov)." });
+    const day = { day: "2026-10-26", gist: "A long day; I'm done with the commute", note: "The day" };
 
-    await call(memory, "journal", {
-      text: "I'm tired of the commute.",
-      yours: true,
-      gist: "A long day",
-      note: "Theirs",
+    const first = await call(memory, "journal", { ...day, text: "I'm tired of the commute." });
+    const rewritten = await call(memory, "journal", {
+      ...day,
+      text: "I'm tired of the commute.\n\nSam and I talked about moving, maybe east.",
     });
-    await call(memory, "journal", { text: "You talked about moving.", gist: "A long day", note: "Talked" });
-    const read = await call(memory, "journal", {
-      text: "You seemed flat\nafter the call.",
-      reading: true,
-      gist: "A long day",
-      note: "How you seemed",
-    });
-    const both = await call(memory, "journal", { text: "Hm.", yours: true, reading: true, gist: "A", note: "B" });
+    const reading = await call(memory, "journal", { ...day, text: "My reading: I seemed flat after the call." });
+    const timed = await call(memory, "journal", { ...day, text: "### 11:56\n\nRan with Sam." });
+    const later = await call(memory, "journal", { ...day, day: "2026-10-27", text: "Not yet." });
+    const undated = await call(memory, "journal", { text: "Ran with Sam.", gist: "A run", note: "A run" });
     const onPage = await edit(memory, {
       address: "memory:people/sam",
       old_text: "A friend from running",
@@ -140,20 +136,26 @@ describe("memory", () => {
       title: "Moving",
       body: "_My reading:_ you want out of London.",
     });
-    const day = await call(memory, "read_page", { address: "memory:journal/2026-10-26" });
+    const read = await call(memory, "read_page", { address: "memory:journal/2026-10-26" });
 
-    expect(read.text).toBe("Added to today's journal.");
-    expect(day.text).toContain("> I'm tired of the commute.");
-    expect(day.text).toContain("You talked about moving.");
-    expect(day.text).toContain("_My reading:_ You seemed flat after the call.");
-    expect(both).toEqual({
-      text: "Their own words aren't your reading: give yours or reading, not both.",
+    expect(first.text).toBe("Wrote 26 October 2026.");
+    expect(rewritten.text).toBe("Wrote 26 October 2026.");
+    expect(read.text).toContain("gist: A long day; I'm done with the commute");
+    expect(read.text).toContain("1  I'm tired of the commute.\n2\n3  Sam and I talked about moving, maybe east.");
+    expect(reading).toMatchObject({ text: expect.stringContaining("Leave your reading of them out.") as string });
+    expect(timed).toEqual({
+      text: "Write the day as one flowing entry in short paragraphs, without time headings.",
       isError: true,
     });
+    expect(later).toEqual({
+      text: "A journal entry is for a day that's happened: not a later day.",
+      isError: true,
+    });
+    expect(undated).toEqual({ text: "Give the day it's about, as YYYY-MM-DD.", isError: true });
     expect(onPage).toEqual({
       text:
-        "That's your reading of them, and a page keeps what they told you and what happened. A reading stays in " +
-        "the journal, marked as yours; ask them before anything like it becomes part of a page.",
+        "That's your reading of them, and a page keeps what they told you and what happened: say what they said, " +
+        "or ask them before anything like it becomes part of a page.",
       isError: true,
     });
     expect(newPage).toMatchObject({ isError: true });
@@ -169,7 +171,8 @@ describe("memory", () => {
     });
     await write(memory, { address: "memory:now", body: "As of 26 Oct, you're settling into the new flat." });
     await call(memory, "journal", {
-      text: "Ran with Sam; you seemed worried Sam is pulling away.",
+      day: "2026-10-26",
+      text: "Ran with Sam; I worried Sam is pulling away.",
       gist: "Sam pulling away?",
       note: "Ran with Sam",
     });
@@ -184,7 +187,7 @@ describe("memory", () => {
     });
     const fixedDay = await edit(memory, {
       address: "memory:journal/2026-10-26",
-      old_text: "; you seemed worried Sam is pulling away",
+      old_text: "; I worried Sam is pulling away",
       new_text: ", an easy 8 km by the river together",
       gist: "Ran with Sam",
     });
@@ -196,11 +199,11 @@ describe("memory", () => {
     });
 
     expect(found.text).toMatch(
-      /^memory:journal\/2026-10-26 \(26 October 2026, version \w{10}\)\n {2}gist: Sam pulling away\?\n {2}3 {2}Ran with Sam; you seemed worried Sam is pulling away\.\nmemory:people\/sam \(Sam, version \w{10}\)\n {2}2 {2}You're worried Sam is pulling away\.$/u,
+      /^memory:journal\/2026-10-26 \(26 October 2026, version \w{10}\)\n {2}gist: Sam pulling away\?\n {2}1 {2}Ran with Sam; I worried Sam is pulling away\.\nmemory:people\/sam \(Sam, version \w{10}\)\n {2}2 {2}You're worried Sam is pulling away\.$/u,
     );
     expect(tooShort).toEqual({ text: "Give a word or phrase of three letters or more to find.", isError: true });
     expect(corrected.text).toMatch(
-      /^Saved Sam, now at version \w{10}\. Still said elsewhere, so put each right too:\nmemory:journal\/2026-10-26 \(26 October 2026, version \w{10}\)\n {2}gist: Sam pulling away\?\n {2}3 {2}Ran with Sam; you seemed worried Sam is pulling away\.$/u,
+      /^Saved Sam, now at version \w{10}\. Still said elsewhere, so put each right too:\nmemory:journal\/2026-10-26 \(26 October 2026, version \w{10}\)\n {2}gist: Sam pulling away\?\n {2}1 {2}Ran with Sam; I worried Sam is pulling away\.$/u,
     );
     expect(fixedDay.text).toMatch(/^Saved 26 October 2026/u);
     expect(settled.text).toMatch(/^Saved Sam, now at version \w{10}\. No other page says it\.$/u);
@@ -425,7 +428,7 @@ describe("memory", () => {
     const bare = await call(memory, "write_page", { address: "memory:people/sam", title: "Sam", body: "A friend." });
     await write(memory, { address: "memory:people/sam", title: "Sam", body: "A friend." });
     const unnoted = await edit(memory, { address: "memory:people/sam", old_text: "A", new_text: "An old", note: "" });
-    const journal = await call(memory, "journal", { text: "Ran with Sam." });
+    const journal = await call(memory, "journal", { day: "2026-10-26", text: "Ran with Sam." });
 
     expect(bare).toEqual({ text: `${gist} ${circle} ${note}`, isError: true });
     expect(unnoted).toEqual({ text: note, isError: true });

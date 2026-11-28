@@ -39,11 +39,12 @@ export const inMindTitles: Readonly<Record<InMindPage, string>> = {
 // Past this, a page in mind gets a gentle note to move detail out: never a limit, so nothing is ever squeezed in.
 export const inMindWords = 450;
 
-export const wordsIn = (markdown: string): number => markdown.split(/\s+/u).filter(Boolean).length;
+// Words as a reader counts them, each run of letters and each number on its own, so that text with its spaces
+// squeezed out ("As of4 Dec") counts the same as the text it should be.
+export const wordsIn = (markdown: string): number =>
+  markdown.match(/\p{L}+(?:['’]\p{L}+)*|\p{N}+(?:[.,:]\p{N}+)*/gu)?.length ?? 0;
 
-// How Kumo's own reading of them is marked, in the journal only: never a fact, and never on a page.
-export const readingMark = "_My reading:_";
-
+// Kumo's own reading of them, never a fact: kept out of every page.
 export const isReading = (text: string): boolean => /my reading:/iu.test(text);
 
 const namePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
@@ -146,27 +147,6 @@ export const dayTitle = (day: string): string =>
 export const toDay = (at: number, timeZone: string): string =>
   new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone }).format(at);
 
-export const toTimeOfDay = (at: number, timeZone: string): string =>
-  new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }).format(at);
-
-// Whose words a journal entry holds: theirs, quoted; Kumo's account of the day; or Kumo's reading of them, marked
-// as such in one paragraph, so recall never takes it for a fact.
-export type Voice = "yours" | "account" | "reading";
-
-export const toJournalEntry = (text: string, voice: Voice, time: string): string => {
-  const words = text.trim();
-  const body =
-    voice === "yours"
-      ? words
-          .split("\n")
-          .map((line) => `> ${line}`.trimEnd())
-          .join("\n")
-      : voice === "reading"
-        ? `${readingMark} ${words.replaceAll(/\s+/gu, " ")}`
-        : words;
-  return `### ${time}\n\n${body}\n`;
-};
-
 // The lines of a page's body as read_page numbers them, from 1, that hold any of the words.
 export const linesWith = (
   markdown: string,
@@ -177,9 +157,6 @@ export const linesWith = (
     .split("\n")
     .map((text, index) => ({ number: index + 1, text }))
     .filter(({ text }) => words.some((word) => text.toLowerCase().includes(word)));
-
-export const appendEntry = (markdown: string, entry: string): string =>
-  markdown.trim() === "" ? entry : `${markdown.trimEnd()}\n\n${entry}`;
 
 const levelOf = (line: string): number | undefined => /^(?<hashes>#{1,6})\s/u.exec(line)?.groups?.hashes?.length;
 

@@ -4,7 +4,9 @@ import type { Result } from "#result.ts";
 const quickModel = "luna";
 const thoroughEffort = "high";
 
-export type QuickChoice = () => Promise<ModelChoice | undefined>;
+// The quick model, thinking least, for a small judgement. One that must see images needs a model that can: the quick
+// one if it does, or else the default model thinking least.
+export type QuickChoice = (needs?: { readonly images?: boolean }) => Promise<ModelChoice | undefined>;
 
 export type Stakes = "low" | "high";
 
@@ -15,9 +17,13 @@ type Models = () => Promise<Result<readonly ModelOption[], string>>;
 
 export const createQuickChoice =
   (models: Models): QuickChoice =>
-  async () => {
+  async ({ images = false } = {}) => {
     const listed = await models();
-    const quick = listed.ok ? listed.value.find(({ id }) => id.includes(quickModel)) : undefined;
+    const fits = ({ images: seesImages }: ModelOption): boolean => seesImages || !images;
+    const quick = listed.ok
+      ? (listed.value.find((model) => model.id.includes(quickModel) && fits(model)) ??
+        (images ? listed.value.find((model) => model.is_default && fits(model)) : undefined))
+      : undefined;
     const lowest = quick?.efforts[0];
     return quick && lowest ? { model: quick.id, effort: lowest.id } : undefined;
   };

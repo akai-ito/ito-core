@@ -21,11 +21,12 @@ Over SSH, `node bin/ito.ts login --device-auth` signs Codex in with a code inste
 redirect. `ito serve` listens on `127.0.0.1:8787` only. If you lose the token, `ito token new` makes
 another. `--engine demo` answers without Codex, to try Ari before signing in: a message with *busy*
 in it walks a trail of steps, *long* gives a reply to stop, *fail* a failure, *silent* a quiet turn
-that works until you stop it, *ask* a question, *approve* an approval, *remember* writes a page and
-the journal in memory, *recall* looks it up, *trip* and *training* start things in motion, *motion*
-fills In motion with every kind (a role, a hybrid block, a project and a goal that ended unmet),
-*booked* books the trip's Uffizi, *mail* reads a sample mail, puts a draft on the Desk and messages
-you about it, and *plan* lays out a sample day of Kumo's plan and guesses in Coming up.
+that works until you stop it, *ask* a question, *approve* an approval, *remember* writes a page in
+memory and a note for tonight's journal, *recall* looks it up, *trip* and *training* start things
+in motion, *motion* fills In motion with every kind (a role, a hybrid block, a project and a goal
+that ended unmet), *booked* books the trip's Uffizi, *mail* reads a sample mail, puts a draft on the
+Desk and messages you about it, and *plan* lays out a sample day of Kumo's plan and guesses in
+Coming up.
 
 ## Check a turn from the machine
 
@@ -71,6 +72,9 @@ To update, pull and restart; a reply being written at that moment ends as interr
 cd ~/ito-core && git pull && npm ci --omit=dev && systemctl --user restart ito
 ```
 
+When Playwright's version changes, run `npx playwright install --with-deps chromium` too, before
+the restart.
+
 ## The model and the agent's instructions
 
 Ari runs on Codex's default model until you choose another, and how hard it thinks, in Ari's
@@ -79,6 +83,20 @@ Settings › Model; the choice applies from your next message.
 The agent's instructions, Ari's voice and how it works, are in
 [agent/instructions.md](../agent/instructions.md). Change them and restart: the next message picks
 them up, in the same conversation.
+
+## Full access
+
+Kumo's commands run in Codex's `workspace-write` sandbox: it writes only in its workspace,
+`~/.ito/workspace`, reads the rest of the machine and reaches the network. When you want it to fix
+the server itself, such as installing what a capability needs, turn on full access in the app's
+Settings, with Face ID. From Kumo's next turn, in the chat, in the background and in the night's
+dream, its commands run with no sandbox at all: anything your user can do, Ito's own checkout
+included, with no approval asked. Kumo is told so on every turn, and says what it's about to do
+before it does it. A turn already running keeps the sandbox it started with.
+
+The chat shows a marker while it's on, and Kumo's work notes each change. Turn it off in Settings
+once you're done: the sandbox is back from the next turn. From the machine, the same switch is
+`POST /v0/access/full` with `{"confirm": true}` and `DELETE /v0/access/full`.
 
 ## Capabilities and Reports
 
@@ -92,14 +110,37 @@ from your conversation. Tap *Connect GitHub* on its sheet and approve the code o
 GitHub app can only open and comment on issues in Ito's own repositories, and GitHub hands its token
 to your server, never to the phone. Up to 20 reports a day are filed; any more go to Ito's log.
 
+## Kumo's browser
+
+The Browser capability is a Chromium on the server that Kumo uses for you, with takeover on the
+phone for logins, codes, CAPTCHAs and payments. It needs Playwright's Chromium and, on Linux, Xvfb,
+a virtual display, so Chromium runs headful, as a person's browser does: sites trust that more than
+a headless one, so logins and CAPTCHAs behave as they do on a laptop.
+
+```sh
+sudo apt install xvfb                          # the virtual display
+cd ~/ito-core && npm ci --omit=dev             # Playwright comes with Ito's packages
+npx playwright install --with-deps chromium    # Chromium and the libraries it needs
+systemctl --user restart ito
+```
+
+Switch it on in Ari's Settings › Capabilities. If it can't start, its row there says why and how to
+fix it, such as a package missing because `npm ci` was skipped. The browser starts Xvfb itself on a
+free display while Chromium runs, or uses `$DISPLAY` if one is set, such as under `xvfb-run`.
+Without either it falls back to headless and says so in Ito's log (`journalctl --user -u ito`),
+with the fix. On a Mac it runs headless unless `ITO_BROWSER=headful` is set, which opens a window
+on the desktop; `ITO_BROWSER=headless` forces headless anywhere. The page always browses at your
+phone's size: a takeover tells the server the room the page has on screen, and it's kept.
+
 ## Memory
 
 Ari remembers you in the Thread, a git repository of Markdown pages in `~/.ito/thread` that you can
 read without Ito: your portrait, what's going on now, how you like to be helped, pages on people,
 goals, projects, places and topics, and a journal. Ari writes it as you talk, and finds things in it
 and in past conversations with a small embedding model it downloads once and runs on the CPU.
-Your own words stay apart from Kumo's reading of you: a reading lives only in the journal, marked as
-Kumo's, and when you correct something, Kumo finds every copy, journal previews included.
+Pages say what you told Kumo and what happened, never Kumo's reading of you, and when you correct
+something, Kumo finds every copy, journal previews included. The journal is your own diary, in the
+first person: during the day Kumo only keeps notes for it, and its nightly dream writes each day.
 A photo you share in the chat can stay with the story: Kumo puts it where it belongs in the journal
 or on a page, and the Thread keeps a copy in its `media` folder, scaled down to at most 2,000 pixels
 on the long edge as JPEG, without its location or camera details, so it goes to the backup too.
@@ -107,6 +148,22 @@ Kumo also notices the chapters of your life, such as a trip or a training block,
 short story with its photos on `chapters/`, with when it began and ended. When a change teaches it
 something about you, it says so in a line to you, kept with the change (in the Thread too, as a
 `Learnt:` line in its commit); the Library shows the newest few, and tidying a page adds none.
+
+### The nightly dream
+
+Once a day, at the dream time (04:00 on your phone's clock until you change it in Ari's Settings),
+Kumo dreams: a background run of up to an hour that looks back over everything since the last one,
+every thread and the main chat, the wake-ups that ran, the mail you read or sent, your calendar, the
+photos you shared (by the day each was taken) and its own notes from the day, and puts it in order.
+It rewrites memory pages rather than adding to them, keeps Now to what's live and How to help you to
+lasting preferences, reconciles tomorrow's blocks, guesses and wake-ups, writes each day's journal in
+the first person (filling in earlier days with what you mentioned later), and folds lasting lessons
+from your corrections into How to help you. It leaves a record on the Desk of what it planned,
+tidied, noticed and saved for you; each change is in Kumo's work with an undo that puts it back as it
+was before the dream. If the box was off at the dream time, it dreams as soon as it's back; if the
+model couldn't, it tries again every half hour until the next one is due. *Dream now* runs an extra
+one at once; the night's dream still runs, looking back only since. A dream never notifies; Kumo
+messages you only when something from the night is worth it.
 
 To back it up, tap *Back up to GitHub* in Ari's Settings › Memory and approve the code on GitHub.
 Your server finds your private `ito-thread` repository, or makes one, and GitHub asks you to install
@@ -229,9 +286,10 @@ blocks:
   and your Focus decides what makes a sound. Kumo marks a message urgent only when it can't wait,
   and then it's time-sensitive, to break through Focus.
 - **It sets itself wake-ups:** a concrete time, what it's for and why, one-off or repeating (such as
-  weekdays at 9), who asked for it, and where it came from. "After the dentist" is when the
-  appointment ends, and Kumo moves a wake-up when life moves. Setting one is quiet: it shows in
-  Kumo's plans on the Desk, where you can move or cancel it. When one comes due, Kumo looks first, then
+  weekdays at 9, with an end when Kumo knows one: eight more times, or until a day), who asked for
+  it, and where it came from. "After the dentist" is when the appointment ends, and Kumo moves a
+  wake-up when life moves. Setting one is quiet: it shows in Kumo's plans on the Desk, where you can
+  move it, skip a repeating one's next time, or stop it. When one comes due, Kumo looks first, then
   messages you, moves it or drops it, and Done says which.
 - **It wakes on what happens:** a new mail, a change on your calendars, the mail you send. Kumo looks
   at each with the same memory pages and plans it has in the chat, and the end of your conversation,
@@ -250,6 +308,16 @@ shows them as bars. Kumo moves a track by judgement. "That was wrong" on anythin
 undoes it where it can, keeps what to do differently on your How to help you page (the attention
 pass reads the "Sorting mail" part as it sorts), and steps its track back. To be shown everything
 again, tell Kumo.
+
+What Kumo would like you to explain, which only you can tell it, waits in **Understanding you**, a
+quiet page that grows out of its tracks (tap Kumo on the Desk). Each question says what Kumo already
+understands, the missing piece and why it would help, often with a few honest guesses to tap. Answer
+with taps, your own words or your voice (heard on the box's GPU, as recordings are), or say none
+fit, not sure or not now. Nothing there is due or overdue, and it never reaches Waiting on you or
+notifies you. An answer is enough: it becomes evidence on its track, Kumo files what it learned in
+memory in the background, and asks nothing more about it. If you explain something in the chat
+instead, Kumo settles the question with a note on where, and the nightly dream can add and settle
+questions too.
 
 ## Time zone, location and weather
 

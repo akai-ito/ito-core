@@ -150,7 +150,7 @@ describe("side threads in the store", () => {
 });
 
 describe("what each conversation knows of the others", () => {
-  it("gives a side thread a digest of the main chat and the other open threads, and the main chat the open threads", () => {
+  it("gives a side thread the other open threads, and the main chat the open threads; today so far has the rest", () => {
     const store = openStore("digest");
     talk(store, "1", "Lunch with Lena at 12:30.", "Then the morning's yours.");
     const menu = talk(store, "2", "Menu photo", "Noodles and laab.", { isNewThread: true });
@@ -162,7 +162,7 @@ describe("what each conversation knows of the others", () => {
     const inMain = threads.inMindText(undefined);
 
     expect(inMenu).toContain("<thread>");
-    expect(inMenu).toContain("- Saturday, they: Lunch with Lena at 12:30.");
+    expect(inMenu).not.toContain("Lunch with Lena at 12:30.");
     expect(inMenu).toContain(`- ${String(guide.thread)}, “V&A guide”, last Saturday: 3 of 9 spotted`);
     expect(inMenu).not.toContain(`- ${String(menu.thread)},`);
     expect(inMain).toContain(`- ${String(menu.thread)}, a thread not yet named, last Saturday`);

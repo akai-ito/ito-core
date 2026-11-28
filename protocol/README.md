@@ -45,6 +45,10 @@ sequenceDiagram
   with a `snapshot` instead.
 - **Send** messages under an id the app chooses, so retrying is always safe. The server answers
   once the message is on disk; what it does next arrives on the stream.
+- **Share** from the phone's share sheet: any mix of a link, text, photos and files and a note, under
+  an id the app makes, so a retry never makes a second. The server reads the link's page for its
+  title and summary; Kumo puts the share in the open side thread it belongs in, or a new one it
+  names, where it becomes your message with `share` on it, and answers it in that thread's turn.
 - **Stop** a turn, or **try again** after one failed, with commands addressed to the turn.
 - **Attach** photos and files: upload each under an id the app makes, then name them in a message.
   Anything over 20 MB, such as a recording, goes up in chunks that resume after any drop; `GET
@@ -60,12 +64,26 @@ sequenceDiagram
   from Kumo reaches it at once. Notifications travel encrypted.
 - **Say where you are:** the phone sends its time zone and, roughly, its place. Kumo lives by that
   time zone, and the Desk shows the weather there.
-- **Plan with Kumo:** list, move and cancel the wake-ups Kumo set, which the Desk shows as its plans.
+- **Plan with Kumo:** list, move, skip a repeating one's next time and cancel the wake-ups Kumo set,
+  which the Desk shows as its plans, each with its title and, for a repeat that ends, how many times
+  are left or its last day.
+- **Kumo's dream:** once a day, at a time you set (04:00 until you choose another), Kumo looks back
+  over the whole day and puts it in order: memory, tomorrow's blocks and wake-ups, and your journal,
+  written as your own diary. Read the latest dream's record with `GET /v0/dream` (what it planned,
+  tidied, noticed and saved for you, each line pointing at what it changed, with an undo through
+  Kumo's work), mark it seen, ask for one now, and set the dream time. While one runs,
+  `dream.progress` brings each step as a short line for a live view, and `GET /v0/dream` has the
+  latest; `dream.finished` says when one is done. Neither notifies.
 - **Talk in threads:** a side thread is a conversation of its own beside the main chat. Send into
   one, reply to a message to start one, open one with its messages, rename it, mark it done or open,
   and move a message between threads; list and search them for Threads by day.
 - **Open what Kumo made:** list the Made shelf, fetch a page with its content and your ticks, and
   tick its items.
+- **Understanding you:** what Kumo would like you to explain waits quietly as questions on its
+  learning tracks (`GET /v0/understanding`), each with what Kumo already understands, the missing
+  piece and why it would help. Answer with taps, your own words or a recording you uploaded, or say
+  none fit, not sure or not now; `question.changed` follows each one. Nothing there is due, and
+  nothing notifies.
 - **Follow Kumo's browser:** when Kumo books, fills in a form or shops for you on a site, its task
   shows as a line in the thread it lives in (`browser.changed`), and a tap peeks at the live view
   over a WebSocket. When Kumo needs your hand, for a login, a code, a CAPTCHA or the pay button, a
@@ -73,6 +91,10 @@ sequenceDiagram
   phone's own keyboard laid over the page's field, and hand it back. Kumo never presses a button
   that pays. A free booking or form can come as a one-tap `commit` card on the Desk, pressed for
   you only if the page is still as it was.
+- **Give Kumo full access** to the server, or put it back in its sandbox, from its next turn: read
+  it with `GET /v0/access`, turn it on with `POST /v0/access/full` and a body that says it's meant,
+  and off with `DELETE /v0/access/full`. `access.changed` tells every app, so the chat can show a
+  marker while it lasts.
 
 ## Events
 
@@ -103,6 +125,10 @@ Every event carries `id`, `type` and `at`, plus the fields of its type.
 | `made.state` | Your ticks on a page changed, from any device |
 | `made.removed` | You let Kumo forget a page |
 | `browser.changed` | Kumo's browser moved on: a step on a site, a takeover asked for, taken or handed back, a commit card, or the task over |
+| `access.changed` | You turned Kumo's full access on or off |
+| `question.changed` | A question in Understanding you was added, answered, filed, heard, set aside, settled or dropped |
+| `dream.finished` | Kumo finished a dream, with its record |
+| `dream.progress` | A dream under way started a step, such as tidying a page or moving a wake-up |
 
 ## Kumo's browser
 

@@ -16,7 +16,11 @@ export type CodexErrorInfo =
   | "rateLimitExceeded"
   | "flexUnavailable"
   | "serverOverloaded"
+  | "modelNotFound"
+  | "policyCapacityUnavailable"
+  | "inferenceHookDenied"
   | "cyberPolicy"
+  | "bioPolicy"
   | "misalignmentPolicyViolation"
   | "tooManyDenials"
   | { httpConnectionFailed: { httpStatusCode: number | null } }

@@ -11,7 +11,8 @@ import { createBlockStore } from "#day/blocks.ts";
 import { createDayPicture, guessMark } from "#day/picture.ts";
 import { atLocal } from "#day/time.ts";
 import { startOfDay, untilMinutes } from "#desk/day.ts";
-import type { CalendarItem } from "#protocol/types.ts";
+import type { CalendarItem, DoneEntry } from "#protocol/types.ts";
+import type { Undoer } from "#desk/desk.ts";
 import { fail, ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createTracks } from "#work/tracks.ts";
@@ -90,11 +91,18 @@ const pictureWith = (name: string, theirs: readonly CalendarItem[] = []) => {
   const memory = memoryCalendar(theirs);
   const database = openDatabase(path.join(home, `${name}.db`));
   const saved = createCell<ReadonlyMap<string, string>>(new Map());
+  const undoers = createCell<readonly Undoer[]>([]);
+  const blocks = createBlockStore(database);
   const picture = createDayPicture({
-    blocks: createBlockStore(database),
+    blocks,
     calendar: memory.calendar,
     motions: noMotions,
-    desk: { addDone: () => assert.fail("The day picture records nothing here."), onUndo: ignore },
+    desk: {
+      addDone: () => assert.fail("The day picture records nothing here."),
+      onUndo: (undoer) => {
+        undoers.update((current) => [...current, undoer]);
+      },
+    },
     tracks: createTracks({ database, clock, identifiers: { track: () => "l_day" }, info: ignore }),
     settings: {
       setting: (key) => saved.get().get(key),
@@ -112,7 +120,7 @@ const pictureWith = (name: string, theirs: readonly CalendarItem[] = []) => {
     if (!found) throw new Error(`no tool ${name}`);
     return found;
   };
-  return { clock, memory, picture, tool };
+  return { clock, memory, picture, tool, undoers, blocks };
 };
 
 const working = {
@@ -157,6 +165,27 @@ describe("local days across a change of clock", () => {
 });
 
 describe("Kumo's picture of the day", () => {
+  it("takes off a block a dream added, block and all, when its entry in Done is undone", async () => {
+    const { tool, memory, undoers, blocks } = pictureWith("added");
+    await tool("plan_block").call(working);
+    const [placed] = memory.items.get();
+    const uid = placed?.uid ?? "";
+    expect(blocks.find(uid)).toBeDefined();
+    const entry: DoneEntry = {
+      id: "d_1",
+      at: toTimestamp(sunday),
+      text: "Guessed “Working”",
+      undo: true,
+      quiet: false,
+    };
+
+    const undone = await Promise.all(undoers.get().map((undoer) => undoer(entry, { kind: "kumo_block_added", uid })));
+
+    expect(undone).toEqual([ok(undefined)]);
+    expect(memory.items.get()).toEqual([]);
+    expect(blocks.find(uid)).toBeUndefined();
+  });
+
   it("puts plans and guesses on Kumo's calendar, marks guesses, and keeps them clear of yours", async () => {
     const dentist: CalendarItem = {
       id: "v_dentist",

@@ -13,8 +13,8 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       const { message } = event;
       database
         .prepare(
-          `INSERT INTO messages (id, position, role, text, at, answers, attachments, spoken, done, thread, quotes)
-            VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO messages (id, position, role, text, at, answers, attachments, spoken, done, thread, quotes, share)
+            VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           message.id,
@@ -27,6 +27,7 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
           message.done ?? null,
           message.thread ?? null,
           message.quotes ? toJson(message.quotes) : null,
+          message.share ? toJson(message.share) : null,
         );
       const attached = [...(message.attachments ?? []), ...(message.spoken?.audio ? [message.spoken.audio] : [])];
       for (const attachment of attached) {
@@ -216,7 +217,9 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
       return;
     }
     case "voice.status":
-    case "recording.changed": {
+    case "recording.changed":
+    case "question.changed":
+    case "dream.progress": {
       return;
     }
     case "thread.started":
@@ -261,8 +264,20 @@ export const project = (database: DatabaseSync, seq: number, event: LoggedEvent)
         .run(toJson(event.onboarding));
       return;
     }
+    // A dream's record, kept by the dream itself first; from the log too, so a restored server still has it.
+    case "dream.finished": {
+      const { dream } = event;
+      database
+        .prepare("INSERT OR IGNORE INTO dreams (id, slot, started_at, body) VALUES (?, ?, ?, ?)")
+        .run(dream.id, dream.started_at, dream.started_at, toJson(dream));
+      return;
+    }
     case "browser.changed": {
       database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('browser', ?)").run(toJson(event.browser));
+      return;
+    }
+    case "access.changed": {
+      database.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('access', ?)").run(toJson(event.access));
       return;
     }
     case "problems.changed": {

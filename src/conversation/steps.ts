@@ -209,6 +209,57 @@ const motionTitle = ({ action, pages = [], note }: StepFacts): Title => {
   }
 };
 
+// A time Kumo's browser needed his hand, as the trail says it; how the page came back goes under it.
+const handoffTitle = ({ handoff }: StepFacts): Title => {
+  switch (handoff?.need) {
+    case "login": {
+      return title("Needing you to log in", "Needed you to log in");
+    }
+    case "code": {
+      return title("Needing a code from you", "Needed a code from you");
+    }
+    case "captcha": {
+      return title("Needing you past a check", "Needed you past a check");
+    }
+    case "payment": {
+      return title("Needing you to press Pay", "Needed you to press Pay");
+    }
+    case "other": {
+      return title("Needing your hand", "Needed your hand");
+    }
+    case undefined: {
+      return title("You're taking over", "You took over");
+    }
+  }
+};
+
+// How a one-tap card he answered went.
+const commitTitle = ({ commit }: StepFacts): Title => {
+  const button = commit?.page.button ?? "it";
+  switch (commit?.outcome) {
+    case "done": {
+      return title(`Pressing “${button}”`, `Pressed “${button}”`);
+    }
+    case "uncertain": {
+      return title(`Pressing “${button}”`, `Pressed “${button}”; checking it went through`);
+    }
+    case "failed": {
+      return title(`Pressing “${button}”`, `Pressed “${button}”, and it didn't go through`);
+    }
+    case "changed": {
+      return title("Checking the page", "The page changed, so nothing was pressed");
+    }
+    case "declined": {
+      const said = commit.answer === undefined ? "not now" : `“${commit.answer}”`;
+      return title("Leaving it", `You said ${said}, so nothing was pressed`);
+    }
+    case "refused":
+    case undefined: {
+      return title("Leaving it", "Nothing was pressed");
+    }
+  }
+};
+
 const titleOf = (kind: StepKind, facts: StepFacts, trail: Trail | undefined): Title => {
   switch (kind) {
     case "thinking": {
@@ -249,6 +300,12 @@ const titleOf = (kind: StepKind, facts: StepFacts, trail: Trail | undefined): Ti
     }
     case "motion": {
       return motionTitle(facts);
+    }
+    case "handoff": {
+      return handoffTitle(facts);
+    }
+    case "commit": {
+      return commitTitle(facts);
     }
   }
 };

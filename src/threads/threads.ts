@@ -2,14 +2,16 @@ import { toMessageId, toThreadId, type MessageId, type ThreadId } from "#convers
 import type { Message, Thread } from "#protocol/types.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import { lineOf } from "#notifications/text.ts";
+import { toSaid } from "#shares/said.ts";
 import type { Store } from "#store/store.ts";
 import { contextRun, contextThread } from "#tools/context.ts";
 import { fieldOf, textOf } from "#tools/input.ts";
 import type { Tool, ToolResult } from "#tools/mcp.ts";
 
 // What each conversation knows of the others, and Kumo's tools for side threads. A side thread is a conversation of
-// its own: it sees the in-mind pages, plus a short digest of the main chat and of the open threads, written here
-// from the store as it is, so it never goes stale and costs no model call. The main chat sees the open threads.
+// its own: it sees the in-mind pages, where it hangs from and the open threads, written here from the store as it
+// is, so it never goes stale and costs no model call; what was said elsewhere today comes with today so far. The
+// main chat sees the open threads.
 
 export type ThreadsOptions = {
   readonly store: Store;
@@ -28,8 +30,6 @@ export type ThreadsContext = {
   readonly tools: readonly Tool[];
 };
 
-const digestMessages = 8;
-const digestLength = 240;
 const readMessages = 20;
 const readLength = 600;
 const postLength = 1500;
@@ -38,7 +38,8 @@ const mostResultLength = 90;
 
 const failed = (text: string): ToolResult => ({ text, isError: true });
 
-const squeeze = (text: string, most: number): string => {
+// A message's words on one line, without its blocks, cut to fit.
+export const squeeze = (text: string, most: number): string => {
   const plain = withoutBlocks(text).replaceAll(/\s+/gu, " ").trim();
   return plain.length > most ? `${plain.slice(0, most)}…` : plain;
 };
@@ -52,7 +53,8 @@ const isTitle = (title: string): boolean => title.split(/\s+/u).filter(Boolean).
 
 export const createThreads = ({ store, spoken, branched }: ThreadsOptions): ThreadsContext => {
   const toLine = (message: Message, most: number): string =>
-    `- ${spoken(message.at)}, ${whoSaid(message)}: ${squeeze(message.text, most) || lineOf("", message.attachments)}`;
+    `- ${spoken(message.at)}, ${whoSaid(message)}: ` +
+    (squeeze(toSaid(message.text, message.share), most) || lineOf("", message.attachments));
 
   const openLines = (except: ThreadId | undefined): readonly string[] =>
     store
@@ -81,7 +83,6 @@ export const createThreads = ({ store, spoken, branched }: ThreadsOptions): Thre
     const thread = store.findThread(id);
     if (!thread) return "";
     const anchor = thread.anchor === undefined ? undefined : store.findMessage(toMessageId(thread.anchor));
-    const main = store.threadMessages(undefined, digestMessages);
     const open = openLines(id);
     return [
       "<thread>",
@@ -96,9 +97,6 @@ export const createThreads = ({ store, spoken, branched }: ThreadsOptions): Thre
         : `Its line now: “${thread.result}”.`,
       ...(anchor
         ? ["", `They started it by replying to this message in the main chat:`, toLine(anchor, readLength)]
-        : []),
-      ...(main.length > 0
-        ? ["", "The main chat lately:", ...main.map((message) => toLine(message, digestLength))]
         : []),
       ...(open.length > 0 ? ["", "Their other open threads:", ...open] : []),
       "</thread>",

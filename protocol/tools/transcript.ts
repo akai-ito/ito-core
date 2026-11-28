@@ -7,6 +7,7 @@ import { lineOf, toFailedText, toFirstLine } from "#notifications/text.ts";
 import { mergePatch } from "#motion/changes.ts";
 import { withoutBlocks } from "#replies/blocks.ts";
 import type {
+  Access,
   Ambient,
   Ask,
   AskKind,
@@ -17,8 +18,11 @@ import type {
   Card,
   Desk,
   DeskLine,
+  Dream,
+  DreamStep,
   Onboarding,
   Problem,
+  Shared,
   Thread,
   Error as ErrorBody,
   LiveTurn,
@@ -41,6 +45,7 @@ import type {
 import type { Event, Line } from "./spec.ts";
 import { fixtureDirectory } from "./transcript-files.ts";
 import { askAloud, createSentenceFeed, type SentenceFeed } from "#voice/spoken.ts";
+import { hostOf, readPage } from "#shares/link.ts";
 
 export type Header = {
   readonly name: string;
@@ -74,7 +79,24 @@ type SendOptions = {
   readonly thread?: string;
   readonly replyTo?: string;
   readonly newThread?: boolean;
+  // What it shared besides its note, for a message a share became.
+  readonly share?: Shared;
 };
+
+// What the share sheet sends, the page the link leads to, and where Kumo puts it: an open thread it joins, or a new
+// thread it names.
+type ShareOptions = {
+  readonly id?: string;
+  readonly url?: string;
+  readonly html?: string;
+  readonly text?: string;
+  readonly note?: string;
+  readonly attachments?: readonly string[];
+  readonly joins?: string;
+  readonly startsThread?: string;
+};
+
+type ShareStarted = { readonly id: string; readonly thread: string };
 
 type PostOptions = { readonly isUrgent?: boolean; readonly thread?: string; readonly newThread?: string };
 
@@ -156,6 +178,10 @@ export type Transcript = {
   readonly cancelAsk: (ask: string) => void;
   readonly registerDevice: () => string;
   readonly upload: (file: string, options?: UploadOptions) => string;
+  // You share something from the share sheet; Kumo places it, and it's your message in that thread.
+  readonly share: (options: ShareOptions) => ShareStarted;
+  // You share it again under the same id, as a retry would; it stands as it was.
+  readonly shareAgain: (options: ShareOptions & { readonly id: string; readonly thread: string }) => void;
   readonly uploadTooLarge: (name: string, size: number) => void;
   readonly forgetUnsentUploads: () => void;
   readonly fetchAttachment: (id: string) => void;
@@ -175,6 +201,11 @@ export type Transcript = {
   readonly listWakeUps: () => void;
   // A learning track's id, as the server makes it.
   readonly track: () => string;
+  // A question's id in Understanding you, as the server makes it.
+  readonly questionId: () => string;
+  // A question was added or moved on: every app hears it whole, and it never notifies.
+  readonly question: (question: Fields) => void;
+  readonly getUnderstanding: (understanding: Fields) => void;
   // Answers one of Kumo's guesses in Coming up; the item comes back as `after`.
   readonly answerGuess: (item: CalendarItem, answer: Fields, after: CalendarItem) => void;
   // Kumo did one more thing without you today: its Done entry.
@@ -188,11 +219,19 @@ export type Transcript = {
   readonly ambient: (ambient: Ambient | undefined) => void;
   // One more thing Kumo did, counted in what it handled unless it's quiet.
   readonly addDone: (entry: Fields) => Fields;
+  // A dream's id, made when it finishes, before the entries in Done that point at it.
+  readonly dreamId: () => string;
+  // A dream finished: every app hears its record.
+  readonly dreamFinished: (dream: Dream) => Dream;
+  // A dream under way started a step, for the live view.
+  readonly dreamStep: (group: DreamStep["group"], text: string) => DreamStep;
   readonly addCard: (card: NewCard) => Card;
   readonly answerCard: (card: string, answer: Fields) => void;
   readonly settleCard: (card: string, replacement?: Partial<Card>) => void;
   readonly onboarding: (state: Onboarding) => void;
   readonly problems: (problems: readonly Problem[]) => void;
+  // You turned full access on or off: every app hears the whole state.
+  readonly access: (access: Access) => void;
   readonly belief: () => string;
   readonly eventUid: () => string;
   readonly answerBelief: (belief: string, answer: Fields) => void;
@@ -246,7 +285,7 @@ export type Transcript = {
   readonly toJsonl: () => string;
 };
 
-type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "h" | "k" | "d" | "w" | "l" | "v" | "n";
+type IdPrefix = "e" | "m" | "t" | "s" | "a" | "c" | "f" | "h" | "k" | "d" | "w" | "l" | "v" | "n" | "q" | "z";
 
 type CallState = "listening" | "hearing" | "turn_ended" | "working" | "speaking";
 
@@ -477,7 +516,7 @@ const splitIntoPieces = (text: string, pieces?: number): readonly string[] =>
   pieces === 1 ? [text] : toPieces(text, pieces ? Math.ceil(text.length / pieces) : defaultPieceLength);
 
 const idsIn = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return /^[emstacfhkdwlvn]_\d{4}_/.test(value) ? [value] : [];
+  if (typeof value === "string") return /^[emstacfhkdwlvnqz]_\d{4}_/.test(value) ? [value] : [];
   if (Array.isArray(value)) return value.flatMap(idsIn);
   return value && typeof value === "object" ? Object.values(value).flatMap(idsIn) : [];
 };
@@ -501,6 +540,8 @@ const toCounters = (log: readonly Event[]): Counters => {
     l: highest("l"),
     v: highest("v"),
     n: highest("n"),
+    q: highest("q"),
+    z: highest("z"),
   };
 };
 
@@ -521,7 +562,7 @@ export const createTranscript = (header: Header): Transcript => {
   const log = createCell<readonly Event[]>([]);
   const ids = createCell<Ids>({
     boot: 1,
-    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, h: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0 },
+    counters: { e: 0, m: 0, t: 0, s: 0, a: 0, c: 0, f: 0, h: 0, k: 0, d: 0, w: 0, l: 0, v: 0, n: 0, q: 0, z: 0 },
     issued: new Set(),
   });
   const callModel = createCell<CallModel | undefined>(undefined);
@@ -575,6 +616,7 @@ export const createTranscript = (header: Header): Transcript => {
   const deskState = createCell<Desk>({ plans: [], coming_up: [], waiting: [], handled: 0 });
   const onboardingState = createCell<Onboarding>({ state: "done" });
   const problemsState = createCell<readonly Problem[]>([]);
+  const accessState = createCell<Access>({ mode: "sandboxed" });
 
   const timestamp = (): string => new Date(now.get()).toISOString();
 
@@ -707,6 +749,7 @@ export const createTranscript = (header: Header): Transcript => {
         desk: deskState.get(),
         ...(onboardingState.get().state !== "done" && { onboarding: onboardingState.get() }),
         ...(problemsState.get().length > 0 && { problems: [...problemsState.get()] }),
+        ...(accessState.get().mode !== "sandboxed" && { access: accessState.get() }),
       },
     });
     cursor.set(latest);
@@ -1508,6 +1551,7 @@ export const createTranscript = (header: Header): Transcript => {
           ...(attached.length > 0 && { attachments: attached }),
           ...(thread !== undefined && { thread }),
           ...(quotes && { quotes }),
+          ...(options.share && { share: options.share }),
         },
       });
       if (answering) endAsk(answering, "answered", id);
@@ -1558,6 +1602,48 @@ export const createTranscript = (header: Header): Transcript => {
     }
     response(isKnown ? 200 : 201, { message: messageById(id) }, { isLost: options.isLost });
     return id;
+  };
+
+  const shareBody = ({ id, url, text, note, attachments: attached = [] }: ShareOptions): Fields => ({
+    id,
+    ...(url !== undefined && { url }),
+    ...(text !== undefined && { text }),
+    ...(note !== undefined && { note }),
+    ...(attached.length > 0 && { attachments: attached }),
+  });
+
+  // As the server does: the page is read for the link, Kumo decides where the share goes, and it's accepted there.
+  const share = (options: ShareOptions): ShareStarted => {
+    const id = options.id ?? newUserId();
+    const { url, html, text, note = "", attachments: attached = [], joins, startsThread } = options;
+    if (url !== undefined && html !== undefined) world("web_has", { url, html });
+    world("share_sorted", { thread: joins ?? "", title: startsThread ?? "" });
+    request("POST", "/v0/shares", { body: shareBody({ ...options, id }) });
+    response(201, { share: { id, state: "sorting", at: timestamp() } });
+    const page = html === undefined ? {} : readPage(html);
+    const site = page.site ?? (url === undefined ? undefined : hostOf(url));
+    const shared: Shared = {
+      ...(url !== undefined && { link: { url, ...page, ...(site !== undefined && { site }) } }),
+      ...(text !== undefined && { text }),
+    };
+    const thread = joins ?? startThreadAt("kumo", nextPosition(), { ...(startsThread && { title: startsThread }) }).id;
+    accept(
+      id,
+      note,
+      attached.map((attachment) => {
+        const found = attachments.get().get(attachment);
+        if (!found) throw new Error(`unknown attachment ${attachment}`);
+        return found;
+      }),
+      { thread, share: shared },
+    );
+    return { id, thread };
+  };
+
+  const shareAgain = (options: ShareOptions & { readonly id: string; readonly thread: string }): void => {
+    request("POST", "/v0/shares", { body: shareBody(options) });
+    const accepted = messageById(options.id);
+    response(200, { share: { id: options.id, state: "placed", at: accepted.at, thread: options.thread } });
   };
 
   const ask = (fields: AskFields): string => {
@@ -1883,10 +1969,22 @@ export const createTranscript = (header: Header): Transcript => {
     );
   };
 
+  // A dream's changes show with the dream, not in what Kumo handled today.
   const addDone = (entry: Fields): Fields => {
-    const done = { id: newId("d"), at: timestamp(), quiet: false, undo: false, ...entry };
-    if (!done.quiet) changeDesk((desk) => ({ ...desk, handled: desk.handled + 1 }));
+    const done: Fields = { id: newId("d"), at: timestamp(), quiet: false, undo: false, ...entry };
+    if (done.quiet !== true && done.dream === undefined) changeDesk((desk) => ({ ...desk, handled: desk.handled + 1 }));
     return done;
+  };
+
+  const dreamFinished = (dream: Dream): Dream => {
+    emit("dream.finished", { dream });
+    return dream;
+  };
+
+  const dreamStep = (group: DreamStep["group"], text: string): DreamStep => {
+    const step: DreamStep = { at: timestamp(), group, text };
+    emit("dream.progress", { step });
+    return step;
   };
 
   const addCard = (given: NewCard): Card => {
@@ -1933,6 +2031,11 @@ export const createTranscript = (header: Header): Transcript => {
   const problems = (current: readonly Problem[]): void => {
     problemsState.set(current);
     emit("problems.changed", { problems: [...current] });
+  };
+
+  const access = (state: Access): void => {
+    accessState.set(state);
+    emit("access.changed", { access: state });
   };
 
   const belief = (): string => newId("n");
@@ -2111,6 +2214,8 @@ export const createTranscript = (header: Header): Transcript => {
     cancelAsk,
     registerDevice,
     upload,
+    share,
+    shareAgain,
     uploadTooLarge,
     forgetUnsentUploads,
     fetchAttachment,
@@ -2126,6 +2231,14 @@ export const createTranscript = (header: Header): Transcript => {
     plans,
     listWakeUps,
     track: () => newId("l"),
+    questionId: () => newId("q"),
+    question: (question) => {
+      emit("question.changed", { question });
+    },
+    getUnderstanding: (understanding) => {
+      request("GET", "/v0/understanding");
+      response(200, understanding);
+    },
     answerGuess,
     handled,
     mailRead,
@@ -2134,11 +2247,15 @@ export const createTranscript = (header: Header): Transcript => {
     deskLine,
     ambient,
     addDone,
+    dreamId: () => newId("z"),
+    dreamFinished,
+    dreamStep,
     addCard,
     answerCard,
     settleCard,
     onboarding,
     problems,
+    access,
     belief,
     eventUid,
     answerBelief,

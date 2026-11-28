@@ -4,8 +4,13 @@ import type { AddressInfo, Socket } from "node:net";
 import { createCell } from "#cell.ts";
 
 // A small made-up website for the browser's tests, served from the test itself: a restaurant to book, a shop that
-// takes payment, a bank to sign in to, a form in steps, files to upload and download, and a page to touch. Every name
-// in it is fictional, and no test ever reaches a real website.
+// takes payment, a bank to sign in to, a form in steps, files to upload and download, and a page to touch. Beside them,
+// replicas of the pages that were finicky to take over from a phone: a sign-in whose password step arrives after a
+// navigation among frames that never finish loading, a check in a cross-origin frame like a CAPTCHA, a cookie banner
+// over everything, a page that goes on below the fold, buttons to tap fast, and a page that freezes. Things to tap
+// sit at fixed places, so a test knows where they are. A cross-origin frame comes from `localhost` while the page is on
+// `127.0.0.1`: two sites, so Chromium runs it in a process of its own. Every name in it is fictional, and no test ever
+// reaches a real website.
 
 export type Booking = { readonly name: string; readonly guests: string; readonly day: string; readonly time: string };
 
@@ -129,6 +134,127 @@ document.getElementById("photo").addEventListener("change", (event) => {
 </script>`,
 );
 
+const fixed = "body{margin:0;font:16px system-ui} .at{position:absolute;box-sizing:border-box;margin:0}";
+
+const marketSignIn = page(
+  "Sign in",
+  `<style>${fixed}</style><h1 style="margin:16px">Sign in to Fixture Market</h1>
+<form method="post" action="/signin/email">
+  <input class="at" id="email" name="email" type="email" aria-label="Email" style="left:20px;top:100px;width:300px;height:40px">
+  <button class="at" type="submit" style="left:20px;top:160px;width:300px;height:44px">Continue</button>
+</form>`,
+  "Fixture Market",
+);
+
+// The password step: its field takes the focus by itself, and the page is busy with frames, one of which never
+// finishes loading, as a big shop's is.
+const marketPassword = (email: string, other: string): string =>
+  page(
+    "Password",
+    `<style>${fixed} iframe{position:absolute;left:20px;width:300px;height:50px;border:0}</style>
+<h1 style="margin:16px">Hello, ${email.replaceAll(/[<>&"]/gu, "")}</h1>
+<form method="post" action="/signin/password">
+  <input type="hidden" name="email" value="${email.replaceAll(/[<>&"]/gu, "")}">
+  <input class="at" id="password" name="password" type="password" aria-label="Password" autocomplete="current-password" autofocus style="left:20px;top:100px;width:300px;height:40px">
+  <button class="at" type="submit" style="left:20px;top:160px;width:300px;height:44px">Sign in</button>
+</form>
+${[0, 1, 2, 3, 4].map((index) => `<iframe title="Advert ${String(index)}" src="${other}/advert?n=${String(index)}" style="top:${String(260 + index * 60)}px"></iframe>`).join("")}
+<iframe title="Slow advert" src="${other}/advert-never" style="top:560px"></iframe>`,
+    "Fixture Market",
+  );
+
+const advert = page("Advert", `<p style="margin:0;background:#eee">An advert</p>`, "Fixture Adverts");
+
+// A check in a frame from another site, as a CAPTCHA is: a box to tick, a field to answer in, and a button that keeps
+// the frame busy for a long while once it has put the focus in the field.
+const check = (other: string): string =>
+  page(
+    "Check",
+    `<style>${fixed} #pad{position:absolute;left:0;top:0;width:100%;height:80px;background:rgb(0,0,255)} #pad.on{background:rgb(255,0,0)}</style>
+<div id="pad"></div>
+<p class="at" style="left:20px;top:100px">Prove you're a person to see the timetable.</p>
+<iframe id="check" title="Fixture Check" src="${other}/check-frame" class="at" style="left:20px;top:300px;width:300px;height:160px;border:2px solid #ccc"></iframe>
+<script>
+const pad = document.getElementById("pad");
+pad.addEventListener("touchstart", () => { pad.classList.toggle("on"); });
+</script>`,
+    "Fixture Rail",
+  );
+
+const checkFrame = page(
+  "Fixture Check",
+  `<style>${fixed} #box{left:10px;top:10px;width:40px;height:40px;background:rgb(230,230,230)} #box[aria-checked=true]{background:rgb(0,170,0)}</style>
+<div class="at" id="box" role="checkbox" aria-checked="false" aria-label="I'm a person" tabindex="0"></div>
+<button class="at" id="busy" style="left:230px;top:10px;width:60px;height:40px">Busy</button>
+<input class="at" id="answer" aria-label="Answer" autocomplete="off" style="left:10px;top:80px;width:200px;height:36px">
+<script>
+const box = document.getElementById("box");
+box.addEventListener("click", () => { box.setAttribute("aria-checked", "true"); });
+document.getElementById("busy").addEventListener("click", () => {
+  document.getElementById("answer").focus();
+  setTimeout(() => { const end = Date.now() + 20000; while (Date.now() < end) {} }, 50);
+});
+</script>`,
+  "Fixture Check",
+);
+
+// A cookie banner over the whole page, its button at the bottom of the screen, wherever the bottom is.
+const consent = page(
+  "News",
+  `<style>${fixed} #veil{position:fixed;inset:0;background:rgba(0,0,0,0.6)} #panel{position:fixed;left:0;right:0;bottom:0;height:120px;background:#fff}
+#accept{position:absolute;left:20px;right:20px;bottom:20px;height:48px} body.accepted{background:rgb(0,170,0)}</style>
+<h1 style="margin:16px">Fixture News</h1><p style="margin:16px">Today's stories.</p>
+<div id="veil"><div id="panel"><p style="margin:12px">We use cookies.</p><button id="accept">Accept all</button></div></div>
+<script>
+document.getElementById("accept").addEventListener("click", () => {
+  document.getElementById("veil").remove();
+  document.body.classList.add("accepted");
+});
+</script>`,
+  "Fixture News",
+);
+
+// A page that goes on below the fold, with what he's after far down.
+const tall = page(
+  "Timetable",
+  `<style>${fixed} body{height:3200px;background:rgb(0,0,255)} body.found{background:rgb(0,170,0)}</style>
+<h1 style="margin:16px">Timetable</h1>
+<button class="at" id="found" style="left:20px;top:2100px;width:300px;height:60px">The 07:42</button>
+<script>
+document.getElementById("found").addEventListener("click", () => { document.body.classList.add("found"); });
+</script>`,
+  "Fixture Rail",
+);
+
+// Five buttons in a row, each saying when it's pressed.
+const taps = page(
+  "Taps",
+  `<style>${fixed} button{top:100px;width:60px;height:60px}</style>
+${[1, 2, 3, 4, 5].map((number) => `<button class="at" data-n="${String(number)}" style="left:${String(number * 64 - 50)}px">${String(number)}</button>`).join("")}
+<p class="at" id="log" style="left:20px;top:200px">Pressed:</p>
+<script>
+for (const button of document.querySelectorAll("[data-n]")) {
+  button.addEventListener("click", () => { document.getElementById("log").textContent += " " + button.dataset.n; });
+}
+</script>`,
+);
+
+// A page that freezes for a while once tapped, then turns green.
+const freeze = page(
+  "Freeze",
+  `<style>${fixed} body{background:rgb(0,0,255)} body.done{background:rgb(0,170,0)}</style>
+<button class="at" id="freeze" style="left:20px;top:100px;width:300px;height:60px">Freeze</button>
+<script>
+document.getElementById("freeze").addEventListener("click", () => {
+  setTimeout(() => {
+    const end = Date.now() + 6000;
+    while (Date.now() < end) {}
+    document.body.classList.add("done");
+  }, 50);
+});
+</script>`,
+);
+
 const readBody = async (request: IncomingMessage): Promise<URLSearchParams> => {
   const collect = async (iterator: AsyncIterator<Buffer>, chunks: readonly Buffer[]): Promise<readonly Buffer[]> => {
     const next = await iterator.next();
@@ -168,7 +294,76 @@ export const startSite = async (): Promise<Site> => {
   const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const url = new URL(request.url ?? "/", "http://fixture.test");
     const route = `${request.method ?? "GET"} ${url.pathname}`;
+    // The other site, for frames from another origin.
+    const host = request.headers.host ?? "";
+    const other = host.startsWith("localhost")
+      ? `http://${host.replace("localhost", "127.0.0.1")}`
+      : `http://${host.replace("127.0.0.1", "localhost")}`;
     switch (route) {
+      case "GET /signin": {
+        send(response, 200, marketSignIn);
+        return;
+      }
+      case "POST /signin/email": {
+        const form = await readBody(request);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        redirect(response, `/signin/password?email=${encodeURIComponent(form.get("email") ?? "")}`);
+        return;
+      }
+      case "GET /signin/password": {
+        send(response, 200, marketPassword(url.searchParams.get("email") ?? "", other));
+        return;
+      }
+      case "POST /signin/password": {
+        const form = await readBody(request);
+        const email = form.get("email") ?? "";
+        if (form.get("password") !== "correct horse") {
+          send(response, 401, marketPassword(email, other));
+          return;
+        }
+        send(
+          response,
+          200,
+          page(
+            "Your account",
+            `<h1>Signed in to Fixture Market as ${email.replaceAll(/[<>&"]/gu, "")}</h1>`,
+            "Fixture Market",
+          ),
+        );
+        return;
+      }
+      case "GET /advert": {
+        send(response, 200, advert);
+        return;
+      }
+      case "GET /advert-never": {
+        // Never answers: the frame never finishes loading, until the test closes the site.
+        return;
+      }
+      case "GET /check": {
+        send(response, 200, check(other));
+        return;
+      }
+      case "GET /check-frame": {
+        send(response, 200, checkFrame);
+        return;
+      }
+      case "GET /consent": {
+        send(response, 200, consent);
+        return;
+      }
+      case "GET /tall": {
+        send(response, 200, tall);
+        return;
+      }
+      case "GET /taps": {
+        send(response, 200, taps);
+        return;
+      }
+      case "GET /freeze": {
+        send(response, 200, freeze);
+        return;
+      }
       case "GET /book": {
         send(response, 200, bookingForm("/book"));
         return;

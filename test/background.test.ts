@@ -115,6 +115,7 @@ const posts = (server: Server): readonly string[] =>
     .map(({ text }) => text);
 
 const technical = {
+  title: "Ask how the Halcyon technical went",
   what: "Ask how the Halcyon technical went",
   why: "It ends at 15:30, and they wanted to talk it through while it's fresh.",
   at: "2026-11-02T15:30:00Z",

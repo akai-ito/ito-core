@@ -8,6 +8,7 @@ const calendar: McpServerElicitationRequestParams = {
   threadId: "thread",
   turnId: "turn",
   serverName: "codex_apps",
+  environmentId: null,
   mode: "form",
   message: "Allow Google Calendar to create an event?",
   _meta: {

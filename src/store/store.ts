@@ -17,12 +17,15 @@ import {
 } from "#conversation/ids.ts";
 import type { Identifiers } from "#identifiers.ts";
 import type {
+  Access,
   Ask,
   Attachment,
   Browser,
   Call,
   Desk,
   DoneEntry,
+  Dream,
+  DreamStep,
   Onboarding,
   Error as ErrorBody,
   Spoken,
@@ -35,19 +38,23 @@ import type {
   MotionChange,
   Outcome,
   Problem,
+  Question,
   Recording,
   Snapshot,
   Status,
   Step,
+  StepId,
   StepKind,
   Thread,
   Quote,
+  Shared,
   VoiceState,
 } from "#protocol/types.ts";
 import { fail, ok, type Result } from "#result.ts";
 import type { AskFields, StepFacts } from "#engine/engine.ts";
 import { project, type LoggedEvent } from "#store/projection.ts";
 import { lineOf } from "#notifications/text.ts";
+import { toSaid } from "#shares/said.ts";
 
 export type LogEntry = { readonly seq: number; readonly event: LoggedEvent };
 
@@ -129,11 +136,37 @@ export type Exchange = {
 export type AcceptFailure =
   "id_conflict" | "unknown_attachment" | "attachment_taken" | "call_not_on" | "unknown_thread" | "unknown_message";
 
+// What they shared from their phone's share sheet, as the app sent it.
+export type ShareRequest = {
+  readonly url?: string;
+  readonly text?: string;
+  readonly note?: string;
+  readonly attachments: readonly string[];
+};
+
+// A share from when the server accepted it; once Kumo has placed it, it's their message, under its id, in a thread.
+export type StoredShare = {
+  readonly id: MessageId;
+  readonly at: string;
+  readonly request: ShareRequest;
+  readonly placed?: { readonly thread: ThreadId | undefined };
+};
+
+export type ShareFailure = "id_conflict" | "unknown_attachment" | "attachment_taken";
+
+// Where Kumo puts a share: a thread there is, or a new one, named or not.
+export type SharePlace = { readonly thread: ThreadId } | { readonly title: string | undefined };
+
 export const onboardingSetting = "onboarding";
 
 export const problemsSetting = "problems";
 
 export const browserSetting = "browser";
+
+// How Kumo runs on the server, in its sandbox or with full access, as access.changed last said.
+export const accessSetting = "access";
+
+export const sandboxed: Access = { mode: "sandboxed" };
 
 export type DonePage = { readonly entries: readonly DoneEntry[]; readonly hasMore: boolean };
 
@@ -176,6 +209,17 @@ export type Store = Settings & {
     done?: string,
     where?: Where,
   ) => Result<Accepted, AcceptFailure>;
+  // What they share from their phone's share sheet, accepted on disk until Kumo places it.
+  readonly acceptShare: (
+    id: MessageId,
+    request: ShareRequest,
+  ) => Result<{ readonly share: StoredShare; readonly isNew: boolean }, ShareFailure>;
+  readonly findShare: (id: MessageId) => StoredShare | undefined;
+  // Shares Kumo hasn't placed yet, oldest first.
+  readonly unplacedShares: () => readonly StoredShare[];
+  // Kumo places a share: it becomes their message, under its id, in a thread there is or a new one Kumo started. A
+  // thread that's gone, or done, gives way to a new one.
+  readonly placeShare: (id: MessageId, share: Shared, place: SharePlace) => Result<Accepted, "not_found">;
   // A message from Kumo outside any turn; an urgent one is sent time-sensitive.
   readonly postMessage: (
     text: string,
@@ -190,6 +234,8 @@ export type Store = Settings & {
   // Kumo's browser as it stands; idle until it does something.
   readonly browser: () => Browser;
   readonly setBrowser: (browser: Browser) => void;
+  readonly access: () => Access;
+  readonly setAccess: (access: Access) => void;
   readonly addDone: (entry: DoneEntry, undoWith?: unknown) => void;
   readonly listDone: (before: string | undefined, limit: number) => DonePage;
   readonly doneSince: (at: string) => readonly DoneEntry[];
@@ -206,6 +252,8 @@ export type Store = Settings & {
   readonly recordVoiceStatus: (state: VoiceState, reason?: string) => void;
   // Where a recording's transcript stands, for the app to follow.
   readonly recordRecording: (recording: Recording) => void;
+  // A question in Understanding you was added or moved on, for the app to follow.
+  readonly recordQuestion: (question: Question) => void;
   readonly latestCall: () => Call | undefined;
   readonly exchanges: (through: TurnId | undefined, limit: number, thread?: ThreadId) => readonly Exchange[];
   // A thread Kumo starts empty, for a post; it sits at the end of the main chat.
@@ -239,6 +287,13 @@ export type Store = Settings & {
   readonly messageText: (message: MessageId) => string | undefined;
   // The conversation's latest messages with words in them, oldest first.
   readonly latestMessages: (limit: number) => readonly Message[];
+  // What was said since a time, in the main chat and every thread: their messages and your replies and posts,
+  // newest first, at most `limit`.
+  readonly messagesSince: (at: string, limit: number) => readonly Message[];
+  // A dream finished: every app hears it.
+  readonly recordDream: (dream: Dream) => void;
+  // A dream under way started a step, for the live view.
+  readonly recordDreamStep: (step: DreamStep) => void;
   readonly recordMotion: (
     type: "motion.started" | "motion.changed" | "motion.finished",
     motion: Omit<Motion, "position"> & { readonly position?: number },
@@ -281,6 +336,8 @@ export type Store = Settings & {
   // The threads where something waits to be answered.
   readonly waitingThreads: () => readonly ThreadId[];
   readonly findTurn: (turn: TurnId) => StoredTurn | undefined;
+  // The latest turn in the main chat, or in a thread, running or not.
+  readonly latestTurn: (thread?: ThreadId) => StoredTurn | undefined;
   readonly openMessage: (turn: TurnId) => OpenMessage | undefined;
   readonly retryFor: (failed: TurnId) => TurnId | undefined;
   readonly requestRetry: (failed: TurnId, turn: TurnId) => TurnId;
@@ -293,6 +350,7 @@ export type Store = Settings & {
   readonly updateStep: (step: Step) => void;
   readonly endStep: (step: Step) => void;
   readonly openSteps: (turn: TurnId) => readonly Step[];
+  readonly findStep: (step: StepId) => Step | undefined;
   readonly appendText: (message: MessageId, text: string) => void;
   readonly endMessage: (message: MessageId, outcome: Outcome, length: number, error?: ErrorBody) => void;
   readonly endTurn: (turn: TurnId, outcome: Outcome, error?: ErrorBody) => void;
@@ -333,7 +391,10 @@ type MessageRow = {
   readonly urgent: number;
   readonly thread: string | null;
   readonly quotes: string | null;
+  readonly share: string | null;
 };
+
+type ShareRow = { readonly id: string; readonly at: string; readonly body: string };
 
 type AttachmentRow = { readonly body: string; readonly sha256: string; readonly message: string | null };
 
@@ -375,7 +436,8 @@ const snapshotSize = 50;
 const compactedSetting = "compacted_through_seq";
 
 const compactedTypes =
-  "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed', 'recording.changed', 'browser.changed')";
+  "('message.delta', 'desk.changed', 'problems.changed', 'onboarding.changed', 'recording.changed', 'browser.changed', " +
+  "'question.changed', 'dream.progress')";
 
 const parseIds = (json: string): readonly string[] => JSON.parse(json) as readonly string[];
 
@@ -393,6 +455,7 @@ const toMessage = (row: MessageRow): Message =>
         ...(row.done && { done: row.done }),
         ...(row.thread && { thread: row.thread }),
         ...(row.quotes && { quotes: JSON.parse(row.quotes) as Quote }),
+        ...(row.share && { share: JSON.parse(row.share) as Shared }),
       }
     : {
         id: row.id,
@@ -635,6 +698,26 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
   const messageRow = (id: string): MessageRow | undefined =>
     database.prepare("SELECT * FROM messages WHERE id = ?").get(id) as MessageRow | undefined;
 
+  const shareRow = (id: string): ShareRow | undefined =>
+    database.prepare("SELECT id, at, body FROM shares WHERE id = ?").get(id) as ShareRow | undefined;
+
+  const toShare = (row: ShareRow): StoredShare => {
+    const placed = messageRow(row.id);
+    return {
+      id: toMessageId(row.id),
+      at: row.at,
+      request: JSON.parse(row.body) as ShareRequest,
+      ...(placed && { placed: { thread: placed.thread === null ? undefined : toThreadId(placed.thread) } }),
+    };
+  };
+
+  // A share Kumo hasn't placed yet holds its attachments, so no message takes them and they aren't swept meanwhile.
+  const heldByShares = `SELECT held.value FROM shares, json_each(shares.body, '$.attachments') AS held
+    WHERE NOT EXISTS (SELECT 1 FROM messages WHERE messages.id = shares.id)`;
+
+  const isHeldByShare = (attachment: string): boolean =>
+    database.prepare(`SELECT 1 FROM (${heldByShares}) WHERE value = ? LIMIT 1`).get(attachment) !== undefined;
+
   const turnRow = (id: string): TurnRow | undefined =>
     database.prepare("SELECT * FROM turns WHERE id = ?").get(id) as TurnRow | undefined;
 
@@ -732,6 +815,55 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     return stored === undefined ? { state: "idle" } : (JSON.parse(stored) as Browser);
   };
 
+  const currentAccess = (): Access => {
+    const stored = readSetting(accessSetting);
+    return stored === undefined ? sandboxed : (JSON.parse(stored) as Access);
+  };
+
+  // Your message, wherever it goes: it answers an ask waiting there, and in a thread it opens the thread again, and
+  // you've seen what's new there.
+  const putUserMessage = ({
+    id,
+    text,
+    attached,
+    spoken,
+    done,
+    thread,
+    quotes,
+    share,
+  }: {
+    readonly id: MessageId;
+    readonly text: string;
+    readonly attached: readonly Attachment[];
+    readonly spoken?: Spoken;
+    readonly done?: string;
+    readonly thread: string | undefined;
+    readonly quotes?: Quote;
+    readonly share?: Shared;
+  }): Message => {
+    const waiting = waitingRow(thread);
+    const at = now();
+    const message: Message = {
+      id,
+      role: "user",
+      text,
+      at,
+      position: nextSeq(),
+      ...(waiting && { answers: toAsk(waiting).id }),
+      ...(attached.length > 0 && { attachments: [...attached] }),
+      ...(spoken && { spoken }),
+      ...(done !== undefined && { done }),
+      ...(thread !== undefined && { thread }),
+      ...(quotes && { quotes }),
+      ...(share && { share }),
+    };
+    append({ id: identifiers.event(), type: "message.accepted", at, message });
+    if (waiting) endAsk(toAsk(waiting), "answered", id);
+    if (thread !== undefined)
+      refreshThread(thread, (current) => ({ ...without(current, "news", "done"), state: "open" }));
+    return message;
+  };
+
   const currentDesk = (): Desk => {
     const row = database.prepare("SELECT body FROM desk WHERE id = 1").get() as { readonly body: string } | undefined;
     return row ? (JSON.parse(row.body) as Desk) : { plans: [], coming_up: [], waiting: [], handled: 0 };
@@ -783,6 +915,7 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
           ...(currentOnboarding().state !== "done" && { onboarding: currentOnboarding() }),
           ...(currentProblems().length > 0 && { problems: [...currentProblems()] }),
           ...(currentBrowser().state !== "idle" && { browser: currentBrowser() }),
+          ...(currentAccess().mode !== "sandboxed" && { access: currentAccess() }),
         },
       };
     },
@@ -804,7 +937,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         if (!audioRow && spoken?.audio !== undefined) return fail("unknown_attachment");
         const attachedRows = attachments.map((attachment) => attachmentRow(attachment));
         if (attachedRows.includes(undefined)) return fail("unknown_attachment");
-        if ([...attachedRows, audioRow].some((row) => row !== undefined && row.message !== null))
+        if (
+          [...attachedRows, audioRow].some((row) => row !== undefined && row.message !== null) ||
+          attachments.some((attachment) => isHeldByShare(attachment))
+        )
           return fail("attachment_taken");
         const attached = attachedRows.flatMap((row) => (row ? [JSON.parse(row.body) as Attachment] : []));
         const target = where.replyTo === undefined ? undefined : messageRow(where.replyTo);
@@ -825,28 +961,75 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
                 message: target.id,
                 text: lineOf(target.text, target.attachments ? (JSON.parse(target.attachments) as Attachment[]) : []),
               };
-        const waiting = waitingRow(thread);
-        const at = now();
-        const message: Message = {
+        const message = putUserMessage({
           id,
-          role: "user",
           text,
-          at,
-          position: nextSeq(),
-          ...(waiting && { answers: toAsk(waiting).id }),
-          ...(attached.length > 0 && { attachments: attached }),
+          attached,
           ...(spoken && {
             spoken: { call: spoken.call, ...(audioRow && { audio: JSON.parse(audioRow.body) as Attachment }) },
           }),
           ...(done !== undefined && { done }),
-          ...(thread !== undefined && { thread }),
+          thread,
           ...(quotes && { quotes }),
-        };
-        append({ id: identifiers.event(), type: "message.accepted", at, message });
-        if (waiting) endAsk(toAsk(waiting), "answered", id);
-        // Replying in a thread opens it again, and you've seen what's new there.
-        if (thread !== undefined)
-          refreshThread(thread, (current) => ({ ...without(current, "news", "done"), state: "open" }));
+        });
+        return ok({ message, isNew: true });
+      }),
+
+    acceptShare: (id, request) =>
+      transaction(() => {
+        const body = canonical({ ...request, attachments: [...request.attachments] });
+        const existing = shareRow(id);
+        if (existing) {
+          return canonical(JSON.parse(existing.body)) === body
+            ? ok({ share: toShare(existing), isNew: false })
+            : fail("id_conflict");
+        }
+        if (messageRow(id)) return fail("id_conflict");
+        const attachedRows = request.attachments.map((attachment) => attachmentRow(attachment));
+        if (attachedRows.includes(undefined)) return fail("unknown_attachment");
+        if (
+          attachedRows.some((row) => row !== undefined && row.message !== null) ||
+          request.attachments.some((attachment) => isHeldByShare(attachment))
+        )
+          return fail("attachment_taken");
+        const row = { id, at: now(), body };
+        database.prepare("INSERT INTO shares (id, at, body) VALUES (?, ?, ?)").run(row.id, row.at, row.body);
+        return ok({ share: toShare(row), isNew: true });
+      }),
+
+    findShare: (id) => {
+      const row = shareRow(id);
+      return row && toShare(row);
+    },
+
+    unplacedShares: () =>
+      (
+        database
+          .prepare(
+            `SELECT id, at, body FROM shares
+             WHERE NOT EXISTS (SELECT 1 FROM messages WHERE messages.id = shares.id) ORDER BY at, rowid`,
+          )
+          .all() as unknown as readonly ShareRow[]
+      ).map((row) => toShare(row)),
+
+    placeShare: (id, share, place) =>
+      transaction(() => {
+        const row = shareRow(id);
+        if (!row) return fail("not_found");
+        const existing = messageRow(id);
+        if (existing) return ok({ message: toMessage(existing), isNew: false });
+        const request = JSON.parse(row.body) as ShareRequest;
+        const target = "thread" in place ? threadRow(place.thread) : undefined;
+        const title = "title" in place ? place.title : undefined;
+        const thread =
+          target?.state === "open"
+            ? target.id
+            : newThread("kumo", nextSeq(), { ...(title !== undefined && { title }) }).id;
+        const attached = request.attachments.flatMap((attachment) => {
+          const found = attachmentRow(attachment);
+          return found?.message === null ? [JSON.parse(found.body) as Attachment] : [];
+        });
+        const message = putUserMessage({ id, text: request.note ?? "", attached, thread, share });
         return ok({ message, isNew: true });
       }),
 
@@ -895,6 +1078,15 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       transaction(() => {
         if (JSON.stringify(browser) === JSON.stringify(currentBrowser())) return;
         append({ id: identifiers.event(), type: "browser.changed", at: now(), browser });
+      });
+    },
+
+    access: () => currentAccess(),
+
+    setAccess: (access) => {
+      transaction(() => {
+        if (JSON.stringify(access) === JSON.stringify(currentAccess())) return;
+        append({ id: identifiers.event(), type: "access.changed", at: now(), access });
       });
     },
 
@@ -1001,6 +1193,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       record((stamp) => ({ ...stamp, type: "recording.changed", recording }));
     },
 
+    recordQuestion: (question) => {
+      record((stamp) => ({ ...stamp, type: "question.changed", question }));
+    },
+
     deleteCallAudio: (id) =>
       transaction(() => {
         const row = callRow(id);
@@ -1036,7 +1232,9 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
         return {
           turn: toTurnId(row.id),
           position: inputs[0]?.position ?? row.position,
-          said: inputs.map(({ text }) => text).join("\n\n"),
+          said: inputs
+            .map(({ text, share }) => toSaid(text, share === null ? undefined : (JSON.parse(share) as Shared)))
+            .join("\n\n"),
           answered: replies.map(({ text }) => text).join("\n\n"),
         };
       });
@@ -1212,7 +1410,10 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       });
     },
 
-    messageText: (message) => messageRow(message)?.text,
+    messageText: (message) => {
+      const row = messageRow(message);
+      return row && toSaid(row.text, row.share === null ? undefined : (JSON.parse(row.share) as Shared));
+    },
 
     latestMessages: (limit) =>
       (
@@ -1224,6 +1425,24 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       )
         .toReversed()
         .map((row) => toMessage(row)),
+
+    messagesSince: (at, limit) =>
+      (
+        database
+          .prepare(
+            `SELECT * FROM messages WHERE at >= ? AND (role = 'user' OR kind IN ('reply', 'post'))
+             AND (text != '' OR attachments IS NOT NULL) AND ${kept} ORDER BY position DESC LIMIT ?`,
+          )
+          .all(at, limit) as unknown as readonly MessageRow[]
+      ).map((row) => toMessage(row)),
+
+    recordDream: (dream) => {
+      record((stamp) => ({ ...stamp, type: "dream.finished", dream }));
+    },
+
+    recordDreamStep: (step) => {
+      record((stamp) => ({ ...stamp, type: "dream.progress", step }));
+    },
 
     recordMotion: (type, given, note) =>
       transaction(() => {
@@ -1406,6 +1625,13 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
       return row ? toStoredTurn(row) : undefined;
     },
 
+    latestTurn: (thread) => {
+      const row = database
+        .prepare("SELECT * FROM turns WHERE thread IS ? ORDER BY position DESC LIMIT 1")
+        .get(placeOf(thread)) as TurnRow | undefined;
+      return row ? toStoredTurn(row) : undefined;
+    },
+
     openMessage: (turn) => {
       const row = database
         .prepare("SELECT id, text FROM messages WHERE turn = ? AND outcome IS NULL ORDER BY position DESC LIMIT 1")
@@ -1483,6 +1709,11 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
 
     endStep: (step) => {
       record((stamp) => ({ ...stamp, type: "step.ended", step }));
+    },
+
+    findStep: (step) => {
+      const row = database.prepare("SELECT body FROM steps WHERE id = ?").get(step) as StepRow | undefined;
+      return row ? toStep(row) : undefined;
     },
 
     openSteps: (turn) =>
@@ -1636,7 +1867,9 @@ export const createStore = (database: DatabaseSync, clock: Clock, identifiers: I
     unattachedBefore: (before) =>
       (
         database
-          .prepare("SELECT id FROM attachments WHERE message IS NULL AND kept = 0 AND at < ?")
+          .prepare(
+            `SELECT id FROM attachments WHERE message IS NULL AND kept = 0 AND at < ? AND id NOT IN (${heldByShares})`,
+          )
           .all(before) as unknown as readonly {
           readonly id: string;
         }[]

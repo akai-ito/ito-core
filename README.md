@@ -54,6 +54,9 @@ pages.</sub></p>
 - **Follow-through.** Kumo sets itself wake-ups, wakes on new mail and calendar changes, and
   messages you when something is worth saying. Every action it takes is recorded, with an undo
   where there can be one.
+- **The dream.** Once a day, at a time you set, Kumo looks back over the whole day and puts it in
+  order: it tends memory, plans tomorrow, and writes your journal as your own diary, then leaves a
+  record of what it did that you can take back line by line.
 - **In motion.** Roles you're pursuing, training blocks, trips, projects and other things you're
   doing, kept as structured documents that Kumo changes a part at a time as you talk, and ended
   with an honest outcome.
@@ -150,12 +153,13 @@ each capability and the voice as child processes, each speaking JSON-RPC over it
 | [protocol](protocol) | The client API: OpenAPI for commands, JSON Schema for events, the guarantees and the golden transcripts |
 | [src/http](src/http), [src/store](src/store) | The routes, the event stream and the SQLite event log with its projections |
 | [src/turns](src/turns), [src/threads](src/threads) | One turn at a time in each conversation, the main chat and every side thread: routing, Stop, steering, asks, approvals, crash recovery, and the backstop for background work |
+| [src/shares](src/shares) | What you share from the phone's share sheet: the link's page read on the box, and Kumo's call on which thread it belongs in |
 | [src/engine](src/engine) | The engine seam, the Codex adapter and the scripted engine for tests and the demo |
 | [src/tools](src/tools), [src/capabilities](src/capabilities) | The MCP server, the `ito` commands and skills, and the capability host |
 | [src/memory](src/memory) | The Thread, recall and backup |
 | [src/recordings](src/recordings), [src/files](src/files), [src/made](src/made) | Recordings transcribed on the box, files Kumo shows at one version, and pages Kumo makes |
 | [src/mail](src/mail), [src/calendar](src/calendar), [src/contacts](src/contacts) | IMAP, CalDAV and CardDAV, drafts and Kumo's calendar |
-| [src/wakeups](src/wakeups), [src/desk](src/desk), [src/work](src/work) | Wake-ups, the Desk, and Kumo's work log and learning tracks |
+| [src/wakeups](src/wakeups), [src/desk](src/desk), [src/work](src/work) | Wake-ups, the Desk, and Kumo's work log, learning tracks and Understanding you |
 | [capabilities](capabilities) | The capability SDK, Reports and a sample |
 | [agent](agent) | Kumo's instructions and the skill files it reads on demand |
 | [voice](voice) | The voice sidecar: turn detection, speech recognition and synthesis |
@@ -193,8 +197,8 @@ interrupt it, answer an approval, a structured completion, and a piece of backgr
 own protocol stops at the adapter ([codex-engine.ts](src/engine/codex/codex-engine.ts)), the words
 on Kumo's trail come from Ito's own tables rather than from Codex, and a scripted engine stands in
 for tests and the demo. The main chat and each side thread are long-lived Codex threads in a
-`workspace-write` sandbox; background work and quick judgements run in short-lived threads of their
-own.
+`workspace-write` sandbox, or none while you've given Kumo full access, set afresh on every turn;
+background work and quick judgements run in short-lived threads of their own.
 
 ### Side threads, each a conversation of its own
 
@@ -304,7 +308,9 @@ app's UI tests run locally against the demo engine, not in CI.
   `tailscale serve`. API tokens are stored as SHA-256 hashes, a pairing code works once for five
   minutes, and wrong tokens or codes are rate-limited.
 - **The agent's sandbox.** Codex runs the agent's commands in its `workspace-write` sandbox, in a
-  workspace of their own, with network access.
+  workspace of their own, with network access. Full access, which you turn on in the app's Settings,
+  lifts the sandbox from Kumo's next turn until you turn it off: its commands can then do anything
+  your user can on the machine, Ito's own checkout included, with nothing asked first.
 - **Secrets at rest.** Mail app passwords, tokens and the APNs key are stored unencrypted in
   `~/.ito/ito.db`, protected only by file permissions. Capability secrets go to the server once and
   never come back to the app. The log stays on the machine and can hold mail subjects.

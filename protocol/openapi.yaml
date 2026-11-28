@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ito client API
-  version: "0.19"
+  version: "0.20"
   summary: Commands in, one resumable event stream out.
   description: |
     The API that Ari, and any other client, uses to talk to an Ito server.
@@ -14,6 +14,9 @@ info:
       server says. Resume with `Last-Event-ID` after any disconnect.
     - **Send** with `POST /v0/messages`. The app chooses the message id, so retrying is always
       safe.
+    - **Share** a link, a screenshot, a photo or a quick thought from the phone's share sheet with
+      `POST /v0/shares`. Kumo puts it in the side thread it belongs in, or a new one it names, and
+      answers it there.
     - **Stop** a turn, or **try again** after one failed, with commands on the turn.
     - **Pair** a new app by exchanging the short-lived code in the QR code `ito pair` shows for a
       token of its own.
@@ -32,6 +35,13 @@ info:
       and fill in its setup sheet, or connect it through its provider.
     - **Kumo's browser:** follow what Kumo is doing on a site as a line in its thread, peek at the
       live view, and take the page over when Kumo needs your hand, then hand it back.
+    - **Understanding you:** the questions Kumo would like you to explain, on its learning tracks,
+      each with what it already understands, the missing piece and why it would help. Answer with a
+      tap, your own words or your voice, or say none fit, not sure or not now. Quiet and optional:
+      nothing is due, and nothing notifies.
+    - **Kumo's dream:** once a day Kumo looks back over the whole day and puts it in order; read the
+      latest dream's record of what it planned, tidied, noticed and saved for you, mark it seen, ask
+      for one now, and set the dream time.
     - **Read memory:** what's in Ari's mind, the shelves and their pages with a line on each, the
       journal, the photos a page keeps with its story, the chapters of your life Ari noticed, what
       it learnt about you lately, what Ari changed lately and why, and what each change changed.
@@ -74,12 +84,26 @@ tags:
     description: Getting started, with what Kumo found and the beliefs it checks with you.
   - name: Desk
     description: Home, with Kumo's plans, Coming up, Waiting on you, Kumo's work and the calendar.
+  - name: Understanding
+    description: |
+      Understanding you: the deeper questions Kumo would like you to explain, which grow out of its
+      learning tracks (Getting to know you). Optional and quiet: a question has no due date, is never
+      overdue, never waits on the Desk and never notifies. An answer is enough: it becomes evidence on
+      its track, and Kumo files what it learned in the background with no follow-up.
+  - name: Dream
+    description: |
+      Kumo's dream: once a day, at a time you set, Kumo looks back over the whole day and puts
+      everything in order, then leaves a record of what it planned, tidied, noticed and saved for you.
   - name: Attachments
     description: Upload the photos and files you attach to messages, and fetch them again.
   - name: Threads
     description: |
       Side threads beside the main chat, each with its own conversation: list and search them, open
       one, rename it, mark it done or open, and move a message between them.
+  - name: Sharing
+    description: |
+      What you share with Kumo from the phone's share sheet: links, screenshots, photos and quick
+      thoughts. Kumo answers each in a side thread.
   - name: Recordings
     description: |
       The recordings you send, transcribed on the server for Kumo to read, with times and, as a best
@@ -117,6 +141,8 @@ tags:
       Ari writes and keeps them current; apps read them and tick their items.
   - name: Model
     description: Choose the model the agent runs on.
+  - name: Access
+    description: How Kumo runs on the server, in its sandbox or with full access.
   - name: Talk
     description: Call the agent and speak your messages.
   - name: Whereabouts
@@ -514,7 +540,7 @@ paths:
       summary: Move or change one of Kumo's plans
       description: |
         Moves a wake-up to another time, changes how it repeats (`null` makes it a one-off), or
-        rewords what it's for. The answer is the wake-up as it is now, and `desk.changed` follows.
+        renames or rewords it. The answer is the wake-up as it is now, and `desk.changed` follows.
         A time that has passed is refused.
       parameters:
         - $ref: "#/components/parameters/WakeUp"
@@ -539,7 +565,9 @@ paths:
       tags: [Desk]
       operationId: cancelWakeUp
       summary: Cancel one of Kumo's plans
-      description: Cancels a wake-up, and `desk.changed` follows. Kumo sees it's gone and doesn't set it again unasked.
+      description: |
+        Cancels a wake-up, a repeating one with every time still to come (Stop), and `desk.changed`
+        follows. Kumo sees it's gone and doesn't set it again unasked.
       parameters:
         - $ref: "#/components/parameters/WakeUp"
       responses:
@@ -547,6 +575,29 @@ paths:
           description: Cancelled.
           headers:
             Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/wakeups/{wake_up}/skip:
+    post:
+      tags: [Desk]
+      operationId: skipWakeUp
+      summary: Skip the next time of a repeating plan
+      description: |
+        Skips a repeating wake-up's next time: it comes back at the time after, one fewer `left`
+        when it counts down. When that was its last time it ends, and the answer has no
+        `wake_up`. Skipping again before it moves on skips the time after that. `desk.changed`
+        follows. A one-off has no next time, so it's refused: cancel it instead.
+      parameters:
+        - $ref: "#/components/parameters/WakeUp"
+      responses:
+        "200":
+          description: Skipped.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WakeUpSkipped" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v0/done/{entry}/undo:
@@ -682,6 +733,86 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Work" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/dream:
+    get:
+      tags: [Dream]
+      operationId: getDream
+      summary: Read Kumo's dream
+      description: |
+        Kumo's dream: the time it dreams each night, when the next one is, whether one is under way,
+        and the latest dream's record with what it planned, tidied, noticed and saved for you. Show
+        the latest as new (a moon on the Desk) until its `seen_at` is set.
+      responses:
+        "200":
+          description: The dream.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DreamState" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+    post:
+      tags: [Dream]
+      operationId: dreamNow
+      summary: Dream now
+      description: |
+        Kumo dreams now, in the background, instead of waiting for the dream time; `dream.finished`
+        follows when it's done, often many minutes later. One dream runs at a time: while one is
+        under way this answers with it and starts nothing. Dream now is an extra: the night's dream
+        still runs at the dream time, and reads only what came since.
+      responses:
+        "202":
+          description: Dreaming.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DreamState" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/dream/time:
+    put:
+      tags: [Dream]
+      operationId: setDreamTime
+      summary: Set the dream time
+      description: |
+        When Kumo dreams each night, on your local clock wherever you are; 04:00 until you choose
+        another. The next dream moves at once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DreamTime" }
+            example: { time: "03:30" }
+      responses:
+        "200":
+          description: Set.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DreamState" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/dreams/{dream}/seen:
+    post:
+      tags: [Dream]
+      operationId: seeDream
+      summary: Mark a dream seen
+      description: |
+        You've seen a dream's record, so it's no longer new: the moon on the Desk becomes the sun.
+        Seeing it again keeps the first time.
+      parameters:
+        - $ref: "#/components/parameters/Dream"
+      responses:
+        "200":
+          description: Seen.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DreamResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v0/desk/cards/{card}/answer:
     post:
       tags: [Desk]
@@ -721,6 +852,83 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CardResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/understanding:
+    get:
+      tags: [Understanding]
+      operationId: getUnderstanding
+      summary: Read Understanding you
+      description: |
+        Every learning track, the questions waiting quietly on them, and what you answered lately.
+        `question.changed` carries each question whenever it's added or moves on.
+      responses:
+        "200":
+          description: Understanding you.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Understanding" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/understanding/questions/{question}/answer:
+    post:
+      tags: [Understanding]
+      operationId: answerQuestion
+      summary: Answer a question
+      description: |
+        Answers an open question: tap one or more of its options (`picked`), say it in your own
+        words (`text`) or aloud (`audio`, an audio file you uploaded first), or say `none_fit` or
+        `not_sure`, alone or with your words. The question is `answered` at once, and the answer
+        becomes evidence on its track. Kumo then files what it learned in the background and the
+        question gains `filed`; it asks nothing more about it. A spoken answer is heard on the server
+        first, and `answer.text` follows; if it can't be heard, the question opens again with
+        `unheard`. The same answer sent again, such as a retry, is taken once; a different answer to
+        a question that's no longer open is refused.
+      parameters:
+        - name: question
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/QuestionId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuestionReply" }
+            example: { picked: [Unplanned time], text: Nothing booked before noon. }
+      responses:
+        "202":
+          description: Taken; Kumo files it in the background.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuestionResult" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v0/understanding/questions/{question}/not-now:
+    post:
+      tags: [Understanding]
+      operationId: notNowQuestion
+      summary: Say "Not now" to a question
+      description: |
+        Leaves an open question open, for another time, with `later_at`: no reminder follows, and
+        Kumo doesn't ask it again. Saying it again only moves `later_at`.
+      parameters:
+        - name: question
+          in: path
+          required: true
+          schema: { $ref: "events.schema.json#/$defs/QuestionId" }
+      responses:
+        "200":
+          description: Left for later.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuestionResult" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -821,6 +1029,64 @@ paths:
               schema: { $ref: "#/components/schemas/Lead" }
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/shares:
+    post:
+      tags: [Sharing]
+      operationId: sendShare
+      summary: Share something with Kumo
+      description: |
+        What the share sheet sends: any mix of a link, text from another app, photos and files, and
+        a note you add. Upload photos and files first with `PUT /v0/attachments/{attachment}` (or
+        in chunks, for big ones), then name them in `attachments`, as a message does.
+
+        Answers as soon as the share is on the server's disk, with `state` `sorting`. The server
+        then reads the link's page for its title and summary, where it can, and Kumo decides
+        where the share belongs: one of your open side threads when it clearly belongs to that
+        thread's subject, or a new thread of its own that Kumo names (`thread.started`, by
+        `kumo`, comes first). The share becomes your message there, under the share's id, with
+        `share` holding the link and text, and arrives as `message.accepted`. Kumo answers it in
+        that thread's own turn, saying what it made of it and what it did with it, and its reply
+        notifies like any other.
+
+        Sending the same id again returns the share as it stands, `placed` once it's a message,
+        and changes nothing. The same id with anything different is an `id_conflict`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendShare" }
+            example:
+              id: 0f9b4c2e-6a71-4d3b-8e25-9c1a7d4e3b60
+              url: https://careers.halcyon.example/jobs/platform-engineer
+              note: This is the one Sam mentioned
+      responses:
+        "201":
+          description: Accepted for the first time; Kumo is sorting it.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareResult" }
+        "200":
+          description: Already accepted earlier; nothing changed. This is where it stands.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ShareResult" }
+        "400":
+          description: >-
+            The request is malformed or not possible now (`invalid_request`), such as an attachment
+            that belongs to a message already, or an attachment it names isn't on the server
+            (`attachment_missing`).
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResult" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "409": { $ref: "#/components/responses/IdConflict" }
+        "429": { $ref: "#/components/responses/SlowDown" }
   /v0/threads:
     get:
       tags: [Threads]
@@ -1813,6 +2079,28 @@ paths:
               schema: { $ref: "#/components/schemas/BrowserBody" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/capabilities/browser/task:
+    delete:
+      tags: [Browser]
+      operationId: stopBrowserTask
+      summary: Stop Kumo's browsing task
+      description: |
+        Stops what Kumo is doing in the browser, for "Stop the task": a step it's in the middle of
+        finishes first, then nothing more of the task is done. A takeover you hold ends, without
+        waking Kumo; a need it was waiting on, and a one-tap card waiting for your tap, are dropped;
+        and the page stays exactly as it is, unpressed. The turn that was browsing can't use the
+        browser again, so a new ask starts afresh. The trail's hand-off says you stopped it.
+        Stopping with no task changes nothing. The answer is the browser, now `idle`.
+      responses:
+        "200":
+          description: Stopped; the browser, now `idle`.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrowserBody" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+        "503": { $ref: "#/components/responses/Unavailable" }
   /v0/capabilities/browser/stream:
     get:
       tags: [Browser]
@@ -1823,15 +2111,24 @@ paths:
         at once, one for each device; the page is streamed while any is.
 
         - **Binary frames down:** the page, from Chrome's own screencast: one JPEG each, the whole
-          viewport at iPhone size, as soon as anything paints. While the page moves they come at 1x,
-          up to 60 a second; once it's still for a moment, a sharp one at 2x follows. A slow
+          viewport at your phone's size, as soon as anything paints. While the page moves they come
+          at 1x, up to 60 a second; once it's still for a moment, a sharp one at 2x follows. A slow
           connection gets fewer, never a backlog: draw the latest.
         - **Text frames** both ways are JSON, as in [the browser stream schema](browser.schema.json):
-          `state`, `view`, `focus`, `refused` and `ended` from the server; `tap`, `touch`, `scroll`,
-          `text`, `fill`, `key` and `navigate` from the app, which reach the page only while you
-          hold it. `focus` gives the field with the focus, its kind, where it is and how long its
-          value is, so a native field laid over it can type with iOS's keyboard and fill in
-          passwords and codes, sending each change with `fill` and return as `key` Enter.
+          `state`, `view`, `focus`, `mark`, `link`, `refused` and `ended` from the server; `tap`,
+          `touch`, `scroll`, `text`, `fill`, `key`, `navigate` and `viewport` from the app, which
+          reach the page only while you hold it. What you send reaches the page at once, in order,
+          never waiting on anything else: moves and scrolls sent faster than the page takes them
+          join up. `focus` gives the field with the focus, its kind, where it is and how long its
+          value is, in frames from other sites too, so a native field laid over it can type with
+          iOS's keyboard and fill in passwords and codes, sending each change with `fill` and
+          return as `key` Enter; it comes by itself when a new page puts the focus in a field.
+          `mark` gives the site's own pay button on a `payment` need, to ring, and follows it as
+          the page scrolls. `viewport` tells the server how much room the page has between the
+          header and the Hand back bar, and how much the keyboard covers, and the page's viewport
+          is made the room above the keyboard, so nothing sits under the bar or the keyboard.
+          `link` says `reconnecting` while the page should have painted and couldn't be shown, and
+          `live` again once it can.
 
         Peeking is watching: nothing you do changes the page until you take it over with
         `POST /v0/capabilities/browser/takeover`, and Kumo carries on meanwhile.
@@ -2281,6 +2578,72 @@ paths:
         "400": { $ref: "#/components/responses/InvalidRequest" }
         "401": { $ref: "#/components/responses/TokenRejected" }
         "503": { $ref: "#/components/responses/Unavailable" }
+  /v0/access:
+    get:
+      tags: [Access]
+      operationId: getAccess
+      summary: Read how Kumo runs on the server
+      description: |
+        Whether Kumo runs in its sandbox, as it does unless you change it, or with full access, and
+        since when. `access.changed` carries every change, and the snapshot holds it while it's full.
+      responses:
+        "200":
+          description: How Kumo runs.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Access" }
+              example: { mode: sandboxed }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+  /v0/access/full:
+    post:
+      tags: [Access]
+      operationId: giveFullAccess
+      summary: Give Kumo full access to the server
+      description: |
+        From the next turn or piece of work that starts, in the chat, in the background and in the
+        night's dream, Kumo runs without Codex's sandbox: its commands can install, restart and
+        change anything the server's user can, Ito's own checkout included, with nothing asked
+        first. A turn already running keeps the sandbox it started with. Nothing else turns it on:
+        the body must say `confirm: true`, so a stray call can't, and the app asks for Face ID
+        before it sends it. Turning it on when it's already on changes nothing. Kumo's work notes
+        each change, and every app hears `access.changed`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FullAccessConsent" }
+            example: { confirm: true }
+      responses:
+        "200":
+          description: Full access is on.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Access" }
+              example: { mode: full, since: "2026-11-27T14:02:00.000Z" }
+        "400": { $ref: "#/components/responses/InvalidRequest" }
+        "401": { $ref: "#/components/responses/TokenRejected" }
+    delete:
+      tags: [Access]
+      operationId: endFullAccess
+      summary: Put Kumo back in its sandbox
+      description: |
+        From the next turn or piece of work that starts, Kumo runs in its sandbox again: free to
+        write in its workspace and reach the network, and to read the rest of the server. Safe to
+        repeat. Kumo's work notes the change, and every app hears `access.changed`.
+      responses:
+        "200":
+          description: Kumo runs in its sandbox.
+          headers:
+            Ito-Protocol: { $ref: "#/components/headers/ItoProtocol" }
+          content:
+            application/json:
+              schema: { $ref: "events.schema.json#/$defs/Access" }
+              example: { mode: sandboxed }
+        "401": { $ref: "#/components/responses/TokenRejected" }
   /v0/calls/{call}:
     put:
       tags: [Talk]
@@ -2561,6 +2924,12 @@ components:
       in: path
       required: true
       schema: { $ref: "events.schema.json#/$defs/WakeUpId" }
+    Dream:
+      name: dream
+      in: path
+      required: true
+      description: The dream's id, from its `Dream`.
+      schema: { $ref: "events.schema.json#/$defs/DreamId" }
     Call:
       name: call
       in: path
@@ -2755,6 +3124,14 @@ components:
       required: [call]
       properties:
         call: { $ref: "events.schema.json#/$defs/Call" }
+    FullAccessConsent:
+      type: object
+      required: [confirm]
+      additionalProperties: false
+      properties:
+        confirm:
+          description: You mean it, having confirmed it on the phone, such as with Face ID.
+          const: true
     ModelChoice:
       type: object
       required: [model, effort]
@@ -3311,6 +3688,48 @@ components:
       required: [entry]
       properties:
         entry: { $ref: "events.schema.json#/$defs/DoneEntry" }
+    DreamState:
+      description: Kumo's dream as it stands.
+      type: object
+      required: [time, next_at]
+      properties:
+        time:
+          description: When Kumo dreams each night, on your local clock, such as `04:00`.
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        next_at:
+          $ref: "events.schema.json#/$defs/Timestamp"
+          description: When the next dream is due, in your time zone now.
+        dreaming:
+          description: A dream under way, while there is one.
+          type: object
+          required: [since, trigger, steps]
+          properties:
+            since: { $ref: "events.schema.json#/$defs/Timestamp" }
+            trigger: { enum: [scheduled, manual] }
+            steps:
+              description: |
+                Its latest steps, oldest first, up to 20, so an app that opens mid-dream catches up;
+                `dream.progress` brings each one after.
+              type: array
+              items: { $ref: "events.schema.json#/$defs/DreamStep" }
+        latest:
+          $ref: "events.schema.json#/$defs/Dream"
+          description: The latest dream, until there's been none.
+    DreamTime:
+      type: object
+      required: [time]
+      additionalProperties: false
+      properties:
+        time:
+          description: Such as `04:00`, on your local clock.
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+    DreamResult:
+      type: object
+      required: [dream]
+      properties:
+        dream: { $ref: "events.schema.json#/$defs/Dream" }
     WakeUpList:
       type: object
       required: [wake_ups]
@@ -3321,6 +3740,12 @@ components:
       required: [wake_up]
       properties:
         wake_up: { $ref: "events.schema.json#/$defs/WakeUp" }
+    WakeUpSkipped:
+      type: object
+      properties:
+        wake_up:
+          $ref: "events.schema.json#/$defs/WakeUp"
+          description: The wake-up at its next time; absent when that was its last, and it's gone.
     WakeUpChange:
       description: What to change; leave out what stays.
       type: object
@@ -3335,6 +3760,11 @@ components:
           oneOf:
             - $ref: "events.schema.json#/$defs/Repeat"
             - type: "null"
+        title:
+          description: Its title in Kumo's plans.
+          type: string
+          minLength: 1
+          maxLength: 60
         what:
           type: string
           minLength: 1
@@ -3390,6 +3820,60 @@ components:
           description: Every area Kumo is learning, in the order it opened them, now. Draw each with its stage as bars.
           type: array
           items: { $ref: "events.schema.json#/$defs/Track" }
+    Understanding:
+      description: Understanding you, now.
+      type: object
+      required: [tracks, questions, recent]
+      properties:
+        tracks:
+          description: Every area Kumo is learning, in the order it opened them, as in `GET /v0/work`.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Track" }
+        questions:
+          description: |
+            The open questions, each naming its track: first those you haven't set aside, oldest
+            first, then those you said "Not now" to.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Question" }
+        recent:
+          description: The questions answered or settled in the last 14 days, newest first.
+          type: array
+          items: { $ref: "events.schema.json#/$defs/Question" }
+    QuestionReply:
+      description: |
+        Your answer to a question: `picked` options, your words as `text` or as a recording in
+        `audio` (one or the other), and `none_fit` or `not_sure`. Send at least one; `none_fit`
+        doesn't go with `picked`.
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        picked:
+          description: The options you tapped, from the question's own.
+          type: array
+          minItems: 1
+          maxItems: 6
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 80 }
+        text:
+          description: Your own words.
+          type: string
+          minLength: 1
+          maxLength: 4000
+        audio:
+          $ref: "events.schema.json#/$defs/AttachmentId"
+          description: A spoken answer, as the id of an audio file you uploaded with `PUT /v0/uploads/{upload}`.
+        none_fit:
+          description: None of the options fit.
+          type: boolean
+        not_sure:
+          description: You're not sure.
+          type: boolean
+    QuestionResult:
+      type: object
+      required: [question]
+      properties:
+        question: { $ref: "events.schema.json#/$defs/Question" }
     CorrectDone:
       description: What was wrong, in your words; `{}` just says it was wrong.
       type: object
@@ -3635,6 +4119,73 @@ components:
         has_more:
           description: Whether older messages exist in the thread.
           type: boolean
+    SendShare:
+      type: object
+      required: [id]
+      anyOf:
+        - required: [url]
+          properties:
+            url: { type: string }
+        - required: [text]
+          properties:
+            text: { type: string }
+        - required: [note]
+          properties:
+            note: { type: string }
+        - required: [attachments]
+          properties:
+            attachments: { type: array }
+      properties:
+        id:
+          description: A random UUID the app makes for the share. It is the share's retry key, and the id of the message it becomes.
+          type: string
+          format: uuid
+        url:
+          description: The link you shared, `http` or `https`.
+          type: string
+          format: uri
+          pattern: ^https?://
+          maxLength: 2048
+        text:
+          description: Text you shared from another app, such as a passage you selected.
+          type: string
+          pattern: \S
+          maxLength: 32000
+        note:
+          description: What you added in the share sheet, as plain text or Markdown. A quick thought can be a note alone.
+          type: string
+          pattern: \S
+          maxLength: 32000
+        attachments:
+          description: The screenshots, photos and files you shared, uploaded first, in order, each once. Naming one the server doesn't have is an `attachment_missing`; naming one a message or another share already carries is an `invalid_request`.
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items: { $ref: "events.schema.json#/$defs/UploadId" }
+    ShareResult:
+      type: object
+      required: [share]
+      properties:
+        share: { $ref: "#/components/schemas/Share" }
+    Share:
+      description: A share and where it stands.
+      type: object
+      required: [id, state, at]
+      properties:
+        id:
+          description: The share's id, which its message takes once Kumo has placed it.
+          $ref: "events.schema.json#/$defs/MessageId"
+        state:
+          description: "`sorting` while the server reads it and Kumo decides which thread it belongs in; `placed` once it's your message in that thread."
+          type: string
+          enum: [sorting, placed]
+        at:
+          description: When the server accepted it.
+          $ref: "events.schema.json#/$defs/Timestamp"
+        thread:
+          description: Once it's placed, the thread it's in.
+          $ref: "events.schema.json#/$defs/ThreadId"
     ThreadResult:
       type: object
       required: [thread]

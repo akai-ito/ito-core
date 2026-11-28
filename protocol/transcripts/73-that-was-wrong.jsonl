@@ -1,4 +1,4 @@
-{"transcript":"73-that-was-wrong","start":"2026-11-11T10:00:00.000Z","scenario":73,"title":"That was wrong","summary":"Kumo bins a mail from Acme as a promotion. You open Kumo's work and say it was wrong: the mail goes back to your inbox, and Kumo keeps what to do differently on How to help you, which Done says.","guarantees":["G43"],"app":{}}
+{"transcript":"73-that-was-wrong","start":"2026-11-11T10:00:00.000Z","scenario":73,"title":"That was wrong","summary":"Kumo bins a mail from Acme as a promotion. You open Kumo's work and say it was wrong: the mail goes back to your inbox, and Kumo keeps what to do differently on the track it belongs to, which Done says.","guarantees":["G43"],"app":{}}
 {"at":0,"world":"capability_on","capability":"outlook","values":{"address":"sam@outlook.example","token":"replay-token"}}
 {"at":0,"app":{"method":"GET","path":"/v0/events"}}
 {"at":0,"server":{"status":200,"headers":{"Content-Type":"text/event-stream"}}}

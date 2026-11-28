@@ -29,4 +29,8 @@ export const registerBrowser = (app: FastifyInstance, { hand, schemaFor }: Brows
   app.delete("/v0/capabilities/browser/takeover", { schema: schemaFor("handBackBrowser") }, async (_request, reply) =>
     answer(reply, await hand.handBack()),
   );
+
+  app.delete("/v0/capabilities/browser/task", { schema: schemaFor("stopBrowserTask") }, async (_request, reply) =>
+    answer(reply, await hand.stop()),
+  );
 };

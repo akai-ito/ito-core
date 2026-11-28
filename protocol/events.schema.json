@@ -121,6 +121,18 @@
         },
         {
           "$ref": "#/$defs/BrowserChanged"
+        },
+        {
+          "$ref": "#/$defs/AccessChanged"
+        },
+        {
+          "$ref": "#/$defs/QuestionChanged"
+        },
+        {
+          "$ref": "#/$defs/DreamFinished"
+        },
+        {
+          "$ref": "#/$defs/DreamProgress"
         }
       ]
     },
@@ -292,6 +304,10 @@
         "quotes": {
           "$ref": "#/$defs/Quote",
           "description": "User messages only: inside a thread, the message you replied to."
+        },
+        "share": {
+          "$ref": "#/$defs/Shared",
+          "description": "User messages only: on something you shared from your phone's share sheet, what you shared besides your note, which is the `text`, and the photos and files, which are the `attachments`. Kumo puts a share in the side thread it belongs in, or in a new one it names, and answers it there."
         }
       },
       "if": {
@@ -335,6 +351,47 @@
           }
         }
       ]
+    },
+    "Shared": {
+      "description": "What you shared from your phone's share sheet, besides your note and its photos and files: a link, and text from another app.",
+      "type": "object",
+      "properties": {
+        "link": {
+          "$ref": "#/$defs/SharedLink"
+        },
+        "text": {
+          "description": "Text you shared from another app, such as a passage you selected, exactly as it came.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SharedLink": {
+      "description": "A link you shared, with what the server read from the page where it could, so the app can show it as a card without going to the site.",
+      "type": "object",
+      "required": ["url"],
+      "properties": {
+        "url": {
+          "description": "The link, exactly as you shared it.",
+          "type": "string",
+          "format": "uri"
+        },
+        "title": {
+          "description": "The page's title.",
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "description": "The page's summary of itself, as it gives one to link previews.",
+          "type": "string",
+          "minLength": 1
+        },
+        "site": {
+          "description": "The site's name, such as \"Halcyon Careers\", or else its host.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
     },
     "AttachmentKind": {
       "description": "`image` for a JPEG, PNG, GIF or WebP photo, which the agent sees; `audio` for a recording, such as a spoken message's or one you send, which the server transcribes for the agent; `file` for anything else, which lands in the agent's workspace. Treat a kind you don't recognise as a file.",
@@ -380,7 +437,7 @@
       }
     },
     "StepKind": {
-      "description": "What kind of thing the agent did. Show the title of a kind you don't recognise.",
+      "description": "What kind of thing the agent did. `handoff` and `commit` are written by the server, not the agent: a time Kumo's browser needed your hand, and how a one-tap card you answered went. Show the title of a kind you don't recognise.",
       "enum": [
         "thinking",
         "web_search",
@@ -392,7 +449,9 @@
         "image_view",
         "compacting",
         "memory",
-        "motion"
+        "motion",
+        "handoff",
+        "commit"
       ]
     },
     "Step": {
@@ -663,6 +722,76 @@
         "path": {
           "description": "`image_view`: the image looked at.",
           "type": "string"
+        },
+        "handoff": {
+          "description": "`handoff`: a time Kumo's browser needed your hand, or you took the page over, kept in the trail of the thread its task lives in so it outlasts a relaunch. Its `title` says what for, such as \"Needed you to log in\", or \"You took over\" when Kumo hadn't asked; draw `answer` under it, such as \"You logged in and handed back · 17:21\". It ends at once, as it's written, and `step.updated` adds the answer when the page comes back, even after its turn has ended.",
+          "type": "object",
+          "required": ["site"],
+          "additionalProperties": false,
+          "properties": {
+            "need": {
+              "$ref": "#/$defs/BrowserNeedKind",
+              "description": "What Kumo asked your hand for. Absent when you took the page over without being asked."
+            },
+            "why": {
+              "description": "What Kumo asked, in its words, such as \"Sign in to Railway so I can get the tickets\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "site": {
+              "description": "The site, such as \"Railway\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "answer": {
+              "description": "How the page came back: `handed_back` by you, `lapsed` when you left it untouched until it went back by itself, or `stopped` when you stopped the task. Absent while Kumo still waits on you, or you still hold the page. Treat one you don't recognise as handed back.",
+              "enum": ["handed_back", "lapsed", "stopped"]
+            },
+            "answered_at": {
+              "$ref": "#/$defs/Timestamp",
+              "description": "When it came back, with `answer`."
+            }
+          }
+        },
+        "commit": {
+          "description": "`commit`: how a one-tap card you answered went, kept in the trail of the thread its task lives in, so the card can be drawn as it settled after it has left the Desk and after a relaunch. Its `title` says it in a line, such as \"Pressed “Book now”\". When Kumo settles an uncertain press, or reads the site's reference on the confirmation page, `step.updated` brings the new `outcome` or the `reference`.",
+          "type": "object",
+          "required": ["card", "title", "verb", "outcome", "page"],
+          "additionalProperties": false,
+          "properties": {
+            "card": {
+              "$ref": "#/$defs/CardId",
+              "description": "The card, as it was on the Desk."
+            },
+            "title": {
+              "description": "The card's title, such as \"Table for two at Kiln\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "verb": {
+              "description": "The card's option that acts, such as \"Book\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "outcome": {
+              "$ref": "#/$defs/CommitOutcome"
+            },
+            "answer": {
+              "description": "`declined`: what you tapped or wrote instead, such as \"Not now\".",
+              "type": "string",
+              "minLength": 1
+            },
+            "reference": {
+              "description": "`done`: the site's reference for it, as Kumo read it on the confirmation page, such as \"TW-48KQ\". Absent until Kumo reads one, and when the site gave none.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "page": {
+              "$ref": "#/$defs/CommitCard",
+              "description": "The card's page as you saw it: its picture, summary and details."
+            }
+          }
         }
       }
     },
@@ -951,6 +1080,10 @@
         "browser": {
           "$ref": "#/$defs/Browser",
           "description": "Kumo's browser, while it's doing something: browsing, waiting on you, or in your hands. Absent while it's idle."
+        },
+        "access": {
+          "$ref": "#/$defs/Access",
+          "description": "How Kumo runs on the server, while it has full access. Absent while it runs in its sandbox."
         }
       }
     },
@@ -2142,6 +2275,12 @@
       "minLength": 1,
       "maxLength": 64
     },
+    "DreamId": {
+      "description": "Opaque. The server makes it when a dream finishes.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
     "CalendarItemId": {
       "description": "Opaque. The server makes it for each event it shows.",
       "type": "string",
@@ -2485,61 +2624,7 @@
           }
         },
         "commit": {
-          "description": "A free booking or form Kumo has ready on a site, such as a table for two, for your one tap. Show the picture, the summary and the details, with the options: the one that `acts` has the box press the site's own button, exactly the one outlined in the picture, but only if the page is still as it was; if it changed, nothing is pressed and Kumo looks again. The other option, or words of your own, press nothing: Kumo hears them. Money never goes this way: where money moves, Kumo asks you to take over and press the button yourself.",
-          "type": "object",
-          "required": ["site", "url", "button", "summary", "screenshot"],
-          "additionalProperties": false,
-          "properties": {
-            "site": {
-              "description": "The site, such as \"OpenTable\".",
-              "type": "string",
-              "minLength": 1
-            },
-            "url": {
-              "description": "The page's address, without its query.",
-              "type": "string",
-              "minLength": 1
-            },
-            "button": {
-              "description": "The site's own button that a go-ahead presses, as it reads, such as \"Book now\".",
-              "type": "string",
-              "minLength": 1
-            },
-            "summary": {
-              "description": "What pressing it does, in Kumo's words.",
-              "type": "string",
-              "minLength": 1
-            },
-            "details": {
-              "description": "What matters, such as when, for how many, and the name it's under. Absent when Kumo gave none.",
-              "type": "array",
-              "minItems": 1,
-              "maxItems": 8,
-              "items": {
-                "type": "object",
-                "required": ["label", "value"],
-                "additionalProperties": false,
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "value": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                }
-              }
-            },
-            "screenshot": {
-              "$ref": "#/$defs/AttachmentId",
-              "description": "The page as Kumo left it, at iPhone size, with the button outlined. Fetch it with `GET /v0/attachments/{attachment}`."
-            },
-            "thread": {
-              "$ref": "#/$defs/ThreadId",
-              "description": "The side thread the task lives in, where Kumo tells you how it went. Absent for the main chat."
-            }
-          }
+          "$ref": "#/$defs/CommitCard"
         }
       },
       "allOf": [
@@ -2634,6 +2719,67 @@
           }
         }
       ]
+    },
+    "CommitCard": {
+      "description": "A free booking or form Kumo has ready on a site, such as a table for two, for your one tap. Show the picture, the summary and the details, with the options: the one that `acts` has the box press the site's own button, exactly the one outlined in the picture, but only if the page is still as it was; if it changed, nothing is pressed and Kumo looks again. The other option, or words of your own, press nothing: Kumo hears them. Money never goes this way: where money moves, Kumo asks you to take over and press the button yourself.",
+      "type": "object",
+      "required": ["site", "url", "button", "summary", "screenshot"],
+      "additionalProperties": false,
+      "properties": {
+        "site": {
+          "description": "The site, such as \"OpenTable\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "description": "The page's address, without its query.",
+          "type": "string",
+          "minLength": 1
+        },
+        "button": {
+          "description": "The site's own button that a go-ahead presses, as it reads, such as \"Book now\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "description": "What pressing it does, in Kumo's words.",
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "description": "What matters, such as when, for how many, and the name it's under. Absent when Kumo gave none.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["label", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "screenshot": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "The page as Kumo left it, at iPhone size, with the button outlined. Fetch it with `GET /v0/attachments/{attachment}`."
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId",
+          "description": "The side thread the task lives in, where Kumo tells you how it went. Absent for the main chat."
+        }
+      }
+    },
+    "CommitOutcome": {
+      "description": "How a one-tap card settled. `done`: the box pressed the site's button and the site answered. `uncertain`: it pressed, but the site's answer was lost, and Kumo checks on the site before anything is pressed again. `failed`: Kumo checked an uncertain press and it didn't go through. `changed`: the page had moved on before your tap, so nothing was pressed. `declined`: you said not now, or asked for a change, so nothing was pressed. `refused`: nothing was pressed, such as because money moves there or you held the page. Treat one you don't recognise as `refused`.",
+      "enum": ["done", "uncertain", "failed", "changed", "declined", "refused"]
     },
     "Desk": {
       "description": "Home: Kumo's line and mood, the weather around you, Kumo's plans, what's coming up, what's waiting on you, how much Kumo handled today and when it last read your mail.",
@@ -2815,6 +2961,10 @@
         "track": {
           "$ref": "#/$defs/TrackId",
           "description": "The track this call belongs to, when it's in an area Kumo is learning. \"That was wrong\" on it steps the track back."
+        },
+        "dream": {
+          "$ref": "#/$defs/DreamId",
+          "description": "The dream that did it: show it with that dream rather than as the day's work. It doesn't count in the Desk's `handled`."
         }
       }
     },
@@ -2874,7 +3024,7 @@
       }
     },
     "TrackEvidence": {
-      "description": "One thing a track stands on: a time you `confirmed` Kumo got it right, `corrected` it, or Kumo `moved` it to another stage, with why.",
+      "description": "One thing a track stands on: a time you `confirmed` Kumo got it right, `corrected` it, `answered` one of its questions in Understanding you, or Kumo `moved` it to another stage, with why. Show the text alone for a kind you don't recognise.",
       "type": "object",
       "required": ["at", "kind", "text"],
       "additionalProperties": false,
@@ -2883,7 +3033,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "kind": {
-          "enum": ["confirmed", "corrected", "moved"]
+          "enum": ["confirmed", "corrected", "moved", "answered"]
         },
         "text": {
           "description": "In a line, such as \"You sent the Tess draft as I wrote it\".",
@@ -2897,6 +3047,127 @@
         "done": {
           "$ref": "#/$defs/DoneId",
           "description": "The call it was about, in Done."
+        },
+        "question": {
+          "$ref": "#/$defs/QuestionId",
+          "description": "`answered` only: the question you answered."
+        }
+      }
+    },
+    "QuestionId": {
+      "description": "Opaque. The server makes it when Kumo adds a question.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "QuestionState": {
+      "description": "Where a question stands: `open`, waiting quietly for you for as long as it takes; `answered`, by you; `settled`, Kumo learned the answer elsewhere, such as in the chat, and `note` says where; `dropped`, Kumo let it go because it no longer helps. Treat a state you don't recognise as `dropped`.",
+      "enum": ["open", "answered", "settled", "dropped"]
+    },
+    "Question": {
+      "description": "Something Kumo would like you to explain, in Understanding you, on one of its learning tracks: what it already understands, the missing piece and why it would help. It's optional and quiet: it has no due date, is never overdue, never waits on the Desk and never notifies you. Answer it with a tap on one or more of its `options`, in your own words, written or spoken, or say none fit or you're not sure; \"Not now\" leaves it open. An answer is enough: Kumo files what it learned in the background and asks nothing more about it.",
+      "type": "object",
+      "required": ["id", "track", "state", "understood", "missing", "why", "options", "asked_at", "changed_at"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/QuestionId"
+        },
+        "track": {
+          "$ref": "#/$defs/TrackId",
+          "description": "The learning track it belongs to, such as Planning with you."
+        },
+        "state": {
+          "$ref": "#/$defs/QuestionState"
+        },
+        "understood": {
+          "description": "What Kumo already understands, from your conversations, memory and sources, in a sentence or two, such as \"You keep Sunday mornings free and run long on Saturdays.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "missing": {
+          "description": "The missing piece, asked as one question, such as \"What makes a weekend feel restful rather than busy?\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "why": {
+          "description": "Why it would help, in a line, such as \"So the weekends I plan leave you rested, not just full.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "description": "Quick answers to tap: Kumo's honest possibilities, a few words each, for you to recognise or correct. Tap one or several. Empty when only your own words will do.",
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "asked_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "changed_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "later_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "`open` only: the last time you said \"Not now\". It stays open, with no reminder; show it after the rest."
+        },
+        "unheard": {
+          "description": "`open` only: your spoken answer couldn't be heard, and why, so the question is open for you to answer again.",
+          "type": "string",
+          "minLength": 1
+        },
+        "answer": {
+          "$ref": "#/$defs/QuestionAnswer",
+          "description": "`answered` only: what you said."
+        },
+        "filed": {
+          "description": "`answered` only, once Kumo has filed it: what it took from your answer, in a line, such as \"Weekends start slow: nothing booked before noon.\"",
+          "type": "string",
+          "minLength": 1
+        },
+        "note": {
+          "description": "`settled`: where Kumo learned the answer, such as \"You said in the chat that sleep comes first.\" `dropped`: why Kumo let it go.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "QuestionAnswer": {
+      "description": "Your answer to a question: the options you tapped, your own words, written or spoken, and whether none fit or you're not sure, alone or together.",
+      "type": "object",
+      "required": ["at"],
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "picked": {
+          "description": "The options you tapped.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "text": {
+          "description": "Your own words. For a spoken answer, what the server heard, once it has: until then a spoken answer has `audio` and no `text`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "audio": {
+          "$ref": "#/$defs/AttachmentId",
+          "description": "A spoken answer: the recording you uploaded, which the server transcribes on its own GPU."
+        },
+        "none_fit": {
+          "description": "None of Kumo's options fit.",
+          "const": true
+        },
+        "not_sure": {
+          "description": "You're not sure.",
+          "const": true
         }
       }
     },
@@ -2907,7 +3178,7 @@
     "WakeUp": {
       "description": "A time Kumo will wake up and look at something for you: a follow-up, a look after an event, a standing job, or something you asked for. When it comes due, Kumo looks first, then messages you if that's useful, moves it if things changed, or drops it if it's moot, and Done says which. Kumo keeps it current as your life moves, such as a meeting moving or a trip; you can move, change or cancel it too.",
       "type": "object",
-      "required": ["id", "at", "what", "why", "by", "source", "set_at"],
+      "required": ["id", "at", "title", "what", "why", "by", "source", "set_at"],
       "properties": {
         "id": {
           "$ref": "#/$defs/WakeUpId"
@@ -2916,8 +3187,14 @@
           "$ref": "#/$defs/Timestamp",
           "description": "When it's next due, a concrete time Kumo worked out, such as the end of the event it's for."
         },
+        "title": {
+          "description": "What it is in a few plain words, as you'd say it, such as \"Ask how the technical went\": the line to show in Kumo's plans. A repeating one keeps one title, such as \"Look at the week ahead\".",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
         "what": {
-          "description": "What it's for, in a line, such as \"Ask how the Halcyon technical went\".",
+          "description": "What Kumo will do when it wakes, in its own words, such as \"Ask how the Halcyon technical went and note what to work on\": show it with `why` when you open a plan.",
           "type": "string",
           "minLength": 1
         },
@@ -2948,7 +3225,7 @@
       }
     },
     "Repeat": {
-      "description": "A wake-up that comes back: on these days, at this time in your time zone, wherever you are, such as weekdays at 09:00.",
+      "description": "A wake-up that comes back: on these days, at this time in your time zone, wherever you are, such as weekdays at 09:00, until it's stopped or, when it has an end, a number of times or up to a day.",
       "type": "object",
       "required": ["days", "time"],
       "additionalProperties": false,
@@ -2966,6 +3243,16 @@
           "description": "Such as `09:00`.",
           "type": "string",
           "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "left": {
+          "description": "How many more times it comes round, counting the next one; it ends after the last. Absent when it repeats until stopped. Kumo sets it when it knows, such as eight aligner trays: show it as \"4 left\".",
+          "type": "integer",
+          "minimum": 1
+        },
+        "until": {
+          "description": "The last day it comes round, on your local clock; it ends after that. Show it as \"until 22 Dec\".",
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
         }
       }
     },
@@ -3257,6 +3544,26 @@
         }
       }
     },
+    "QuestionChanged": {
+      "title": "question.changed",
+      "description": "A question in Understanding you was added or moved on: answered, filed by Kumo, set aside with \"Not now\", heard, settled or dropped. It carries the whole question, and never notifies. These events are compacted like the Desk's, so after a `snapshot`, fetch `GET /v0/understanding`.",
+      "type": "object",
+      "required": ["id", "type", "at", "question"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "question.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "question": {
+          "$ref": "#/$defs/Question"
+        }
+      }
+    },
     "BrowserState": {
       "description": "What Kumo's browser is doing: `idle`; `browsing`, Kumo at work on a site; `needs_you`, Kumo asked you to take over, for a login, a code, a CAPTCHA or the pay button; `yours`, you hold the page in a takeover and Kumo can't touch it; `waiting`, a commit card waits for your tap. Treat a state you don't recognise as `idle`.",
       "enum": ["idle", "browsing", "needs_you", "yours", "waiting"]
@@ -3343,6 +3650,157 @@
         }
       }
     },
+    "DreamGroup": {
+      "description": "Where a line of a dream belongs: `planned`, tomorrow put in order (Kumo's blocks and guesses, wake-ups set, moved or dropped); `tidied`, memory tended (pages rewritten, merged, Now kept to what's live); `noticed`, what Kumo noticed or learnt (a lasting lesson on How to help you, a pattern, a chapter); `saved`, kept for you (the day's journal, a message or a question for the morning). Show a group you don't recognise under Noticed.",
+      "enum": ["planned", "tidied", "noticed", "saved"]
+    },
+    "DreamLine": {
+      "description": "One short line of what a dream did, pointing at what it changed or is about. Lines are in the order Kumo wrote them; group them by `group`.",
+      "type": "object",
+      "required": ["group", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "group": {
+          "$ref": "#/$defs/DreamGroup"
+        },
+        "text": {
+          "description": "Plain words, such as \"Moved tomorrow's run to 07:30, before the 09:00 call\".",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "done": {
+          "$ref": "#/$defs/DoneId",
+          "description": "The entry in Kumo's work for the change this line made, when it made one. Undo it with `POST /v0/done/{entry}/undo` while `undo` is true."
+        },
+        "undo": {
+          "description": "Whether `POST /v0/done/{entry}/undo` can take the change back now: it puts the page, the wake-up or the block back as it was before the dream.",
+          "type": "boolean"
+        },
+        "undone": {
+          "description": "You took the change back.",
+          "const": true
+        },
+        "page": {
+          "description": "The memory page it changed or is about, such as `memory:journal/2026-11-26`.",
+          "type": "string",
+          "pattern": "^memory:"
+        },
+        "wake_up": {
+          "$ref": "#/$defs/WakeUpId",
+          "description": "The wake-up it set, moved or dropped; one it dropped is no longer in the plans."
+        },
+        "event": {
+          "$ref": "#/$defs/CalendarItemId",
+          "description": "The item on Kumo's calendar it planned, moved or removed; one it removed is no longer in Coming up."
+        },
+        "message": {
+          "$ref": "#/$defs/MessageId",
+          "description": "A message it posted to you."
+        }
+      }
+    },
+    "Dream": {
+      "description": "One of Kumo's dreams: once a day, at the dream time, Kumo looks back over everything since the last one and puts it in order, then leaves this record. Show it from when it finishes until you've seen it (a moon on the Desk), then as seen.",
+      "type": "object",
+      "required": ["id", "day", "trigger", "started_at", "ended_at", "lines"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/DreamId"
+        },
+        "day": {
+          "description": "The local day it mostly looked back on, such as `2026-11-26` for a dream at 04:00 on the 27th.",
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "trigger": {
+          "description": "`scheduled`, at the dream time (or as soon as the server was back, if it was off then); `manual`, from Dream now.",
+          "enum": ["scheduled", "manual"]
+        },
+        "started_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "ended_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "headline": {
+          "description": "The night in a line, in Kumo's words, such as \"A quiet Wednesday: journal written, Thursday planned\".",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DreamLine"
+          }
+        },
+        "seen_at": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When you saw it, with `POST /v0/dreams/{dream}/seen`. Until then it's new."
+        }
+      }
+    },
+    "DreamFinished": {
+      "title": "dream.finished",
+      "description": "Kumo finished a dream, and left its record. It never notifies: Kumo messages you itself when something from the night is worth it.",
+      "type": "object",
+      "required": ["id", "type", "at", "dream"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "dream.finished"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "dream": {
+          "$ref": "#/$defs/Dream"
+        }
+      }
+    },
+    "DreamProgress": {
+      "title": "dream.progress",
+      "description": "While Kumo dreams, it started a step, such as reading a page or moving a wake-up: one short line for the live view. Steps come from the tools the dream calls, written by the server, a few to a few dozen a dream. They never notify, and are compacted like the Desk's: after a `snapshot`, `GET /v0/dream` gives the recent steps of a dream under way.",
+      "type": "object",
+      "required": ["id", "type", "at", "step"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "dream.progress"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "step": {
+          "$ref": "#/$defs/DreamStep"
+        }
+      }
+    },
+    "DreamStep": {
+      "description": "One step of a dream under way, as a short line such as \"Tidying Leo\" or \"Writing Monday's journal\".",
+      "type": "object",
+      "required": ["at", "group", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "group": {
+          "description": "What kind of step: `gathering`, reading back over the day; `tidying`, tending memory; `planning`, tomorrow's blocks and wake-ups; `journal`, writing a day's entry. Show a group you don't recognise as gathering.",
+          "enum": ["gathering", "tidying", "planning", "journal"]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "BrowserChanged": {
       "title": "browser.changed",
       "description": "Kumo's browser changed: a step on a site, a takeover asked for, taken or handed back, a commit card put to you or settled, or the task over. It carries the whole state. These events are compacted like the Desk's, so after a `snapshot`, its `browser` is the state, or idle when absent. They never notify, except that a need notifies once, as a `takeover` notification.",
@@ -3360,6 +3818,41 @@
         },
         "browser": {
           "$ref": "#/$defs/Browser"
+        }
+      }
+    },
+    "Access": {
+      "description": "How Kumo runs on the server. `sandboxed`, the default: Kumo's commands run in Codex's sandbox, free to write only in Kumo's workspace and to reach the network, and to read the rest of the server. `full`: no sandbox, so its commands can install, restart and change anything the server's user can, Ito's own checkout included, with no approval asked. Either applies from the next turn or piece of work that starts, never to one already running. While it's `full`, show a marker on the chat.",
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": ["sandboxed", "full"]
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "`full` only: when you turned it on."
+        }
+      }
+    },
+    "AccessChanged": {
+      "title": "access.changed",
+      "description": "You turned full access on or off, from any device. It carries the whole state. After a `snapshot`, its `access` is the state, or `sandboxed` when absent. It never notifies.",
+      "type": "object",
+      "required": ["id", "type", "at", "access"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "type": {
+          "const": "access.changed"
+        },
+        "at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "access": {
+          "$ref": "#/$defs/Access"
         }
       }
     }

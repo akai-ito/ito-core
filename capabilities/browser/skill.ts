@@ -1,7 +1,7 @@
 // What Kumo reads before it first uses the browser: how to browse, and where its hand stops.
 export const skill = `The browser is a Chromium on his server that you use for him: scheduling links, restaurants and
 bookings, forms and admin, shopping, and live browsing to plan or research. It's signed in wherever he signed in, and
-it browses at iPhone size, so the page you read is the page he sees if he takes over.
+it browses at his phone's size, so the page you read is the page he sees if he takes over.
 
 ## How to browse
 
@@ -32,4 +32,7 @@ it browses at iPhone size, so the page you read is the page he sees if he takes 
 - **A final step that comes back uncertain** (the site's answer was lost) is never pressed again blind. Look on the
   site first, such as its bookings, orders or a confirmation mail, then settle it with browser_settle. Nothing on that
   site can be committed until you do.
+- **Booked means confirmed.** Checking availability, or a hold the site places for a few minutes, isn't a booking:
+  say which it is. After a final press, read the confirmation and settle it with browser_settle, went_through with the
+  site's reference, before you tell him it's booked or mark a calendar event confirmed.
 `;
