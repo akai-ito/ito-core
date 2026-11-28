@@ -2433,7 +2433,7 @@ paths:
     get:
       tags: [Places]
       operationId: getPlace
-      summary: A place, with every visit
+      summary: A place, with every visit, who you went with and Kumo's line
       parameters:
         - $ref: "#/components/parameters/Place"
       responses:
@@ -5953,13 +5953,57 @@ components:
           items: { $ref: "#/components/schemas/Place" }
     PlacePage:
       type: object
-      required: [place, visits]
+      required: [place, visits, companions]
       properties:
         place: { $ref: "#/components/schemas/Place" }
         visits:
           description: Every visit, newest first.
           type: array
           items: { $ref: "#/components/schemas/PlaceVisit" }
+        companions:
+          description: |
+            Who you went with, most visits together first, at most six: someone on a People page named
+            beside the place in the journal or a day note on a day you were there, on a calendar event
+            with you during a visit, or the one it's named after, such as Leo's. Someone on the calendar
+            there with you in the next two weeks comes too, with `next`. Never from tracking anyone.
+          type: array
+          maxItems: 6
+          items: { $ref: "#/components/schemas/PlaceCompanion" }
+        moment: { $ref: "#/components/schemas/PlaceMoment" }
+        line:
+          description: |
+            Kumo's line about the place, such as "You come back for the fig thing.", written on the
+            quick model from the visits, who you went with, what's on the calendar there and what you
+            wrote, and kept until those change. Absent when there's nothing to go on, or Kumo hasn't
+            written it, can't now or doesn't finish within a few seconds; never stood in for.
+          type: string
+          minLength: 1
+    PlaceCompanion:
+      type: object
+      required: [person, name, visits]
+      properties:
+        person: { $ref: "events.schema.json#/$defs/PersonId" }
+        name: { description: "What Kumo calls them, from their People page.", type: string, minLength: 1 }
+        photo:
+          $ref: "events.schema.json#/$defs/PhotoName"
+          description: Their card's photo, from `GET /v0/people/photos/{photo}`.
+        visits: { description: The days you were there together., type: integer, minimum: 0 }
+        last: { $ref: "#/components/schemas/Day", description: The last day you were there together. }
+        next:
+          description: The next time you're on the calendar there together.
+          type: object
+          required: [day]
+          properties:
+            day: { $ref: "#/components/schemas/Day" }
+            at: { $ref: "events.schema.json#/$defs/Timestamp" }
+    PlaceMoment:
+      description: The newest line in the journal, on a day you were there, that names the place.
+      type: object
+      required: [day, text, journal]
+      properties:
+        day: { $ref: "#/components/schemas/Day" }
+        text: { type: string, minLength: 1 }
+        journal: { $ref: "events.schema.json#/$defs/MemoryAddress" }
     PlaceChange:
       type: object
       additionalProperties: false

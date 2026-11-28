@@ -50,6 +50,16 @@ import type { Tracks } from "#work/tracks.ts";
 // Who someone is, for the places seam: their page and the names they go by.
 export type PersonReference = { readonly address: string; readonly names: readonly string[] };
 
+// Someone on a People page as what's written names them: the names they go by and their card's emails, such as for
+// who was with him at a place.
+export type KnownPerson = {
+  readonly id: string;
+  readonly name: string;
+  readonly photo?: string;
+  readonly names: readonly string[];
+  readonly emails: readonly string[];
+};
+
 export type LinkReport = {
   readonly linked: readonly { readonly person: string; readonly name: string; readonly card: string }[];
   readonly asked: readonly { readonly person: string; readonly name: string; readonly question: string }[];
@@ -59,6 +69,7 @@ export type LinkReport = {
 export type PeopleKeeper = {
   readonly list: () => Promise<People>;
   readonly person: (id: string) => Promise<PersonPageBody | undefined>;
+  readonly known: () => Promise<readonly KnownPerson[]>;
   readonly photo: (name: string) => Photo | undefined;
   readonly circles: () => Promise<CircleOrder>;
   readonly changeCircles: (wanted: readonly CircleChange[]) => Promise<Result<CircleOrder, string>>;
@@ -524,6 +535,20 @@ export const createPeople = ({
     };
   };
 
+  const everyoneKnown = async (): Promise<readonly KnownPerson[]> => {
+    const context = await loadContext(false);
+    return context.pages.map((page) => {
+      const card = cardOf(page);
+      return {
+        id: page.id,
+        name: page.title,
+        ...(card?.photo !== undefined && { photo: card.photo.name }),
+        names: namesOf(page, card, context.pages),
+        emails: card?.facts.emails.map(({ value }) => value.toLowerCase()) ?? [],
+      };
+    });
+  };
+
   const circlesNow = async (): Promise<CircleOrder> => {
     await memory.sync();
     const pages = await readShelf("people");
@@ -772,6 +797,7 @@ export const createPeople = ({
   return {
     list,
     person,
+    known: everyoneKnown,
     photo: (name) => contacts.photo(name),
     circles: circlesNow,
     changeCircles: changeOrder,

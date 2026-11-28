@@ -47,7 +47,8 @@ export type Location = {
   readonly forget: (what: ForgetLocation) => Result<ForgetResult, string>;
   readonly held: () => LocationHeld;
   readonly places: (from?: string, to?: string) => readonly Place[];
-  readonly place: (id: string) => PlacePage | undefined;
+  // A place and every visit; Life adds who he went with and Kumo's line.
+  readonly place: (id: string) => PlaceVisits | undefined;
   readonly change: (id: string, change: PlaceChange) => Result<Place, string>;
   readonly days: Days;
   // Today worked out again, so an open stay counts until now.
@@ -72,6 +73,8 @@ export type Location = {
 };
 
 export type PlaceVisitOf = PlaceVisit & { readonly place: Place };
+
+export type PlaceVisits = Pick<PlacePage, "place" | "visits">;
 
 export type LocationOptions = {
   readonly database: DatabaseSync;
@@ -610,7 +613,7 @@ export const createLocation = ({
       .toSorted((left, right) => right.hours - left.hours || left.first_visit.localeCompare(right.first_visit));
   };
 
-  const place = (id: string): PlacePage | undefined => {
+  const place = (id: string): PlaceVisits | undefined => {
     const found = find(id);
     if (!found || found.not_a_place === true) return undefined;
     const now = clock.now();

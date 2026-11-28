@@ -344,6 +344,7 @@ const naming = (): Transcript => {
   transcript.response(200, {
     place: { ...unnamed, name: "Five-a-side with Omar", kind: "outdoors" },
     visits: [{ arrived_at: "2026-11-24T19:05:00.000Z", departed_at: "2026-11-24T21:02:00.000Z", minutes: 117 }],
+    companions: [],
   });
   return transcript;
 };

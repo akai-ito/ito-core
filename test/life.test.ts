@@ -7,12 +7,25 @@ import { createBusy, targetsOf } from "#life/busy.ts";
 import { createDays, type LifeLocation } from "#life/days.ts";
 import { createGoingOn } from "#life/going-on.ts";
 import { createLines, type Lines } from "#life/lines.ts";
+import { createPlacePages } from "#life/place.ts";
+import { without } from "#location/records.ts";
 import { createSearch, wordsOf } from "#life/search.ts";
 import type { ChapterSummary } from "#memory/chapters.ts";
 import type { Hit, PageBody, PageSummary, RecentChangeBody } from "#memory/memory.ts";
 import type { Shelf } from "#memory/pages.ts";
 import type { MotionDetail } from "#motion/motion.ts";
-import type { DayThread, Made, Message, Motion, People, Place, Trip } from "#protocol/types.ts";
+import type { KnownPerson } from "#people/people.ts";
+import type {
+  CalendarItem,
+  DayThread,
+  Made,
+  Message,
+  Motion,
+  People,
+  Place,
+  PlaceVisit,
+  Trip,
+} from "#protocol/types.ts";
 import { fail, ok } from "#result.ts";
 import { openDatabase } from "#store/database.ts";
 import { createVirtualClock } from "./support/virtual-clock.ts";
@@ -676,5 +689,175 @@ describe("what Kumo knows about you", () => {
     expect(known.portrait).toBeUndefined();
     expect(known.helping).toBeUndefined();
     expect(known.tastes).toEqual([]);
+  });
+});
+
+const orrins: Place = {
+  id: "pl_orrins",
+  name: "Orrin's",
+  apple_name: "Orrin's Kitchen",
+  kind: "restaurant",
+  latitude: 55.9572,
+  longitude: -3.1887,
+  radius: 20,
+  hours: 7.5,
+  visits: 3,
+  first_visit: "2026-10-06T18:30:00.000Z",
+  last_visit: "2026-11-24T19:40:00.000Z",
+};
+
+const orrinsVisits: readonly PlaceVisit[] = [
+  { arrived_at: "2026-11-20T19:40:00.000Z", departed_at: "2026-11-20T22:10:00.000Z", minutes: 150 },
+  { arrived_at: "2026-10-13T18:30:00.000Z", departed_at: "2026-10-13T21:00:00.000Z", minutes: 150 },
+  { arrived_at: "2026-10-06T18:30:00.000Z", departed_at: "2026-10-06T21:00:00.000Z", minutes: 150 },
+];
+
+const knownPeople: readonly KnownPerson[] = [
+  { id: "omar", name: "Omar", photo: "omar.jpg", names: ["Omar", "Omar Haddad"], emails: ["omar@example.com"] },
+  { id: "leo", name: "Leo", names: ["Leo"], emails: [] },
+  { id: "mira", name: "Mira", names: ["Mira"], emails: ["mira@example.com"] },
+  { id: "tilly", name: "Tilly", names: ["Tilly"], emails: [] },
+];
+
+const event = (
+  fields: Partial<CalendarItem> & Pick<CalendarItem, "uid" | "title" | "start" | "end">,
+): CalendarItem => ({
+  id: `ci_${fields.uid}`,
+  all_day: false,
+  calendar: { name: "Home", kumo: false },
+  ...fields,
+});
+
+const placePagesWith = ({
+  answers = [],
+  place = orrins,
+  markdown = {},
+  notes = [],
+  items = [],
+  attendees = {},
+}: {
+  readonly answers?: readonly unknown[];
+  readonly place?: Place;
+  readonly markdown?: Readonly<Record<string, string>>;
+  readonly notes?: readonly DayNote[];
+  readonly items?: readonly CalendarItem[];
+  readonly attendees?: Readonly<Record<string, readonly string[]>>;
+}) => {
+  const canned = cannedLines(answers);
+  const journal = Object.keys(markdown).map((address) => summary(address, address));
+  const pages = createPlacePages({
+    location: { place: (id) => (id === place.id ? { place, visits: [...orrinsVisits] } : undefined) },
+    memory: fakeMemory({ pages: { journal }, markdown }),
+    dayNotes: { since: (day) => notes.filter((note) => note.day >= day) },
+    calendar: { listItems: () => items, attendeesOf: (uid) => attendees[uid] ?? [] },
+    people: { known: () => Promise.resolve(knownPeople) },
+    lines: canned.lines,
+    now: () => now,
+    timeZone,
+  });
+  return { pages, prompts: canned.prompts };
+};
+
+describe("a place's page", () => {
+  const markdown = {
+    "memory:journal/2026-11-20": "### 22:40\n\nDinner at Orrin's with Omar. The fig thing was the best all month.\n",
+    "memory:journal/2026-10-06":
+      "### 23:10\n\nFirst time at Orrin's, with Leo and Omar.\n\nTilly called about Lisbon.\n",
+    "memory:journal/2026-10-07": "### 21:00\n\nLeftovers from Orrin's with Mira.\n",
+  };
+  const tonight = event({
+    uid: "dinner-mira",
+    title: "Dinner with Mira",
+    start: "2026-11-24T19:30:00.000Z",
+    end: "2026-11-24T21:30:00.000Z",
+    location: "Orrin's Kitchen, Broughton Street",
+    calendar: { name: "Home", kumo: false },
+  });
+
+  it("brings who you went with, a moment from the journal and Kumo's line", async () => {
+    const line = "You come back for the fig thing. Tonight's table is at 19:30.";
+    const { pages, prompts } = placePagesWith({ answers: [{ line }], markdown, items: [tonight] });
+    const page = await pages.read("pl_orrins");
+    expect(page).toEqual({
+      place: orrins,
+      visits: orrinsVisits,
+      companions: [
+        { person: "omar", name: "Omar", photo: "omar.jpg", visits: 2, last: "2026-11-20" },
+        { person: "leo", name: "Leo", visits: 1, last: "2026-10-06" },
+        { person: "mira", name: "Mira", visits: 0, next: { day: "2026-11-24", at: "2026-11-24T19:30:00.000Z" } },
+      ],
+      moment: {
+        day: "2026-11-20",
+        text: "Dinner at Orrin's with Omar. The fig thing was the best all month.",
+        journal: "memory:journal/2026-11-20",
+      },
+      line,
+    });
+    // Tilly is in the journal that day, but not beside the place; the 7th wasn't a day there.
+    const [prompt] = prompts();
+    expect(prompt).toContain("Orrin's (Apple calls it Orrin's Kitchen)");
+    expect(prompt).toContain("- Omar, twice");
+    expect(prompt).toContain("Dinner with Mira (Orrin's Kitchen, Broughton Street)");
+    expect(prompt).toContain("Today is Tuesday, 24 November 2026.");
+    expect(prompt).not.toContain("Leftovers");
+  });
+
+  it("keeps Kumo's line, and counts an event with them during a visit", async () => {
+    const run = event({
+      uid: "drinks",
+      title: "Drinks",
+      start: "2026-10-13T18:00:00.000Z",
+      end: "2026-10-13T20:00:00.000Z",
+    });
+    const { pages, prompts } = placePagesWith({
+      answers: [{ line: "Where the weeks end." }],
+      markdown,
+      items: [run],
+      attendees: { drinks: ["mira@example.com", "you@example.com"] },
+    });
+    const first = await pages.read("pl_orrins");
+    expect(first?.companions.map(({ person, visits }) => [person, visits])).toEqual([
+      ["omar", 2],
+      ["mira", 1],
+      ["leo", 1],
+    ]);
+    expect(await pages.read("pl_orrins")).toEqual(first);
+    expect(prompts()).toHaveLength(1);
+  });
+
+  it("counts every visit with the one a place is named after", async () => {
+    const leos: Place = { ...without(orrins, "apple_name"), id: "pl_leos", name: "Leo's", kind: "friend" };
+    const { pages } = placePagesWith({ place: leos });
+    const page = await pages.read("pl_leos");
+    expect(page?.companions).toEqual([{ person: "leo", name: "Leo", visits: 3, last: "2026-11-20" }]);
+  });
+
+  it("finds them in a day note too", async () => {
+    const note: DayNote = {
+      id: 1,
+      at: "2026-10-13T21:30:00.000Z",
+      day: "2026-10-13",
+      text: "Orrin's with Tilly.",
+      yours: true,
+    };
+    const { pages } = placePagesWith({ notes: [note] });
+    const page = await pages.read("pl_orrins");
+    expect(page?.companions).toEqual([{ person: "tilly", name: "Tilly", visits: 1, last: "2026-10-13" }]);
+  });
+
+  it("writes no line from nothing, and goes without one Kumo couldn't write", async () => {
+    const bare = placePagesWith({});
+    expect(await bare.pages.read("pl_orrins")).toEqual({ place: orrins, visits: orrinsVisits, companions: [] });
+    expect(bare.prompts()).toEqual([]);
+    const failing = placePagesWith({ markdown });
+    const page = await failing.pages.read("pl_orrins");
+    expect(page?.line).toBeUndefined();
+    expect(page?.moment?.day).toBe("2026-11-20");
+    expect(failing.prompts()).toHaveLength(1);
+  });
+
+  it("has no page for a place it doesn't know", async () => {
+    const { pages } = placePagesWith({});
+    expect(await pages.read("pl_nowhere")).toBeUndefined();
   });
 });

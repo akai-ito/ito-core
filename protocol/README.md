@@ -69,8 +69,10 @@ sequenceDiagram
   were taken (`/v0/location/photos`). The server groups visits into places, finds home and trips, and
   keeps time spent per area, so `/v0/location/heat` lights a week, month or year with a curve that
   caps; a day's thread and trail show where you went. Arriving and leaving wake Kumo like mail. Places
-  it can't name become questions, answered by naming them (`PATCH /v0/places/{id}`). Forget a day, a
-  range or everything with `/v0/location/forget`; nothing else is ever deleted.
+  it can't name become questions, answered by naming them (`PATCH /v0/places/{id}`). A place's page
+  (`GET /v0/places/{id}`) has every visit, who you went with from the journal, day notes and calendar,
+  a moment from the journal and Kumo's line. Forget a day, a range or everything with
+  `/v0/location/forget`; nothing else is ever deleted.
 - **Plan with Kumo:** list, move, skip a repeating one's next time and cancel the wake-ups Kumo set,
   which the Desk shows as its plans, each with its title and, for a repeat that ends, how many times
   are left or its last day.
